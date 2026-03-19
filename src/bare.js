@@ -11,6 +11,7 @@ const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
 const { createDispatch } = require('./bare-dispatch')
+const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -88,13 +89,124 @@ async function init (dataDir) {
   mode = storedMode ? storedMode.value : null
 
   // Build dispatch with live context
-  dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode })
+  dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
+    joinTopic, sendToPeer })
 
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
     publicKey: b4a.toString(identity.publicKey, 'hex'),
     mode,
   }})
+}
+
+// ── P2P / Hyperswarm ──────────────────────────────────────────────────────────
+
+/**
+ * Join a Hyperswarm topic. Called by the pairing flow (generateInvite / acceptInvite).
+ * topic: 32-byte Buffer or hex string
+ */
+async function joinTopic (topicInput) {
+  if (!swarm) {
+    swarm = new Hyperswarm()
+    swarm.on('connection', onPeerConnection)
+  }
+  const topicBuf = typeof topicInput === 'string'
+    ? b4a.from(topicInput, 'hex')
+    : topicInput
+  await swarm.join(topicBuf, { client: true, server: true })
+  await swarm.flush()
+  send({ type: 'event', event: 'swarm:joined', data: { topic: b4a.toString(topicBuf, 'hex') } })
+}
+
+/**
+ * Called for each new Hyperswarm peer connection.
+ */
+function onPeerConnection (conn, info) {
+  const remoteKeyHex = b4a.toString(conn.remotePublicKey, 'hex')
+  console.log('[bare] peer connected:', remoteKeyHex.slice(0, 12))
+
+  let peerBuf = ''
+  conn.on('data', chunk => {
+    peerBuf += chunk.toString()
+    const lines = peerBuf.split('\n')
+    peerBuf = lines.pop()
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        const msg = JSON.parse(line)
+        handlePeerMessage(msg, conn, remoteKeyHex)
+      } catch (e) {
+        console.error('[bare] peer message parse error:', e.message)
+      }
+    }
+  })
+
+  conn.on('error', e => console.error('[bare] peer error:', e.message))
+  conn.on('close', () => {
+    peers.delete(remoteKeyHex)
+    send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
+  })
+
+  // Store the connection for sending
+  peers.set(remoteKeyHex, { conn, remoteKeyHex, displayName: null })
+  send({ type: 'event', event: 'peer:connected', data: { remoteKey: remoteKeyHex } })
+}
+
+/**
+ * Handle an incoming signed message from a peer.
+ * Verifies signature against known peer identity. Drops unknown/invalid messages.
+ */
+async function handlePeerMessage (msg, conn, remoteKeyHex) {
+  // Require the 'from' field to match the connection's remote key
+  if (!msg.from || msg.from !== remoteKeyHex) {
+    console.warn('[bare] dropped message: from mismatch')
+    return
+  }
+
+  // Look up known peer — pairing handshake messages are handled before full verification
+  const peer = peers.get(remoteKeyHex)
+  if (!peer) return
+
+  // For 'hello' messages (pairing handshake): we don't have the peer's pubkey yet —
+  // but we DO know their Hyperswarm public key (NOISE key), which is different from their
+  // Ed25519 identity key. We accept 'hello' only once and then store their identity key.
+  if (msg.type === 'hello') {
+    await handleHello(msg, conn, remoteKeyHex)
+    return
+  }
+
+  // For all other messages: verify signature against stored identity key
+  const storedPeer = await db.get('peers:' + msg.from).catch(() => null)
+  if (!storedPeer) {
+    console.warn('[bare] dropped message: unknown peer', msg.from.slice(0, 12))
+    return
+  }
+  if (!verifyMessage(msg, msg.from)) {
+    console.warn('[bare] dropped message: invalid signature from', msg.from.slice(0, 12))
+    return
+  }
+
+  // Dispatch verified peer message
+  send({ type: 'event', event: 'peer:message', data: msg })
+}
+
+/**
+ * Send a signed message to a connected peer.
+ * @param {string} remoteKeyHex — the peer's Hyperswarm public key (hex)
+ * @param {{ type: string, payload: object }} msg
+ */
+function sendToPeer (remoteKeyHex, msg) {
+  const peer = peers.get(remoteKeyHex)
+  if (!peer || !peer.conn) {
+    throw new Error('peer not connected: ' + remoteKeyHex.slice(0, 12))
+  }
+  const signed = signMessage(msg, identity)
+  peer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+}
+
+async function handleHello (msg, conn, remoteKeyHex) {
+  // Implemented in Task 8 (pairing flow)
+  console.log('[bare] hello received from:', remoteKeyHex.slice(0, 12))
 }
 
 // Signal that bare.js has loaded (before init is called)

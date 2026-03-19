@@ -30,6 +30,22 @@ function createDispatch (ctx) {
         return stored ? stored.value : null
       }
 
+      case 'connectToPeer': {
+        // args[0]: swarmTopic (hex string)
+        const topic = args[0]
+        if (!topic || typeof topic !== 'string' || !/^[0-9a-f]{64}$/i.test(topic)) {
+          throw new Error('invalid swarmTopic')
+        }
+        await ctx.joinTopic(topic)
+        return { joined: true, topic }
+      }
+
+      case 'sendPeerMessage': {
+        // args[0]: remoteKeyHex, args[1]: { type, payload }
+        ctx.sendToPeer(args[0], args[1])
+        return { sent: true }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }

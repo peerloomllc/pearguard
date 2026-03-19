@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handlePolicyUpdate, appendPinUseLog, getPinUseLog } = require('../src/bare-dispatch')
+const { createDispatch, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -497,6 +497,247 @@ describe('bare dispatch', () => {
       const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
       const [, report] = usagePuts[0]
       expect(report.pinOverrides).toEqual([])
+    })
+  })
+
+  describe('time:request', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('stores pending request to db with key starting with req:', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('time:request', { packageName: 'com.example.tiktok' })
+
+      expect(result).toHaveProperty('requestId')
+      expect(result.requestId).toMatch(/^req:/)
+      expect(result).toHaveProperty('status', 'pending')
+
+      // db.put called with a key starting with 'req:'
+      const reqPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('req:'))
+      expect(reqPuts).toHaveLength(1)
+      const [key, value] = reqPuts[0]
+      expect(key).toMatch(/^req:/)
+      expect(value).toHaveProperty('status', 'pending')
+      expect(value).toHaveProperty('packageName', 'com.example.tiktok')
+      expect(value).toHaveProperty('requestedAt')
+      expect(value).toHaveProperty('id', key)
+    })
+
+    test('emits request:submitted event with request data', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('time:request', { packageName: 'com.example.tiktok' })
+
+      const submittedCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'request:submitted')
+      expect(submittedCalls).toHaveLength(1)
+      const [msg] = submittedCalls[0]
+      expect(msg.data).toHaveProperty('status', 'pending')
+      expect(msg.data).toHaveProperty('packageName', 'com.example.tiktok')
+    })
+
+    test('emits time:request:sent event', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('time:request', { packageName: 'com.example.tiktok' })
+
+      const sentCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'time:request:sent')
+      expect(sentCalls).toHaveLength(1)
+      const [msg] = sentCalls[0]
+      expect(msg.data).toHaveProperty('packageName', 'com.example.tiktok')
+      expect(msg.data).toHaveProperty('requestId')
+      expect(msg.data).toHaveProperty('requestedAt')
+    })
+  })
+
+  describe('handleTimeExtend', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('updates request status to approved and stores expiresAt', async () => {
+      const requestId = 'req:1000:com.example.tiktok'
+      const pendingRequest = { id: requestId, packageName: 'com.example.tiktok', requestedAt: 1000, status: 'pending' }
+      const stored = { [requestId]: pendingRequest }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ requestId, packageName: 'com.example.tiktok', extraSeconds: 600 }, mockDb, mockSend)
+
+      const reqPuts = mockDb.put.mock.calls.filter(([k]) => k === requestId)
+      expect(reqPuts).toHaveLength(1)
+      const [, savedReq] = reqPuts[0]
+      expect(savedReq.status).toBe('approved')
+      expect(savedReq.expiresAt).toBeGreaterThan(Date.now())
+    })
+
+    test('sends native:grantOverride', async () => {
+      const requestId = 'req:1000:com.example.tiktok'
+      const pendingRequest = { id: requestId, packageName: 'com.example.tiktok', requestedAt: 1000, status: 'pending' }
+      const stored = { [requestId]: pendingRequest }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ requestId, packageName: 'com.example.tiktok', extraSeconds: 600 }, mockDb, mockSend)
+
+      const nativeCalls = mockSend.mock.calls.filter(([m]) => m.method === 'native:grantOverride')
+      expect(nativeCalls).toHaveLength(1)
+      const [msg] = nativeCalls[0]
+      expect(msg.args).toHaveProperty('packageName', 'com.example.tiktok')
+      expect(msg.args).toHaveProperty('source', 'parent-approved')
+    })
+
+    test('emits override:granted event', async () => {
+      const requestId = 'req:1000:com.example.tiktok'
+      const pendingRequest = { id: requestId, packageName: 'com.example.tiktok', requestedAt: 1000, status: 'pending' }
+      const stored = { [requestId]: pendingRequest }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ requestId, packageName: 'com.example.tiktok', extraSeconds: 600 }, mockDb, mockSend)
+
+      const grantedCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'override:granted')
+      expect(grantedCalls).toHaveLength(1)
+    })
+
+    test('emits request:updated event with approved status', async () => {
+      const requestId = 'req:1000:com.example.tiktok'
+      const pendingRequest = { id: requestId, packageName: 'com.example.tiktok', requestedAt: 1000, status: 'pending' }
+      const stored = { [requestId]: pendingRequest }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ requestId, packageName: 'com.example.tiktok', extraSeconds: 600 }, mockDb, mockSend)
+
+      const updatedCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'request:updated')
+      expect(updatedCalls).toHaveLength(1)
+      const [msg] = updatedCalls[0]
+      expect(msg.data).toHaveProperty('requestId', requestId)
+      expect(msg.data).toHaveProperty('status', 'approved')
+      expect(msg.data).toHaveProperty('expiresAt')
+    })
+
+    test('drops malformed payload (missing extraSeconds) — no db writes, no sends', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ requestId: 'req:1', packageName: 'com.example.app' }, mockDb, mockSend)
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('drops malformed payload (missing requestId) — no db writes, no sends', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ packageName: 'com.example.app', extraSeconds: 600 }, mockDb, mockSend)
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('skips db.put if requestId not found in db but still sends native and events', async () => {
+      const mockDb = makeMockDb({})  // empty db — request not found
+      const mockSend = jest.fn()
+
+      await handleTimeExtend({ requestId: 'req:999:com.example.app', packageName: 'com.example.app', extraSeconds: 300 }, mockDb, mockSend)
+
+      // No put since request not found
+      expect(mockDb.put).not.toHaveBeenCalled()
+
+      // Native and events still fire
+      const nativeCalls = mockSend.mock.calls.filter(([m]) => m.method === 'native:grantOverride')
+      expect(nativeCalls).toHaveLength(1)
+      const grantedCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'override:granted')
+      expect(grantedCalls).toHaveLength(1)
+    })
+  })
+
+  describe('requests:list', () => {
+    function makeAsyncIterable (arr) {
+      return {
+        [Symbol.asyncIterator] () {
+          let i = 0
+          return {
+            next () {
+              if (i < arr.length) return Promise.resolve({ value: arr[i++], done: false })
+              return Promise.resolve({ value: undefined, done: true })
+            },
+          }
+        },
+      }
+    }
+
+    test('returns requests sorted by requestedAt descending', async () => {
+      const items = [
+        { key: 'req:100:com.a', value: { id: 'req:100:com.a', packageName: 'com.a', requestedAt: 100, status: 'pending' } },
+        { key: 'req:300:com.b', value: { id: 'req:300:com.b', packageName: 'com.b', requestedAt: 300, status: 'pending' } },
+        { key: 'req:200:com.c', value: { id: 'req:200:com.c', packageName: 'com.c', requestedAt: 200, status: 'approved' } },
+      ]
+      const mockDb = {
+        put: jest.fn(),
+        get: jest.fn(),
+        createReadStream: jest.fn().mockReturnValue(makeAsyncIterable(items)),
+      }
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('requests:list', {})
+
+      expect(result).toHaveProperty('requests')
+      expect(result.requests).toHaveLength(3)
+      // Sorted descending by requestedAt
+      expect(result.requests[0].requestedAt).toBe(300)
+      expect(result.requests[1].requestedAt).toBe(200)
+      expect(result.requests[2].requestedAt).toBe(100)
+    })
+
+    test('calls createReadStream with correct range options', async () => {
+      const mockDb = {
+        put: jest.fn(),
+        get: jest.fn(),
+        createReadStream: jest.fn().mockReturnValue(makeAsyncIterable([])),
+      }
+      const ctx = { db: mockDb, send: jest.fn() }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('requests:list', {})
+
+      expect(mockDb.createReadStream).toHaveBeenCalledWith({ gt: 'req:', lt: 'req:~' })
+    })
+
+    test('returns empty requests array when no requests exist', async () => {
+      const mockDb = {
+        put: jest.fn(),
+        get: jest.fn(),
+        createReadStream: jest.fn().mockReturnValue(makeAsyncIterable([])),
+      }
+      const ctx = { db: mockDb, send: jest.fn() }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('requests:list', {})
+
+      expect(result).toEqual({ requests: [] })
     })
   })
 

@@ -149,6 +149,38 @@ function createDispatch (ctx) {
         return { granted: true, expiresAt }
       }
 
+      case 'time:request': {
+        const { packageName } = args
+        const requestId = 'req:' + Date.now() + ':' + packageName
+        const request = {
+          id: requestId,
+          packageName,
+          requestedAt: Date.now(),
+          status: 'pending',
+        }
+
+        await ctx.db.put(requestId, request)
+
+        // Notify parent (emit event to RN for relay)
+        ctx.send({ type: 'event', event: 'time:request:sent', data: { packageName, requestId, requestedAt: request.requestedAt } })
+
+        // Notify WebView that request was submitted
+        ctx.send({ type: 'event', event: 'request:submitted', data: request })
+
+        return { requestId, status: 'pending' }
+      }
+
+      case 'requests:list': {
+        // Scan Hyperbee for all keys matching 'req:*'
+        const requests = []
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+          requests.push(value)
+        }
+        // Sort by requestedAt descending
+        requests.sort((a, b) => b.requestedAt - a.requestedAt)
+        return { requests }
+      }
+
       case 'usage:flush': {
         // Build usage report from PIN log and identity
         const pinLog = await getPinUseLog(ctx.db)
@@ -208,6 +240,41 @@ async function handlePolicyUpdate (payload, db, send) {
 }
 
 /**
+ * Handle a verified `time:extend` P2P message from a parent peer.
+ * Extracted for testability — called from bare.js handlePeerMessage.
+ *
+ * @param {object} payload — { requestId, packageName, extraSeconds }
+ * @param {object} db — Hyperbee instance
+ * @param {function} send — bare→RN IPC send function
+ */
+async function handleTimeExtend (payload, db, send) {
+  const { requestId, packageName, extraSeconds } = payload
+  if (!requestId || !packageName || typeof extraSeconds !== 'number') {
+    console.warn('[bare] time:extend: malformed payload, dropping')
+    return
+  }
+
+  const expiresAt = Date.now() + extraSeconds * 1000
+  const grant = { packageName, grantedAt: Date.now(), expiresAt, source: 'parent-approved' }
+
+  // Update request status in Hyperbee
+  const existing = await db.get(requestId)
+  if (existing) {
+    const req = existing.value
+    req.status = 'approved'
+    req.expiresAt = expiresAt
+    await db.put(requestId, req)
+  }
+
+  // Notify native to grant override
+  send({ method: 'native:grantOverride', args: grant })
+
+  // Notify WebView
+  send({ type: 'event', event: 'override:granted', data: grant })
+  send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved', expiresAt } })
+}
+
+/**
  * Append an entry to the `pinLog` array in Hyperbee.
  * Creates the log if it doesn't exist yet.
  *
@@ -233,4 +300,4 @@ async function getPinUseLog (db) {
   return raw ? raw.value : []
 }
 
-module.exports = { createDispatch, handlePolicyUpdate, appendPinUseLog, getPinUseLog }
+module.exports = { createDispatch, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog }

@@ -12,6 +12,7 @@
     "build:bare": "bare-pack --linked src/bare.js -o assets/bare-universal.bundle",
     "build:ui": "esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
     "test": "jest",
+    "test:policy": "node src/policy.test.js",
     "ios": "expo run:ios"
   },
   "dependencies": {

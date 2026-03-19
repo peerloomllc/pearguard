@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch } = require('../src/bare-dispatch')
+const { createDispatch, handlePolicyUpdate } = require('../src/bare-dispatch')
 
 describe('bare dispatch', () => {
   test('ping returns pong', async () => {
@@ -41,5 +41,97 @@ describe('bare dispatch', () => {
     const ctx = { db: { put: jest.fn(), get: jest.fn() }, mode: null }
     const dispatch = createDispatch(ctx)
     await expect(dispatch('setMode', ['admin'])).rejects.toThrow()
+  })
+
+  describe('policy:getCurrent', () => {
+    test('returns parsed policy when policy exists in db', async () => {
+      const storedPolicy = { version: 1, childPublicKey: 'abc123', rules: [] }
+      const stored = { policy: storedPolicy }
+      const mockDb = {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] ? { value: stored[k] } : null),
+      }
+      const ctx = { db: mockDb, mode: 'child' }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('policy:getCurrent', {})
+      expect(result).toEqual({ policy: storedPolicy })
+    })
+
+    test('returns { policy: null } when no policy stored', async () => {
+      const mockDb = {
+        put: jest.fn(),
+        get: jest.fn(async () => null),
+      }
+      const ctx = { db: mockDb, mode: 'child' }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('policy:getCurrent', {})
+      expect(result).toEqual({ policy: null })
+    })
+  })
+
+  describe('handlePolicyUpdate', () => {
+    function makeMockDb () {
+      const stored = {}
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('stores valid policy to db and emits events', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const payload = { version: 1, childPublicKey: 'deadbeef', rules: [] }
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      expect(mockDb.put).toHaveBeenCalledWith('policy', payload)
+      expect(mockSend).toHaveBeenCalledWith({
+        type: 'event',
+        event: 'native:setPolicy',
+        data: { json: JSON.stringify(payload) },
+      })
+      expect(mockSend).toHaveBeenCalledWith({
+        type: 'event',
+        event: 'policy:updated',
+        data: payload,
+      })
+    })
+
+    test('does NOT call db.put when payload is missing version', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const payload = { childPublicKey: 'deadbeef', rules: [] }  // no version
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('does NOT call db.put when payload is missing childPublicKey', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const payload = { version: 1, rules: [] }  // no childPublicKey
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('does NOT call db.put when version is not a number', async () => {
+      const mockDb = makeMockDb()
+      const mockSend = jest.fn()
+      const payload = { version: '1', childPublicKey: 'deadbeef', rules: [] }  // string version
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
   })
 })

@@ -10,7 +10,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch } = require('./bare-dispatch')
+const { createDispatch, handlePolicyUpdate } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -197,8 +197,15 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     return
   }
 
-  // Dispatch verified peer message
-  send({ type: 'event', event: 'peer:message', data: msg })
+  // Dispatch verified peer message by type
+  switch (msg.type) {
+    case 'policy:update':
+      await handlePolicyUpdate(msg.payload, db, send)
+      break
+    default:
+      send({ type: 'event', event: 'peer:message', data: msg })
+      break
+  }
 }
 
 /**

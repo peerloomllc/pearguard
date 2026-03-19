@@ -84,10 +84,34 @@ function createDispatch (ctx) {
         return { ok: true, swarmTopic, parentPublicKey }
       }
 
+      case 'policy:getCurrent': {
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : null
+        return { policy }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }
   }
 }
 
-module.exports = { createDispatch }
+/**
+ * Handle a verified `policy:update` P2P message from a parent peer.
+ * Extracted for testability — called from bare.js handlePeerMessage.
+ *
+ * @param {object} payload — the policy object from msg.payload
+ * @param {object} db — Hyperbee instance
+ * @param {function} send — bare→RN IPC send function
+ */
+async function handlePolicyUpdate (payload, db, send) {
+  if (typeof payload.version !== 'number' || !payload.childPublicKey) {
+    console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
+    return
+  }
+  await db.put('policy', payload)
+  send({ type: 'event', event: 'native:setPolicy', data: { json: JSON.stringify(payload) } })
+  send({ type: 'event', event: 'policy:updated', data: payload })
+}
+
+module.exports = { createDispatch, handlePolicyUpdate }

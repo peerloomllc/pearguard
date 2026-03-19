@@ -123,10 +123,17 @@ public class AppBlockerModule extends AccessibilityService {
      * or null if the app is allowed.
      */
     private String getBlockReason(String packageName) {
-        // Check for active override (PIN was entered successfully)
+        // Check for active override (PIN was entered successfully — in-memory)
         Long overrideExpiry = overrides.get(packageName);
         if (overrideExpiry != null && System.currentTimeMillis() < overrideExpiry) {
             return null; // override is active, allow
+        }
+
+        // Check SharedPreferences for P2P-granted overrides (from parent via bare worklet)
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        long sharedPrefOverride = prefs.getLong("pearguard_override_" + packageName, 0L);
+        if (sharedPrefOverride > System.currentTimeMillis()) {
+            return null; // P2P override is active, allow
         }
 
         // Phone/messaging apps with contact exceptions: skip all block checks

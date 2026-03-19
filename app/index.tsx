@@ -162,6 +162,12 @@ export default function Root () {
             } else if (msg.method === 'native:setPolicy') {
               // Write policy to SharedPreferences so native enforcement modules can read it
               NativeModules.UsageStatsModule?.setPolicy(msg.args.json)
+            } else if (msg.method === 'native:grantOverride') {
+              // Write P2P-granted override expiry to SharedPreferences so AppBlockerModule can read it
+              NativeModules.UsageStatsModule?.grantOverride(
+                msg.args.packageName,
+                msg.args.expiresAt
+              )
             } else if (msg.type === 'response') {
               const resolve = _pending.get(msg.id)
               if (resolve) { _pending.delete(msg.id); resolve(msg) }

@@ -1038,6 +1038,53 @@ describe('bare dispatch', () => {
     })
   })
 
+  // ── Task 9: pin:used ──────────────────────────────────────────────────────
+
+  describe('pin:used', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('calls appendPinUseLog with packageName, grantedAt, expiresAt; returns { logged: true }', async () => {
+      const mockDb = makeMockDb({})
+      const ctx = { db: mockDb }
+      const dispatch = createDispatch(ctx)
+
+      const timestamp = Date.now()
+      const durationSeconds = 600
+      const result = await dispatch('pin:used', { packageName: 'com.example.app', timestamp, durationSeconds })
+
+      expect(result).toEqual({ logged: true })
+
+      // appendPinUseLog calls db.put('pinLog', [...])
+      const logPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pinLog')
+      expect(logPuts).toHaveLength(1)
+      const [, log] = logPuts[0]
+      expect(log).toHaveLength(1)
+      expect(log[0].packageName).toBe('com.example.app')
+      expect(log[0].grantedAt).toBe(timestamp)
+      expect(log[0].expiresAt).toBe(timestamp + durationSeconds * 1000)
+    })
+
+    test('pin:used with missing args: still returns { logged: true } (graceful)', async () => {
+      const mockDb = makeMockDb({})
+      const ctx = { db: mockDb }
+      const dispatch = createDispatch(ctx)
+
+      // timestamp and durationSeconds are undefined — expiresAt will be NaN, but should not throw
+      const result = await dispatch('pin:used', {})
+
+      expect(result).toEqual({ logged: true })
+
+      const logPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pinLog')
+      expect(logPuts).toHaveLength(1)
+    })
+  })
+
   // ── Task 8: bypass:detected ────────────────────────────────────────────────
 
   describe('bypass:detected', () => {

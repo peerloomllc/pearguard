@@ -226,6 +226,16 @@ function createDispatch (ctx) {
         return heartbeat.payload
       }
 
+      case 'pin:used': {
+        const { packageName, timestamp, durationSeconds } = args
+        await appendPinUseLog({
+          packageName,
+          grantedAt: timestamp,
+          expiresAt: timestamp + durationSeconds * 1000,
+        }, ctx.db)
+        return { logged: true }
+      }
+
       case 'bypass:detected': {
         const { reason } = args
         const entry = { reason, detectedAt: Date.now() }

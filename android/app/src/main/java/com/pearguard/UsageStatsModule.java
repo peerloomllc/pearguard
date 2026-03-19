@@ -169,4 +169,16 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         prefs.edit().putString("pearguard_policy", policyJson).apply();
     }
+
+    /**
+     * Stores a P2P-granted override expiry timestamp in SharedPreferences so
+     * AppBlockerModule can read it during blocking checks.
+     * Called from app/index.tsx when bare.js sends native:grantOverride.
+     */
+    @ReactMethod
+    public void grantOverride(String packageName, double expiresAt, Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+        prefs.edit().putLong("pearguard_override_" + packageName, (long) expiresAt).apply();
+        promise.resolve(null);
+    }
 }

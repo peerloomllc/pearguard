@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handlePolicyUpdate, appendPinUseLog } = require('../src/bare-dispatch')
+const { createDispatch, handlePolicyUpdate, appendPinUseLog, getPinUseLog } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -337,6 +337,189 @@ describe('bare dispatch', () => {
       const dispatch = createDispatch(ctx)
 
       await expect(dispatch('pin:set', { pin: 1234 })).rejects.toThrow('invalid pin')
+    })
+  })
+
+  describe('usage:flush', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('builds report with pinLog, identity, and timestamp', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
+      const stored = {
+        pinLog: [pinLogEntry],
+        identity: identity,
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', [])
+
+      expect(result).toHaveProperty('flushed', true)
+      expect(result).toHaveProperty('timestamp')
+      expect(typeof result.timestamp).toBe('number')
+    })
+
+    test('persists report to db with key usage:{timestamp}', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
+      const stored = {
+        pinLog: [pinLogEntry],
+        identity: identity,
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', [])
+
+      // Find the db.put call with the usage: key
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      expect(usagePuts).toHaveLength(1)
+
+      const [key, value] = usagePuts[0]
+      expect(key).toBe('usage:' + result.timestamp)
+      expect(value).toHaveProperty('type', 'usage:report')
+      expect(value).toHaveProperty('timestamp', result.timestamp)
+      expect(value).toHaveProperty('pinOverrides')
+      expect(value).toHaveProperty('childPublicKey')
+      expect(value).toHaveProperty('usageStats')
+    })
+
+    test('includes pinLog entries in pinOverrides', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
+      const stored = {
+        pinLog: [pinLogEntry],
+        identity: identity,
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('usage:flush', [])
+
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      const [, report] = usagePuts[0]
+      expect(report.pinOverrides).toEqual([pinLogEntry])
+    })
+
+    test('emits usage:report event with report data', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
+      const stored = {
+        pinLog: [pinLogEntry],
+        identity: identity,
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', [])
+
+      // Find the event:usage:report call
+      const eventCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'usage:report')
+      expect(eventCalls).toHaveLength(1)
+
+      const [eventMsg] = eventCalls[0]
+      expect(eventMsg.data).toHaveProperty('type', 'usage:report')
+      expect(eventMsg.data).toHaveProperty('timestamp', result.timestamp)
+      expect(eventMsg.data).toHaveProperty('pinOverrides')
+      expect(eventMsg.data).toHaveProperty('childPublicKey')
+    })
+
+    test('clears pinLog to empty array', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
+      const stored = {
+        pinLog: [pinLogEntry],
+        identity: identity,
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('usage:flush', [])
+
+      // Find the db.put call that clears pinLog
+      const logPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pinLog')
+      expect(logPuts).toHaveLength(1)
+      expect(logPuts[0][1]).toEqual([])
+    })
+
+    test('handles missing identity gracefully', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const stored = {
+        pinLog: [pinLogEntry],
+        // no identity
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', [])
+
+      expect(result).toHaveProperty('flushed', true)
+
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      const [, report] = usagePuts[0]
+      expect(report.childPublicKey).toBeNull()
+    })
+
+    test('handles empty pinLog', async () => {
+      const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
+      const stored = {
+        identity: identity,
+        // no pinLog
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', [])
+
+      expect(result).toHaveProperty('flushed', true)
+
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      const [, report] = usagePuts[0]
+      expect(report.pinOverrides).toEqual([])
+    })
+  })
+
+  describe('getPinUseLog', () => {
+    test('returns existing pinLog array', async () => {
+      const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
+      const mockDb = {
+        get: jest.fn(async () => ({ value: [pinLogEntry] })),
+      }
+
+      const result = await getPinUseLog(mockDb)
+
+      expect(result).toEqual([pinLogEntry])
+    })
+
+    test('returns empty array when pinLog does not exist', async () => {
+      const mockDb = {
+        get: jest.fn(async () => null),
+      }
+
+      const result = await getPinUseLog(mockDb)
+
+      expect(result).toEqual([])
     })
   })
 })

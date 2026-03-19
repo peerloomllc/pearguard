@@ -149,6 +149,36 @@ function createDispatch (ctx) {
         return { granted: true, expiresAt }
       }
 
+      case 'usage:flush': {
+        // Build usage report from PIN log and identity
+        const pinLog = await getPinUseLog(ctx.db)
+        const identityRaw = await ctx.db.get('identity')
+        const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
+
+        // TODO: nativeStats would be fetched via a request/response IPC call to native
+        // (native:getUsageStats). For now, use empty stats.
+        // This will be properly implemented in a future task.
+
+        const report = {
+          type: 'usage:report',
+          timestamp: Date.now(),
+          usageStats: {},  // TODO: populate when native:getUsageStats is implemented
+          pinOverrides: pinLog,
+          childPublicKey,
+        }
+
+        // Persist report to Hyperbee
+        await ctx.db.put('usage:' + report.timestamp, report)
+
+        // Emit event to RN which can relay to parent (sendToParent not yet implemented — see Task 13)
+        ctx.send({ type: 'event', event: 'usage:report', data: report })
+
+        // Clear PIN log for next reporting period
+        await ctx.db.put('pinLog', [])
+
+        return { flushed: true, timestamp: report.timestamp }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }
@@ -191,4 +221,16 @@ async function appendPinUseLog (entry, db) {
   await db.put('pinLog', log)
 }
 
-module.exports = { createDispatch, handlePolicyUpdate, appendPinUseLog }
+/**
+ * Retrieve the PIN usage log from Hyperbee.
+ * Returns an empty array if no log exists yet.
+ *
+ * @param {object} db — Hyperbee instance
+ * @returns {Promise<array>} — array of PIN override entries
+ */
+async function getPinUseLog (db) {
+  const raw = await db.get('pinLog')
+  return raw ? raw.value : []
+}
+
+module.exports = { createDispatch, handlePolicyUpdate, appendPinUseLog, getPinUseLog }

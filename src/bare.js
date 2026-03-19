@@ -97,6 +97,11 @@ async function init (dataDir) {
     publicKey: b4a.toString(identity.publicKey, 'hex'),
     mode,
   }})
+
+  // Start 5-minute usage reporting timer
+  setInterval(() => {
+    handleDispatch('usage:flush', {}, null)
+  }, 5 * 60 * 1000)
 }
 
 // ── P2P / Hyperswarm ──────────────────────────────────────────────────────────

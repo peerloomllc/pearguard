@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -940,6 +940,101 @@ describe('bare dispatch', () => {
       // TODO: enforcementActive should be populated via native:getEnforcementState once
       // the RN callRN round-trip helper is implemented.
       expect(result.enforcementActive).toBeNull()
+    })
+  })
+
+  // ── Task 13: queueMessage / flushMessageQueue ──────────────────────────────
+
+  describe('queueMessage', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('first message creates a single-element array in pendingMessages', async () => {
+      const mockDb = makeMockDb({})
+
+      await queueMessage({ type: 'heartbeat', payload: {} }, mockDb)
+
+      const puts = mockDb.put.mock.calls.filter(([k]) => k === 'pendingMessages')
+      expect(puts).toHaveLength(1)
+      const [, queue] = puts[0]
+      expect(queue).toHaveLength(1)
+      expect(queue[0].message).toEqual({ type: 'heartbeat', payload: {} })
+      expect(typeof queue[0].queuedAt).toBe('number')
+    })
+
+    test('second message appends in order', async () => {
+      const stored = {}
+      const mockDb = makeMockDb(stored)
+
+      await queueMessage({ type: 'msg1' }, mockDb)
+      await queueMessage({ type: 'msg2' }, mockDb)
+
+      const puts = mockDb.put.mock.calls.filter(([k]) => k === 'pendingMessages')
+      // Second call will have both items
+      const [, finalQueue] = puts[puts.length - 1]
+      expect(finalQueue).toHaveLength(2)
+      expect(finalQueue[0].message).toEqual({ type: 'msg1' })
+      expect(finalQueue[1].message).toEqual({ type: 'msg2' })
+    })
+  })
+
+  describe('flushMessageQueue', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('calls writeMessage for each queued item, clears queue, returns count', async () => {
+      const queue = [
+        { message: { type: 'msg1' }, queuedAt: 1000 },
+        { message: { type: 'msg2' }, queuedAt: 2000 },
+        { message: { type: 'msg3' }, queuedAt: 3000 },
+      ]
+      const mockDb = makeMockDb({ pendingMessages: queue })
+      const writeMessage = jest.fn()
+
+      const count = await flushMessageQueue(mockDb, writeMessage)
+
+      expect(count).toBe(3)
+      expect(writeMessage).toHaveBeenCalledTimes(3)
+      expect(writeMessage.mock.calls[0][0]).toEqual({ type: 'msg1' })
+      expect(writeMessage.mock.calls[1][0]).toEqual({ type: 'msg2' })
+      expect(writeMessage.mock.calls[2][0]).toEqual({ type: 'msg3' })
+
+      // Queue cleared
+      const clearPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pendingMessages')
+      expect(clearPuts).toHaveLength(1)
+      expect(clearPuts[0][1]).toEqual([])
+    })
+
+    test('empty queue: does nothing and returns 0', async () => {
+      const mockDb = makeMockDb({ pendingMessages: [] })
+      const writeMessage = jest.fn()
+
+      const count = await flushMessageQueue(mockDb, writeMessage)
+
+      expect(count).toBe(0)
+      expect(writeMessage).not.toHaveBeenCalled()
+      expect(mockDb.put).not.toHaveBeenCalled()
+    })
+
+    test('no pendingMessages key: does nothing and returns 0', async () => {
+      const mockDb = makeMockDb({})
+      const writeMessage = jest.fn()
+
+      const count = await flushMessageQueue(mockDb, writeMessage)
+
+      expect(count).toBe(0)
+      expect(writeMessage).not.toHaveBeenCalled()
+      expect(mockDb.put).not.toHaveBeenCalled()
     })
   })
 

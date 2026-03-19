@@ -384,4 +384,36 @@ async function getPinUseLog (db) {
   return raw ? raw.value : []
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog }
+/**
+ * Queue a message for later delivery when no parent connection is available.
+ * Appends to the `pendingMessages` array in Hyperbee.
+ *
+ * @param {object} message — the message object to queue
+ * @param {object} db — Hyperbee instance
+ */
+async function queueMessage (message, db) {
+  const raw = await db.get('pendingMessages')
+  const queue = raw ? raw.value : []
+  queue.push({ message, queuedAt: Date.now() })
+  await db.put('pendingMessages', queue)
+}
+
+/**
+ * Flush all queued messages by calling writeMessage for each, then clear the queue.
+ *
+ * @param {object} db — Hyperbee instance
+ * @param {function} writeMessage — async function called with each queued message
+ * @returns {Promise<number>} — number of messages flushed
+ */
+async function flushMessageQueue (db, writeMessage) {
+  const raw = await db.get('pendingMessages')
+  if (!raw || !raw.value || raw.value.length === 0) return 0
+  const queue = raw.value
+  for (const { message } of queue) {
+    await writeMessage(message)
+  }
+  await db.put('pendingMessages', [])
+  return queue.length
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

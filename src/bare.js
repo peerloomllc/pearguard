@@ -10,7 +10,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, queueMessage, flushMessageQueue } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -24,6 +24,10 @@ let dispatch = null   // method dispatch function
 
 // Peers map: hex(publicKey) → { publicKey: Buffer, displayName: string, conn: object }
 const peers = new Map()
+
+// Parent connection state (child mode only)
+let peerConnected = false
+let parentPeer = null  // the connected parent peer entry from `peers` map
 
 // ── IPC helpers ───────────────────────────────────────────────────────────────
 
@@ -90,7 +94,7 @@ async function init (dataDir) {
 
   // Build dispatch with live context
   dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
-    joinTopic, sendToPeer, sodium })
+    joinTopic, sendToPeer, sendToParent, sodium })
 
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
@@ -154,6 +158,11 @@ function onPeerConnection (conn, info) {
   conn.on('error', e => console.error('[bare] peer error:', e.message))
   conn.on('close', () => {
     peers.delete(remoteKeyHex)
+    // Reset parent connection state if this was the parent peer
+    if (mode === 'child' && parentPeer && parentPeer.remoteKeyHex === remoteKeyHex) {
+      peerConnected = false
+      parentPeer = null
+    }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
   })
 
@@ -238,6 +247,34 @@ function sendToPeer (remoteKeyHex, msg) {
   peer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
 }
 
+/**
+ * Send a message to the connected parent, or queue it in Hyperbee if not connected.
+ * Child mode only.
+ * @param {{ type: string, payload: object }} message
+ */
+async function sendToParent (message) {
+  if (peerConnected && parentPeer && parentPeer.conn) {
+    const signed = signMessage(message, identity)
+    parentPeer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+  } else {
+    await queueMessage(message, db)
+  }
+}
+
+/**
+ * Flush all queued messages to the parent connection and clear the queue.
+ * @param {object} conn — the parent peer's connection stream
+ */
+async function flushPendingMessages (conn) {
+  const count = await flushMessageQueue(db, (message) => {
+    const signed = signMessage(message, identity)
+    conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+  })
+  if (count > 0) {
+    console.log('[bare] flushed', count, 'queued messages to parent')
+  }
+}
+
 async function handleHello (msg, conn, remoteKeyHex) {
   const { publicKey: peerIdentityKeyHex, displayName } = msg.payload ?? {}
   if (!peerIdentityKeyHex || typeof peerIdentityKeyHex !== 'string') {
@@ -288,6 +325,11 @@ async function handleHello (msg, conn, remoteKeyHex) {
     if (pendingParent && pendingParent.value.publicKey === peerIdentityKeyHex) {
       await db.del('pendingParent').catch(() => {})
     }
+
+    // Mark parent as connected and flush any queued messages
+    peerConnected = true
+    parentPeer = peers.get(remoteKeyHex)
+    await flushPendingMessages(conn)
   }
 }
 

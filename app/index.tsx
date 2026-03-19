@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -158,6 +158,12 @@ export default function Root () {
       // When init completes, bare emits 'ready' — mark DB ready
       onEvent('ready', (data) => {
         setDbReady(true)
+      })
+
+      // Listen for deep link events from join.tsx
+      DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
+        console.log('[RN] pearguardLink received:', url)
+        sendToWorklet({ method: 'acceptInvite', args: [url] })
       })
 
       await _worklet.start({ source })

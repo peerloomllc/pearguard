@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ParentApp from './components/ParentApp.jsx';
-
-// Stub until Plan 4 (Child UI) is implemented
-function ChildApp() {
-  return <div style={styles.center}><p>Child mode — coming soon</p></div>;
-}
+import ChildApp from './components/ChildApp.jsx';
 
 function ModeSetup() {
   return (

@@ -1,58 +1,48 @@
-// src/ui/main.jsx
-//
-// WebView entry point. Bundled by esbuild into assets/app-ui.bundle.
-// Runs inside a WebView — no React Native APIs available here.
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.jsx';
 
-import React from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
+// Pending IPC calls: id → { resolve, reject }
+const pending = {};
+let nextId = 1;
 
-// ── IPC bridge ────────────────────────────────────────────────────────────────
+// Called by RN shell when bare responds to a request
+window.__pearResponse = function (id, result, error) {
+  const p = pending[id];
+  if (!p) return;
+  delete pending[id];
+  if (error) p.reject(new Error(error));
+  else p.resolve(result);
+};
 
-let _nextId = 1
-const _pending = new Map()   // id → { resolve, reject }
-const _eventHandlers = new Map()  // event name → [fn, ...]
+// Event listeners registered by components
+const eventListeners = {};
 
-/**
- * Call a method in the Bare worklet.
- * Returns a Promise that resolves/rejects with the response.
- */
-window.__pearCall = function (method, ...args) {
+// Called by RN shell to push bare→UI events
+window.__pearEvent = function (eventName, data) {
+  const handlers = eventListeners[eventName];
+  if (!handlers) return;
+  handlers.forEach((fn) => fn(data));
+};
+
+// Subscribe to a bare event; returns an unsubscribe function
+window.onBareEvent = function (eventName, handler) {
+  if (!eventListeners[eventName]) eventListeners[eventName] = [];
+  eventListeners[eventName].push(handler);
+  return function () {
+    eventListeners[eventName] = eventListeners[eventName].filter((h) => h !== handler);
+  };
+};
+
+// Send a request to the bare worklet; returns a Promise
+window.callBare = function (method, args) {
   return new Promise((resolve, reject) => {
-    const id = _nextId++
-    _pending.set(id, { resolve, reject })
-    window.ReactNativeWebView.postMessage(JSON.stringify({ id, method, args }))
-  })
-}
+    const id = nextId++;
+    pending[id] = { resolve, reject };
+    window.ReactNativeWebView.postMessage(JSON.stringify({ id, method, args: args || {} }));
+  });
+};
 
-/**
- * Called by RN when a response arrives from Bare.
- */
-window.__pearResponse = function (msg) {
-  const p = _pending.get(msg.id)
-  if (!p) return
-  _pending.delete(msg.id)
-  if (msg.error) p.reject(new Error(msg.error))
-  else p.resolve(msg.result)
-}
-
-/**
- * Called by RN to push unsolicited events from Bare.
- */
-window.__pearEvent = function (event, data) {
-  ;(_eventHandlers.get(event) ?? []).forEach(fn => fn(data))
-}
-
-/**
- * Subscribe to an event from Bare.
- */
-window.__pearOn = function (event, fn) {
-  const handlers = _eventHandlers.get(event) ?? []
-  handlers.push(fn)
-  _eventHandlers.set(event, handlers)
-}
-
-// ── Render ────────────────────────────────────────────────────────────────────
-
-const root = createRoot(document.getElementById('root'))
-root.render(<App />)
+// Mount React app
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);

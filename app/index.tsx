@@ -84,7 +84,7 @@ export default function Root () {
       if (msg.method === 'navigateTo') {
         router.push(msg.args[0])
         webViewRef.current?.injectJavaScript(
-          'window.__pearResponse(' + JSON.stringify({ id: msg.id, result: null }) + ');true;'
+          'window.__pearResponse(' + msg.id + ', null);true;'
         )
         return
       }
@@ -94,7 +94,7 @@ export default function Root () {
       const bareId = _nextId++
       _pending.set(bareId, result => {
         webViewRef.current?.injectJavaScript(
-          'window.__pearResponse(' + JSON.stringify({ ...result, id: msg.id }) + ');true;'
+          'window.__pearResponse(' + msg.id + ', ' + JSON.stringify(result.result ?? null) + ', ' + JSON.stringify(result.error ?? null) + ');true;'
         )
       })
       sendToWorklet({ ...msg, id: bareId }, bareId)

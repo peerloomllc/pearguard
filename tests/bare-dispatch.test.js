@@ -20,4 +20,26 @@ describe('bare dispatch', () => {
     const dispatch = createDispatch({})
     await expect(dispatch('unknownMethod', [])).rejects.toThrow('unknown method')
   })
+
+  test('setMode stores mode and getMode returns it', async () => {
+    const stored = {}
+    const mockDb = {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] ? { value: stored[k] } : null),
+    }
+    const ctx = { db: mockDb, mode: null }
+    const dispatch = createDispatch(ctx)
+
+    await dispatch('setMode', ['parent'])
+    expect(mockDb.put).toHaveBeenCalledWith('mode', 'parent')
+
+    const result = await dispatch('getMode', [])
+    expect(result).toBe('parent')
+  })
+
+  test('setMode rejects invalid mode', async () => {
+    const ctx = { db: { put: jest.fn(), get: jest.fn() }, mode: null }
+    const dispatch = createDispatch(ctx)
+    await expect(dispatch('setMode', ['admin'])).rejects.toThrow()
+  })
 })

@@ -15,6 +15,7 @@ import b4a from 'b4a'
 import { Asset } from 'expo-asset'
 import * as FileSystem from 'expo-file-system/legacy'
 import { useRouter } from 'expo-router'
+import { setBareCaller } from './setup'
 
 // ── Worklet singleton ─────────────────────────────────────────────────────────
 // The worklet must survive re-renders and navigation — keep it in module scope.
@@ -117,6 +118,19 @@ export default function Root () {
       const appBundleJs = await fetch(jsAsset.localUri!).then(r => r.text())
       setHtml(buildHtml(appBundleJs))
 
+      // Helper to call Bare methods and wait for response
+      function callBare (method: string, args: any[]): Promise<any> {
+        return new Promise((resolve, reject) => {
+          const id = _nextId++
+          _pending.set(id, (msg) => {
+            if (msg.error) reject(new Error(msg.error))
+            else resolve(msg.result)
+          })
+          sendToWorklet({ method, args, id })
+        })
+      }
+      setBareCaller(callBare)
+
       // Load and start the Bare worklet
       const bundleAsset = Asset.fromModule(require('../assets/bare-universal.bundle'))
       await bundleAsset.downloadAsync()
@@ -155,9 +169,12 @@ export default function Root () {
       // When bare.js loads, it emits 'bareReady' — then we call init
       onEvent('bareReady', () => sendToWorklet({ method: 'init', dataDir }))
 
-      // When init completes, bare emits 'ready' — mark DB ready
+      // When init completes, bare emits 'ready' — mark DB ready and check mode
       onEvent('ready', (data) => {
         setDbReady(true)
+        if (!data.mode) {
+          setTimeout(() => router.push('/setup'), 500)
+        }
       })
 
       // Listen for deep link events from join.tsx

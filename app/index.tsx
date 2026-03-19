@@ -159,9 +159,9 @@ export default function Root () {
                 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
               )
               ;(_eventHandlers.get(msg.event) ?? []).forEach(fn => fn(msg.data))
-            } else if (msg.method === 'policy:update') {
+            } else if (msg.method === 'native:setPolicy') {
               // Write policy to SharedPreferences so native enforcement modules can read it
-              NativeModules.UsageStatsModule?.setPolicy(JSON.stringify(msg.args))
+              NativeModules.UsageStatsModule?.setPolicy(msg.args.json)
             } else if (msg.type === 'response') {
               const resolve = _pending.get(msg.id)
               if (resolve) { _pending.delete(msg.id); resolve(msg) }

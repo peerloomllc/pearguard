@@ -32,6 +32,7 @@ function isScheduleActive(schedule, now) {
     if (!schedule.days.includes(currentDay)) return false
     return currentMinutes >= startMinutes && currentMinutes < endMinutes
   } else {
+    if (endMinutes === startMinutes) return false
     const yesterday = (currentDay + 6) % 7
     const inWindowA =
       schedule.days.includes(currentDay) && currentMinutes >= startMinutes
@@ -59,6 +60,23 @@ function isSmsCallException(packageName, contactPhone, policy) {
   return policy.allowedContacts.some((c) => c.phone === contactPhone)
 }
 
+/**
+ * Primary enforcement decision. Returns true if the app should be blocked.
+ *
+ * Checks (in order):
+ *   1. App is explicitly blocked in policy
+ *   2. App is pending approval
+ *   3. Any active schedule blocks all apps
+ *   4. App has exceeded its daily limit
+ *
+ * Does NOT check override grants — callers handle those before calling this.
+ *
+ * @param {string} packageName
+ * @param {object} policy         Full policy object (may be null/undefined → not blocked)
+ * @param {object} usageStats     { [packageName]: { dailySeconds } }
+ * @param {Date}   now            Current time (injected for testability)
+ * @returns {boolean}
+ */
 function isAppBlocked(packageName, policy, usageStats, now) {
   if (!policy) return false
 

@@ -181,6 +181,63 @@ function createDispatch (ctx) {
         return { requests }
       }
 
+      case 'app:installed': {
+        const { packageName } = args
+
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : { apps: {} }
+        if (!policy.apps) policy.apps = {}
+
+        // Mark as pending if not already in policy
+        if (!policy.apps[packageName]) {
+          policy.apps[packageName] = { status: 'pending' }
+          await ctx.db.put('policy', policy)
+
+          // Notify native enforcement of updated policy
+          ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
+
+          // Notify parent
+          ctx.send({ type: 'event', event: 'app:installed', data: { packageName, detectedAt: Date.now() } })
+
+          // Notify WebView
+          ctx.send({ type: 'event', event: 'policy:updated', data: policy })
+        }
+
+        return { status: policy.apps[packageName].status }
+      }
+
+      case 'heartbeat:send': {
+        const identityRaw = await ctx.db.get('identity')
+        const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
+
+        const heartbeat = {
+          type: 'heartbeat',
+          payload: {
+            childPublicKey,
+            isOnline: true,
+            // TODO: enforcementActive should come from native:getEnforcementState via RN.
+            // Since we lack a synchronous callRN helper, default to null (unknown) for now.
+            enforcementActive: null,
+            timestamp: Date.now(),
+          },
+        }
+
+        ctx.send({ type: 'event', event: 'heartbeat:send', data: heartbeat })
+        return heartbeat.payload
+      }
+
+      case 'bypass:detected': {
+        const { reason } = args
+        const entry = { reason, detectedAt: Date.now() }
+
+        await ctx.db.put('bypass:' + entry.detectedAt, entry)
+
+        ctx.send({ type: 'event', event: 'alert:bypass', data: { reason, detectedAt: entry.detectedAt } })
+        ctx.send({ type: 'event', event: 'enforcement:offline', data: { reason } })
+
+        return { logged: true }
+      }
+
       case 'usage:flush': {
         // Build usage report from PIN log and identity
         const pinLog = await getPinUseLog(ctx.db)
@@ -215,6 +272,33 @@ function createDispatch (ctx) {
         throw new Error('unknown method: ' + method)
     }
   }
+}
+
+/**
+ * Handle a verified `app:decision` P2P message from a parent peer.
+ * Extracted for testability — called from bare.js handlePeerMessage.
+ *
+ * @param {object} payload — { packageName, decision }
+ * @param {object} db — Hyperbee instance
+ * @param {function} send — bare→RN IPC send function
+ */
+async function handleAppDecision (payload, db, send) {
+  const { packageName, decision } = payload
+  if (!packageName || !['allowed', 'blocked'].includes(decision)) {
+    console.warn('[bare] app:decision: malformed payload')
+    return
+  }
+
+  const raw = await db.get('policy')
+  if (!raw) return
+  const policy = raw.value
+
+  if (!policy.apps) policy.apps = {}
+  policy.apps[packageName] = { ...(policy.apps[packageName] || {}), status: decision }
+
+  await db.put('policy', policy)
+  send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
+  send({ type: 'event', event: 'policy:updated', data: policy })
 }
 
 /**
@@ -300,4 +384,4 @@ async function getPinUseLog (db) {
   return raw ? raw.value : []
 }
 
-module.exports = { createDispatch, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog }

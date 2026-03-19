@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -761,6 +761,229 @@ describe('bare dispatch', () => {
       const result = await getPinUseLog(mockDb)
 
       expect(result).toEqual([])
+    })
+  })
+
+  // ── Task 6: app:installed ──────────────────────────────────────────────────
+
+  describe('app:installed', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('new package: sets status to pending, calls db.put, sends native:setPolicy and policy:updated', async () => {
+      const mockDb = makeMockDb({})
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('app:installed', { packageName: 'com.example.newapp' })
+
+      expect(result).toEqual({ status: 'pending' })
+
+      // db.put called with policy containing the new app
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy')
+      expect(policyPuts).toHaveLength(1)
+      const [, savedPolicy] = policyPuts[0]
+      expect(savedPolicy.apps['com.example.newapp']).toEqual({ status: 'pending' })
+
+      // native:setPolicy sent
+      const nativeCalls = mockSend.mock.calls.filter(([m]) => m.method === 'native:setPolicy')
+      expect(nativeCalls).toHaveLength(1)
+
+      // app:installed event emitted
+      const installedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
+      expect(installedEvents).toHaveLength(1)
+      expect(installedEvents[0][0].data.packageName).toBe('com.example.newapp')
+
+      // policy:updated event emitted
+      const updatedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'policy:updated')
+      expect(updatedEvents).toHaveLength(1)
+    })
+
+    test('already-known package: existing status NOT overwritten, no db.put, no sends', async () => {
+      const existingPolicy = { apps: { 'com.example.known': { status: 'allowed' } } }
+      const mockDb = makeMockDb({ policy: existingPolicy })
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('app:installed', { packageName: 'com.example.known' })
+
+      expect(result).toEqual({ status: 'allowed' })
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── Task 6: handleAppDecision ──────────────────────────────────────────────
+
+  describe('handleAppDecision', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('allowed: updates app status, sends native:setPolicy and policy:updated', async () => {
+      const existingPolicy = { apps: { 'com.example.app': { status: 'pending' } } }
+      const mockDb = makeMockDb({ policy: existingPolicy })
+      const mockSend = jest.fn()
+
+      await handleAppDecision({ packageName: 'com.example.app', decision: 'allowed' }, mockDb, mockSend)
+
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy')
+      expect(policyPuts).toHaveLength(1)
+      const [, savedPolicy] = policyPuts[0]
+      expect(savedPolicy.apps['com.example.app'].status).toBe('allowed')
+
+      const nativeCalls = mockSend.mock.calls.filter(([m]) => m.method === 'native:setPolicy')
+      expect(nativeCalls).toHaveLength(1)
+
+      const updatedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'policy:updated')
+      expect(updatedEvents).toHaveLength(1)
+    })
+
+    test('blocked: updates app status to blocked', async () => {
+      const existingPolicy = { apps: { 'com.example.app': { status: 'pending' } } }
+      const mockDb = makeMockDb({ policy: existingPolicy })
+      const mockSend = jest.fn()
+
+      await handleAppDecision({ packageName: 'com.example.app', decision: 'blocked' }, mockDb, mockSend)
+
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy')
+      expect(policyPuts).toHaveLength(1)
+      const [, savedPolicy] = policyPuts[0]
+      expect(savedPolicy.apps['com.example.app'].status).toBe('blocked')
+    })
+
+    test('invalid decision string: no state change', async () => {
+      const existingPolicy = { apps: { 'com.example.app': { status: 'pending' } } }
+      const mockDb = makeMockDb({ policy: existingPolicy })
+      const mockSend = jest.fn()
+
+      await handleAppDecision({ packageName: 'com.example.app', decision: 'maybe' }, mockDb, mockSend)
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('no policy in db: returns without error', async () => {
+      const mockDb = makeMockDb({})
+      const mockSend = jest.fn()
+
+      await expect(
+        handleAppDecision({ packageName: 'com.example.app', decision: 'allowed' }, mockDb, mockSend)
+      ).resolves.toBeUndefined()
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── Task 7: heartbeat:send ─────────────────────────────────────────────────
+
+  describe('heartbeat:send', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('returns payload with isOnline:true and numeric timestamp', async () => {
+      const identity = { publicKey: 'abc123', secretKey: 'secret' }
+      const mockDb = makeMockDb({ identity })
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const before = Date.now()
+      const result = await dispatch('heartbeat:send', {})
+      const after = Date.now()
+
+      expect(result.isOnline).toBe(true)
+      expect(result.timestamp).toBeGreaterThanOrEqual(before)
+      expect(result.timestamp).toBeLessThanOrEqual(after)
+      expect(result.childPublicKey).toBe('abc123')
+    })
+
+    test('emits heartbeat:send event', async () => {
+      const identity = { publicKey: 'abc123', secretKey: 'secret' }
+      const mockDb = makeMockDb({ identity })
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('heartbeat:send', {})
+
+      const events = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'heartbeat:send')
+      expect(events).toHaveLength(1)
+    })
+
+    test('enforcementActive is null (TODO: not yet wired to native:getEnforcementState)', async () => {
+      const identity = { publicKey: 'abc123', secretKey: 'secret' }
+      const mockDb = makeMockDb({ identity })
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('heartbeat:send', {})
+
+      // TODO: enforcementActive should be populated via native:getEnforcementState once
+      // the RN callRN round-trip helper is implemented.
+      expect(result.enforcementActive).toBeNull()
+    })
+  })
+
+  // ── Task 8: bypass:detected ────────────────────────────────────────────────
+
+  describe('bypass:detected', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('stores entry with bypass: key, emits alert:bypass and enforcement:offline, returns { logged: true }', async () => {
+      const mockDb = makeMockDb({})
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const before = Date.now()
+      const result = await dispatch('bypass:detected', { reason: 'accessibility_disabled' })
+      const after = Date.now()
+
+      expect(result).toEqual({ logged: true })
+
+      // db.put called with a key starting with 'bypass:'
+      const bypassPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('bypass:'))
+      expect(bypassPuts).toHaveLength(1)
+      const [key, entry] = bypassPuts[0]
+      expect(key).toMatch(/^bypass:\d+$/)
+      expect(entry.reason).toBe('accessibility_disabled')
+      expect(entry.detectedAt).toBeGreaterThanOrEqual(before)
+      expect(entry.detectedAt).toBeLessThanOrEqual(after)
+
+      // alert:bypass event emitted
+      const bypassEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'alert:bypass')
+      expect(bypassEvents).toHaveLength(1)
+      expect(bypassEvents[0][0].data.reason).toBe('accessibility_disabled')
+
+      // enforcement:offline event emitted
+      const offlineEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'enforcement:offline')
+      expect(offlineEvents).toHaveLength(1)
+      expect(offlineEvents[0][0].data.reason).toBe('accessibility_disabled')
     })
   })
 })

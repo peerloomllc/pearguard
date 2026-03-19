@@ -10,7 +10,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handlePolicyUpdate, handleTimeExtend } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -102,6 +102,11 @@ async function init (dataDir) {
   setInterval(() => {
     handleDispatch('usage:flush', {}, null)
   }, 5 * 60 * 1000)
+
+  // Start 60-second heartbeat timer
+  setInterval(() => {
+    handleDispatch('heartbeat:send', {}, null)
+  }, 60 * 1000)
 }
 
 // ── P2P / Hyperswarm ──────────────────────────────────────────────────────────
@@ -209,6 +214,9 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       break
     case 'time:extend':
       await handleTimeExtend(msg.payload, db, send)
+      break
+    case 'app:decision':
+      await handleAppDecision(msg.payload, db, send)
       break
     default:
       send({ type: 'event', event: 'peer:message', data: msg })

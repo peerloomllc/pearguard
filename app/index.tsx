@@ -195,9 +195,10 @@ export default function Root () {
           sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
         }),
 
-        // Accessibility Service or Device Admin disabled — forward as alert:bypass
-        DeviceEventEmitter.addListener('onBypassDetected', (reason: string) => {
-          sendToWorklet({ method: 'alert:bypass', args: { reason } })
+        // Accessibility Service or Device Admin disabled — forward as bypass:detected
+        DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
+          const reason = typeof e === 'string' ? e : e.reason
+          sendToWorklet({ method: 'bypass:detected', args: { reason } })
         }),
 
         // Child tapped "Send Request" on block overlay — forward as time:request

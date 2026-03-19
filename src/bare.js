@@ -150,6 +150,17 @@ function onPeerConnection (conn, info) {
   // Store the connection for sending
   peers.set(remoteKeyHex, { conn, remoteKeyHex, displayName: null })
   send({ type: 'event', event: 'peer:connected', data: { remoteKey: remoteKeyHex } })
+
+  // Child sends hello proactively on new connection
+  if (mode === 'child') {
+    const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
+    const hello = signMessage({
+      type: 'hello',
+      payload: { publicKey: myIdentityHex, displayName: 'Child Device' },
+    }, identity)
+    peers.get(remoteKeyHex).sentHello = true
+    conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
+  }
 }
 
 /**
@@ -205,8 +216,56 @@ function sendToPeer (remoteKeyHex, msg) {
 }
 
 async function handleHello (msg, conn, remoteKeyHex) {
-  // Implemented in Task 8 (pairing flow)
-  console.log('[bare] hello received from:', remoteKeyHex.slice(0, 12))
+  const { publicKey: peerIdentityKeyHex, displayName } = msg.payload ?? {}
+  if (!peerIdentityKeyHex || typeof peerIdentityKeyHex !== 'string') {
+    console.warn('[bare] invalid hello: missing publicKey')
+    return
+  }
+
+  // Verify signature using the declared identity key
+  if (!verifyMessage(msg, peerIdentityKeyHex)) {
+    console.warn('[bare] invalid hello: bad signature')
+    return
+  }
+
+  // Store peer identity
+  const peerRecord = {
+    publicKey:   peerIdentityKeyHex,
+    displayName: displayName ?? 'Unknown',
+    pairedAt:    Date.now(),
+    noiseKey:    remoteKeyHex,
+  }
+  await db.put('peers:' + peerIdentityKeyHex, peerRecord)
+
+  // Update the in-memory peers map with the identity key
+  const peer = peers.get(remoteKeyHex)
+  if (peer) {
+    peer.identityKey = peerIdentityKeyHex
+    peer.displayName = displayName ?? 'Unknown'
+  }
+
+  console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName)
+  send({ type: 'event', event: 'peer:paired', data: peerRecord })
+
+  // Send our own hello back (if we haven't already)
+  const alreadySentHello = peer?.sentHello
+  if (!alreadySentHello) {
+    if (peer) peer.sentHello = true
+    const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
+    const hello = signMessage({
+      type: 'hello',
+      payload: { publicKey: myIdentityHex, displayName: 'PearGuard Device' },
+    }, identity)
+    conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
+  }
+
+  // If we're the child, check if this is our pending parent
+  if (mode === 'child') {
+    const pendingParent = await db.get('pendingParent').catch(() => null)
+    if (pendingParent && pendingParent.value.publicKey === peerIdentityKeyHex) {
+      await db.del('pendingParent').catch(() => {})
+    }
+  }
 }
 
 // Signal that bare.js has loaded (before init is called)

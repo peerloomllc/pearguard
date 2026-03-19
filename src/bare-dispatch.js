@@ -46,6 +46,44 @@ function createDispatch (ctx) {
         return { sent: true }
       }
 
+      case 'generateInvite': {
+        // Generate a random 32-byte swarm topic
+        const topicBuf = Buffer.allocUnsafe(32)
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          crypto.getRandomValues(topicBuf)
+        } else {
+          require('sodium-native').randombytes_buf(topicBuf)
+        }
+        const topicHex = topicBuf.toString('hex')
+        const parentPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
+
+        // Join the swarm topic (parent listens for child connections)
+        await ctx.joinTopic(topicHex)
+
+        // Build and return the invite link
+        const { buildInviteLink } = require('./invite')
+        const inviteLink = buildInviteLink({ parentPublicKey, swarmTopic: topicHex })
+
+        return { inviteLink, swarmTopic: topicHex, parentPublicKey }
+      }
+
+      case 'acceptInvite': {
+        // args[0]: full pearguard://join/... URL
+        const { parseInviteLink } = require('./invite')
+        const parsed = parseInviteLink(args[0])
+        if (!parsed.ok) throw new Error('invalid invite: ' + parsed.error)
+
+        const { parentPublicKey, swarmTopic } = parsed
+
+        // Store the parent's public key as a "pending" entry — will be confirmed on hello
+        await ctx.db.put('pendingParent', { publicKey: parentPublicKey, ts: Date.now() })
+
+        // Join the swarm topic (child connects to parent)
+        await ctx.joinTopic(swarmTopic)
+
+        return { ok: true, swarmTopic, parentPublicKey }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }

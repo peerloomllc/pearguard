@@ -38,6 +38,11 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         return "UsageStatsModule";
     }
 
+    @Override
+    public void onCatalystInstanceDestroy() {
+        PearGuardReactHost.set(null);
+    }
+
     /**
      * Returns whether the app has been granted PACKAGE_USAGE_STATS permission.
      * Call this before getUsage() to check if the permission wizard needs to run.

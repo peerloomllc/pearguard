@@ -39,6 +39,7 @@ public class EnforcementService extends Service {
         super.onCreate();
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
+        lastAccessibilityState = isAccessibilityServiceEnabled();
         handler.post(enforcementLoop);
     }
 

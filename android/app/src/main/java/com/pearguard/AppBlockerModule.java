@@ -62,6 +62,7 @@ public class AppBlockerModule extends AccessibilityService {
     private WindowManager windowManager;
     private View overlayView;
     private String currentOverlayPackage;
+    private View pinDialogView;
 
     // In-memory override: packageName -> expiry time in ms
     private final HashMap<String, Long> overrides = new HashMap<>();
@@ -295,7 +296,7 @@ public class AppBlockerModule extends AccessibilityService {
         pinButton.setOnClickListener(v -> onEnterPin(packageName));
         layout.addView(pinButton);
 
-        overlayView = layout;
+        final View pendingOverlay = layout;
 
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -309,14 +310,19 @@ public class AppBlockerModule extends AccessibilityService {
 
         new Handler(Looper.getMainLooper()).post(() -> {
             try {
-                windowManager.addView(overlayView, params);
+                windowManager.addView(pendingOverlay, params);
+                overlayView = pendingOverlay;
             } catch (Exception e) {
-                overlayView = null;
+                // addView failed — overlayView remains null, overlay is not shown
             }
         });
     }
 
     private void dismissOverlay() {
+        if (pinDialogView != null) {
+            try { windowManager.removeView(pinDialogView); } catch (Exception ignored) {}
+            pinDialogView = null;
+        }
         if (overlayView != null) {
             try {
                 windowManager.removeView(overlayView);
@@ -387,6 +393,15 @@ public class AppBlockerModule extends AccessibilityService {
         dialogParams.gravity = Gravity.CENTER;
 
         windowManager.addView(dialogLayout, dialogParams);
+        pinDialogView = dialogLayout;
+
+        Button cancelBtn = new Button(this);
+        cancelBtn.setText("Cancel");
+        dialogLayout.addView(cancelBtn);
+        cancelBtn.setOnClickListener(v -> {
+            try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+            pinDialogView = null;
+        });
 
         confirmBtn.setOnClickListener(v -> {
             String enteredPin = pinInput.getText().toString();
@@ -413,6 +428,7 @@ public class AppBlockerModule extends AccessibilityService {
 
                 // Remove dialog and overlay
                 try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+                pinDialogView = null;
                 dismissOverlay();
             } else {
                 Toast.makeText(AppBlockerModule.this, "Incorrect PIN", Toast.LENGTH_SHORT).show();

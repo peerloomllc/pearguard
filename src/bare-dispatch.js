@@ -104,7 +104,7 @@ function createDispatch (ctx) {
         const verified = ctx.sodium.crypto_pwhash_str_verify(hashBuffer, pinBuffer)
 
         if (!verified) {
-          ctx.send({ method: 'event', event: 'override:denied', data: { packageName, reason: 'wrong-pin' } })
+          ctx.send({ type: 'event', event: 'override:denied', data: { packageName, reason: 'wrong-pin' } })
           return { granted: false, reason: 'wrong-pin' }
         }
 

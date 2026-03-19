@@ -1,3 +1,5 @@
+import '@testing-library/jest-dom';
+
 global.window = global.window || {};
 window.ReactNativeWebView = { postMessage: jest.fn() };
 

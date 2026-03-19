@@ -90,6 +90,30 @@ function createDispatch (ctx) {
         return { policy }
       }
 
+      case 'pin:set': {
+        const { pin } = args
+        if (!pin || typeof pin !== 'string') throw new Error('invalid pin')
+
+        // Hash the PIN using pwhash (slow by design — runs in worker context)
+        const hash = Buffer.alloc(ctx.sodium.crypto_pwhash_STRBYTES)
+        ctx.sodium.crypto_pwhash_str(
+          hash,
+          Buffer.from(pin),
+          ctx.sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
+          ctx.sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
+        )
+
+        // Read current policy (or start with empty object)
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : {}
+
+        // Update pinHash in the policy
+        policy.pinHash = hash.toString()  // store as string
+        await ctx.db.put('policy', policy)
+
+        return { ok: true }
+      }
+
       case 'pin:verify': {
         const { pin, packageName } = args
         const raw = await ctx.db.get('policy')

@@ -165,18 +165,6 @@ describe('bare dispatch', () => {
       }
     }
 
-    function makeCtx (db, extraPolicy = {}) {
-      const stored = {}
-      const mockDb = db || makeMockDb(stored)
-      const mockSend = jest.fn()
-      const ctx = {
-        db: mockDb,
-        send: mockSend,
-        sodium,
-      }
-      return { ctx, mockDb, mockSend }
-    }
-
     test('correct PIN grants override, stores to db, calls appendPinUseLog', async () => {
       const policyObj = {
         version: 1,
@@ -193,7 +181,9 @@ describe('bare dispatch', () => {
       const result = await dispatch('pin:verify', { pin: '1234', packageName: 'com.example.app' })
 
       expect(result.granted).toBe(true)
-      expect(result.expiresAt).toBeGreaterThan(Date.now() - 1000)
+      const expectedExpiry = Date.now() + 600 * 1000
+      expect(result.expiresAt).toBeGreaterThanOrEqual(expectedExpiry - 200)
+      expect(result.expiresAt).toBeLessThanOrEqual(expectedExpiry + 200)
 
       // Override grant stored to db
       const overridePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('override:com.example.app:'))
@@ -265,6 +255,88 @@ describe('bare dispatch', () => {
       expect(result).toEqual({ granted: false, reason: 'no-pin' })
       expect(mockDb.put).not.toHaveBeenCalled()
       expect(mockSend).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('pin:set', () => {
+    // pwhash is intentionally slow (~300ms) — generate once and reuse across all test cases
+    let pinHash
+
+    beforeAll(() => {
+      pinHash = Buffer.alloc(sodium.crypto_pwhash_STRBYTES)
+      sodium.crypto_pwhash_str(
+        pinHash,
+        Buffer.from('5678'),
+        sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
+        sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
+      )
+    })
+
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('setting a PIN stores a non-empty pinHash in the policy', async () => {
+      const stored = {}
+      const mockDb = makeMockDb(stored)
+      const ctx = { db: mockDb, sodium }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:set', { pin: '5678' })
+
+      expect(result).toEqual({ ok: true })
+
+      // db.put should have been called with 'policy'
+      expect(mockDb.put).toHaveBeenCalledWith('policy', expect.objectContaining({
+        pinHash: expect.any(String),
+      }))
+
+      // The stored pinHash should be non-empty
+      const savedPolicy = mockDb.put.mock.calls.find(([k]) => k === 'policy')[1]
+      expect(savedPolicy.pinHash.length).toBeGreaterThan(0)
+
+      // The stored hash should verify correctly against the original PIN
+      const verifyResult = sodium.crypto_pwhash_str_verify(
+        Buffer.from(savedPolicy.pinHash),
+        Buffer.from('5678')
+      )
+      expect(verifyResult).toBe(true)
+    })
+
+    test('pin:set merges pinHash into existing policy without overwriting other fields', async () => {
+      const existingPolicy = { version: 1, childPublicKey: 'abc', overrideDurationSeconds: 300 }
+      const stored = { policy: existingPolicy }
+      const mockDb = makeMockDb(stored)
+      const ctx = { db: mockDb, sodium }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('pin:set', { pin: '5678' })
+
+      const savedPolicy = mockDb.put.mock.calls.find(([k]) => k === 'policy')[1]
+      expect(savedPolicy.version).toBe(1)
+      expect(savedPolicy.childPublicKey).toBe('abc')
+      expect(savedPolicy.overrideDurationSeconds).toBe(300)
+      expect(savedPolicy.pinHash).toBeTruthy()
+    })
+
+    test('missing pin throws', async () => {
+      const mockDb = makeMockDb()
+      const ctx = { db: mockDb, sodium }
+      const dispatch = createDispatch(ctx)
+
+      await expect(dispatch('pin:set', {})).rejects.toThrow('invalid pin')
+    })
+
+    test('non-string pin throws', async () => {
+      const mockDb = makeMockDb()
+      const ctx = { db: mockDb, sodium }
+      const dispatch = createDispatch(ctx)
+
+      await expect(dispatch('pin:set', { pin: 1234 })).rejects.toThrow('invalid pin')
     })
   })
 })

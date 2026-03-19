@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -104,6 +104,7 @@ export default function Root () {
   // Start the worklet and load the HTML bundle
   useEffect(() => {
     let buf = ''
+    const nativeSubs: ReturnType<typeof DeviceEventEmitter.addListener>[] = []
 
     async function start () {
       // Ensure data directory exists
@@ -158,6 +159,9 @@ export default function Root () {
                 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
               )
               ;(_eventHandlers.get(msg.event) ?? []).forEach(fn => fn(msg.data))
+            } else if (msg.method === 'policy:update') {
+              // Write policy to SharedPreferences so native enforcement modules can read it
+              NativeModules.UsageStatsModule?.setPolicy(JSON.stringify(msg.args))
             } else if (msg.type === 'response') {
               const resolve = _pending.get(msg.id)
               if (resolve) { _pending.delete(msg.id); resolve(msg) }
@@ -177,16 +181,49 @@ export default function Root () {
         }
       })
 
-      // Listen for deep link events from join.tsx
-      DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
-        console.log('[RN] pearguardLink received:', url)
-        sendToWorklet({ method: 'acceptInvite', args: [url] })
-      })
-
       await _worklet.start({ source })
+
+      // Listen for deep link and native enforcement events
+      nativeSubs.push(
+        DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
+          console.log('[RN] pearguardLink received:', url)
+          sendToWorklet({ method: 'acceptInvite', args: [url] })
+        }),
+
+        // New app installed — forward to bare worklet as app:installed
+        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
+          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
+        }),
+
+        // Accessibility Service or Device Admin disabled — forward as alert:bypass
+        DeviceEventEmitter.addListener('onBypassDetected', (reason: string) => {
+          sendToWorklet({ method: 'alert:bypass', args: { reason } })
+        }),
+
+        // Child tapped "Send Request" on block overlay — forward as time:request
+        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string }) => {
+          sendToWorklet({ method: 'time:request', args: { packageName: e.packageName, appName: e.appName } })
+        }),
+
+        // PIN entered successfully — log the override event
+        DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
+          sendToWorklet({ method: 'pin:used', args: e })
+        }),
+
+        // Usage flush timer fired — gather usage and send report
+        DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
+          try {
+            const usageList = await NativeModules.UsageStatsModule.getDailyUsageAll()
+            sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
+          } catch (err) {
+            console.warn('[PearGuard] Usage flush failed:', err)
+          }
+        }),
+      )
     }
 
     start().catch(e => console.error('[RN] start error:', e))
+    return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
 
   if (!html) {

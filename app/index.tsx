@@ -31,8 +31,16 @@ function onEvent (event: string, fn: (data: any) => void) {
   _eventHandlers.set(event, handlers)
 }
 
-function sendToWorklet (msg: object) {
-  _worklet?.IPC.write(b4a.from(JSON.stringify(msg) + '\n'))
+function sendToWorklet (msg: object, pendingId?: number) {
+  try {
+    _worklet?.IPC.write(b4a.from(JSON.stringify(msg) + '\n'))
+  } catch (e) {
+    console.error('[RN] IPC write error:', e)
+    if (pendingId !== undefined) {
+      const resolve = _pending.get(pendingId)
+      if (resolve) { _pending.delete(pendingId); resolve({ error: 'IPC write failed' }) }
+    }
+  }
 }
 
 // ── HTML builder ──────────────────────────────────────────────────────────────
@@ -81,13 +89,14 @@ export default function Root () {
       }
 
       // Forward everything else to Bare
+      // bareId routes response back to the right callback; msg.id is preserved for the WebView response
       const bareId = _nextId++
       _pending.set(bareId, result => {
         webViewRef.current?.injectJavaScript(
           'window.__pearResponse(' + JSON.stringify({ ...result, id: msg.id }) + ');true;'
         )
       })
-      sendToWorklet({ ...msg, id: bareId })
+      sendToWorklet({ ...msg, id: bareId }, bareId)
     } catch (err) { console.error('[RN] WebView msg error:', err) }
   }, [])
 

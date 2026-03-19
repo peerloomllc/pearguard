@@ -2,8 +2,9 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import App from '../App.jsx';
 
-// Mock ParentApp so it renders something recognizable without needing the full component tree
+// Mock ParentApp and ChildApp so they render something recognizable without needing the full component tree
 jest.mock('../components/ParentApp.jsx', () => () => <div>Dashboard</div>);
+jest.mock('../components/ChildApp.jsx', () => () => <div>Child mode</div>);
 
 beforeEach(() => {
   window.callBare = jest.fn();

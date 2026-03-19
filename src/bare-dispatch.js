@@ -90,6 +90,41 @@ function createDispatch (ctx) {
         return { policy }
       }
 
+      case 'pin:verify': {
+        const { pin, packageName } = args
+        const raw = await ctx.db.get('policy')
+        if (!raw) { return { granted: false, reason: 'no-policy' } }
+        const policy = raw.value  // Hyperbee uses valueEncoding:'json' so raw.value is already parsed
+        if (!policy.pinHash) { return { granted: false, reason: 'no-pin' } }
+
+        // crypto_pwhash_str_verify: compares plaintext against stored hash
+        // This is deliberately slow (~100-500ms) — runs in bare worklet (worker context), not main thread
+        const pinBuffer = Buffer.from(pin)
+        const hashBuffer = Buffer.from(policy.pinHash)
+        const verified = ctx.sodium.crypto_pwhash_str_verify(hashBuffer, pinBuffer)
+
+        if (!verified) {
+          ctx.send({ method: 'event', event: 'override:denied', data: { packageName, reason: 'wrong-pin' } })
+          return { granted: false, reason: 'wrong-pin' }
+        }
+
+        const now = Date.now()
+        const expiresAt = now + (policy.overrideDurationSeconds || 3600) * 1000
+        const grant = { packageName, grantedAt: now, expiresAt }
+
+        // Store grant to Hyperbee for audit log
+        await ctx.db.put('override:' + packageName + ':' + now, grant)
+
+        // Log to usage report
+        await appendPinUseLog({ packageName, grantedAt: now, expiresAt }, ctx.db)
+
+        // Notify native to allow app temporarily
+        ctx.send({ method: 'native:grantOverride', args: grant })
+
+        ctx.send({ type: 'event', event: 'override:granted', data: grant })
+        return { granted: true, expiresAt }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }
@@ -118,4 +153,18 @@ async function handlePolicyUpdate (payload, db, send) {
   send({ type: 'event', event: 'policy:updated', data: payload })
 }
 
-module.exports = { createDispatch, handlePolicyUpdate }
+/**
+ * Append an entry to the `pinLog` array in Hyperbee.
+ * Creates the log if it doesn't exist yet.
+ *
+ * @param {object} entry — { packageName, grantedAt, expiresAt }
+ * @param {object} db — Hyperbee instance
+ */
+async function appendPinUseLog (entry, db) {
+  const raw = await db.get('pinLog')
+  const log = raw ? raw.value : []  // Hyperbee json encoding returns parsed value
+  log.push(entry)
+  await db.put('pinLog', log)
+}
+
+module.exports = { createDispatch, handlePolicyUpdate, appendPinUseLog }

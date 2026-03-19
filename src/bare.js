@@ -90,7 +90,7 @@ async function init (dataDir) {
 
   // Build dispatch with live context
   dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
-    joinTopic, sendToPeer })
+    joinTopic, sendToPeer, sodium })
 
   // Signal ready
   send({ type: 'event', event: 'ready', data: {

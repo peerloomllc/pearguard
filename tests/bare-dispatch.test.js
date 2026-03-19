@@ -7,7 +7,8 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handlePolicyUpdate } = require('../src/bare-dispatch')
+const { createDispatch, handlePolicyUpdate, appendPinUseLog } = require('../src/bare-dispatch')
+const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
   test('ping returns pong', async () => {
@@ -137,6 +138,131 @@ describe('bare dispatch', () => {
 
       await handlePolicyUpdate(payload, mockDb, mockSend)
 
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('pin:verify', () => {
+    // pwhash is intentionally slow (~300ms) — generate once and reuse across all test cases
+    let pinHash
+
+    beforeAll(() => {
+      pinHash = Buffer.alloc(sodium.crypto_pwhash_STRBYTES)
+      sodium.crypto_pwhash_str(
+        pinHash,
+        Buffer.from('1234'),
+        sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
+        sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
+      )
+    })
+
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    function makeCtx (db, extraPolicy = {}) {
+      const stored = {}
+      const mockDb = db || makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = {
+        db: mockDb,
+        send: mockSend,
+        sodium,
+      }
+      return { ctx, mockDb, mockSend }
+    }
+
+    test('correct PIN grants override, stores to db, calls appendPinUseLog', async () => {
+      const policyObj = {
+        version: 1,
+        childPublicKey: 'abc',
+        pinHash: pinHash.toString(),
+        overrideDurationSeconds: 600,
+      }
+      const stored = { policy: policyObj }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend, sodium }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:verify', { pin: '1234', packageName: 'com.example.app' })
+
+      expect(result.granted).toBe(true)
+      expect(result.expiresAt).toBeGreaterThan(Date.now() - 1000)
+
+      // Override grant stored to db
+      const overridePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('override:com.example.app:'))
+      expect(overridePuts).toHaveLength(1)
+
+      // pinLog appended (appendPinUseLog calls db.put('pinLog', ...))
+      const logPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pinLog')
+      expect(logPuts).toHaveLength(1)
+      expect(logPuts[0][1]).toHaveLength(1)
+      expect(logPuts[0][1][0].packageName).toBe('com.example.app')
+
+      // native:grantOverride sent
+      const nativeCalls = mockSend.mock.calls.filter(([m]) => m.method === 'native:grantOverride')
+      expect(nativeCalls).toHaveLength(1)
+
+      // override:granted event emitted
+      const eventCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'override:granted')
+      expect(eventCalls).toHaveLength(1)
+    })
+
+    test('wrong PIN returns { granted: false, reason: "wrong-pin" }, no override in db', async () => {
+      const policyObj = {
+        version: 1,
+        childPublicKey: 'abc',
+        pinHash: pinHash.toString(),
+      }
+      const stored = { policy: policyObj }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend, sodium }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:verify', { pin: '9999', packageName: 'com.example.app' })
+
+      expect(result).toEqual({ granted: false, reason: 'wrong-pin' })
+
+      // No override stored
+      const overridePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('override:'))
+      expect(overridePuts).toHaveLength(0)
+
+      // override:denied event emitted
+      const deniedCalls = mockSend.mock.calls.filter(([m]) => m.event === 'override:denied')
+      expect(deniedCalls).toHaveLength(1)
+    })
+
+    test('no policy stored returns { granted: false, reason: "no-policy" }', async () => {
+      const mockDb = makeMockDb({})
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend, sodium }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:verify', { pin: '1234', packageName: 'com.example.app' })
+
+      expect(result).toEqual({ granted: false, reason: 'no-policy' })
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('policy with no pinHash returns { granted: false, reason: "no-pin" }', async () => {
+      const policyObj = { version: 1, childPublicKey: 'abc', rules: [] }  // no pinHash
+      const stored = { policy: policyObj }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend, sodium }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:verify', { pin: '1234', packageName: 'com.example.app' })
+
+      expect(result).toEqual({ granted: false, reason: 'no-pin' })
       expect(mockDb.put).not.toHaveBeenCalled()
       expect(mockSend).not.toHaveBeenCalled()
     })

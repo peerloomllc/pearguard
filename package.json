@@ -2,14 +2,17 @@
   "private": true,
   "name": "pearguard-native",
   "version": "0.1.0",
-  "engines": { "node": ">=20.0.0" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "build:bare": "bare-pack --linked src/bare.js -o assets/bare-universal.bundle",
     "build:ui": "esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
-    "test": "jest"
+    "test": "jest",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "b4a": "^1.8.0",
@@ -45,6 +48,8 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"]
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
   }
 }

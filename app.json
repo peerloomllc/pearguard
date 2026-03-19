@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "PearGuard",
+    "slug": "pearguard",
+    "newArchEnabled": true,
+    "orientation": "portrait",
+    "scheme": "pearguard",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#111111"
+      },
+      "package": "com.pearguard",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "scheme": "pearguard",
+              "host": "join"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "versionCode": 1,
+      "minSdkVersion": 29
+    },
+    "plugins": [
+      ["expo-router"],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ]
+    ],
+    "assets": [
+      "./assets/bare-universal.bundle"
+    ],
+    "version": "0.1.0"
+  }
+}

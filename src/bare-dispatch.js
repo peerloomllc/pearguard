@@ -110,7 +110,11 @@ async function handlePolicyUpdate (payload, db, send) {
     return
   }
   await db.put('policy', payload)
-  send({ type: 'event', event: 'native:setPolicy', data: { json: JSON.stringify(payload) } })
+  // Use method format (not event) so the RN shell routes this to
+  // NativeModules.UsageStatsModule.setPolicy() via the msg.method === 'native:setPolicy' branch
+  // in the bare IPC data handler (app/index.tsx ~line 162).
+  // Sending as a type:'event' would only forward it to the WebView, never to the native module.
+  send({ method: 'native:setPolicy', args: { json: JSON.stringify(payload) } })
   send({ type: 'event', event: 'policy:updated', data: payload })
 }
 

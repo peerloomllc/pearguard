@@ -72,6 +72,11 @@ describe('bare dispatch', () => {
   })
 
   describe('handlePolicyUpdate', () => {
+    // NOTE: Signature verification for policy:update P2P messages is handled upstream
+    // in bare.js handlePeerMessage (using sodium-native verify) before handlePolicyUpdate
+    // is ever called. There is therefore no "bad signature" test in this file — that
+    // path is covered by integration testing on a physical device.
+
     function makeMockDb () {
       const stored = {}
       return {
@@ -89,16 +94,18 @@ describe('bare dispatch', () => {
       await handlePolicyUpdate(payload, mockDb, mockSend)
 
       expect(mockDb.put).toHaveBeenCalledWith('policy', payload)
-      expect(mockSend).toHaveBeenCalledWith({
-        type: 'event',
-        event: 'native:setPolicy',
-        data: { json: JSON.stringify(payload) },
-      })
-      expect(mockSend).toHaveBeenCalledWith({
+
+      // native:setPolicy must come first so the native module receives the policy
+      // before the WebView reacts to policy:updated.
+      expect(mockSend.mock.calls[0]).toEqual([{
+        method: 'native:setPolicy',
+        args: { json: JSON.stringify(payload) },
+      }])
+      expect(mockSend.mock.calls[1]).toEqual([{
         type: 'event',
         event: 'policy:updated',
         data: payload,
-      })
+      }])
     })
 
     test('does NOT call db.put when payload is missing version', async () => {

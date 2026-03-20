@@ -22,6 +22,7 @@ function createDispatch (ctx) {
         }
         await ctx.db.put('mode', newMode)
         ctx.mode = newMode
+        if (ctx.onModeChange) ctx.onModeChange(newMode)
         return newMode
       }
 

@@ -278,7 +278,18 @@ export default function Root () {
           try {
             const msg = JSON.parse(line)
             if (msg.type === 'event') {
-              // Forward Bare events to WebView
+              // Handle apps:syncRequested locally — do NOT forward to WebView
+              if (msg.event === 'apps:syncRequested') {
+                NativeModules.UsageStatsModule?.getInstalledPackages?.()
+                  .then((apps: { packageName: string; appName: string }[]) => {
+                    for (const app of apps) {
+                      sendToWorklet({ method: 'app:installed', args: { packageName: app.packageName, appName: app.appName } })
+                    }
+                  })
+                  .catch((e: any) => console.warn('[RN] getInstalledPackages failed:', e))
+                return
+              }
+              // Forward all other Bare events to WebView
               webViewRef.current?.injectJavaScript(
                 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
               )

@@ -348,6 +348,8 @@ async function handleHello (msg, conn, remoteKeyHex) {
     peerConnected = true
     parentPeer = peers.get(remoteKeyHex)
     await flushPendingMessages(conn)
+    // Ask RN shell to scan installed apps and relay each as app:installed
+    send({ type: 'event', event: 'apps:syncRequested', data: {} })
   }
 }
 

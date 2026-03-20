@@ -342,7 +342,13 @@ function createDispatch (ctx) {
         policy.version = (policy.version || 0) + 1
         await ctx.db.put('policy:' + childPublicKey, policy)
         try {
-          ctx.sendToPeer(childPublicKey, { type: 'app:decision', payload: { packageName, decision: d } })
+          // sendToPeer requires the Hyperswarm noise key, not the identity key.
+          // The stored peer record contains noiseKey for this cross-lookup.
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'app:decision', payload: { packageName, decision: d } })
+          }
         } catch (_e) {
           // child offline — policy stored; will be sent on next reconnect
         }
@@ -357,7 +363,12 @@ function createDispatch (ctx) {
         const newPolicy = { ...policy, childPublicKey, version: (policy.version || 0) + 1 }
         await ctx.db.put('policy:' + childPublicKey, newPolicy)
         try {
-          ctx.sendToPeer(childPublicKey, { type: 'policy:update', payload: newPolicy })
+          // sendToPeer requires the Hyperswarm noise key, not the identity key.
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: newPolicy })
+          }
         } catch (_e) {
           // child offline — policy stored; will be sent on reconnect
         }

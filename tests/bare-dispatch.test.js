@@ -1247,9 +1247,11 @@ describe('bare dispatch', () => {
       }
     }
 
-    test('approve: updates app status to allowed, stores policy:{childPublicKey}, calls sendToPeer', async () => {
+    test('approve: updates app status to allowed, stores policy:{childPublicKey}, calls sendToPeer with noiseKey', async () => {
       const existing = { apps: { 'com.example.app': { status: 'pending' } }, childPublicKey: 'child1', version: 1 }
-      const mockDb = makeMockDb({ 'policy:child1': existing })
+      // Peer record with noiseKey — sendToPeer requires the noise key, not identity key
+      const peerRecord = { publicKey: 'child1', noiseKey: 'noise1', displayName: 'Test', pairedAt: 1 }
+      const mockDb = makeMockDb({ 'policy:child1': existing, 'peers:child1': peerRecord })
       const mockSendToPeer = jest.fn()
       const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
 
@@ -1263,7 +1265,7 @@ describe('bare dispatch', () => {
       expect(saved.apps['com.example.app'].status).toBe('allowed')
       expect(saved.version).toBe(2)
 
-      expect(mockSendToPeer).toHaveBeenCalledWith('child1', expect.objectContaining({
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise1', expect.objectContaining({
         type: 'app:decision',
         payload: expect.objectContaining({ packageName: 'com.example.app', decision: 'allowed' }),
       }))
@@ -1319,9 +1321,11 @@ describe('bare dispatch', () => {
       }
     }
 
-    test('stores policy:{childPublicKey}, increments version, calls sendToPeer with policy:update', async () => {
+    test('stores policy:{childPublicKey}, increments version, calls sendToPeer with noiseKey', async () => {
       const policy = { apps: { 'com.example.app': { status: 'allowed' } }, childPublicKey: 'child1', version: 2 }
-      const mockDb = makeMockDb({})
+      // Peer record with noiseKey — sendToPeer requires the noise key, not identity key
+      const peerRecord = { publicKey: 'child1', noiseKey: 'noise1', displayName: 'Test', pairedAt: 1 }
+      const mockDb = makeMockDb({ 'peers:child1': peerRecord })
       const mockSendToPeer = jest.fn()
       const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
 
@@ -1335,7 +1339,7 @@ describe('bare dispatch', () => {
       expect(saved.version).toBe(3)
       expect(saved.childPublicKey).toBe('child1')
 
-      expect(mockSendToPeer).toHaveBeenCalledWith('child1', expect.objectContaining({
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise1', expect.objectContaining({
         type: 'policy:update',
         payload: expect.objectContaining({ version: 3, childPublicKey: 'child1' }),
       }))

@@ -194,6 +194,10 @@ function createDispatch (ctx) {
         // Notify WebView that request was submitted
         ctx.send({ type: 'event', event: 'request:submitted', data: request })
 
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'time:request', payload: { requestId, packageName, requestedAt: request.requestedAt } })
+        }
+
         return { requestId, status: 'pending' }
       }
 
@@ -209,7 +213,7 @@ function createDispatch (ctx) {
       }
 
       case 'app:installed': {
-        const { packageName } = args
+        const { packageName, appName } = args
 
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : { apps: {} }
@@ -217,7 +221,7 @@ function createDispatch (ctx) {
 
         // Mark as pending if not already in policy
         if (!policy.apps[packageName]) {
-          policy.apps[packageName] = { status: 'pending' }
+          policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
           await ctx.db.put('policy', policy)
 
           // Notify native enforcement of updated policy
@@ -228,6 +232,10 @@ function createDispatch (ctx) {
 
           // Notify WebView
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
+
+          if (ctx.sendToParent) {
+            await ctx.sendToParent({ type: 'app:installed', payload: { packageName, appName: appName || packageName, detectedAt: Date.now() } })
+          }
         }
 
         return { status: policy.apps[packageName].status }
@@ -250,6 +258,11 @@ function createDispatch (ctx) {
         }
 
         ctx.send({ type: 'event', event: 'heartbeat:send', data: heartbeat })
+
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'heartbeat', payload: heartbeat.payload })
+        }
+
         return heartbeat.payload
       }
 
@@ -298,6 +311,10 @@ function createDispatch (ctx) {
 
         // Emit event to RN which can relay to parent (sendToParent not yet implemented — see Task 13)
         ctx.send({ type: 'event', event: 'usage:report', data: report })
+
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'usage:report', payload: report })
+        }
 
         // Clear PIN log for next reporting period
         await ctx.db.put('pinLog', [])
@@ -495,4 +512,42 @@ async function flushMessageQueue (db, writeMessage) {
   return queue.length
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }
+/**
+ * Handle an incoming `app:installed` P2P message from a child peer.
+ * Runs on the PARENT device.
+ */
+async function handleIncomingAppInstalled (payload, childPublicKey, db, send) {
+  const { packageName, appName } = payload
+  if (!packageName) {
+    console.warn('[bare] app:installed from child: missing packageName')
+    return
+  }
+
+  const raw = await db.get('policy:' + childPublicKey)
+  const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+  if (!policy.apps) policy.apps = {}
+
+  if (!policy.apps[packageName]) {
+    policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
+    await db.put('policy:' + childPublicKey, policy)
+    send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, detectedAt: Date.now() } })
+  }
+}
+
+/**
+ * Handle an incoming `time:request` P2P message from a child peer.
+ * Runs on the PARENT device.
+ */
+async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
+  const { requestId, packageName, requestedAt } = payload
+  if (!requestId || !packageName) {
+    console.warn('[bare] time:request from child: missing fields')
+    return
+  }
+
+  const request = { id: requestId, packageName, requestedAt, status: 'pending', childPublicKey }
+  await db.put('request:' + requestId, request)
+  send({ type: 'event', event: 'time:request:received', data: request })
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

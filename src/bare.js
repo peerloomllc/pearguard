@@ -10,7 +10,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, queueMessage, flushMessageQueue } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingTimeRequest, queueMessage, flushMessageQueue } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -240,6 +240,23 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'app:decision':
       await handleAppDecision(msg.payload, db, send)
       break
+    case 'app:installed':
+      await handleIncomingAppInstalled(msg.payload, msg.from, db, send)
+      break
+    case 'time:request':
+      await handleIncomingTimeRequest(msg.payload, msg.from, db, send)
+      break
+    case 'usage:report': {
+      const childPublicKey = msg.from
+      await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
+      send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey } })
+      break
+    }
+    case 'heartbeat': {
+      const childPublicKey = msg.from
+      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey } })
+      break
+    }
     default:
       send({ type: 'event', event: 'peer:message', data: msg })
       break

@@ -15,13 +15,11 @@ import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -61,6 +59,7 @@ public class AppBlockerModule extends AccessibilityService {
 
     private WindowManager windowManager;
     private View overlayView;
+    private boolean overlayPending = false; // true between Handler.post() and addView() completing
     private String currentOverlayPackage;
     private View pinDialogView;
 
@@ -96,9 +95,12 @@ public class AppBlockerModule extends AccessibilityService {
         if (pkg == null) return;
         String packageName = pkg.toString();
 
-        // Never block PearGuard itself — just return without dismissing,
-        // because adding the overlay view fires TYPE_WINDOW_STATE_CHANGED with
-        // our own package, and dismissing here would create an infinite flash loop.
+        // Never block PearGuard itself.
+        // Do NOT call dismissOverlay() here — adding our own overlay fires
+        // TYPE_WINDOW_STATE_CHANGED with our package name, and dismissing
+        // would remove the overlay we just added (flash loop). The overlay
+        // is only dismissed by explicit button actions or when another app
+        // takes the foreground.
         if (packageName.equals(getPackageName())) {
             return;
         }
@@ -263,11 +265,14 @@ public class AppBlockerModule extends AccessibilityService {
     // --- Overlay UI ---
 
     private void showOverlay(String packageName, String reason) {
-        // If already showing overlay for this package, skip
-        if (overlayView != null && packageName.equals(currentOverlayPackage)) return;
+        // Skip if overlay is already showing or pending for this package.
+        // overlayPending covers the window between Handler.post() and addView() executing,
+        // during which overlayView is still null but we've already committed to showing.
+        if ((overlayView != null || overlayPending) && packageName.equals(currentOverlayPackage)) return;
 
         dismissOverlay();
         currentOverlayPackage = packageName;
+        overlayPending = true;
 
         // Notify RN that a block occurred — WebView ChildRequests listens for this
         ReactContext rc = PearGuardReactHost.get();
@@ -315,13 +320,18 @@ public class AppBlockerModule extends AccessibilityService {
 
         final View pendingOverlay = layout;
 
+        // FLAG_NOT_FOCUSABLE prevents the overlay from stealing keyboard focus.
+        // Without it, adding the overlay fires TYPE_WINDOW_STATE_CHANGED with
+        // PearGuard's own package name, triggering dismissOverlay() and causing
+        // the flash loop. Touch events (button clicks) are unaffected by this flag.
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         );
 
@@ -330,12 +340,15 @@ public class AppBlockerModule extends AccessibilityService {
                 windowManager.addView(pendingOverlay, params);
                 overlayView = pendingOverlay;
             } catch (Exception e) {
-                // addView failed — overlayView remains null, overlay is not shown
+                // addView failed — reset pending flag so next event can retry
+                overlayView = null;
             }
+            overlayPending = false;
         });
     }
 
     private void dismissOverlay() {
+        overlayPending = false;
         if (pinDialogView != null) {
             try { windowManager.removeView(pinDialogView); } catch (Exception ignored) {}
             pinDialogView = null;
@@ -370,87 +383,154 @@ public class AppBlockerModule extends AccessibilityService {
             reactContext
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                 .emit("onTimeRequest", params);
+            Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
         }
-        Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
+        // Dismiss the overlay and go to the home screen so the blocked app
+        // cannot immediately re-trigger the overlay by coming back to foreground.
+        dismissOverlay();
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(homeIntent);
     }
 
     private void onEnterPin(String packageName) {
+        // TYPE_ACCESSIBILITY_OVERLAY cannot receive IME (keyboard) on Android 11+.
+        // Use a numeric keypad UI instead of EditText.
+
+        final String[] enteredPin = { "" };
+
         LinearLayout dialogLayout = new LinearLayout(this);
         dialogLayout.setOrientation(LinearLayout.VERTICAL);
         dialogLayout.setBackgroundColor(Color.argb(255, 30, 30, 30));
         dialogLayout.setPadding(48, 48, 48, 48);
         dialogLayout.setGravity(Gravity.CENTER);
 
-        TextView prompt = new TextView(this);
-        prompt.setText("Enter parent PIN:");
-        prompt.setTextColor(Color.WHITE);
-        prompt.setTextSize(18);
-        dialogLayout.addView(prompt);
+        // PIN prompt / dots display
+        final TextView pinDisplay = new TextView(this);
+        pinDisplay.setText("Enter parent PIN");
+        pinDisplay.setTextColor(Color.WHITE);
+        pinDisplay.setTextSize(20);
+        pinDisplay.setGravity(Gravity.CENTER);
+        dialogLayout.addView(pinDisplay);
 
-        EditText pinInput = new EditText(this);
-        pinInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        pinInput.setHint("PIN");
-        pinInput.setTextColor(Color.WHITE);
-        pinInput.setHintTextColor(Color.GRAY);
-        dialogLayout.addView(pinInput);
+        Runnable updateDisplay = () -> {
+            if (enteredPin[0].isEmpty()) {
+                pinDisplay.setText("Enter parent PIN");
+            } else {
+                StringBuilder dots = new StringBuilder();
+                for (int i = 0; i < enteredPin[0].length(); i++) {
+                    if (i > 0) dots.append("  ");
+                    dots.append("●");
+                }
+                pinDisplay.setText(dots.toString());
+            }
+        };
 
-        Button confirmBtn = new Button(this);
-        confirmBtn.setText("Unlock");
-        dialogLayout.addView(confirmBtn);
+        // Number pad  1-2-3 / 4-5-6 / 7-8-9 / ⌫-0  (auto-submits at 4 digits)
+        String[][] rows = { {"1","2","3"}, {"4","5","6"}, {"7","8","9"}, {"⌫","0",""} };
+        for (String[] row : rows) {
+            LinearLayout rowLayout = new LinearLayout(this);
+            rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+            rowLayout.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rowParams.setMargins(0, 8, 0, 0);
+            rowLayout.setLayoutParams(rowParams);
+
+            for (String digit : row) {
+                Button btn = new Button(this);
+                btn.setText(digit);
+                btn.setTextColor(Color.WHITE);
+                btn.setTextSize(20);
+                LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                btnParams.setMargins(6, 0, 6, 0);
+                btn.setLayoutParams(btnParams);
+                btn.setBackgroundColor(Color.argb(200, 60, 60, 60));
+
+                btn.setOnClickListener(v -> {
+                    if ("⌫".equals(digit)) {
+                        if (!enteredPin[0].isEmpty()) {
+                            enteredPin[0] = enteredPin[0].substring(0, enteredPin[0].length() - 1);
+                            updateDisplay.run();
+                        }
+                    } else if ("".equals(digit)) {
+                        // placeholder cell — no action
+                    } else {
+                        if (enteredPin[0].length() < 4) {
+                            enteredPin[0] = enteredPin[0] + digit;
+                            updateDisplay.run();
+
+                            // Auto-submit when 4 digits entered
+                            if (enteredPin[0].length() == 4) {
+                                if (verifyPin(enteredPin[0])) {
+                                    JSONObject policy = loadPolicy();
+                                    int durationSeconds = 3600;
+                                    if (policy != null) {
+                                        durationSeconds = policy.optInt("overrideDurationSeconds", 3600);
+                                    }
+                                    long expiryMs = System.currentTimeMillis() + (durationSeconds * 1000L);
+                                    overrides.put(packageName, expiryMs);
+
+                                    ReactContext rc = PearGuardReactHost.get();
+                                    if (rc != null && rc.hasActiveReactInstance()) {
+                                        WritableMap evt = Arguments.createMap();
+                                        evt.putString("packageName", packageName);
+                                        evt.putDouble("timestamp", System.currentTimeMillis());
+                                        evt.putInt("durationSeconds", durationSeconds);
+                                        rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                            .emit("onPinSuccess", evt);
+                                    }
+
+                                    try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+                                    pinDialogView = null;
+                                    dismissOverlay();
+                                } else {
+                                    Toast.makeText(AppBlockerModule.this, "Incorrect PIN", Toast.LENGTH_SHORT).show();
+                                    enteredPin[0] = "";
+                                    updateDisplay.run();
+                                }
+                            }
+                        }
+                    }
+                });
+
+                rowLayout.addView(btn);
+            }
+            dialogLayout.addView(rowLayout);
+        }
+
+        // Cancel button
+        Button cancelBtn = new Button(this);
+        cancelBtn.setText("Cancel");
+        cancelBtn.setTextColor(Color.WHITE);
+        cancelBtn.setBackgroundColor(Color.argb(200, 100, 30, 30));
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelParams.setMargins(0, 24, 0, 0);
+        cancelBtn.setLayoutParams(cancelParams);
+        cancelBtn.setOnClickListener(v -> {
+            try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+            pinDialogView = null;
+        });
+        dialogLayout.addView(cancelBtn);
 
         WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
-            900,
+            WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-            0, // no FLAG_NOT_FOCUSABLE — allows keyboard
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // no IME needed — using button pad
             PixelFormat.TRANSLUCENT
         );
         dialogParams.gravity = Gravity.CENTER;
 
         windowManager.addView(dialogLayout, dialogParams);
         pinDialogView = dialogLayout;
-
-        Button cancelBtn = new Button(this);
-        cancelBtn.setText("Cancel");
-        dialogLayout.addView(cancelBtn);
-        cancelBtn.setOnClickListener(v -> {
-            try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-            pinDialogView = null;
-        });
-
-        confirmBtn.setOnClickListener(v -> {
-            String enteredPin = pinInput.getText().toString();
-            if (verifyPin(enteredPin)) {
-                // Grant timed override
-                JSONObject policy = loadPolicy();
-                int durationSeconds = 3600;
-                if (policy != null) {
-                    durationSeconds = policy.optInt("overrideDurationSeconds", 3600);
-                }
-                long expiryMs = System.currentTimeMillis() + (durationSeconds * 1000L);
-                overrides.put(packageName, expiryMs);
-
-                // Log PIN use — emit event to RN for inclusion in next usage:report
-                ReactContext rc = PearGuardReactHost.get();
-                if (rc != null && rc.hasActiveReactInstance()) {
-                    WritableMap evt = Arguments.createMap();
-                    evt.putString("packageName", packageName);
-                    evt.putDouble("timestamp", System.currentTimeMillis());
-                    evt.putInt("durationSeconds", durationSeconds);
-                    rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                        .emit("onPinSuccess", evt);
-                }
-
-                // Remove dialog and overlay
-                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-                pinDialogView = null;
-                dismissOverlay();
-            } else {
-                Toast.makeText(AppBlockerModule.this, "Incorrect PIN", Toast.LENGTH_SHORT).show();
-            }
-        });
     }
 
     /**

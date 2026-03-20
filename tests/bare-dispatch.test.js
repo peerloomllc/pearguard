@@ -276,6 +276,13 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        // pin:set iterates peers to propagate pinHash to child policies
+        createReadStream: jest.fn(({ gt, lt } = {}) => {
+          const entries = Object.entries(stored)
+            .filter(([k]) => (!gt || k > gt) && (!lt || k < lt))
+            .map(([k, v]) => ({ key: k, value: v }))
+          return entries[Symbol.iterator] ? (async function* () { for (const e of entries) yield e })() : []
+        }),
         _stored: stored,
       }
     }
@@ -299,11 +306,11 @@ describe('bare dispatch', () => {
       const savedPolicy = mockDb.put.mock.calls.find(([k]) => k === 'policy')[1]
       expect(savedPolicy.pinHash.length).toBeGreaterThan(0)
 
-      // The stored hash should verify correctly against the original PIN
-      const verifyResult = sodium.crypto_pwhash_str_verify(
-        Buffer.from(savedPolicy.pinHash),
-        Buffer.from('5678')
-      )
+      // The stored hash should verify correctly against the original PIN.
+      // Pad back to crypto_pwhash_STRBYTES since sodium-native requires the full buffer.
+      const padded = Buffer.alloc(sodium.crypto_pwhash_STRBYTES)
+      Buffer.from(savedPolicy.pinHash).copy(padded)
+      const verifyResult = sodium.crypto_pwhash_str_verify(padded, Buffer.from('5678'))
       expect(verifyResult).toBe(true)
     })
 
@@ -887,6 +894,12 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        createReadStream: jest.fn(({ gt, lt } = {}) => {
+          const entries = Object.entries(stored)
+            .filter(([k]) => (!gt || k > gt) && (!lt || k < lt))
+            .map(([key, value]) => ({ key, value }))
+          return (async function * () { yield * entries })()
+        }),
         _stored: stored,
       }
     }
@@ -944,6 +957,41 @@ describe('bare dispatch', () => {
 
       expect(mockDb.put).not.toHaveBeenCalled()
       expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('allowed: updates pending request status to approved and emits request:updated', async () => {
+      const reqKey = 'req:1000:com.example.app'
+      const existingPolicy = { apps: { 'com.example.app': { status: 'pending' } } }
+      const stored = {
+        policy: existingPolicy,
+        [reqKey]: { id: reqKey, packageName: 'com.example.app', status: 'pending', requestedAt: 1000 },
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+
+      await handleAppDecision({ packageName: 'com.example.app', decision: 'allowed' }, mockDb, mockSend)
+
+      expect(stored[reqKey].status).toBe('approved')
+      const updatedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'request:updated')
+      expect(updatedEvents).toHaveLength(1)
+      expect(updatedEvents[0][0].data).toMatchObject({ requestId: reqKey, status: 'approved' })
+    })
+
+    test('blocked: updates pending request status to denied and emits request:updated', async () => {
+      const reqKey = 'req:1001:com.example.app'
+      const existingPolicy = { apps: { 'com.example.app': { status: 'pending' } } }
+      const stored = {
+        policy: existingPolicy,
+        [reqKey]: { id: reqKey, packageName: 'com.example.app', status: 'pending', requestedAt: 1001 },
+      }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+
+      await handleAppDecision({ packageName: 'com.example.app', decision: 'blocked' }, mockDb, mockSend)
+
+      expect(stored[reqKey].status).toBe('denied')
+      const updatedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'request:updated')
+      expect(updatedEvents).toHaveLength(1)
     })
   })
 

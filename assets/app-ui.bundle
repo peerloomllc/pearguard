@@ -14662,6 +14662,12 @@
     (0, import_react3.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
+    (0, import_react3.useEffect)(() => {
+      const unsub = window.onBareEvent("apps:synced", (data) => {
+        if (data.childPublicKey === childPublicKey) loadPolicy();
+      });
+      return unsub;
+    }, [childPublicKey, loadPolicy]);
     function handleUpdate(packageName, newAppData) {
       const newApps = { ...policy.apps, [packageName]: newAppData };
       const newPolicy = { ...policy, apps: newApps };
@@ -15441,6 +15447,12 @@
     (0, import_react10.useEffect)(() => {
       window.callBare("children:list").then(setChildren).catch(() => {
       });
+      const unsub = window.onBareEvent("child:connected", () => {
+        setShowAdd(false);
+        window.callBare("children:list").then(setChildren).catch(() => {
+        });
+      });
+      return unsub;
     }, []);
     function handleChildConnected(data) {
       setShowAdd(false);
@@ -15619,6 +15631,7 @@
     const [status, setStatus] = (0, import_react12.useState)(null);
     const [pairState, setPairState] = (0, import_react12.useState)("idle");
     const [pairError, setPairError] = (0, import_react12.useState)(null);
+    const [parents, setParents] = (0, import_react12.useState)([]);
     (0, import_react12.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName }) => {
         const n = displayName || "";
@@ -15627,6 +15640,17 @@
       }).catch(() => {
       });
     }, []);
+    (0, import_react12.useEffect)(() => {
+      if (mode !== "child") return;
+      window.callBare("children:list").then(setParents).catch(() => {
+      });
+      const unsub = window.onBareEvent("peer:paired", () => {
+        window.callBare("children:list").then(setParents).catch(() => {
+        });
+        setPairState("idle");
+      });
+      return unsub;
+    }, [mode]);
     async function handleSave() {
       const trimmed = name.trim();
       if (!trimmed) return;
@@ -15695,7 +15719,12 @@
       ] }),
       mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.section, children: [
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: styles12.sectionHeading, children: "Parents" }),
-        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { style: styles12.btn, onClick: handlePair, children: "Pair to Parent" }),
+        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles12.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.parentRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...styles12.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: styles12.parentName, children: p.displayName || "Parent Device" }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: styles12.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
+        ] }, p.publicKey)) }),
+        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { style: styles12.btn, onClick: handlePair, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
         pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.hint, children: "Connecting to parent\u2026" }),
         pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.success, children: "Paired! Waiting for parent to confirm\u2026" }),
         pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
@@ -15744,7 +15773,12 @@
     error: { color: "#ea4335", fontSize: "13px", margin: 0 },
     section: { marginTop: "32px" },
     sectionHeading: { fontSize: "16px", fontWeight: "600", marginBottom: "12px", color: "#333" },
-    hint: { color: "#888", fontSize: "14px" }
+    hint: { color: "#888", fontSize: "14px" },
+    parentsList: { marginBottom: "16px" },
+    parentRow: { display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderBottom: "1px solid #eee" },
+    onlineDot: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0 },
+    parentName: { fontSize: "15px", fontWeight: "500", flex: 1 },
+    parentStatus: { fontSize: "12px", color: "#888" }
   };
 
   // src/ui/components/ParentApp.jsx
@@ -15912,6 +15946,8 @@
     const [requests, setRequests] = (0, import_react15.useState)([]);
     const [loading, setLoading] = (0, import_react15.useState)(true);
     const [lastBlockedPackage, setLastBlockedPackage] = (0, import_react15.useState)(null);
+    const [submitting, setSubmitting] = (0, import_react15.useState)(false);
+    const [submitted, setSubmitted] = (0, import_react15.useState)(false);
     async function loadRequests() {
       setLoading(true);
       const { requests: requests2 } = await window.callBare("requests:list");
@@ -15923,24 +15959,33 @@
       loadRequests().then(() => {
         if (!isMounted) return;
       });
-      function onPearEvent(event) {
-        if (!isMounted) return;
-        const { name, data } = event.detail;
-        if (name === "request:submitted" || name === "request:updated") {
-          loadRequests();
-        }
-        if (name === "block:occurred") {
-          setLastBlockedPackage(data.packageName);
-        }
-      }
-      window.addEventListener("__pearEvent", onPearEvent);
+      const unsubSubmit = window.onBareEvent("request:submitted", () => {
+        if (isMounted) loadRequests();
+      });
+      const unsubUpdated = window.onBareEvent("request:updated", () => {
+        if (isMounted) loadRequests();
+      });
+      const unsubBlock = window.onBareEvent("block:occurred", (data) => {
+        if (isMounted) setLastBlockedPackage(data.packageName);
+      });
       return () => {
         isMounted = false;
-        window.removeEventListener("__pearEvent", onPearEvent);
+        unsubSubmit();
+        unsubUpdated();
+        unsubBlock();
       };
     }, []);
-    function handleNewRequest() {
-      window.callBare("time:request", { packageName: lastBlockedPackage }).then(loadRequests);
+    async function handleNewRequest() {
+      if (submitting || !lastBlockedPackage) return;
+      setSubmitting(true);
+      try {
+        await window.callBare("time:request", { packageName: lastBlockedPackage });
+        setSubmitted(true);
+        setLastBlockedPackage(null);
+        await loadRequests();
+      } finally {
+        setSubmitting(false);
+      }
     }
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
     return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { padding: 24 }, children: [
@@ -15950,12 +15995,13 @@
           "button",
           {
             onClick: handleNewRequest,
-            disabled: !lastBlockedPackage,
-            style: { padding: "8px 16px", opacity: lastBlockedPackage ? 1 : 0.4 },
-            children: "New Request"
+            disabled: !lastBlockedPackage || submitting || submitted,
+            style: { padding: "8px 16px", opacity: !lastBlockedPackage || submitting || submitted ? 0.4 : 1 },
+            children: submitting ? "Sending\u2026" : "New Request"
           }
         )
       ] }),
+      submitted && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { color: "#34a853", fontSize: 14, marginBottom: 12 }, children: "Request sent! Your parent will be notified." }),
       requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
       requests.map((req) => {
         const badge = statusBadge(req.status);

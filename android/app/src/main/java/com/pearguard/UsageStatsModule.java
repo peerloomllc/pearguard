@@ -1,6 +1,9 @@
 package com.pearguard;
 
 import android.app.AppOpsManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
@@ -9,7 +12,10 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.os.Build;
 import android.os.Process;
+
+import androidx.core.app.NotificationCompat;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
@@ -138,6 +144,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getInstalledPackages(Promise promise) {
         PackageManager pm = reactContext.getPackageManager();
+
+        // Determine the default home launcher package so it can be auto-approved
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN, null);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo defaultHome = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
+        String launcherPackage = defaultHome != null ? defaultHome.activityInfo.packageName : null;
+
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
         launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
@@ -162,6 +175,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             WritableMap item = Arguments.createMap();
             item.putString("packageName", ai.packageName);
             item.putString("appName", appName);
+            item.putBoolean("isLauncher", ai.packageName.equals(launcherPackage));
             result.pushMap(item);
         }
         promise.resolve(result);
@@ -220,5 +234,51 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         prefs.edit().putLong("pearguard_override_" + packageName, (long) expiresAt).apply();
         promise.resolve(null);
+    }
+
+    private static final String REQUEST_CHANNEL_ID = "pearguard_time_requests";
+    private static int notificationId = 2000;
+
+    /**
+     * Shows an Android notification on the parent device when a child requests access.
+     * Called from app/index.tsx when the bare worklet emits time:request:received.
+     */
+    @ReactMethod
+    public void showTimeRequestNotification(String childName, String appName) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "Child Time Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Alerts when a child requests access to a blocked app");
+            nm.createNotificationChannel(channel);
+        }
+
+        // Tapping the notification opens PearGuard
+        Intent openApp = reactContext.getPackageManager()
+            .getLaunchIntentForPackage(reactContext.getPackageName());
+        PendingIntent pi = PendingIntent.getActivity(
+            reactContext, 0,
+            openApp != null ? openApp : new Intent(),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        String title = childName + " is requesting access";
+        String body  = childName + " wants to use " + appName;
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
     }
 }

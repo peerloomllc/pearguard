@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -227,6 +227,11 @@ export default function Root () {
     const nativeSubs: ReturnType<typeof DeviceEventEmitter.addListener>[] = []
 
     async function start () {
+      // Request POST_NOTIFICATIONS permission (Android 13+, API 33)
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS').catch(() => {})
+      }
+
       // Ensure data directory exists
       const docDir = FileSystem.documentDirectory!
       const dataUri = docDir + 'pearguard'
@@ -251,6 +256,49 @@ export default function Root () {
         })
       }
       setBareCaller(callBare)
+
+      // Always register native event listeners — these must survive remounts
+      // (e.g. returning from setup screen). If registered only after the early
+      // return check below, they would be cleaned up on unmount and never re-added.
+      nativeSubs.push(
+        // New app installed — forward to bare worklet as app:installed
+        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
+          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
+        }),
+
+        // Accessibility Service or Device Admin disabled — forward as bypass:detected
+        DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
+          const reason = typeof e === 'string' ? e : e.reason
+          sendToWorklet({ method: 'bypass:detected', args: { reason } })
+        }),
+
+        // Child tapped "Send Request" on block overlay — forward as time:request
+        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string }) => {
+          sendToWorklet({ method: 'time:request', args: { packageName: e.packageName, appName: e.appName } })
+        }),
+
+        // PIN entered successfully — log the override event
+        DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
+          sendToWorklet({ method: 'pin:used', args: e })
+        }),
+
+        // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
+        DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearEvent("block:occurred",' + JSON.stringify({ packageName: e.packageName }) + ');true;'
+          )
+        }),
+
+        // Usage flush timer fired — gather usage and send report
+        DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
+          try {
+            const usageList = await NativeModules.UsageStatsModule.getDailyUsageAll()
+            sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
+          } catch (err) {
+            console.warn('[PearGuard] Usage flush failed:', err)
+          }
+        }),
+      )
 
       // If worklet already running (e.g. returning from setup screen or after deep-link
       // navigation), mark DB ready immediately and send init (bare will re-emit 'ready'
@@ -282,12 +330,19 @@ export default function Root () {
               if (msg.event === 'apps:syncRequested') {
                 NativeModules.UsageStatsModule?.getInstalledPackages?.()
                   .then((apps: { packageName: string; appName: string }[]) => {
-                    for (const app of apps) {
-                      sendToWorklet({ method: 'app:installed', args: { packageName: app.packageName, appName: app.appName } })
-                    }
+                    // Send all apps in one batch to avoid race-condition on parent side
+                    // (individual messages all read same policy DB key concurrently, last-writer-wins)
+                    sendToWorklet({ method: 'apps:sync', args: { apps } })
                   })
                   .catch((e: any) => console.warn('[RN] getInstalledPackages failed:', e))
                 return
+              }
+              // Show a notification on the parent device when a child sends a time request
+              if (msg.event === 'time:request:received') {
+                const { childDisplayName, appName, packageName } = msg.data ?? {}
+                const childLabel = childDisplayName || 'Your child'
+                const appLabel = appName || packageName || 'an app'
+                NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel)
               }
               // Forward all other Bare events to WebView
               webViewRef.current?.injectJavaScript(
@@ -336,47 +391,6 @@ export default function Root () {
           _pendingInviteUrl = _pendingInviteUrl ?? url
         }
       }).catch(() => {})
-
-      // Listen for native enforcement events
-      nativeSubs.push(
-        // New app installed — forward to bare worklet as app:installed
-        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
-          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
-        }),
-
-        // Accessibility Service or Device Admin disabled — forward as bypass:detected
-        DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
-          const reason = typeof e === 'string' ? e : e.reason
-          sendToWorklet({ method: 'bypass:detected', args: { reason } })
-        }),
-
-        // Child tapped "Send Request" on block overlay — forward as time:request
-        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string }) => {
-          sendToWorklet({ method: 'time:request', args: { packageName: e.packageName, appName: e.appName } })
-        }),
-
-        // PIN entered successfully — log the override event
-        DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
-          sendToWorklet({ method: 'pin:used', args: e })
-        }),
-
-        // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
-        DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
-          webViewRef.current?.injectJavaScript(
-            'window.__pearEvent("block:occurred",' + JSON.stringify({ packageName: e.packageName }) + ');true;'
-          )
-        }),
-
-        // Usage flush timer fired — gather usage and send report
-        DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
-          try {
-            const usageList = await NativeModules.UsageStatsModule.getDailyUsageAll()
-            sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
-          } catch (err) {
-            console.warn('[PearGuard] Usage flush failed:', err)
-          }
-        }),
-      )
     }
 
     start().catch(e => console.error('[RN] start error:', e))

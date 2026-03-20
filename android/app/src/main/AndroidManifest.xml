@@ -29,6 +29,11 @@
   <!-- Post notifications — required for the bypass warning notification (Android 13+) -->
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+  <!-- Query all packages — required to enumerate all installed apps on Android 11+.
+       Parental control apps are explicitly permitted to use this. -->
+  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+      tools:ignore="QueryAllPackagesPermission" />
+
   <queries>
     <!-- Required to enumerate launchable apps on Android 11+ -->
     <intent>

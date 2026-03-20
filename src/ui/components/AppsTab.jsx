@@ -86,6 +86,13 @@ export default function AppsTab({ childPublicKey }) {
 
   useEffect(() => { loadPolicy(); }, [loadPolicy]);
 
+  useEffect(() => {
+    const unsub = window.onBareEvent('apps:synced', (data) => {
+      if (data.childPublicKey === childPublicKey) loadPolicy()
+    })
+    return unsub
+  }, [childPublicKey, loadPolicy]);
+
   function handleUpdate(packageName, newAppData) {
     const newApps = { ...policy.apps, [packageName]: newAppData };
     const newPolicy = { ...policy, apps: newApps };

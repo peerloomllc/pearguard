@@ -12,6 +12,8 @@ export default function ChildRequests() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [lastBlockedPackage, setLastBlockedPackage] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   async function loadRequests() {
     setLoading(true)
@@ -41,8 +43,17 @@ export default function ChildRequests() {
     }
   }, [])
 
-  function handleNewRequest() {
-    window.callBare('time:request', { packageName: lastBlockedPackage }).then(loadRequests)
+  async function handleNewRequest() {
+    if (submitting || !lastBlockedPackage) return
+    setSubmitting(true)
+    try {
+      await window.callBare('time:request', { packageName: lastBlockedPackage })
+      setSubmitted(true)
+      setLastBlockedPackage(null) // prevent duplicate requests
+      await loadRequests()
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (loading) return <div style={{ padding: 24 }}>Loading...</div>
@@ -53,12 +64,18 @@ export default function ChildRequests() {
         <h2 style={{ margin: 0 }}>My Requests</h2>
         <button
           onClick={handleNewRequest}
-          disabled={!lastBlockedPackage}
-          style={{ padding: '8px 16px', opacity: lastBlockedPackage ? 1 : 0.4 }}
+          disabled={!lastBlockedPackage || submitting || submitted}
+          style={{ padding: '8px 16px', opacity: (!lastBlockedPackage || submitting || submitted) ? 0.4 : 1 }}
         >
-          New Request
+          {submitting ? 'Sending…' : 'New Request'}
         </button>
       </div>
+
+      {submitted && (
+        <p style={{ color: '#34a853', fontSize: 14, marginBottom: 12 }}>
+          Request sent! Your parent will be notified.
+        </p>
+      )}
 
       {requests.length === 0 && (
         <p style={{ color: '#888' }}>No requests yet.</p>

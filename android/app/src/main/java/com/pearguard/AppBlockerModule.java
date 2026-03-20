@@ -538,23 +538,27 @@ public class AppBlockerModule extends AccessibilityService {
      */
     private boolean verifyPin(String enteredPin) {
         JSONObject policy = loadPolicy();
-        if (policy == null) {
-            android.util.Log.w("PearGuard", "verifyPin: no policy in SharedPreferences");
-            return false;
-        }
+        if (policy == null) return false;
         String pinHash = policy.optString("pinHash", null);
-        if (pinHash == null || pinHash.isEmpty()) {
-            android.util.Log.w("PearGuard", "verifyPin: pinHash is null or empty in policy");
-            return false;
-        }
-        android.util.Log.d("PearGuard", "verifyPin: pinHash present, len=" + pinHash.length()
-            + " prefix=" + pinHash.substring(0, Math.min(10, pinHash.length())));
+        if (pinHash == null || pinHash.isEmpty()) return false;
+
         try {
-            boolean result = lazySodium.cryptoPwHashStrVerify(pinHash, enteredPin);
-            android.util.Log.d("PearGuard", "verifyPin: cryptoPwHashStrVerify returned " + result);
-            return result;
+            // LazySodium.cryptoPwHashStrVerify pads the hash to crypto_pwhash_STRBYTES (128)
+            // internally by accessing hash.charAt(0..127). The stored argon2id hash is ~97
+            // chars (null bytes were stripped before JSON storage). Calling charAt(97) on a
+            // 97-char string throws StringIndexOutOfBoundsException. Fix: pad to 128 chars
+            // with \u0000. Java's String.getBytes() encodes \u0000 as 0x00 (standard UTF-8),
+            // which is the C null terminator libsodium needs after the real hash string.
+            final int STRBYTES = 128; // crypto_pwhash_STRBYTES
+            String paddedHash = pinHash;
+            if (pinHash.length() < STRBYTES) {
+                char[] padded = new char[STRBYTES];
+                pinHash.getChars(0, pinHash.length(), padded, 0);
+                // positions pinHash.length()..127 remain \u0000 (Java default)
+                paddedHash = new String(padded);
+            }
+            return lazySodium.cryptoPwHashStrVerify(paddedHash, enteredPin);
         } catch (Exception e) {
-            android.util.Log.e("PearGuard", "verifyPin: cryptoPwHashStrVerify threw: " + e.getMessage());
             return false;
         }
     }

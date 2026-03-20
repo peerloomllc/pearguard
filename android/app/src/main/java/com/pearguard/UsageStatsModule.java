@@ -222,12 +222,6 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     public void setPolicy(String policyJson) {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         prefs.edit().putString("pearguard_policy", policyJson).apply();
-        try {
-            org.json.JSONObject p = new org.json.JSONObject(policyJson);
-            boolean hasPinHash = p.has("pinHash") && !p.optString("pinHash", "").isEmpty();
-            android.util.Log.d("PearGuard", "setPolicy: stored policy, hasPinHash=" + hasPinHash
-                + " appCount=" + (p.has("apps") ? p.getJSONObject("apps").length() : 0));
-        } catch (Exception ignored) {}
     }
 
     /**

@@ -572,21 +572,23 @@ public class AppBlockerModule extends AccessibilityService {
         if (pinHash == null || pinHash.isEmpty()) return false;
 
         try {
-            // LazySodium.cryptoPwHashStrVerify pads the hash to crypto_pwhash_STRBYTES (128)
-            // internally by accessing hash.charAt(0..127). The stored argon2id hash is ~97
-            // chars (null bytes were stripped before JSON storage). Calling charAt(97) on a
-            // 97-char string throws StringIndexOutOfBoundsException. Fix: pad to 128 chars
-            // with \u0000. Java's String.getBytes() encodes \u0000 as 0x00 (standard UTF-8),
-            // which is the C null terminator libsodium needs after the real hash string.
+            // LazySodiumAndroid is constructed with HexMessageEncoder as its default
+            // messageEncoder. The String overload of cryptoPwHashStrVerify calls
+            // messageEncoder.decode(hash), which tries to interpret the argon2id string
+            // "$argon2id$v=19$..." as hex — producing garbage bytes and a wrong result.
+            //
+            // Use the byte[] overload directly to bypass the encoder, mirroring what the
+            // bare worklet does in pin:verify:
+            //   const storedHash = Buffer.alloc(crypto_pwhash_STRBYTES) // zero-filled
+            //   Buffer.from(policy.pinHash).copy(storedHash)
+            //   crypto_pwhash_str_verify(storedHash, pinBuffer)
             final int STRBYTES = 128; // crypto_pwhash_STRBYTES
-            String paddedHash = pinHash;
-            if (pinHash.length() < STRBYTES) {
-                char[] padded = new char[STRBYTES];
-                pinHash.getChars(0, pinHash.length(), padded, 0);
-                // positions pinHash.length()..127 remain \u0000 (Java default)
-                paddedHash = new String(padded);
-            }
-            return lazySodium.cryptoPwHashStrVerify(paddedHash, enteredPin);
+            byte[] hashBytes = new byte[STRBYTES]; // zero-filled — null padding included
+            byte[] rawHash = pinHash.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            System.arraycopy(rawHash, 0, hashBytes, 0, Math.min(rawHash.length, STRBYTES));
+
+            byte[] passwordBytes = enteredPin.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            return lazySodium.cryptoPwHashStrVerify(hashBytes, passwordBytes, passwordBytes.length);
         } catch (Exception e) {
             return false;
         }

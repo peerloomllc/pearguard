@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, StatusBar, Share } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -17,6 +17,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { setBareCaller } from './setup'
+import { CameraView, useCameraPermissions } from 'expo-camera'
 
 // ── Worklet singleton ─────────────────────────────────────────────────────────
 // The worklet must survive re-renders and navigation — keep it in module scope.
@@ -26,6 +27,8 @@ let _workletStarted = false
 let _nextId = 1
 const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
+// Invite URL received before worklet was ready — sent once dispatch is initialized
+let _pendingInviteUrl: string | null = null
 
 // ── Module-level deep link listeners ──────────────────────────────────────────
 // These must live outside the component so they are never removed on unmount.
@@ -42,7 +45,12 @@ Linking.addEventListener('url', ({ url }) => {
 
 DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
   console.log('[RN] pearguardLink (module-level):', url)
-  sendToWorklet({ method: 'acceptInvite', args: [url] })
+  if (_worklet) {
+    sendToWorklet({ method: 'acceptInvite', args: [url] })
+  } else {
+    // Worklet not yet ready (cold start) — buffer and send from ready handler
+    _pendingInviteUrl = url
+  }
 })
 
 function onEvent (event: string, fn: (data: any) => void) {
@@ -85,6 +93,68 @@ function buildHtml (appBundleJs: string): string {
   ].join('\n')
 }
 
+// ── Scanner modal ──────────────────────────────────────────────────────────────
+
+function ScannerModal ({
+  visible,
+  onScanned,
+  onCancel,
+  onPermissionDenied,
+}: {
+  visible: boolean
+  onScanned: (url: string) => void
+  onCancel: () => void
+  onPermissionDenied: () => void
+}) {
+  const [permission, requestPermission] = useCameraPermissions()
+  const scanned = useRef(false)
+
+  useEffect(() => {
+    if (!visible) { scanned.current = false; return }
+    if (!permission?.granted) {
+      requestPermission().then(result => {
+        if (!result.granted) onPermissionDenied()
+      })
+    }
+  }, [visible])
+
+  function handleBarcode (result: any) {
+    if (scanned.current) return
+    scanned.current = true
+    onScanned(result.data)
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
+      {permission?.granted ? (
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          onBarcodeScanned={handleBarcode}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        >
+          <View style={scannerStyles.overlay}>
+            <TouchableOpacity style={scannerStyles.cancelBtn} onPress={onCancel}>
+              <Text style={scannerStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      ) : (
+        <View style={scannerStyles.waiting}>
+          <Text style={{ color: '#fff' }}>Requesting camera permission…</Text>
+        </View>
+      )}
+    </Modal>
+  )
+}
+
+const scannerStyles = StyleSheet.create({
+  overlay:    { flex: 1, justifyContent: 'flex-end', padding: 32 },
+  cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderRadius: 8, alignItems: 'center' },
+  cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
+})
+
 // ── Root component ────────────────────────────────────────────────────────────
 
 export default function Root () {
@@ -92,6 +162,9 @@ export default function Root () {
   const [dbReady,      setDbReady]      = useState(false)
   const [webViewReady, setWebViewReady] = useState(false)
   const webViewRef = useRef<any>(null)
+  const [showScanner, setShowScanner] = useState(false)
+  const scanResolve = useRef<((url: string) => void) | null>(null)
+  const scanReject  = useRef<((reason: string) => void) | null>(null)
   const router = useRouter()
 
   // Handle messages from the WebView
@@ -113,6 +186,24 @@ export default function Root () {
         webViewRef.current?.injectJavaScript(
           'window.__pearResponse(' + msg.id + ', null);true;'
         )
+        return
+      }
+
+      if (msg.method === 'qr:scan') {
+        const msgId = msg.id
+        scanResolve.current = (url: string) => {
+          setShowScanner(false)
+          webViewRef.current?.injectJavaScript(
+            'window.__pearResponse(' + msgId + ', ' + JSON.stringify(url) + ', null);true;'
+          )
+        }
+        scanReject.current = (reason: string) => {
+          setShowScanner(false)
+          webViewRef.current?.injectJavaScript(
+            'window.__pearResponse(' + msgId + ', null, ' + JSON.stringify(reason) + ');true;'
+          )
+        }
+        setShowScanner(true)
         return
       }
 
@@ -210,9 +301,14 @@ export default function Root () {
       // When bare.js loads, it emits 'bareReady' — then we call init
       onEvent('bareReady', () => sendToWorklet({ method: 'init', dataDir }))
 
-      // When init completes, bare emits 'ready' — mark DB ready and check mode
+      // When init completes, bare emits 'ready' — dispatch is now initialized
       onEvent('ready', (data) => {
         setDbReady(true)
+        // Flush any invite URL that arrived before the worklet was ready
+        if (_pendingInviteUrl) {
+          sendToWorklet({ method: 'acceptInvite', args: [_pendingInviteUrl] })
+          _pendingInviteUrl = null
+        }
         if (!data.mode) {
           setTimeout(() => router.replace('/setup'), 500)
         }
@@ -220,11 +316,11 @@ export default function Root () {
 
       await _worklet.start('bare.bundle', source)
 
-      // Cold start: app launched by a deep link (warm-start and pearguardLink are
-      // handled by the module-level listeners above, which survive navigation).
+      // Cold start: app launched by a deep link — buffer the URL so the ready
+      // handler sends it after dispatch is initialized (no racy setTimeout).
       Linking.getInitialURL().then(url => {
         if (url && url.startsWith('pear://pearguard/join')) {
-          setTimeout(() => sendToWorklet({ method: 'acceptInvite', args: [url] }), 1500)
+          _pendingInviteUrl = _pendingInviteUrl ?? url
         }
       }).catch(() => {})
 
@@ -284,6 +380,12 @@ export default function Root () {
         originWhitelist={['*']}
         scrollEnabled={false}
         overScrollMode="never"
+      />
+      <ScannerModal
+        visible={showScanner}
+        onScanned={(url) => scanResolve.current?.(url)}
+        onCancel={() => scanReject.current?.('cancelled')}
+        onPermissionDenied={() => scanReject.current?.('Camera permission denied. Please enable in Settings.')}
       />
     </View>
   )

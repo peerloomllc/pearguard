@@ -110,7 +110,32 @@ public class AppBlockerModule extends AccessibilityService {
         if (blockReason != null) {
             showOverlay(packageName, blockReason);
         } else {
+            // Gesture navigation fires TYPE_WINDOW_STATE_CHANGED for system overlay
+            // packages (e.g. com.android.systemui) mid-gesture while the blocked app
+            // is still in the foreground. Skip dismissal for those to prevent the
+            // back-gesture bypass: overlay would disappear but blocked app stays open.
+            if (overlayView != null && isSystemOverlayPackage(packageName)) {
+                return;
+            }
             dismissOverlay();
+        }
+    }
+
+    /**
+     * Returns true for system packages that have no launcher activity — these are
+     * pure system/nav overlays (e.g. SystemUI) that fire spurious events during
+     * gesture navigation. User-visible system apps (Chrome, YouTube) have a launch
+     * intent and return false, so the overlay is correctly dismissed for them.
+     */
+    private boolean isSystemOverlayPackage(String packageName) {
+        try {
+            PackageManager pm = getPackageManager();
+            ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
+            boolean isSystem = (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+            if (!isSystem) return false;
+            return pm.getLaunchIntentForPackage(packageName) == null;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -489,9 +514,13 @@ public class AppBlockerModule extends AccessibilityService {
                                     pinDialogView = null;
                                     dismissOverlay();
                                 } else {
-                                    Toast.makeText(AppBlockerModule.this, "Incorrect PIN", Toast.LENGTH_SHORT).show();
                                     enteredPin[0] = "";
-                                    updateDisplay.run();
+                                    pinDisplay.setTextColor(Color.RED);
+                                    pinDisplay.setText("Incorrect PIN");
+                                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                        pinDisplay.setTextColor(Color.WHITE);
+                                        pinDisplay.setText("Enter parent PIN");
+                                    }, 1500);
                                 }
                             }
                         }

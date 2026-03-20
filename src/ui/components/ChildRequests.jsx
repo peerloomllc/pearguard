@@ -27,21 +27,17 @@ export default function ChildRequests() {
       if (!isMounted) return
     })
 
-    function onPearEvent(event) {
-      if (!isMounted) return
-      const { name, data } = event.detail
-      if (name === 'request:submitted' || name === 'request:updated') {
-        loadRequests()
-      }
-      if (name === 'block:occurred') {
-        setLastBlockedPackage(data.packageName)
-      }
-    }
+    const unsubSubmit = window.onBareEvent('request:submitted', () => { if (isMounted) loadRequests() })
+    const unsubUpdated = window.onBareEvent('request:updated', () => { if (isMounted) loadRequests() })
+    const unsubBlock = window.onBareEvent('block:occurred', (data) => {
+      if (isMounted) setLastBlockedPackage(data.packageName)
+    })
 
-    window.addEventListener('__pearEvent', onPearEvent)
     return () => {
       isMounted = false
-      window.removeEventListener('__pearEvent', onPearEvent)
+      unsubSubmit()
+      unsubUpdated()
+      unsubBlock()
     }
   }, [])
 

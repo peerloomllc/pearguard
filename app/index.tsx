@@ -360,6 +360,13 @@ export default function Root () {
           sendToWorklet({ method: 'pin:used', args: e })
         }),
 
+        // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
+        DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearEvent("block:occurred",' + JSON.stringify({ packageName: e.packageName }) + ');true;'
+          )
+        }),
+
         // Usage flush timer fired — gather usage and send report
         DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
           try {

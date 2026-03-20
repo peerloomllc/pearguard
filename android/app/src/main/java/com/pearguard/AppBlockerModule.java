@@ -268,6 +268,15 @@ public class AppBlockerModule extends AccessibilityService {
         dismissOverlay();
         currentOverlayPackage = packageName;
 
+        // Notify RN that a block occurred — WebView ChildRequests listens for this
+        ReactContext rc = PearGuardReactHost.get();
+        if (rc != null && rc.hasActiveReactInstance()) {
+            WritableMap evt = Arguments.createMap();
+            evt.putString("packageName", packageName);
+            rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("onBlockOccurred", evt);
+        }
+
         String appName = getAppName(packageName);
 
         LinearLayout layout = new LinearLayout(this);

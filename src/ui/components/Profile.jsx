@@ -13,6 +13,7 @@ export default function Profile({ mode }) {
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
   const [pairError, setPairError] = useState(null)
+  const [parents, setParents] = useState([]) // child mode: list of paired parents
 
   useEffect(() => {
     window.callBare('identity:getName')
@@ -23,6 +24,17 @@ export default function Profile({ mode }) {
       })
       .catch(() => {})
   }, [])
+
+  // Child mode: load existing paired parents and listen for new pairings
+  useEffect(() => {
+    if (mode !== 'child') return
+    window.callBare('children:list').then(setParents).catch(() => {})
+    const unsub = window.onBareEvent('peer:paired', () => {
+      window.callBare('children:list').then(setParents).catch(() => {})
+      setPairState('idle')
+    })
+    return unsub
+  }, [mode])
 
   async function handleSave() {
     const trimmed = name.trim()
@@ -99,9 +111,21 @@ export default function Profile({ mode }) {
         <div style={styles.section}>
           <h3 style={styles.sectionHeading}>Parents</h3>
 
+          {parents.length > 0 && (
+            <div style={styles.parentsList}>
+              {parents.map((p) => (
+                <div key={p.publicKey} style={styles.parentRow}>
+                  <span style={{ ...styles.onlineDot, backgroundColor: p.isOnline ? '#34a853' : '#bbb' }} />
+                  <span style={styles.parentName}>{p.displayName || 'Parent Device'}</span>
+                  <span style={styles.parentStatus}>{p.isOnline ? 'Connected' : 'Offline'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {pairState === 'idle' && (
             <button style={styles.btn} onClick={handlePair}>
-              Pair to Parent
+              {parents.length > 0 ? 'Pair Another Parent' : 'Pair to Parent'}
             </button>
           )}
 
@@ -154,4 +178,9 @@ const styles = {
   section:        { marginTop: '32px' },
   sectionHeading: { fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#333' },
   hint:           { color: '#888', fontSize: '14px' },
+  parentsList:    { marginBottom: '16px' },
+  parentRow:      { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #eee' },
+  onlineDot:      { width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 },
+  parentName:     { fontSize: '15px', fontWeight: '500', flex: 1 },
+  parentStatus:   { fontSize: '12px', color: '#888' },
 }

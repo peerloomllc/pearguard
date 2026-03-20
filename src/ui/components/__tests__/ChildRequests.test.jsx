@@ -2,9 +2,19 @@ import React from 'react'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import ChildRequests from '../ChildRequests.jsx'
 
+// Capture onBareEvent handlers so tests can fire them
+const bareEventHandlers = {}
 beforeEach(() => {
   window.callBare = jest.fn()
+  window.onBareEvent = jest.fn((eventName, handler) => {
+    bareEventHandlers[eventName] = handler
+    return () => { delete bareEventHandlers[eventName] }
+  })
 })
+
+function fireBareEvent(name, data) {
+  if (bareEventHandlers[name]) bareEventHandlers[name](data)
+}
 
 test('shows "Loading..." while requests:list is loading', () => {
   // Don't resolve the promise yet
@@ -95,10 +105,7 @@ test('after block:occurred event, "New Request" button is enabled', async () => 
   expect(button).toBeDisabled()
 
   act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'block:occurred', data: { packageName: 'com.example.app' } },
-    })
-    window.dispatchEvent(event)
+    fireBareEvent('block:occurred', { packageName: 'com.example.app' })
   })
 
   await waitFor(() => {
@@ -114,10 +121,7 @@ test('after block:occurred event, clicking "New Request" calls callBare with cor
   })
 
   act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'block:occurred', data: { packageName: 'com.example.testapp' } },
-    })
-    window.dispatchEvent(event)
+    fireBareEvent('block:occurred', { packageName: 'com.example.testapp' })
   })
 
   const button = screen.getByRole('button', { name: 'New Request' })
@@ -158,10 +162,7 @@ test('after request:submitted event, list re-fetches', async () => {
   })
 
   act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'request:submitted', data: {} },
-    })
-    window.dispatchEvent(event)
+    fireBareEvent('request:submitted', {})
   })
 
   await waitFor(() => {
@@ -188,10 +189,7 @@ test('after request:updated event, list re-fetches', async () => {
   })
 
   act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'request:updated', data: {} },
-    })
-    window.dispatchEvent(event)
+    fireBareEvent('request:updated', {})
   })
 
   await waitFor(() => {

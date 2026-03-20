@@ -4,9 +4,11 @@ import android.app.AppOpsManager;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.os.Process;
 
 import com.facebook.react.bridge.Arguments;
@@ -128,35 +130,37 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Returns all user-installed (non-system) apps as an array of
+     * Returns all apps that have a home-screen launcher icon as
      * { packageName: string, appName: string }.
-     * Used by the bare worklet to sync the child's installed app list to the parent on pairing.
+     * Uses ACTION_MAIN + CATEGORY_LAUNCHER to include pre-installed apps like
+     * Chrome and YouTube that have FLAG_SYSTEM but are still user-visible.
      */
     @ReactMethod
     public void getInstalledPackages(Promise promise) {
         PackageManager pm = reactContext.getPackageManager();
-        List<ApplicationInfo> apps = pm.getInstalledApplications(0);
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
 
         WritableArray result = Arguments.createArray();
-        if (apps == null) {
+        if (resolveInfos == null) {
             promise.resolve(result);
             return;
         }
-        for (ApplicationInfo info : apps) {
-            // Skip system apps — only user-installed
-            if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+        for (ResolveInfo info : resolveInfos) {
+            ApplicationInfo ai = info.activityInfo.applicationInfo;
             // Skip PearGuard itself
-            if (info.packageName.equals(reactContext.getPackageName())) continue;
+            if (ai.packageName.equals(reactContext.getPackageName())) continue;
 
             String appName;
             try {
-                appName = pm.getApplicationLabel(info).toString();
+                appName = pm.getApplicationLabel(ai).toString();
             } catch (Exception e) {
-                appName = info.packageName;
+                appName = ai.packageName;
             }
 
             WritableMap item = Arguments.createMap();
-            item.putString("packageName", info.packageName);
+            item.putString("packageName", ai.packageName);
             item.putString("appName", appName);
             result.pushMap(item);
         }

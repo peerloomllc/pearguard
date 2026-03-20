@@ -135,18 +135,29 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getInstalledPackages(Promise promise) {
         PackageManager pm = reactContext.getPackageManager();
-        List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+        List<ApplicationInfo> apps = pm.getInstalledApplications(0);
 
         WritableArray result = Arguments.createArray();
+        if (apps == null) {
+            promise.resolve(result);
+            return;
+        }
         for (ApplicationInfo info : apps) {
             // Skip system apps — only user-installed
             if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
             // Skip PearGuard itself
             if (info.packageName.equals(reactContext.getPackageName())) continue;
 
+            String appName;
+            try {
+                appName = pm.getApplicationLabel(info).toString();
+            } catch (Exception e) {
+                appName = info.packageName;
+            }
+
             WritableMap item = Arguments.createMap();
             item.putString("packageName", info.packageName);
-            item.putString("appName", pm.getApplicationLabel(info).toString());
+            item.putString("appName", appName);
             result.pushMap(item);
         }
         promise.resolve(result);

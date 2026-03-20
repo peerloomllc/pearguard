@@ -11,6 +11,8 @@ export default function Profile({ mode }) {
   const [savedName, setSavedName] = useState('')
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
+  const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
+  const [pairError, setPairError] = useState(null)
 
   useEffect(() => {
     window.callBare('identity:getName')
@@ -35,6 +37,23 @@ export default function Profile({ mode }) {
       setStatus('error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handlePair() {
+    setPairError(null)
+    try {
+      const url = await window.callBare('qr:scan')  // camera opens natively; wait for scan
+      setPairState('connecting')                      // show connecting only after scan
+      await window.callBare('acceptInvite', [url])
+      setPairState('success')
+    } catch (e) {
+      if (e.message === 'cancelled') {
+        setPairState('idle')
+      } else {
+        setPairState('error')
+        setPairError(e.message)
+      }
     }
   }
 
@@ -75,6 +94,35 @@ export default function Profile({ mode }) {
           {saving ? 'Saving…' : 'Save Name'}
         </button>
       </div>
+
+      {mode === 'child' && (
+        <div style={styles.section}>
+          <h3 style={styles.sectionHeading}>Parents</h3>
+
+          {pairState === 'idle' && (
+            <button style={styles.btn} onClick={handlePair}>
+              Pair to Parent
+            </button>
+          )}
+
+          {pairState === 'connecting' && (
+            <p style={styles.hint}>Connecting to parent…</p>
+          )}
+
+          {pairState === 'success' && (
+            <p style={styles.success}>Paired! Waiting for parent to confirm…</p>
+          )}
+
+          {pairState === 'error' && (
+            <>
+              <p style={styles.error}>{pairError}</p>
+              <button style={styles.btn} onClick={() => setPairState('idle')}>
+                Try Again
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -103,4 +151,7 @@ const styles = {
   btnDisabled: { backgroundColor: '#ccc', cursor: 'not-allowed' },
   success: { color: '#34a853', fontSize: '13px', margin: 0 },
   error: { color: '#ea4335', fontSize: '13px', margin: 0 },
+  section:        { marginTop: '32px' },
+  sectionHeading: { fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#333' },
+  hint:           { color: '#888', fontSize: '14px' },
 }

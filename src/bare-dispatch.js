@@ -305,6 +305,48 @@ function createDispatch (ctx) {
         return { flushed: true, timestamp: report.timestamp }
       }
 
+      case 'policy:get': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid policy:get args')
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        return raw ? raw.value : { apps: {} }
+      }
+
+      case 'app:decide': {
+        const { childPublicKey, packageName, decision } = args
+        if (!childPublicKey || !packageName || !['approve', 'deny'].includes(decision)) {
+          throw new Error('invalid app:decide args')
+        }
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+        if (!policy.apps) policy.apps = {}
+        const d = decision === 'approve' ? 'allowed' : 'blocked'
+        policy.apps[packageName] = { ...(policy.apps[packageName] || {}), status: d }
+        policy.version = (policy.version || 0) + 1
+        await ctx.db.put('policy:' + childPublicKey, policy)
+        try {
+          ctx.sendToPeer(childPublicKey, { type: 'app:decision', payload: { packageName, decision: d } })
+        } catch (_e) {
+          // child offline — policy stored; will be sent on next reconnect
+        }
+        return { ok: true, decision: d }
+      }
+
+      case 'policy:update': {
+        const { childPublicKey, policy } = args
+        if (!childPublicKey || !policy || typeof policy !== 'object') {
+          throw new Error('invalid policy:update args')
+        }
+        const newPolicy = { ...policy, childPublicKey, version: (policy.version || 0) + 1 }
+        await ctx.db.put('policy:' + childPublicKey, newPolicy)
+        try {
+          ctx.sendToPeer(childPublicKey, { type: 'policy:update', payload: newPolicy })
+        } catch (_e) {
+          // child offline — policy stored; will be sent on reconnect
+        }
+        return { ok: true }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }

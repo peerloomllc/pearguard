@@ -1128,4 +1128,160 @@ describe('bare dispatch', () => {
       expect(offlineEvents[0][0].data.reason).toBe('accessibility_disabled')
     })
   })
+
+  // ── Parent-side policy dispatch ─────────────────────────────────────────────
+
+  describe('policy:get', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      }
+    }
+
+    test('returns policy for known child', async () => {
+      const policy = { apps: { 'com.example.app': { status: 'allowed' } }, childPublicKey: 'abc', version: 1 }
+      const mockDb = makeMockDb({ 'policy:abc': policy })
+      const dispatch = createDispatch({ db: mockDb })
+
+      const result = await dispatch('policy:get', { childPublicKey: 'abc' })
+      expect(result).toEqual(policy)
+    })
+
+    test('returns { apps: {} } for unknown child', async () => {
+      const mockDb = makeMockDb({})
+      const dispatch = createDispatch({ db: mockDb })
+
+      const result = await dispatch('policy:get', { childPublicKey: 'unknown' })
+      expect(result).toEqual({ apps: {} })
+    })
+
+    test('throws when childPublicKey is missing', async () => {
+      const dispatch = createDispatch({ db: makeMockDb() })
+      await expect(dispatch('policy:get', {})).rejects.toThrow()
+    })
+  })
+
+  describe('app:decide', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('approve: updates app status to allowed, stores policy:{childPublicKey}, calls sendToPeer', async () => {
+      const existing = { apps: { 'com.example.app': { status: 'pending' } }, childPublicKey: 'child1', version: 1 }
+      const mockDb = makeMockDb({ 'policy:child1': existing })
+      const mockSendToPeer = jest.fn()
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+
+      const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'approve' })
+
+      expect(result).toMatchObject({ ok: true, decision: 'allowed' })
+
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy:child1')
+      expect(policyPuts).toHaveLength(1)
+      const [, saved] = policyPuts[0]
+      expect(saved.apps['com.example.app'].status).toBe('allowed')
+      expect(saved.version).toBe(2)
+
+      expect(mockSendToPeer).toHaveBeenCalledWith('child1', expect.objectContaining({
+        type: 'app:decision',
+        payload: expect.objectContaining({ packageName: 'com.example.app', decision: 'allowed' }),
+      }))
+    })
+
+    test('deny: updates app status to blocked', async () => {
+      const existing = { apps: { 'com.example.app': { status: 'pending' } }, childPublicKey: 'child1', version: 1 }
+      const mockDb = makeMockDb({ 'policy:child1': existing })
+      const mockSendToPeer = jest.fn()
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+
+      const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'deny' })
+
+      expect(result).toMatchObject({ ok: true, decision: 'blocked' })
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy:child1')
+      const [, saved] = policyPuts[0]
+      expect(saved.apps['com.example.app'].status).toBe('blocked')
+    })
+
+    test('child offline (sendToPeer throws): still stores policy, returns ok:true', async () => {
+      const existing = { apps: {}, childPublicKey: 'child1', version: 0 }
+      const mockDb = makeMockDb({ 'policy:child1': existing })
+      const mockSendToPeer = jest.fn().mockImplementation(() => { throw new Error('peer not connected') })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+
+      const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'approve' })
+
+      expect(result).toMatchObject({ ok: true })
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy:child1')
+      expect(policyPuts).toHaveLength(1)
+    })
+
+    test('no existing policy: creates new one with apps object', async () => {
+      const mockDb = makeMockDb({})
+      const mockSendToPeer = jest.fn()
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+
+      const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'approve' })
+
+      expect(result).toMatchObject({ ok: true })
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy:child1')
+      expect(policyPuts).toHaveLength(1)
+      const [, saved] = policyPuts[0]
+      expect(saved.apps['com.example.app'].status).toBe('allowed')
+    })
+  })
+
+  describe('policy:update (parent-initiated)', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      }
+    }
+
+    test('stores policy:{childPublicKey}, increments version, calls sendToPeer with policy:update', async () => {
+      const policy = { apps: { 'com.example.app': { status: 'allowed' } }, childPublicKey: 'child1', version: 2 }
+      const mockDb = makeMockDb({})
+      const mockSendToPeer = jest.fn()
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+
+      const result = await dispatch('policy:update', { childPublicKey: 'child1', policy })
+
+      expect(result).toEqual({ ok: true })
+
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy:child1')
+      expect(policyPuts).toHaveLength(1)
+      const [, saved] = policyPuts[0]
+      expect(saved.version).toBe(3)
+      expect(saved.childPublicKey).toBe('child1')
+
+      expect(mockSendToPeer).toHaveBeenCalledWith('child1', expect.objectContaining({
+        type: 'policy:update',
+        payload: expect.objectContaining({ version: 3, childPublicKey: 'child1' }),
+      }))
+    })
+
+    test('child offline (sendToPeer throws): still stores policy, returns ok:true', async () => {
+      const policy = { apps: {}, childPublicKey: 'child1', version: 1 }
+      const mockDb = makeMockDb({})
+      const mockSendToPeer = jest.fn().mockImplementation(() => { throw new Error('peer not connected') })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+
+      const result = await dispatch('policy:update', { childPublicKey: 'child1', policy })
+
+      expect(result).toEqual({ ok: true })
+      const policyPuts = mockDb.put.mock.calls.filter(([k]) => k === 'policy:child1')
+      expect(policyPuts).toHaveLength(1)
+    })
+
+    test('throws when args are invalid', async () => {
+      const dispatch = createDispatch({ db: makeMockDb() })
+      await expect(dispatch('policy:update', { childPublicKey: 'child1' })).rejects.toThrow()
+      await expect(dispatch('policy:update', { policy: {} })).rejects.toThrow()
+    })
+  })
 })

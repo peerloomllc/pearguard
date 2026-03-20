@@ -134,7 +134,7 @@ async function init (dataDir) {
  */
 async function joinTopic (topicInput) {
   if (!swarm) {
-    swarm = new Hyperswarm()
+    swarm = new Hyperswarm({ keyPair: identity })
     swarm.on('connection', onPeerConnection)
   }
   const topicBuf = typeof topicInput === 'string'

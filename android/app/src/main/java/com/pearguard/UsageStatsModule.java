@@ -128,6 +128,31 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Returns all user-installed (non-system) apps as an array of
+     * { packageName: string, appName: string }.
+     * Used by the bare worklet to sync the child's installed app list to the parent on pairing.
+     */
+    @ReactMethod
+    public void getInstalledPackages(Promise promise) {
+        PackageManager pm = reactContext.getPackageManager();
+        List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+
+        WritableArray result = Arguments.createArray();
+        for (ApplicationInfo info : apps) {
+            // Skip system apps — only user-installed
+            if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+            // Skip PearGuard itself
+            if (info.packageName.equals(reactContext.getPackageName())) continue;
+
+            WritableMap item = Arguments.createMap();
+            item.putString("packageName", info.packageName);
+            item.putString("appName", pm.getApplicationLabel(info).toString());
+            result.pushMap(item);
+        }
+        promise.resolve(result);
+    }
+
+    /**
      * Returns weekly usage for a single package as
      * { packageName, secondsThisWeek }.
      */

@@ -538,13 +538,23 @@ public class AppBlockerModule extends AccessibilityService {
      */
     private boolean verifyPin(String enteredPin) {
         JSONObject policy = loadPolicy();
-        if (policy == null) return false;
+        if (policy == null) {
+            android.util.Log.w("PearGuard", "verifyPin: no policy in SharedPreferences");
+            return false;
+        }
         String pinHash = policy.optString("pinHash", null);
-        if (pinHash == null || pinHash.isEmpty()) return false;
-
+        if (pinHash == null || pinHash.isEmpty()) {
+            android.util.Log.w("PearGuard", "verifyPin: pinHash is null or empty in policy");
+            return false;
+        }
+        android.util.Log.d("PearGuard", "verifyPin: pinHash present, len=" + pinHash.length()
+            + " prefix=" + pinHash.substring(0, Math.min(10, pinHash.length())));
         try {
-            return lazySodium.cryptoPwHashStrVerify(pinHash, enteredPin);
+            boolean result = lazySodium.cryptoPwHashStrVerify(pinHash, enteredPin);
+            android.util.Log.d("PearGuard", "verifyPin: cryptoPwHashStrVerify returned " + result);
+            return result;
         } catch (Exception e) {
+            android.util.Log.e("PearGuard", "verifyPin: cryptoPwHashStrVerify threw: " + e.getMessage());
             return false;
         }
     }

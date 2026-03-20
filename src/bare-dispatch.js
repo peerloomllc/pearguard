@@ -278,11 +278,15 @@ function createDispatch (ctx) {
         const policy = raw ? raw.value : { apps: {} }
         if (!policy.apps) policy.apps = {}
 
+        // If no apps are in the policy yet, this is the initial sync at first pairing —
+        // auto-approve everything so enforcement doesn't immediately block all apps on a
+        // freshly paired device. Apps installed after pairing start as 'pending'.
+        const isInitialSync = Object.keys(policy.apps).length === 0
+
         let newCount = 0
         for (const { packageName, appName, isLauncher } of apps) {
           if (!policy.apps[packageName]) {
-            // Auto-approve the device launcher so it is never blocked
-            const status = isLauncher ? 'allowed' : 'pending'
+            const status = (isInitialSync || isLauncher) ? 'allowed' : 'pending'
             policy.apps[packageName] = { status, appName: appName || packageName }
             newCount++
           }

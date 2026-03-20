@@ -11,3 +11,7 @@ android/*.iml
 # iOS not used
 ios/
 worktrees/
+/docs/superpowers/plans/2026-03-19-pearguard-plan1-foundation.md
+/docs/superpowers/plans/2026-03-19-pearguard-plan2-native-enforcement.md
+/docs/superpowers/plans/2026-03-19-pearguard-plan3-parent-ui.md
+/docs/superpowers/plans/2026-03-19-pearguard-plan4-child-ui-policy.md

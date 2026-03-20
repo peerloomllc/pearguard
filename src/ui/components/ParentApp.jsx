@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import Dashboard from './Dashboard.jsx';
 import ChildrenList from './ChildrenList.jsx';
 import Settings from './Settings.jsx';
+import Profile from './Profile.jsx';
+
+const ParentProfile = () => <Profile mode="parent" />;
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', Component: Dashboard },
   { key: 'children', label: 'Children', Component: ChildrenList },
   { key: 'settings', label: 'Settings', Component: Settings },
+  { key: 'profile', label: 'Profile', Component: ParentProfile },
 ];
 
 export default function ParentApp() {
@@ -46,6 +50,7 @@ const styles = {
     flexDirection: 'column',
     height: '100vh',
     fontFamily: 'sans-serif',
+    backgroundColor: '#fff',
   },
   content: {
     flex: 1,

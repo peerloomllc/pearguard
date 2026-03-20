@@ -9,7 +9,8 @@
 // This module runs in both the Bare worklet (src/bare.js) and in the
 // React Native shell (app/join.tsx). It uses only built-in JS APIs.
 
-const SCHEME = 'pearguard://join/'
+const SCHEME_QUERY = 'pear://pearguard/join?t='    // preferred: query param format
+const SCHEME_PATH  = 'pear://pearguard/join/'      // legacy: path format (still parsed)
 const HEX_64 = /^[0-9a-f]{64}$/i   // 32 bytes as hex
 
 // ── Base64url helpers (no external deps) ──────────────────────────────────────
@@ -81,25 +82,30 @@ function decodeInvite (encoded) {
 }
 
 /**
- * Build a full pearguard://join/<encoded> deep link.
+ * Build a full pearguard://join?t=<encoded> deep link.
  * @param {{ parentPublicKey: string, swarmTopic: string }} payload
  * @returns {string}
  */
 function buildInviteLink (payload) {
-  return SCHEME + encodeInvite(payload)
+  return SCHEME_QUERY + encodeInvite(payload)
 }
 
 /**
- * Parse a full pearguard://join/<encoded> deep link.
+ * Parse a pearguard://join deep link — supports both query param (?t=) and legacy path formats.
  * @param {string} url
  * @returns {{ ok: boolean, parentPublicKey?: string, swarmTopic?: string, error?: string }}
  */
 function parseInviteLink (url) {
-  if (typeof url !== 'string' || !url.startsWith(SCHEME)) {
-    return { ok: false, error: 'not a pearguard://join/ link' }
+  if (typeof url !== 'string') return { ok: false, error: 'not a string' }
+  // Query param format: pearguard://join?t=<encoded>
+  if (url.startsWith(SCHEME_QUERY)) {
+    return decodeInvite(url.slice(SCHEME_QUERY.length))
   }
-  const encoded = url.slice(SCHEME.length)
-  return decodeInvite(encoded)
+  // Legacy path format: pearguard://join/<encoded>
+  if (url.startsWith(SCHEME_PATH)) {
+    return decodeInvite(url.slice(SCHEME_PATH.length))
+  }
+  return { ok: false, error: 'not a pearguard://join link' }
 }
 
 module.exports = { encodeInvite, decodeInvite, buildInviteLink, parseInviteLink }

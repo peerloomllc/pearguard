@@ -49,13 +49,7 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="pearguard"/>
-      </intent-filter>
-      <intent-filter data-generated="true">
-        <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="pearguard" android:host="join"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
-        <category android:name="android.intent.category.DEFAULT"/>
+        <data android:scheme="pear" android:host="pearguard" android:pathPrefix="/join"/>
       </intent-filter>
     </activity>
 

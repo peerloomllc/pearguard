@@ -36,5 +36,6 @@ const styles = {
     justifyContent: 'center',
     height: '100vh',
     fontFamily: 'sans-serif',
+    color: '#fff',
   },
 };

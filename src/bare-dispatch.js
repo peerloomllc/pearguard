@@ -25,9 +25,10 @@ function createDispatch (ctx) {
         return newMode
       }
 
+      case 'identity:getMode':
       case 'getMode': {
         const stored = await ctx.db.get('mode')
-        return stored ? stored.value : null
+        return { mode: stored ? stored.value : null }
       }
 
       case 'connectToPeer': {
@@ -46,7 +47,16 @@ function createDispatch (ctx) {
         return { sent: true }
       }
 
-      case 'generateInvite': {
+      case 'children:list': {
+        const children = []
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          const isOnline = value.noiseKey ? ctx.peers.has(value.noiseKey) : false
+          children.push({ ...value, isOnline })
+        }
+        return children
+      }
+
+      case 'invite:generate': {
         // Generate a random 32-byte swarm topic
         const topicBuf = Buffer.allocUnsafe(32)
         if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
@@ -64,7 +74,7 @@ function createDispatch (ctx) {
         const { buildInviteLink } = require('./invite')
         const inviteLink = buildInviteLink({ parentPublicKey, swarmTopic: topicHex })
 
-        return { inviteLink, swarmTopic: topicHex, parentPublicKey }
+        return { inviteLink, inviteString: inviteLink, qrData: inviteLink, swarmTopic: topicHex, parentPublicKey }
       }
 
       case 'acceptInvite': {
@@ -88,6 +98,22 @@ function createDispatch (ctx) {
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : null
         return { policy }
+      }
+
+      case 'identity:setName': {
+        const { name } = args
+        if (!name || typeof name !== 'string') throw new Error('invalid name')
+        const raw = await ctx.db.get('profile')
+        const profile = raw ? raw.value : {}
+        profile.displayName = name.trim()
+        await ctx.db.put('profile', profile)
+        return { ok: true }
+      }
+
+      case 'identity:getName': {
+        const raw = await ctx.db.get('profile')
+        const displayName = raw ? (raw.value.displayName || null) : null
+        return { displayName }
       }
 
       case 'pin:set': {

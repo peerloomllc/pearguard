@@ -8,13 +8,14 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, StatusBar, Share } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
 import { Asset } from 'expo-asset'
 import * as FileSystem from 'expo-file-system/legacy'
 import { useRouter } from 'expo-router'
+import * as Linking from 'expo-linking'
 import { setBareCaller } from './setup'
 
 // ── Worklet singleton ─────────────────────────────────────────────────────────
@@ -25,6 +26,24 @@ let _workletStarted = false
 let _nextId = 1
 const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
+
+// ── Module-level deep link listeners ──────────────────────────────────────────
+// These must live outside the component so they are never removed on unmount.
+// When a deep link arrives, Expo Router may navigate to join.tsx which unmounts
+// index.tsx — any listener registered in useEffect would be torn down. These
+// listeners survive for the lifetime of the JS bundle.
+
+Linking.addEventListener('url', ({ url }) => {
+  if (url && url.startsWith('pear://pearguard/join')) {
+    console.log('[RN] invite URL (module-level Linking):', url)
+    sendToWorklet({ method: 'acceptInvite', args: [url] })
+  }
+})
+
+DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
+  console.log('[RN] pearguardLink (module-level):', url)
+  sendToWorklet({ method: 'acceptInvite', args: [url] })
+})
 
 function onEvent (event: string, fn: (data: any) => void) {
   const handlers = _eventHandlers.get(event) ?? []
@@ -89,6 +108,14 @@ export default function Root () {
         return
       }
 
+      if (msg.method === 'share:text') {
+        Share.share({ message: msg.args.text })
+        webViewRef.current?.injectJavaScript(
+          'window.__pearResponse(' + msg.id + ', null);true;'
+        )
+        return
+      }
+
       // Forward everything else to Bare
       // bareId routes response back to the right callback; msg.id is preserved for the WebView response
       const bareId = _nextId++
@@ -113,7 +140,7 @@ export default function Root () {
       await FileSystem.makeDirectoryAsync(dataUri, { intermediates: true }).catch(() => {})
       const dataDir = dataUri.replace(/^file:\/\//, '')
 
-      // Load the UI bundle
+      // Always load the UI bundle (needed on every mount, including after setup navigates back)
       const jsAsset = Asset.fromModule(require('../assets/app-ui.bundle'))
       await jsAsset.downloadAsync()
       const appBundleJs = await fetch(jsAsset.localUri!).then(r => r.text())
@@ -132,15 +159,19 @@ export default function Root () {
       }
       setBareCaller(callBare)
 
+      // If worklet already running (e.g. returning from setup screen or after deep-link
+      // navigation), mark DB ready immediately and send init (bare will re-emit 'ready'
+      // but the event handlers from the old mount are stale — set dbReady directly here).
+      if (_workletStarted && _worklet) {
+        setDbReady(true)
+        sendToWorklet({ method: 'init', dataDir })
+        return
+      }
+
       // Load and start the Bare worklet
       const bundleAsset = Asset.fromModule(require('../assets/bare-universal.bundle'))
       await bundleAsset.downloadAsync()
       const source = await fetch(bundleAsset.localUri!).then(r => r.text())
-
-      if (_workletStarted && _worklet) {
-        sendToWorklet({ method: 'init', dataDir })
-        return
-      }
       _workletStarted = true
       _worklet = new Worklet()
 
@@ -183,19 +214,22 @@ export default function Root () {
       onEvent('ready', (data) => {
         setDbReady(true)
         if (!data.mode) {
-          setTimeout(() => router.push('/setup'), 500)
+          setTimeout(() => router.replace('/setup'), 500)
         }
       })
 
-      await _worklet.start({ source })
+      await _worklet.start('bare.bundle', source)
 
-      // Listen for deep link and native enforcement events
+      // Cold start: app launched by a deep link (warm-start and pearguardLink are
+      // handled by the module-level listeners above, which survive navigation).
+      Linking.getInitialURL().then(url => {
+        if (url && url.startsWith('pear://pearguard/join')) {
+          setTimeout(() => sendToWorklet({ method: 'acceptInvite', args: [url] }), 1500)
+        }
+      }).catch(() => {})
+
+      // Listen for native enforcement events
       nativeSubs.push(
-        DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
-          console.log('[RN] pearguardLink received:', url)
-          sendToWorklet({ method: 'acceptInvite', args: [url] })
-        }),
-
         // New app installed — forward to bare worklet as app:installed
         DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
           sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
@@ -233,7 +267,7 @@ export default function Root () {
     return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
 
-  if (!html) {
+  if (!html || !dbReady) {
     return <View style={styles.loading} />
   }
 
@@ -256,7 +290,7 @@ export default function Root () {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#111' },
+  container: { flex: 1, backgroundColor: '#111', paddingTop: StatusBar.currentHeight ?? 0 },
   webview:   { flex: 1, backgroundColor: '#111' },
   loading:   { flex: 1, backgroundColor: '#111' },
 })

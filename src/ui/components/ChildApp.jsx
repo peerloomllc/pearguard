@@ -1,10 +1,14 @@
 import React, { useState } from 'react'
 import ChildHome from './ChildHome'
 import ChildRequests from './ChildRequests'
+import Profile from './Profile.jsx'
+
+const ChildProfile = () => <Profile mode="child" />
 
 const TABS = [
   { id: 'home', label: 'Home', Component: ChildHome },
   { id: 'requests', label: 'Requests', Component: ChildRequests },
+  { id: 'profile', label: 'Profile', Component: ChildProfile },
 ]
 
 export default function ChildApp() {
@@ -12,7 +16,7 @@ export default function ChildApp() {
   const ActiveComponent = TABS.find((t) => t.id === activeTab).Component
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#fff' }}>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <ActiveComponent />
       </div>

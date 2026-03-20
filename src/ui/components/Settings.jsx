@@ -4,9 +4,6 @@ export default function Settings() {
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinStatus, setPinStatus] = useState(null); // null | 'success' | Error string
-  const [displayName, setDisplayName] = useState('');
-  const [nameSaved, setNameSaved] = useState(false);
-
   function handlePinSubmit(e) {
     e.preventDefault();
     if (newPin.length < 4) {
@@ -31,13 +28,6 @@ export default function Settings() {
       .catch((err) => {
         setPinStatus(err.message || 'Failed to set PIN. Please try again.');
       });
-  }
-
-  function handleNameBlur() {
-    if (!displayName.trim()) return;
-    window.callBare('identity:setName', { name: displayName.trim() })
-      .then(() => setNameSaved(true))
-      .catch(() => {});
   }
 
   return (
@@ -86,22 +76,6 @@ export default function Settings() {
         </form>
       </section>
 
-      <section style={styles.section}>
-        <h3 style={styles.sectionHead}>Display Name</h3>
-        <label style={styles.label}>
-          Your name (shown to children)
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => { setDisplayName(e.target.value); setNameSaved(false); }}
-            onBlur={handleNameBlur}
-            placeholder="e.g. Mom"
-            style={styles.input}
-            aria-label="Display name"
-          />
-        </label>
-        {nameSaved && <p style={styles.successText} role="status">Name saved.</p>}
-      </section>
     </div>
   );
 }

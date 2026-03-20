@@ -4,7 +4,7 @@
     "slug": "pearguard",
     "newArchEnabled": true,
     "orientation": "portrait",
-    "scheme": "pearguard",
+    "scheme": "pear",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",
     "android": {
@@ -19,8 +19,9 @@
           "autoVerify": false,
           "data": [
             {
-              "scheme": "pearguard",
-              "host": "join"
+              "scheme": "pear",
+              "host": "pearguard",
+              "pathPrefix": "/join"
             }
           ],
           "category": [

@@ -15,12 +15,13 @@ const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let db       = null   // Hyperbee (local persistence)
-let core     = null   // Hypercore backing the Hyperbee
-let swarm    = null   // Hyperswarm instance
-let identity = null   // { publicKey: Buffer, secretKey: Buffer }
-let mode     = null   // 'parent' | 'child' | null
-let dispatch = null   // method dispatch function
+let db           = null   // Hyperbee (local persistence)
+let core         = null   // Hypercore backing the Hyperbee
+let swarm        = null   // Hyperswarm instance
+let identity     = null   // { publicKey: Buffer, secretKey: Buffer }
+let mode         = null   // 'parent' | 'child' | null
+let dispatch     = null   // method dispatch function
+let _initialized = false  // guard against re-running init on component remount
 
 // Peers map: hex(publicKey) → { publicKey: Buffer, displayName: string, conn: object }
 const peers = new Map()
@@ -67,6 +68,17 @@ async function handleDispatch (method, args, id) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init (dataDir) {
+  // Idempotent: if already initialized, just re-emit 'ready' so the remounted
+  // RN component can set dbReady=true without reopening the Hypercore.
+  if (_initialized) {
+    send({ type: 'event', event: 'ready', data: {
+      publicKey: b4a.toString(identity.publicKey, 'hex'),
+      mode,
+    }})
+    return
+  }
+  _initialized = true
+
   // Open (or create) the local Hypercore + Hyperbee
   core = new Hypercore(dataDir + '/pearguard/core')
   await core.ready()
@@ -306,6 +318,11 @@ async function handleHello (msg, conn, remoteKeyHex) {
 
   console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName)
   send({ type: 'event', event: 'peer:paired', data: peerRecord })
+
+  // Notify the parent UI that a child has connected
+  if (mode === 'parent') {
+    send({ type: 'event', event: 'child:connected', data: peerRecord })
+  }
 
   // Send our own hello back (if we haven't already)
   const alreadySentHello = peer?.sentHello

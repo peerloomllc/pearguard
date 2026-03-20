@@ -19,6 +19,7 @@
     "b4a": "^1.8.0",
     "expo": "^54.0.10",
     "expo-build-properties": "^1.0.9",
+    "expo-camera": "~17.0.10",
     "expo-constants": "^18.0.9",
     "expo-file-system": "~19.0.21",
     "expo-linking": "^8.0.8",

@@ -340,6 +340,17 @@ async function handleHello (msg, conn, remoteKeyHex) {
   // Notify the parent UI that a child has connected
   if (mode === 'parent') {
     send({ type: 'event', event: 'child:connected', data: peerRecord })
+
+    // Push the latest stored policy to the child so enforcement stays current
+    const storedPolicy = await db.get('policy:' + peerIdentityKeyHex).catch(() => null)
+    if (storedPolicy && storedPolicy.value) {
+      try {
+        sendToPeer(remoteKeyHex, { type: 'policy:update', payload: storedPolicy.value })
+        console.log('[bare] sent stored policy to child:', peerIdentityKeyHex.slice(0, 12))
+      } catch (e) {
+        console.warn('[bare] could not send stored policy:', e.message)
+      }
+    }
   }
 
   // Send our own hello back (if we haven't already)

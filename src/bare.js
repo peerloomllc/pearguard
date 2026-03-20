@@ -274,6 +274,20 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey } })
       break
     }
+    case 'bypass:alert': {
+      const childPublicKey = msg.from
+      const { reason, detectedAt } = msg.payload
+      const alertEntry = {
+        id: 'bypass:' + detectedAt,
+        type: 'bypass',
+        timestamp: detectedAt,
+        reason,
+        childPublicKey,
+      }
+      await db.put('alert:' + childPublicKey + ':' + detectedAt, alertEntry)
+      send({ type: 'event', event: 'alert:bypass', data: alertEntry })
+      break
+    }
     default:
       send({ type: 'event', event: 'peer:message', data: msg })
       break

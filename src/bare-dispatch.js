@@ -348,6 +348,10 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'alert:bypass', data: { reason, detectedAt: entry.detectedAt } })
         ctx.send({ type: 'event', event: 'enforcement:offline', data: { reason } })
 
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'bypass:alert', payload: { reason, detectedAt: entry.detectedAt } })
+        }
+
         return { logged: true }
       }
 
@@ -436,6 +440,35 @@ function createDispatch (ctx) {
           // child offline — policy stored; will be sent on reconnect
         }
         return { ok: true }
+      }
+
+      case 'alerts:list': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid alerts:list args')
+        const results = []
+
+        // Bypass alerts stored when a bypass:alert P2P message was received from this child
+        for await (const { value } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
+          results.push(value)
+        }
+
+        // Time requests received from this child
+        for await (const { value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey === childPublicKey) {
+            results.push({
+              id: value.id,
+              type: 'time_request',
+              timestamp: value.requestedAt,
+              packageName: value.packageName,
+              appDisplayName: value.appName,
+              resolved: value.status !== 'pending',
+              childPublicKey,
+            })
+          }
+        }
+
+        results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        return results
       }
 
       default:

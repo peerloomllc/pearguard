@@ -116,7 +116,7 @@ function ScannerModal ({
         if (!result.granted) onPermissionDenied()
       })
     }
-  }, [visible])
+  }, [visible, permission, requestPermission, onPermissionDenied])
 
   function handleBarcode (result: any) {
     if (scanned.current) return
@@ -190,6 +190,8 @@ export default function Root () {
       }
 
       if (msg.method === 'qr:scan') {
+        // Reject any in-flight scan before starting a new one
+        scanReject.current?.('cancelled')
         const msgId = msg.id
         scanResolve.current = (url: string) => {
           setShowScanner(false)

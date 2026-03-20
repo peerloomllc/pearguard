@@ -96,9 +96,10 @@ public class AppBlockerModule extends AccessibilityService {
         if (pkg == null) return;
         String packageName = pkg.toString();
 
-        // Never block PearGuard itself
+        // Never block PearGuard itself — just return without dismissing,
+        // because adding the overlay view fires TYPE_WINDOW_STATE_CHANGED with
+        // our own package, and dismissing here would create an infinite flash loop.
         if (packageName.equals(getPackageName())) {
-            dismissOverlay();
             return;
         }
 

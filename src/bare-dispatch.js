@@ -524,12 +524,18 @@ async function handleAppDecision (payload, db, send) {
   // Update any pending time requests for this package so the child's request
   // list reflects the parent's decision ('allowed' → 'approved', 'blocked' → 'denied').
   const requestStatus = decision === 'allowed' ? 'approved' : 'denied'
+  let requestFound = false
   for await (const { key, value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
     if (value.packageName === packageName && value.status === 'pending') {
       const updated = { ...value, status: requestStatus }
       await db.put(key, updated)
       send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
+      requestFound = true
     }
+  }
+  // Fallback: always emit so the child notification fires even if no req:* entry was found
+  if (!requestFound) {
+    send({ type: 'event', event: 'request:updated', data: { status: requestStatus, packageName } })
   }
 }
 

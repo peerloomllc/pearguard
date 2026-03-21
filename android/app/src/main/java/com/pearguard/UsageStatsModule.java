@@ -223,6 +223,23 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     public void setPolicy(String policyJson) {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         prefs.edit().putString("pearguard_policy", policyJson).apply();
+
+        // When the parent sends a definitive decision (allowed/blocked), clear the pending
+        // request suppression in AppBlockerModule so the overlay can resume normal behavior.
+        try {
+            org.json.JSONObject policy = new org.json.JSONObject(policyJson);
+            org.json.JSONObject apps = policy.optJSONObject("apps");
+            if (apps != null) {
+                java.util.Iterator<String> keys = apps.keys();
+                while (keys.hasNext()) {
+                    String pkg = keys.next();
+                    String status = apps.getJSONObject(pkg).optString("status", "allowed");
+                    if ("allowed".equals(status) || "blocked".equals(status)) {
+                        AppBlockerModule.clearPendingRequest(pkg);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     /**

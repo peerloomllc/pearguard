@@ -66,6 +66,15 @@ public class AppBlockerModule extends AccessibilityService {
     // In-memory override: packageName -> expiry time in ms
     private final HashMap<String, Long> overrides = new HashMap<>();
 
+    // Packages that have a pending time request — suppress overlay re-trigger while waiting
+    // for parent response. Cleared via clearPendingRequest() when policy updates arrive.
+    private static final Set<String> pendingRequestPackages = new HashSet<>();
+
+    /** Called from UsageStatsModule.setPolicy() when a parent decision arrives. */
+    public static void clearPendingRequest(String packageName) {
+        pendingRequestPackages.remove(packageName);
+    }
+
     private LazySodiumAndroid lazySodium;
 
     // --- Lifecycle ---
@@ -189,9 +198,16 @@ public class AppBlockerModule extends AccessibilityService {
                 JSONObject appPolicy = apps.getJSONObject(packageName);
                 String status = appPolicy.optString("status", "allowed");
                 if ("blocked".equals(status)) {
+                    // Parent explicitly denied — clear any pending request and show overlay
+                    pendingRequestPackages.remove(packageName);
                     return "This app is blocked by your parent.";
                 }
                 if ("pending".equals(status)) {
+                    // If the child already sent a request, suppress the overlay so it doesn't
+                    // re-appear over the home screen while waiting for the parent's response.
+                    if (pendingRequestPackages.contains(packageName)) {
+                        return null;
+                    }
                     return "This app is waiting for parent approval.";
                 }
             }
@@ -422,6 +438,10 @@ public class AppBlockerModule extends AccessibilityService {
         } else {
             Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
         }
+        // Track that a request was sent — suppresses the overlay from re-appearing
+        // over the home screen while waiting for the parent's response.
+        pendingRequestPackages.add(packageName);
+
         // Dismiss the overlay and go to the home screen so the blocked app
         // cannot immediately re-trigger the overlay by coming back to foreground.
         dismissOverlay();

@@ -37,7 +37,7 @@ A full-screen sequential wizard. No back button, no skip — both permissions ar
 **Regression guard on mount:** When `child-setup.tsx` mounts with `step=2` (re-appear jump), it must call `checkChildPermissions()` immediately and revert to `step=1` if `accessibility` is missing. Step 1's permission must always be satisfied before step 2 is shown.
 
 **Layout (both steps share the same template):**
-- Large icon (step 1: accessibility icon asset, step 2: chart icon asset — use bundled PNG assets, not emoji, for consistent rendering across Android versions)
+- Large icon (step 1: accessibility icon, step 2: usage stats icon — use a styled `View` placeholder component, not emoji, for consistent rendering across Android versions; PNG assets may be substituted later)
 - Title and description explaining why the permission is needed
 - Numbered instructions (4 steps: tap button → find PearGuard → toggle ON → return)
 - "Open [Settings Screen] →" button that deep-links to the relevant Android settings

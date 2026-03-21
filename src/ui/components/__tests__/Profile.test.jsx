@@ -4,6 +4,8 @@ import Profile from '../Profile.jsx';
 
 beforeEach(() => {
   window.callBare = jest.fn().mockResolvedValue({});
+  // onBareEvent is defined in main.jsx (not loaded in tests) — provide a no-op stub
+  window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
 
 // ── Parent mode ───────────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ test('child mode: shows Pair to Parent button', () => {
 test('child mode: calls qr:scan then acceptInvite on button press', async () => {
   window.callBare = jest.fn()
     .mockResolvedValueOnce({})                               // identity:getName
+    .mockResolvedValueOnce([])                               // children:list
     .mockResolvedValueOnce('pear://pearguard/join?t=abc123') // qr:scan
     .mockResolvedValueOnce({});                              // acceptInvite
 
@@ -42,6 +45,7 @@ test('child mode: shows connecting state after scan, while acceptInvite is pendi
   let resolveAccept;
   window.callBare = jest.fn()
     .mockResolvedValueOnce({})                               // identity:getName
+    .mockResolvedValueOnce([])                               // children:list
     .mockResolvedValueOnce('pear://pearguard/join?t=abc123') // qr:scan resolves immediately
     .mockImplementationOnce(() => new Promise(res => { resolveAccept = res; })); // acceptInvite hangs
 
@@ -59,6 +63,7 @@ test('child mode: shows connecting state after scan, while acceptInvite is pendi
 test('child mode: cancel returns to idle silently', async () => {
   window.callBare = jest.fn()
     .mockResolvedValueOnce({})                              // identity:getName
+    .mockResolvedValueOnce([])                              // children:list
     .mockRejectedValueOnce(new Error('cancelled'));          // qr:scan
 
   render(<Profile mode="child" />);
@@ -73,6 +78,7 @@ test('child mode: cancel returns to idle silently', async () => {
 test('child mode: non-cancel error shows message and retry button', async () => {
   window.callBare = jest.fn()
     .mockResolvedValueOnce({})                              // identity:getName
+    .mockResolvedValueOnce([])                              // children:list
     .mockRejectedValueOnce(new Error('invalid invite'));    // qr:scan
 
   render(<Profile mode="child" />);
@@ -85,6 +91,7 @@ test('child mode: non-cancel error shows message and retry button', async () => 
 test('child mode: Try Again resets to idle', async () => {
   window.callBare = jest.fn()
     .mockResolvedValueOnce({})                              // identity:getName
+    .mockResolvedValueOnce([])                              // children:list
     .mockRejectedValueOnce(new Error('invalid invite'));    // qr:scan
 
   render(<Profile mode="child" />);
@@ -98,6 +105,7 @@ test('child mode: Try Again resets to idle', async () => {
 test('child mode: permission denied shows error message', async () => {
   window.callBare = jest.fn()
     .mockResolvedValueOnce({})                              // identity:getName
+    .mockResolvedValueOnce([])                              // children:list
     .mockRejectedValueOnce(
       new Error('Camera permission denied. Please enable in Settings.')
     );                                                       // qr:scan

@@ -16,6 +16,7 @@ const MOCK_POLICY = {
 
 beforeEach(() => {
   window.callBare = jest.fn().mockResolvedValue(MOCK_POLICY);
+  window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
 
 test('renders loading then app list', async () => {

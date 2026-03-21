@@ -29,16 +29,26 @@ function AlertRow({ alert, onApprove, onDeny }) {
 
   async function handleApprove() {
     setResolving(true);
-    await onApprove(alert);
-    setResolved(true);
-    setResolving(false);
+    try {
+      await onApprove(alert);
+      setResolved(true);
+    } catch (e) {
+      console.error('Approve failed:', e);
+    } finally {
+      setResolving(false);
+    }
   }
 
   async function handleDeny() {
     setResolving(true);
-    await onDeny(alert);
-    setResolved(true);
-    setResolving(false);
+    try {
+      await onDeny(alert);
+      setResolved(true);
+    } catch (e) {
+      console.error('Deny failed:', e);
+    } finally {
+      setResolving(false);
+    }
   }
 
   return (
@@ -86,17 +96,25 @@ export default function AlertsTab({ childPublicKey }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  function reload() {
     window.callBare('alerts:list', { childPublicKey })
       .then((list) => { setAlerts(list || []); setLoading(false); })
       .catch(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    // Refresh when a new bypass alert or time request arrives in real-time
+    const unsubBypass = window.onBareEvent('alert:bypass', reload);
+    const unsubRequest = window.onBareEvent('time:request:received', reload);
+    return () => { unsubBypass(); unsubRequest(); };
   }, [childPublicKey]);
 
   async function handleApprove(alert) {
-    await window.callBare('time:extend', {
+    await window.callBare('app:decide', {
       childPublicKey,
       packageName: alert.packageName,
-      extraSeconds: alert.requestedSeconds || 1800,
+      decision: 'approve',
     });
   }
 

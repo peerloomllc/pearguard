@@ -130,13 +130,37 @@ function createDispatch (ctx) {
           ctx.sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
         )
 
-        // Read current policy (or start with empty object)
+        // Strip null-padding bytes — crypto_pwhash_str fills the rest of the buffer
+        // with \0 after the actual hash string. Keeping them corrupts the value when
+        // passed through JNI (Java Modified UTF-8 encodes \0 as 0xC080, not 0x00).
+        const nullIdx = hash.indexOf(0)
+        const hashStr = nullIdx >= 0 ? hash.slice(0, nullIdx).toString() : hash.toString()
+
+        // Store in parent's own policy key
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : {}
-
-        // Update pinHash in the policy
-        policy.pinHash = hash.toString()  // store as string
+        policy.pinHash = hashStr
         await ctx.db.put('policy', policy)
+
+        // Propagate pinHash into every child's policy and push to connected children
+        for await (const { value: peerRecord } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          const childPK = peerRecord.publicKey
+          const childPolicyRaw = await ctx.db.get('policy:' + childPK).catch(() => null)
+          const childPolicy = childPolicyRaw
+            ? childPolicyRaw.value
+            : { apps: {}, childPublicKey: childPK, version: 0 }
+          childPolicy.pinHash = hashStr
+          childPolicy.version = (childPolicy.version || 0) + 1
+          await ctx.db.put('policy:' + childPK, childPolicy)
+          try {
+            const noiseKey = peerRecord.noiseKey
+            if (noiseKey) {
+              ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: childPolicy })
+            }
+          } catch (_e) {
+            // child offline — pinHash stored; will be pushed on next hello
+          }
+        }
 
         return { ok: true }
       }
@@ -151,8 +175,10 @@ function createDispatch (ctx) {
         // crypto_pwhash_str_verify: compares plaintext against stored hash
         // This is deliberately slow (~100-500ms) — runs in bare worklet (worker context), not main thread
         const pinBuffer = Buffer.from(pin)
-        const hashBuffer = Buffer.from(policy.pinHash)
-        const verified = ctx.sodium.crypto_pwhash_str_verify(hashBuffer, pinBuffer)
+        // Pad hash back to crypto_pwhash_STRBYTES so sodium-native receives the correct buffer length
+        const storedHash = Buffer.alloc(ctx.sodium.crypto_pwhash_STRBYTES)
+        Buffer.from(policy.pinHash).copy(storedHash)
+        const verified = ctx.sodium.crypto_pwhash_str_verify(storedHash, pinBuffer)
 
         if (!verified) {
           ctx.send({ type: 'event', event: 'override:denied', data: { packageName, reason: 'wrong-pin' } })
@@ -194,6 +220,10 @@ function createDispatch (ctx) {
         // Notify WebView that request was submitted
         ctx.send({ type: 'event', event: 'request:submitted', data: request })
 
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'time:request', payload: { requestId, packageName, requestedAt: request.requestedAt } })
+        }
+
         return { requestId, status: 'pending' }
       }
 
@@ -209,7 +239,7 @@ function createDispatch (ctx) {
       }
 
       case 'app:installed': {
-        const { packageName } = args
+        const { packageName, appName } = args
 
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : { apps: {} }
@@ -217,7 +247,7 @@ function createDispatch (ctx) {
 
         // Mark as pending if not already in policy
         if (!policy.apps[packageName]) {
-          policy.apps[packageName] = { status: 'pending' }
+          policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
           await ctx.db.put('policy', policy)
 
           // Notify native enforcement of updated policy
@@ -228,9 +258,50 @@ function createDispatch (ctx) {
 
           // Notify WebView
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
+
+          if (ctx.sendToParent) {
+            await ctx.sendToParent({ type: 'app:installed', payload: { packageName, appName: appName || packageName, detectedAt: Date.now() } })
+          }
         }
 
         return { status: policy.apps[packageName].status }
+      }
+
+      case 'apps:sync': {
+        // Batch version of app:installed — receives all installed apps at once.
+        // Avoids the race condition where concurrent individual app:installed messages
+        // all read the same policy key before any write completes.
+        const { apps } = args
+        if (!Array.isArray(apps) || apps.length === 0) return { count: 0 }
+
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : { apps: {} }
+        if (!policy.apps) policy.apps = {}
+
+        // If no apps are in the policy yet, this is the initial sync at first pairing —
+        // auto-approve everything so enforcement doesn't immediately block all apps on a
+        // freshly paired device. Apps installed after pairing start as 'pending'.
+        const isInitialSync = Object.keys(policy.apps).length === 0
+
+        let newCount = 0
+        for (const { packageName, appName, isLauncher } of apps) {
+          if (!policy.apps[packageName]) {
+            const status = (isInitialSync || isLauncher) ? 'allowed' : 'pending'
+            policy.apps[packageName] = { status, appName: appName || packageName }
+            newCount++
+          }
+        }
+
+        if (newCount > 0) {
+          await ctx.db.put('policy', policy)
+          ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
+          ctx.send({ type: 'event', event: 'policy:updated', data: policy })
+          if (ctx.sendToParent) {
+            await ctx.sendToParent({ type: 'apps:sync', payload: { apps } })
+          }
+        }
+
+        return { count: newCount }
       }
 
       case 'heartbeat:send': {
@@ -250,6 +321,11 @@ function createDispatch (ctx) {
         }
 
         ctx.send({ type: 'event', event: 'heartbeat:send', data: heartbeat })
+
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'heartbeat', payload: heartbeat.payload })
+        }
+
         return heartbeat.payload
       }
 
@@ -271,6 +347,10 @@ function createDispatch (ctx) {
 
         ctx.send({ type: 'event', event: 'alert:bypass', data: { reason, detectedAt: entry.detectedAt } })
         ctx.send({ type: 'event', event: 'enforcement:offline', data: { reason } })
+
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'bypass:alert', payload: { reason, detectedAt: entry.detectedAt } })
+        }
 
         return { logged: true }
       }
@@ -299,10 +379,114 @@ function createDispatch (ctx) {
         // Emit event to RN which can relay to parent (sendToParent not yet implemented — see Task 13)
         ctx.send({ type: 'event', event: 'usage:report', data: report })
 
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'usage:report', payload: report })
+        }
+
         // Clear PIN log for next reporting period
         await ctx.db.put('pinLog', [])
 
         return { flushed: true, timestamp: report.timestamp }
+      }
+
+      case 'policy:get': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid policy:get args')
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        return raw ? raw.value : { apps: {} }
+      }
+
+      case 'app:decide': {
+        const { childPublicKey, packageName, decision } = args
+        if (!childPublicKey || !packageName || !['approve', 'deny'].includes(decision)) {
+          throw new Error('invalid app:decide args')
+        }
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+        if (!policy.apps) policy.apps = {}
+        const d = decision === 'approve' ? 'allowed' : 'blocked'
+        policy.apps[packageName] = { ...(policy.apps[packageName] || {}), status: d }
+        policy.version = (policy.version || 0) + 1
+        await ctx.db.put('policy:' + childPublicKey, policy)
+        try {
+          // sendToPeer requires the Hyperswarm noise key, not the identity key.
+          // The stored peer record contains noiseKey for this cross-lookup.
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'app:decision', payload: { packageName, decision: d } })
+          }
+        } catch (_e) {
+          // child offline — policy stored; will be sent on next reconnect
+        }
+
+        // Mark matching pending requests for this child+package as resolved in Hyperbee
+        // so AlertsTab shows the correct status after navigating away and back.
+        const reqStatus = d === 'allowed' ? 'approved' : 'denied'
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey === childPublicKey && value.packageName === packageName && value.status === 'pending') {
+            await ctx.db.put(key, { ...value, status: reqStatus })
+          }
+        }
+
+        return { ok: true, decision: d }
+      }
+
+      case 'policy:update': {
+        const { childPublicKey, policy } = args
+        if (!childPublicKey || !policy || typeof policy !== 'object') {
+          throw new Error('invalid policy:update args')
+        }
+        const newPolicy = { ...policy, childPublicKey, version: (policy.version || 0) + 1 }
+        await ctx.db.put('policy:' + childPublicKey, newPolicy)
+        try {
+          // sendToPeer requires the Hyperswarm noise key, not the identity key.
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: newPolicy })
+          }
+        } catch (_e) {
+          // child offline — policy stored; will be sent on reconnect
+        }
+        return { ok: true }
+      }
+
+      case 'alerts:list': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid alerts:list args')
+        const results = []
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days
+
+        // Bypass alerts stored when a bypass:alert P2P message was received from this child
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
+          if ((value.timestamp || 0) < cutoff) {
+            await ctx.db.del(key) // auto-expire stale alerts
+            continue
+          }
+          results.push(value)
+        }
+
+        // Time requests received from this child
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey !== childPublicKey) continue
+          if ((value.requestedAt || 0) < cutoff) {
+            await ctx.db.del(key)
+            continue
+          }
+          results.push({
+            id: value.id,
+            type: 'time_request',
+            timestamp: value.requestedAt,
+            packageName: value.packageName,
+            appDisplayName: value.appName,
+            resolved: value.status !== 'pending',
+            childPublicKey,
+          })
+        }
+
+        results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        return results
       }
 
       default:
@@ -336,6 +520,23 @@ async function handleAppDecision (payload, db, send) {
   await db.put('policy', policy)
   send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
   send({ type: 'event', event: 'policy:updated', data: policy })
+
+  // Update any pending time requests for this package so the child's request
+  // list reflects the parent's decision ('allowed' → 'approved', 'blocked' → 'denied').
+  const requestStatus = decision === 'allowed' ? 'approved' : 'denied'
+  let requestFound = false
+  for await (const { key, value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+    if (value.packageName === packageName && value.status === 'pending') {
+      const updated = { ...value, status: requestStatus }
+      await db.put(key, updated)
+      send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
+      requestFound = true
+    }
+  }
+  // Fallback: always emit so the child notification fires even if no req:* entry was found
+  if (!requestFound) {
+    send({ type: 'event', event: 'request:updated', data: { status: requestStatus, packageName } })
+  }
 }
 
 /**
@@ -453,4 +654,77 @@ async function flushMessageQueue (db, writeMessage) {
   return queue.length
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }
+/**
+ * Handle an incoming `app:installed` P2P message from a child peer.
+ * Runs on the PARENT device.
+ */
+async function handleIncomingAppInstalled (payload, childPublicKey, db, send) {
+  const { packageName, appName } = payload
+  if (!packageName) {
+    console.warn('[bare] app:installed from child: missing packageName')
+    return
+  }
+
+  const raw = await db.get('policy:' + childPublicKey)
+  const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+  if (!policy.apps) policy.apps = {}
+
+  if (!policy.apps[packageName]) {
+    policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
+    await db.put('policy:' + childPublicKey, policy)
+    send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, detectedAt: Date.now() } })
+  }
+}
+
+/**
+ * Handle an incoming `apps:sync` P2P message from a child peer.
+ * Receives all installed apps in one batch — avoids read-modify-write races.
+ * Runs on the PARENT device.
+ */
+async function handleIncomingAppsSync (payload, childPublicKey, db, send) {
+  const { apps } = payload
+  if (!Array.isArray(apps) || apps.length === 0) return
+
+  const raw = await db.get('policy:' + childPublicKey)
+  const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+  if (!policy.apps) policy.apps = {}
+
+  let newCount = 0
+  for (const { packageName, appName } of apps) {
+    if (!policy.apps[packageName]) {
+      policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
+      newCount++
+    }
+  }
+
+  if (newCount > 0) {
+    await db.put('policy:' + childPublicKey, policy)
+    send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })
+  }
+}
+
+/**
+ * Handle an incoming `time:request` P2P message from a child peer.
+ * Runs on the PARENT device.
+ */
+async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
+  const { requestId, packageName, requestedAt } = payload
+  if (!requestId || !packageName) {
+    console.warn('[bare] time:request from child: missing fields')
+    return
+  }
+
+  // Look up child display name and app name for notification
+  const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+  const childDisplayName = peerRecord ? (peerRecord.value.displayName || 'Child') : 'Child'
+  const childPolicyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
+  const appName = childPolicyRaw && childPolicyRaw.value.apps && childPolicyRaw.value.apps[packageName]
+    ? (childPolicyRaw.value.apps[packageName].appName || packageName)
+    : packageName
+
+  const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', childPublicKey, childDisplayName }
+  await db.put('request:' + requestId, request)
+  send({ type: 'event', event: 'time:request:received', data: request })
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

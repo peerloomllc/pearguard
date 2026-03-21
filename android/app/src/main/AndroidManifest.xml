@@ -29,7 +29,17 @@
   <!-- Post notifications — required for the bypass warning notification (Android 13+) -->
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+  <!-- Query all packages — required to enumerate all installed apps on Android 11+.
+       Parental control apps are explicitly permitted to use this. -->
+  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+      tools:ignore="QueryAllPackagesPermission" />
+
   <queries>
+    <!-- Required to enumerate launchable apps on Android 11+ -->
+    <intent>
+      <action android:name="android.intent.action.MAIN"/>
+      <category android:name="android.intent.category.LAUNCHER"/>
+    </intent>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
       <category android:name="android.intent.category.BROWSABLE"/>
@@ -50,6 +60,12 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="pear" android:host="pearguard" android:pathPrefix="/join"/>
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="pear" android:host="pearguard" android:pathPrefix="/alerts"/>
       </intent-filter>
     </activity>
 

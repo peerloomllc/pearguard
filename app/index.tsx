@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -29,6 +29,8 @@ const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
 // Invite URL received before worklet was ready — sent once dispatch is initialized
 let _pendingInviteUrl: string | null = null
+// childPublicKey from pear://pearguard/alerts deep link — injected into WebView after dbReady
+let _pendingAlertsNav: string | null = null
 
 // ── Module-level deep link listeners ──────────────────────────────────────────
 // These must live outside the component so they are never removed on unmount.
@@ -40,6 +42,10 @@ Linking.addEventListener('url', ({ url }) => {
   if (url && url.startsWith('pear://pearguard/join')) {
     console.log('[RN] invite URL (module-level Linking):', url)
     sendToWorklet({ method: 'acceptInvite', args: [url] })
+  } else if (url && url.startsWith('pear://pearguard/alerts')) {
+    const qs = url.split('?')[1] ?? ''
+    const match = qs.match(/childPublicKey=([^&]+)/)
+    if (match) _pendingAlertsNav = decodeURIComponent(match[1])
   }
 })
 
@@ -227,6 +233,11 @@ export default function Root () {
     const nativeSubs: ReturnType<typeof DeviceEventEmitter.addListener>[] = []
 
     async function start () {
+      // Request POST_NOTIFICATIONS permission (Android 13+, API 33)
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS').catch(() => {})
+      }
+
       // Ensure data directory exists
       const docDir = FileSystem.documentDirectory!
       const dataUri = docDir + 'pearguard'
@@ -251,6 +262,49 @@ export default function Root () {
         })
       }
       setBareCaller(callBare)
+
+      // Always register native event listeners — these must survive remounts
+      // (e.g. returning from setup screen). If registered only after the early
+      // return check below, they would be cleaned up on unmount and never re-added.
+      nativeSubs.push(
+        // New app installed — forward to bare worklet as app:installed
+        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
+          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
+        }),
+
+        // Accessibility Service or Device Admin disabled — forward as bypass:detected
+        DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
+          const reason = typeof e === 'string' ? e : e.reason
+          sendToWorklet({ method: 'bypass:detected', args: { reason } })
+        }),
+
+        // Child tapped "Send Request" on block overlay — forward as time:request
+        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string }) => {
+          sendToWorklet({ method: 'time:request', args: { packageName: e.packageName, appName: e.appName } })
+        }),
+
+        // PIN entered successfully — log the override event
+        DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
+          sendToWorklet({ method: 'pin:used', args: e })
+        }),
+
+        // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
+        DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearEvent("block:occurred",' + JSON.stringify({ packageName: e.packageName }) + ');true;'
+          )
+        }),
+
+        // Usage flush timer fired — gather usage and send report
+        DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
+          try {
+            const usageList = await NativeModules.UsageStatsModule.getDailyUsageAll()
+            sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
+          } catch (err) {
+            console.warn('[PearGuard] Usage flush failed:', err)
+          }
+        }),
+      )
 
       // If worklet already running (e.g. returning from setup screen or after deep-link
       // navigation), mark DB ready immediately and send init (bare will re-emit 'ready'
@@ -278,7 +332,39 @@ export default function Root () {
           try {
             const msg = JSON.parse(line)
             if (msg.type === 'event') {
-              // Forward Bare events to WebView
+              // Handle apps:syncRequested locally — do NOT forward to WebView
+              if (msg.event === 'apps:syncRequested') {
+                NativeModules.UsageStatsModule?.getInstalledPackages?.()
+                  .then((apps: { packageName: string; appName: string }[]) => {
+                    // Send all apps in one batch to avoid race-condition on parent side
+                    // (individual messages all read same policy DB key concurrently, last-writer-wins)
+                    sendToWorklet({ method: 'apps:sync', args: { apps } })
+                  })
+                  .catch((e: any) => console.warn('[RN] getInstalledPackages failed:', e))
+                return
+              }
+              // Show a notification on the parent device when a child sends a time request
+              if (msg.event === 'time:request:received') {
+                const { childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
+                const childLabel = childDisplayName || 'Your child'
+                const appLabel = appName || packageName || 'an app'
+                NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
+              }
+              // Show a notification on the child device when parent approves/denies a time request
+              if (msg.event === 'request:updated') {
+                const { appName, packageName, status } = msg.data ?? {}
+                if (status === 'approved' || status === 'denied') {
+                  const label = appName || packageName || 'an app'
+                  NativeModules.UsageStatsModule?.showDecisionNotification?.(label, status)
+                }
+              }
+              // Show a notification on the parent device when a child's accessibility service is disabled
+              if (msg.event === 'alert:bypass') {
+                const { childPublicKey, childDisplayName } = msg.data ?? {}
+                const childName = childDisplayName || 'Your child'
+                NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
+              }
+              // Forward all other Bare events to WebView
               webViewRef.current?.injectJavaScript(
                 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
               )
@@ -323,47 +409,30 @@ export default function Root () {
       Linking.getInitialURL().then(url => {
         if (url && url.startsWith('pear://pearguard/join')) {
           _pendingInviteUrl = _pendingInviteUrl ?? url
+        } else if (url && url.startsWith('pear://pearguard/alerts')) {
+          const qs = url.split('?')[1] ?? ''
+          const match = qs.match(/childPublicKey=([^&]+)/)
+          if (match) _pendingAlertsNav = _pendingAlertsNav ?? decodeURIComponent(match[1])
         }
       }).catch(() => {})
-
-      // Listen for native enforcement events
-      nativeSubs.push(
-        // New app installed — forward to bare worklet as app:installed
-        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
-          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
-        }),
-
-        // Accessibility Service or Device Admin disabled — forward as bypass:detected
-        DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
-          const reason = typeof e === 'string' ? e : e.reason
-          sendToWorklet({ method: 'bypass:detected', args: { reason } })
-        }),
-
-        // Child tapped "Send Request" on block overlay — forward as time:request
-        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string }) => {
-          sendToWorklet({ method: 'time:request', args: { packageName: e.packageName, appName: e.appName } })
-        }),
-
-        // PIN entered successfully — log the override event
-        DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
-          sendToWorklet({ method: 'pin:used', args: e })
-        }),
-
-        // Usage flush timer fired — gather usage and send report
-        DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
-          try {
-            const usageList = await NativeModules.UsageStatsModule.getDailyUsageAll()
-            sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
-          } catch (err) {
-            console.warn('[PearGuard] Usage flush failed:', err)
-          }
-        }),
-      )
     }
 
     start().catch(e => console.error('[RN] start error:', e))
     return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
+
+  // When db is ready and a notification-tap deep link is pending, navigate to that child's Alerts tab
+  useEffect(() => {
+    if (!dbReady || !_pendingAlertsNav) return
+    const childPublicKey = _pendingAlertsNav
+    _pendingAlertsNav = null
+    // Give the WebView React app 600ms to fully render before injecting navigation
+    setTimeout(() => {
+      webViewRef.current?.injectJavaScript(
+        'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey }) + ');true;'
+      )
+    }, 600)
+  }, [dbReady])
 
   if (!html || !dbReady) {
     return <View style={styles.loading} />

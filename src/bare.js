@@ -10,7 +10,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, queueMessage, flushMessageQueue } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, queueMessage, flushMessageQueue } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -109,6 +109,15 @@ async function init (dataDir) {
     joinTopic, sendToPeer, sendToParent, sodium,
     onModeChange: (m) => { mode = m } })
 
+  // Rejoin any persisted swarm topics so peers can reconnect after app restart
+  const topicHexes = []
+  for await (const { value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+    if (value && value.topicHex) topicHexes.push(value.topicHex)
+  }
+  for (const topicHex of topicHexes) {
+    await joinTopic(topicHex).catch(e => console.warn('[bare] rejoin topic failed:', e.message))
+  }
+
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
     publicKey: b4a.toString(identity.publicKey, 'hex'),
@@ -140,15 +149,18 @@ async function joinTopic (topicInput) {
   const topicBuf = typeof topicInput === 'string'
     ? b4a.from(topicInput, 'hex')
     : topicInput
+  const topicHex = b4a.toString(topicBuf, 'hex')
   await swarm.join(topicBuf, { client: true, server: true })
   await swarm.flush()
-  send({ type: 'event', event: 'swarm:joined', data: { topic: b4a.toString(topicBuf, 'hex') } })
+  // Persist topic so we can rejoin on next app launch
+  await db.put('topics:' + topicHex, { topicHex, joinedAt: Date.now() }).catch(() => {})
+  send({ type: 'event', event: 'swarm:joined', data: { topic: topicHex } })
 }
 
 /**
  * Called for each new Hyperswarm peer connection.
  */
-function onPeerConnection (conn, info) {
+async function onPeerConnection (conn, info) {
   const remoteKeyHex = b4a.toString(conn.remotePublicKey, 'hex')
   console.log('[bare] peer connected:', remoteKeyHex.slice(0, 12))
 
@@ -183,12 +195,14 @@ function onPeerConnection (conn, info) {
   peers.set(remoteKeyHex, { conn, remoteKeyHex, displayName: null })
   send({ type: 'event', event: 'peer:connected', data: { remoteKey: remoteKeyHex } })
 
-  // Child sends hello proactively on new connection
+  // Child sends hello proactively on new connection — include real profile name
   if (mode === 'child') {
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
+    const profileRaw = await db.get('profile').catch(() => null)
+    const displayName = profileRaw ? (profileRaw.value.displayName || 'Child Device') : 'Child Device'
     const hello = signMessage({
       type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName: 'Child Device' },
+      payload: { publicKey: myIdentityHex, displayName },
     }, identity)
     peers.get(remoteKeyHex).sentHello = true
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
@@ -240,6 +254,47 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'app:decision':
       await handleAppDecision(msg.payload, db, send)
       break
+    case 'app:installed':
+      await handleIncomingAppInstalled(msg.payload, msg.from, db, send)
+      break
+    case 'apps:sync':
+      await handleIncomingAppsSync(msg.payload, msg.from, db, send)
+      break
+    case 'time:request':
+      await handleIncomingTimeRequest(msg.payload, msg.from, db, send)
+      break
+    case 'usage:report': {
+      const childPublicKey = msg.from
+      await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
+      send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey } })
+      break
+    }
+    case 'heartbeat': {
+      const childPublicKey = msg.from
+      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey } })
+      break
+    }
+    case 'bypass:alert': {
+      const childPublicKey = msg.from
+      const { reason, detectedAt } = msg.payload
+      const reasonLabels = {
+        accessibility_disabled: 'Accessibility Service disabled',
+      }
+      const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+      const childDisplayName = peerRecord?.value?.displayName || 'Child'
+      const alertEntry = {
+        id: 'bypass:' + detectedAt,
+        type: 'bypass',
+        timestamp: detectedAt,
+        reason,
+        appDisplayName: reasonLabels[reason] || reason,
+        childPublicKey,
+        childDisplayName,
+      }
+      await db.put('alert:' + childPublicKey + ':' + detectedAt, alertEntry)
+      send({ type: 'event', event: 'alert:bypass', data: alertEntry })
+      break
+    }
     default:
       send({ type: 'event', event: 'peer:message', data: msg })
       break
@@ -301,11 +356,14 @@ async function handleHello (msg, conn, remoteKeyHex) {
     return
   }
 
-  // Store peer identity
+  // Store peer identity — preserve original pairedAt, update lastSeen
+  const existingRecord = await db.get('peers:' + peerIdentityKeyHex).catch(() => null)
   const peerRecord = {
+    ...(existingRecord ? existingRecord.value : {}),
     publicKey:   peerIdentityKeyHex,
     displayName: displayName ?? 'Unknown',
-    pairedAt:    Date.now(),
+    pairedAt:    existingRecord ? existingRecord.value.pairedAt : Date.now(),
+    lastSeen:    Date.now(),
     noiseKey:    remoteKeyHex,
   }
   await db.put('peers:' + peerIdentityKeyHex, peerRecord)
@@ -323,16 +381,29 @@ async function handleHello (msg, conn, remoteKeyHex) {
   // Notify the parent UI that a child has connected
   if (mode === 'parent') {
     send({ type: 'event', event: 'child:connected', data: peerRecord })
+
+    // Push the latest stored policy to the child so enforcement stays current
+    const storedPolicy = await db.get('policy:' + peerIdentityKeyHex).catch(() => null)
+    if (storedPolicy && storedPolicy.value) {
+      try {
+        sendToPeer(remoteKeyHex, { type: 'policy:update', payload: storedPolicy.value })
+        console.log('[bare] sent stored policy to child:', peerIdentityKeyHex.slice(0, 12))
+      } catch (e) {
+        console.warn('[bare] could not send stored policy:', e.message)
+      }
+    }
   }
 
-  // Send our own hello back (if we haven't already)
+  // Send our own hello back (if we haven't already) — include real profile name
   const alreadySentHello = peer?.sentHello
   if (!alreadySentHello) {
     if (peer) peer.sentHello = true
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
+    const profileRaw = await db.get('profile').catch(() => null)
+    const myDisplayName = profileRaw ? (profileRaw.value.displayName || 'PearGuard Device') : 'PearGuard Device'
     const hello = signMessage({
       type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName: 'PearGuard Device' },
+      payload: { publicKey: myIdentityHex, displayName: myDisplayName },
     }, identity)
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
   }
@@ -348,6 +419,8 @@ async function handleHello (msg, conn, remoteKeyHex) {
     peerConnected = true
     parentPeer = peers.get(remoteKeyHex)
     await flushPendingMessages(conn)
+    // Ask RN shell to scan installed apps and relay each as app:installed
+    send({ type: 'event', event: 'apps:syncRequested', data: {} })
   }
 }
 

@@ -1,13 +1,22 @@
 package com.pearguard;
 
 import android.app.AppOpsManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.os.Build;
 import android.os.Process;
+
+import androidx.core.app.NotificationCompat;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
@@ -128,6 +137,52 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Returns all apps that have a home-screen launcher icon as
+     * { packageName: string, appName: string }.
+     * Uses ACTION_MAIN + CATEGORY_LAUNCHER to include pre-installed apps like
+     * Chrome and YouTube that have FLAG_SYSTEM but are still user-visible.
+     */
+    @ReactMethod
+    public void getInstalledPackages(Promise promise) {
+        PackageManager pm = reactContext.getPackageManager();
+
+        // Determine the default home launcher package so it can be auto-approved
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN, null);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo defaultHome = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
+        String launcherPackage = defaultHome != null ? defaultHome.activityInfo.packageName : null;
+
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+
+        WritableArray result = Arguments.createArray();
+        if (resolveInfos == null) {
+            promise.resolve(result);
+            return;
+        }
+        for (ResolveInfo info : resolveInfos) {
+            ApplicationInfo ai = info.activityInfo.applicationInfo;
+            // Skip PearGuard itself
+            if (ai.packageName.equals(reactContext.getPackageName())) continue;
+
+            String appName;
+            try {
+                appName = pm.getApplicationLabel(ai).toString();
+            } catch (Exception e) {
+                appName = ai.packageName;
+            }
+
+            WritableMap item = Arguments.createMap();
+            item.putString("packageName", ai.packageName);
+            item.putString("appName", appName);
+            item.putBoolean("isLauncher", ai.packageName.equals(launcherPackage));
+            result.pushMap(item);
+        }
+        promise.resolve(result);
+    }
+
+    /**
      * Returns weekly usage for a single package as
      * { packageName, secondsThisWeek }.
      */
@@ -168,6 +223,23 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     public void setPolicy(String policyJson) {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         prefs.edit().putString("pearguard_policy", policyJson).apply();
+
+        // When the parent sends a definitive decision (allowed/blocked), clear the pending
+        // request suppression in AppBlockerModule so the overlay can resume normal behavior.
+        try {
+            org.json.JSONObject policy = new org.json.JSONObject(policyJson);
+            org.json.JSONObject apps = policy.optJSONObject("apps");
+            if (apps != null) {
+                java.util.Iterator<String> keys = apps.keys();
+                while (keys.hasNext()) {
+                    String pkg = keys.next();
+                    String status = apps.getJSONObject(pkg).optString("status", "allowed");
+                    if ("allowed".equals(status) || "blocked".equals(status)) {
+                        AppBlockerModule.clearPendingRequest(pkg);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     /**
@@ -180,5 +252,134 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         prefs.edit().putLong("pearguard_override_" + packageName, (long) expiresAt).apply();
         promise.resolve(null);
+    }
+
+    private static final String REQUEST_CHANNEL_ID = "pearguard_time_requests";
+    private static int notificationId = 2000;
+
+    /**
+     * Shows an Android notification on the parent device when a child requests access.
+     * Called from app/index.tsx when the bare worklet emits time:request:received.
+     */
+    @ReactMethod
+    public void showTimeRequestNotification(String childName, String appName, String childPublicKey) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "Child Time Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Alerts when a child requests access to a blocked app");
+            nm.createNotificationChannel(channel);
+        }
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+
+        String title = childName + " is requesting access";
+        String body  = childName + " wants to use " + appName;
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Shows a notification on the parent device when a child's Accessibility Service is disabled.
+     * Called from app/index.tsx when the bare worklet emits alert:bypass.
+     */
+    @ReactMethod
+    public void showBypassAlertNotification(String childName, String childPublicKey) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "Child Time Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            nm.createNotificationChannel(channel);
+        }
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle(childName + "'s parental controls disabled")
+            .setContentText(childName + " turned off the PearGuard Accessibility Service")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
+    @ReactMethod
+    public void showDecisionNotification(String appName, String decision) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "Child Time Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            nm.createNotificationChannel(channel);
+        }
+
+        boolean approved = "approved".equals(decision);
+        String title = approved ? "Request approved" : "Request denied";
+        String text = approved
+            ? "Your parent allowed more time on " + appName
+            : "Your parent denied the request for " + appName;
+
+        Intent launchIntent = reactContext.getPackageManager()
+            .getLaunchIntentForPackage(reactContext.getPackageName());
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        }
+        PendingIntent pi = PendingIntent.getActivity(
+            reactContext, notificationId, launchIntent != null ? launchIntent : new Intent(),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(approved ? android.R.drawable.ic_dialog_info : android.R.drawable.ic_dialog_alert)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Builds a PendingIntent that deep-links to the child's Alerts tab in PearGuard.
+     * URL: pear://pearguard/alerts?childPublicKey=<key>
+     */
+    private PendingIntent buildAlertsPendingIntent(String childPublicKey, int reqCode) {
+        String url = "pear://pearguard/alerts?childPublicKey=" +
+            Uri.encode(childPublicKey != null ? childPublicKey : "");
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        intent.setPackage(reactContext.getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(
+            reactContext, reqCode, intent,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
     }
 }

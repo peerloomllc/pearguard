@@ -168,7 +168,7 @@ public class EnforcementService extends Service {
         }
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("PearGuard is active")
             .setContentText("Parental controls are running")
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -669,7 +669,7 @@ public class AppBlockerModule extends AccessibilityService {
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("PearGuard enforcement disabled")
             .setContentText("Tap to re-enable parental controls in Accessibility settings.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

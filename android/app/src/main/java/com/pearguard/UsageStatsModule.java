@@ -283,7 +283,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         String body  = childName + " wants to use " + appName;
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -315,7 +315,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(childName + "'s parental controls disabled")
             .setContentText(childName + " turned off the PearGuard Accessibility Service")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -357,7 +357,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         );
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
-            .setSmallIcon(approved ? android.R.drawable.ic_dialog_info : android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

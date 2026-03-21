@@ -40,22 +40,11 @@ After a user selects "Child" mode during first-launch setup, display step-by-ste
 - **Flow**: Select "Child" → see instructions screen → "Open Accessibility Settings" deep-link button → user enables service → return to app and confirm service is active
 - **Detection**: Poll or listen for `AccessibilityManager` service state to auto-advance once enabled
 
-### 7. Remove "Pending Approval" badge from Apps list
-The yellow "Pending Approval" badge on each row is redundant — the Approve/Deny buttons immediately below it already convey pending state. Remove the badge to reduce clutter.
-
-- **Where**: `src/ui/components/AppsTab.jsx` line 35 — delete the `{isPending && <span ...>Pending Approval</span>}` span
-
 ### 8. Display app icons in Apps list
 Show the app's launcher icon next to its name in the parent's Apps tab.
 
 - **Where**: `src/ui/components/AppsTab.jsx` — when child sends `app:installed`, include a base64 icon in the payload; display in `AppRow`
 - **How**: `getInstalledPackages` in Java can fetch `pm.getApplicationIcon(ai)` and encode as base64
-
-### 9. Use app display name instead of package name
-Both the parent's Apps tab and child's My Requests list show raw package names (e.g. `com.android.chrome`). Show the human-readable app name instead.
-
-- **Apps tab**: `appData.appName` is already stored in the policy record — use it instead of `packageName` as the primary label, show `packageName` in smaller text below
-- **My Requests**: `req.packageName` shown — the request record already has `appName` for overlay-originated requests; include it from `time:request` dispatch for WebView-originated requests too
 
 ### 10. "Child Requests" management page on parent
 When a child sends a time request, the parent currently has no dedicated UI to view and approve/deny pending requests. Add a requests tab or section to the parent's ChildDetail screen.

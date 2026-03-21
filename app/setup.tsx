@@ -28,7 +28,7 @@ export default function SetupScreen () {
     setLoading(true)
     try {
       await _callBare('setMode', [mode])
-      router.replace('/')
+      router.replace(mode === 'child' ? '/child-setup' : '/')
     } catch (e: any) {
       setError(e.message)
       setLoading(false)

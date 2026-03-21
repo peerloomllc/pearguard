@@ -169,6 +169,22 @@ When the child installs a new app, it is immediately usable — the parent has n
 - **Where (auto-block)**: `src/bare-dispatch.js` `handleIncomingAppInstalled` — if `blockNewInstalls` is set in the child's policy, add the package as `pending` before emitting the event
 - **Edge case**: System apps and apps already in the policy should be excluded from auto-block
 
+## Added 2026-03-21
+
+### 26. Remove uninstalled apps from parent's Apps list
+When a child uninstalls an app, it remains in the parent's Apps tab indefinitely. The parent needs a way to clear stale entries.
+
+- **Detect uninstall**: `PackageMonitorModule` already listens for `ACTION_PACKAGE_REMOVED`; relay an `app:uninstalled` P2P message to the parent when triggered
+- **Parent side**: `handleIncomingAppUninstalled` in `bare-dispatch.js` removes the package from the child's policy and emits `apps:synced` to refresh the UI
+- **Where**: `src/bare-dispatch.js`, `android/.../PackageMonitorModule.java`, `app/index.tsx`
+
+### 27. Alphabetize Apps list; add sort option
+The Apps tab has no defined order, making it hard to find apps on a real device with many entries.
+
+- **Default**: Sort alphabetically by `appName` (falling back to `packageName`)
+- **Sort option**: Toggle between alphabetical and install/discovery date (order apps were added to policy)
+- **Where**: `src/ui/components/AppsTab.jsx` — sort `Object.entries(policy.apps)` before rendering; add a sort control in the header
+
 ## Known Limitations
 
 ### Overlay not triggered for already-open apps

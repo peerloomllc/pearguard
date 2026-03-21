@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -286,6 +286,11 @@ export default function Root () {
         // PIN entered successfully — log the override event
         DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
           sendToWorklet({ method: 'pin:used', args: e })
+        }),
+
+        // App foregrounded — kick Hyperswarm to reconnect in case connection dropped while backgrounded
+        AppState.addEventListener('change', (state) => {
+          if (state === 'active') sendToWorklet({ method: 'swarm:reconnect' })
         }),
 
         // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button

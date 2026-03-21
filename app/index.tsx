@@ -24,6 +24,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 
 let _worklet: any = null
 let _workletStarted = false
+let _mode: string | null = null
+let _dbReady = false
 let _nextId = 1
 const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
@@ -290,7 +292,17 @@ export default function Root () {
 
         // App foregrounded — kick Hyperswarm to reconnect in case connection dropped while backgrounded
         AppState.addEventListener('change', (state) => {
-          if (state === 'active') sendToWorklet({ method: 'swarm:reconnect' })
+          if (state !== 'active') return
+          sendToWorklet({ method: 'swarm:reconnect' })
+          // Re-appear check: only after DB is ready and mode is known
+          if (_dbReady && _mode === 'child') {
+            NativeModules.UsageStatsModule?.checkChildPermissions?.()
+              .then((p: { accessibility: boolean; usageStats: boolean }) => {
+                if (!p.accessibility) router.replace('/child-setup?step=1')
+                else if (!p.usageStats) router.replace('/child-setup?step=2')
+              })
+              .catch(() => {})
+          }
         }),
 
         // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
@@ -396,6 +408,8 @@ export default function Root () {
 
       // When init completes, bare emits 'ready' — dispatch is now initialized
       onEvent('ready', (data) => {
+        _mode = data.mode
+        _dbReady = true
         setDbReady(true)
         // Flush any invite URL that arrived before the worklet was ready
         if (_pendingInviteUrl) {

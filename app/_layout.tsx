@@ -7,6 +7,7 @@ export default function RootLayout () {
       <Stack.Screen name="index" />
       <Stack.Screen name="setup" />
       <Stack.Screen name="join" />
+      <Stack.Screen name="child-setup" options={{ headerShown: false, gestureEnabled: false }} />
     </Stack>
   )
 }

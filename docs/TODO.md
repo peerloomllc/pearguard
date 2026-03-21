@@ -1,0 +1,175 @@
+# PearGuard TODO
+
+## UI / UX
+
+### 1. Force profile name creation at setup
+Before completing first-launch setup (parent or child mode), require the user to enter a display name. The name is used in `hello` messages so the other device shows the real name instead of "PearGuard Device".
+
+- **Where**: `app/setup.tsx` — add a name input step before or during mode selection
+- **Bare method**: `identity:setName`
+
+### 2. Share profile names between devices (Children tab)
+The Children tab currently shows the name the child declared in its `hello` message. Since we now include the real profile name in `hello`, this will update on reconnect. But the parent's own name shown on the child's Profile screen also uses `hello` reply, which now includes profile name too.
+
+- Verify Children tab shows child's real name after reconnect (should work with the `hello` fix)
+- On child Profile screen, show parent's real name in the Parents list
+
+### 3. Avatar customization
+Add avatar/photo support on the Profile page and during forced profile setup.
+
+- **Options**: in-app camera (via `expo-camera`) and photo/gallery picker (via `expo-image-picker`)
+- **Where**: `src/ui/components/Profile.jsx` — replace the initials circle with photo when set
+- **Storage**: encode avatar as base64 in Hyperbee `profile` record; include thumbnail in `hello` payload
+
+### 4. Parent UI: show pairing confirmation + refresh Children list
+When a child device pairs with the parent, the parent's Children tab should immediately refresh its list and display a "Successfully paired" confirmation message.
+
+- **Where**: `src/ui/components/ChildrenList.jsx` — already listens for `child:connected`; needs a success banner rendered briefly after the event fires
+- **Bare event**: `child:connected`
+
+### 5. Child UI: show pairing confirmation + refresh Profile
+After the child completes pairing (`acceptInvite` resolves), the Profile screen should immediately reflect the new parent connection (refresh the parents list) and display a "Successfully paired" confirmation.
+
+- **Where**: `src/ui/components/Profile.jsx` — `pairState === 'success'` already shows a message; ensure the parents list also reloads at that point
+- **Bare event**: `peer:paired` already triggers a refresh — verify it fires reliably after `acceptInvite` completes
+
+### 6. Guided Accessibility Service setup on Child device
+After a user selects "Child" mode during first-launch setup, display step-by-step instructions guiding them to enable the PearGuard Accessibility Service in Android Settings.
+
+- **Where**: `app/setup.tsx` (first-launch mode selection) or a new `ChildSetup` screen
+- **Flow**: Select "Child" → see instructions screen → "Open Accessibility Settings" deep-link button → user enables service → return to app and confirm service is active
+- **Detection**: Poll or listen for `AccessibilityManager` service state to auto-advance once enabled
+
+### 7. Remove "Pending Approval" badge from Apps list
+The yellow "Pending Approval" badge on each row is redundant — the Approve/Deny buttons immediately below it already convey pending state. Remove the badge to reduce clutter.
+
+- **Where**: `src/ui/components/AppsTab.jsx` line 35 — delete the `{isPending && <span ...>Pending Approval</span>}` span
+
+### 8. Display app icons in Apps list
+Show the app's launcher icon next to its name in the parent's Apps tab.
+
+- **Where**: `src/ui/components/AppsTab.jsx` — when child sends `app:installed`, include a base64 icon in the payload; display in `AppRow`
+- **How**: `getInstalledPackages` in Java can fetch `pm.getApplicationIcon(ai)` and encode as base64
+
+### 9. Use app display name instead of package name
+Both the parent's Apps tab and child's My Requests list show raw package names (e.g. `com.android.chrome`). Show the human-readable app name instead.
+
+- **Apps tab**: `appData.appName` is already stored in the policy record — use it instead of `packageName` as the primary label, show `packageName` in smaller text below
+- **My Requests**: `req.packageName` shown — the request record already has `appName` for overlay-originated requests; include it from `time:request` dispatch for WebView-originated requests too
+
+### 10. "Child Requests" management page on parent
+When a child sends a time request, the parent currently has no dedicated UI to view and approve/deny pending requests. Add a requests tab or section to the parent's ChildDetail screen.
+
+- **Where**: `src/ui/components/ChildDetail.jsx` — add a "Requests" tab alongside Apps/Schedule/Usage
+- **Data**: read from `request:{requestId}` keys in Hyperbee; listen for `time:request:received` event to refresh
+- **Actions**: Approve (grant timed override) / Deny buttons per request
+
+### 11. Time limits not honored — ensure Usage Stats permission is granted on child
+`AppBlockerModule.getDailyUsageSeconds` requires `PACKAGE_USAGE_STATS` permission, which must be manually granted by the user in Settings → Apps → Special app access → Usage access. If not granted, usage is always 0 and limits never trigger. Extend the child setup wizard (TODO #6) to also guide the user through granting usage access.
+
+### 12. Persistent parent identity key (invite URL never changes)
+
+The parent's invite URL is derived from the Hyperswarm keypair stored in the Hypercore data directory. Since the Hypercore data directory is in `documentDirectory` (not `cacheDirectory`), it survives app data clears if the OS only clears cache. This means the same invite URL is reused across setups. Decision needed:
+
+- **Keep as-is**: Simpler for reconnecting existing children — same key means no re-pairing.
+- **Force fresh keypair**: On first-launch setup, always generate a new keypair and clear old peer records.
+
+### 13. PIN override: prompt for duration
+
+When a PIN override is granted, the duration is fixed at `policy.overrideDurationSeconds` (default 3600s = 1 hour). The child (and parent) should be able to choose a duration at the moment of granting.
+
+- **Where** (child overlay): After 4-digit PIN is verified, show a duration picker (e.g., "15 min / 30 min / 1 hour / Custom") before dismissing
+- **Where** (parent side): Parent approving a time request should similarly choose duration
+- **Edge case**: If parent updates policy while an override is active, the override should be respected until it expires
+
+---
+
+## Added 2026-03-20
+
+### 14. What happens when child turns off Accessibility Service?
+When the child disables the PearGuard Accessibility Service, enforcement silently stops. The bypass detection path (`onBypassDetected`) should already fire, but the UX around it needs verification and hardening.
+
+- Verify `EnforcementService` detects and emits `bypass:detected` when Accessibility is disabled
+- Confirm parent receives the bypass alert via P2P relay
+- Consider whether re-enabling should require a PIN or parent approval
+- Related: TODO #6 (guided setup) — the same deep-link flow could be reused here to guide the child back to enabling it
+
+### 15. Apps list: categories, expandable/collapsible sections, search
+The Apps tab will grow large on a real device. Make it manageable.
+
+- Group apps into categories (e.g. Social, Games, Productivity, System) — either from Play Store metadata or a curated map of known package prefixes
+- Expandable/collapsible sections per category; collapsed by default for cleaner first view
+- Search/filter bar at top to find an app by name
+- **Where**: `src/ui/components/AppsTab.jsx`
+
+### 16. Approve All / Deny All per category
+Once categories exist (TODO #15), add Approve All / Deny All buttons per category header row so the parent can quickly manage a whole group at once.
+
+- **Where**: category header in `AppsTab.jsx`
+- **Bare method**: batch variant of `app:decide` — send one policy:update containing all the decisions at once
+
+### 17. Haptic feedback
+Add haptic feedback on key interactions: overlay button taps, PIN digit entry, PIN success/fail, request submitted.
+
+- **Overlay (Java)**: `android.os.Vibrator` / `VibrationEffect` — short pulse on button press, error pattern on wrong PIN, success pattern on correct PIN
+- **WebView UI (JS)**: `navigator.vibrate()` for request submission confirmation
+
+### 18. Bug: Swipe-up gesture causes overlay to briefly flash
+When the child uses the swipe-up-from-bottom gesture (Android navigation), the overlay briefly flashes before disappearing. The gesture likely causes a transient window state change that re-triggers `showOverlay`, then the gesture completes and the overlay is dismissed.
+
+- **Investigate**: What package name does the TYPE_WINDOW_STATE_CHANGED event carry during a swipe-up gesture? Likely the launcher/gesture nav overlay.
+- **Fix candidate**: Ignore events from known system gesture/nav packages, or add a short debounce (e.g. 150ms) before showing the overlay so rapid show→dismiss sequences are coalesced.
+
+### 19. Overlay: auto-dismiss when conditions are no longer met
+Currently the overlay only disappears when the user taps a button or navigates away. If the parent approves the app (policy update arrives over P2P), the overlay should auto-dismiss.
+
+- **How**: When `policy:updated` or `override:granted` event arrives in RN while an overlay is showing for that package, emit a native event (e.g. `onOverridGranted`) to `AppBlockerModule` to call `dismissOverlay()`.
+- Alternatively: re-evaluate `getBlockReason` for `currentOverlayPackage` on every policy update.
+
+### 20. Failsafe: unpair / deactivate all restrictions at once
+A safety valve for when the parent-child relationship needs to be reset or in an emergency.
+
+- **Child device**: A hidden sequence (e.g., tap version number 7 times in Settings) or a timed button that calls `disableEnforcement` and optionally clears the paired parent record.
+- **Parent device**: Option in ChildDetail to "Remove child" that sends an `unpair` P2P message before clearing local peer record.
+- **Edge case**: Child with no internet / offline — the child-side failsafe must work without a P2P connection.
+
+### 21. Clear old / stale Requests
+Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete them.
+
+- **Auto-expire**: Requests older than N days (e.g. 7) could be auto-deleted on startup or during `usage:flush`.
+- **Manual clear**: "Clear all resolved requests" button in child's My Requests tab.
+- **Where**: `src/ui/components/ChildRequests.jsx` + `bare-dispatch.js` `requests:list` / new `requests:clear` method
+
+### 22. Bug: Requests showing Pending even after approval (New Request button path)
+Requests created via the "New Request" button (not from the overlay block) may stay Pending even after the parent approves the app. The `handleAppDecision` fix in this session should address the P2P path, but needs verification. May be worth removing the standalone "New Request" button entirely and only allowing requests from the overlay.
+
+- **Test**: approve an app on parent → check child's Requests list updates to Approved
+- **Potential simplification**: remove the "New Request" button; requests should only originate from the overlay so the blocked state is always the trigger
+
+### 23. Bug: PearGuard force-close stops enforcement
+If the child force-closes PearGuard, the Accessibility Service (which is hosted in the same process) also stops. Enforcement silently ceases.
+
+- **Investigate**: Can the Accessibility Service be declared in a separate process (`android:process`) so it survives PearGuard's main process being killed?
+- **Detect**: `EnforcementService` should detect when PearGuard's main process is not running and alert the parent.
+- **Mitigation**: Device admin (`DevicePolicyManager`) can prevent force-close of designated apps on some Android versions.
+
+### 24. Bug: Profile name changes don't sync to paired devices
+After initial pairing, if the child or parent changes their display name in Profile, the other device still shows the old name.
+
+- **Root cause**: `hello` messages (which carry `displayName`) are only sent at connection time. A name change after pairing never triggers a new `hello`.
+- **Fix**: When `identity:setName` is called, also broadcast a `profile:update` P2P message to all connected peers with the new name. Peers update their `peers:{publicKey}` Hyperbee entry on receipt.
+
+### 25. New app install: notify parent and auto-block until approved
+
+When the child installs a new app, it is immediately usable — the parent has no chance to review it first.
+
+- **Notify parent**: When `app:installed` is received on the parent, show a push notification ("Child installed [App Name]") so the parent is alerted right away, not just when they next open PearGuard
+- **Auto-block new installs**: Add a policy setting on the parent (`blockNewInstalls: true/false`, default `true`). When enabled, any app relayed via `app:installed` that has no existing policy entry is automatically set to `status: 'pending'` in the child's policy and pushed to the child via `policy:update`. The child then sees the overlay immediately when they try to open the new app.
+- **Where (notification)**: `app/index.tsx` — intercept `app:installed` event; call `UsageStatsModule.showNotification` with child name + app name
+- **Where (auto-block)**: `src/bare-dispatch.js` `handleIncomingAppInstalled` — if `blockNewInstalls` is set in the child's policy, add the package as `pending` before emitting the event
+- **Edge case**: System apps and apps already in the policy should be excluded from auto-block
+
+## Known Limitations
+
+### Overlay not triggered for already-open apps
+The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an app is already in the foreground when its policy changes to blocked, no event fires until the user navigates away and back. Possible mitigation: add a background polling loop in the service that periodically checks if the foreground app is now blocked.

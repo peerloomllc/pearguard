@@ -29,6 +29,8 @@ const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
 // Invite URL received before worklet was ready — sent once dispatch is initialized
 let _pendingInviteUrl: string | null = null
+// childPublicKey from pear://pearguard/alerts deep link — injected into WebView after dbReady
+let _pendingAlertsNav: string | null = null
 
 // ── Module-level deep link listeners ──────────────────────────────────────────
 // These must live outside the component so they are never removed on unmount.
@@ -40,6 +42,10 @@ Linking.addEventListener('url', ({ url }) => {
   if (url && url.startsWith('pear://pearguard/join')) {
     console.log('[RN] invite URL (module-level Linking):', url)
     sendToWorklet({ method: 'acceptInvite', args: [url] })
+  } else if (url && url.startsWith('pear://pearguard/alerts')) {
+    const qs = url.split('?')[1] ?? ''
+    const match = qs.match(/childPublicKey=([^&]+)/)
+    if (match) _pendingAlertsNav = decodeURIComponent(match[1])
   }
 })
 
@@ -339,10 +345,16 @@ export default function Root () {
               }
               // Show a notification on the parent device when a child sends a time request
               if (msg.event === 'time:request:received') {
-                const { childDisplayName, appName, packageName } = msg.data ?? {}
+                const { childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
                 const childLabel = childDisplayName || 'Your child'
                 const appLabel = appName || packageName || 'an app'
-                NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel)
+                NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
+              }
+              // Show a notification on the parent device when a child's accessibility service is disabled
+              if (msg.event === 'alert:bypass') {
+                const { childPublicKey, childDisplayName } = msg.data ?? {}
+                const childName = childDisplayName || 'Your child'
+                NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
               }
               // Forward all other Bare events to WebView
               webViewRef.current?.injectJavaScript(
@@ -389,6 +401,10 @@ export default function Root () {
       Linking.getInitialURL().then(url => {
         if (url && url.startsWith('pear://pearguard/join')) {
           _pendingInviteUrl = _pendingInviteUrl ?? url
+        } else if (url && url.startsWith('pear://pearguard/alerts')) {
+          const qs = url.split('?')[1] ?? ''
+          const match = qs.match(/childPublicKey=([^&]+)/)
+          if (match) _pendingAlertsNav = _pendingAlertsNav ?? decodeURIComponent(match[1])
         }
       }).catch(() => {})
     }
@@ -396,6 +412,19 @@ export default function Root () {
     start().catch(e => console.error('[RN] start error:', e))
     return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
+
+  // When db is ready and a notification-tap deep link is pending, navigate to that child's Alerts tab
+  useEffect(() => {
+    if (!dbReady || !_pendingAlertsNav) return
+    const childPublicKey = _pendingAlertsNav
+    _pendingAlertsNav = null
+    // Give the WebView React app 600ms to fully render before injecting navigation
+    setTimeout(() => {
+      webViewRef.current?.injectJavaScript(
+        'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey }) + ');true;'
+      )
+    }, 600)
+  }, [dbReady])
 
   if (!html || !dbReady) {
     return <View style={styles.loading} />

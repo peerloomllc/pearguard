@@ -419,6 +419,16 @@ function createDispatch (ctx) {
         } catch (_e) {
           // child offline — policy stored; will be sent on next reconnect
         }
+
+        // Mark matching pending requests for this child+package as resolved in Hyperbee
+        // so AlertsTab shows the correct status after navigating away and back.
+        const reqStatus = d === 'allowed' ? 'approved' : 'denied'
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey === childPublicKey && value.packageName === packageName && value.status === 'pending') {
+            await ctx.db.put(key, { ...value, status: reqStatus })
+          }
+        }
+
         return { ok: true, decision: d }
       }
 
@@ -446,25 +456,33 @@ function createDispatch (ctx) {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid alerts:list args')
         const results = []
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days
 
         // Bypass alerts stored when a bypass:alert P2P message was received from this child
-        for await (const { value } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
+          if ((value.timestamp || 0) < cutoff) {
+            await ctx.db.del(key) // auto-expire stale alerts
+            continue
+          }
           results.push(value)
         }
 
         // Time requests received from this child
-        for await (const { value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
-          if (value.childPublicKey === childPublicKey) {
-            results.push({
-              id: value.id,
-              type: 'time_request',
-              timestamp: value.requestedAt,
-              packageName: value.packageName,
-              appDisplayName: value.appName,
-              resolved: value.status !== 'pending',
-              childPublicKey,
-            })
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey !== childPublicKey) continue
+          if ((value.requestedAt || 0) < cutoff) {
+            await ctx.db.del(key)
+            continue
           }
+          results.push({
+            id: value.id,
+            type: 'time_request',
+            timestamp: value.requestedAt,
+            packageName: value.packageName,
+            appDisplayName: value.appName,
+            resolved: value.status !== 'pending',
+            childPublicKey,
+          })
         }
 
         results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))

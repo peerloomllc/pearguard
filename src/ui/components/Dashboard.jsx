@@ -5,6 +5,7 @@ import ChildDetail from './ChildDetail.jsx';
 export default function Dashboard() {
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [initialTab, setInitialTab] = useState(null);
   const [selectedChild, setSelectedChild] = useState(null);
 
   const loadChildren = useCallback(() => {
@@ -61,10 +62,19 @@ export default function Dashboard() {
       );
     });
 
+    // Notification tap: navigate directly to a child's Alerts tab
+    const unsubNav = window.onBareEvent('navigate:child:alerts', ({ childPublicKey }) => {
+      window.callBare('children:list').then((list) => {
+        const child = list.find((c) => c.publicKey === childPublicKey);
+        if (child) { setInitialTab('alerts'); setSelectedChild(child); }
+      }).catch(() => {});
+    });
+
     return () => {
       unsubUsage();
       unsubTime();
       unsubBypass();
+      unsubNav();
     };
   }, [loadChildren]);
 
@@ -72,8 +82,10 @@ export default function Dashboard() {
     return (
       <ChildDetail
         child={selectedChild}
+        initialTab={initialTab}
         onBack={() => {
           setSelectedChild(null);
+          setInitialTab(null);
           loadChildren(); // refresh badges on return
         }}
       />

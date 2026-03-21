@@ -15203,8 +15203,8 @@
     { key: "contacts", label: "Contacts", Component: ContactsTab },
     { key: "alerts", label: "Alerts", Component: AlertsTab }
   ];
-  function ChildDetail({ child, onBack }) {
-    const [activeTab, setActiveTab] = (0, import_react7.useState)("usage");
+  function ChildDetail({ child, onBack, initialTab }) {
+    const [activeTab, setActiveTab] = (0, import_react7.useState)(initialTab || "usage");
     const active = TABS.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.container, children: [
@@ -15274,6 +15274,7 @@
   function Dashboard() {
     const [children, setChildren] = (0, import_react8.useState)([]);
     const [loading, setLoading] = (0, import_react8.useState)(true);
+    const [initialTab, setInitialTab] = (0, import_react8.useState)(null);
     const [selectedChild, setSelectedChild] = (0, import_react8.useState)(null);
     const loadChildren = (0, import_react8.useCallback)(() => {
       window.callBare("children:list").then((list) => {
@@ -15313,10 +15314,21 @@
           )
         );
       });
+      const unsubNav = window.onBareEvent("navigate:child:alerts", ({ childPublicKey }) => {
+        window.callBare("children:list").then((list) => {
+          const child = list.find((c) => c.publicKey === childPublicKey);
+          if (child) {
+            setInitialTab("alerts");
+            setSelectedChild(child);
+          }
+        }).catch(() => {
+        });
+      });
       return () => {
         unsubUsage();
         unsubTime();
         unsubBypass();
+        unsubNav();
       };
     }, [loadChildren]);
     if (selectedChild) {
@@ -15324,8 +15336,10 @@
         ChildDetail,
         {
           child: selectedChild,
+          initialTab,
           onBack: () => {
             setSelectedChild(null);
+            setInitialTab(null);
             loadChildren();
           }
         }

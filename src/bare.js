@@ -277,12 +277,19 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'bypass:alert': {
       const childPublicKey = msg.from
       const { reason, detectedAt } = msg.payload
+      const reasonLabels = {
+        accessibility_disabled: 'Accessibility Service disabled',
+      }
+      const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+      const childDisplayName = peerRecord?.value?.displayName || 'Child'
       const alertEntry = {
         id: 'bypass:' + detectedAt,
         type: 'bypass',
         timestamp: detectedAt,
         reason,
+        appDisplayName: reasonLabels[reason] || reason,
         childPublicKey,
+        childDisplayName,
       }
       await db.put('alert:' + childPublicKey + ':' + detectedAt, alertEntry)
       send({ type: 'event', event: 'alert:bypass', data: alertEntry })

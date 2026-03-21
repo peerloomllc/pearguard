@@ -13,8 +13,8 @@ const TABS = [
   { key: 'alerts', label: 'Alerts', Component: AlertsTab },
 ];
 
-export default function ChildDetail({ child, onBack }) {
-  const [activeTab, setActiveTab] = useState('usage');
+export default function ChildDetail({ child, onBack, initialTab }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'usage');
   const active = TABS.find((t) => t.key === activeTab);
   const ActiveComponent = active.Component;
 

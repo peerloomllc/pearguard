@@ -9,6 +9,7 @@ import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -244,7 +245,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
      * Called from app/index.tsx when the bare worklet emits time:request:received.
      */
     @ReactMethod
-    public void showTimeRequestNotification(String childName, String appName) {
+    public void showTimeRequestNotification(String childName, String appName, String childPublicKey) {
         NotificationManager nm =
             (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
@@ -259,14 +260,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             nm.createNotificationChannel(channel);
         }
 
-        // Tapping the notification opens PearGuard
-        Intent openApp = reactContext.getPackageManager()
-            .getLaunchIntentForPackage(reactContext.getPackageName());
-        PendingIntent pi = PendingIntent.getActivity(
-            reactContext, 0,
-            openApp != null ? openApp : new Intent(),
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-        );
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
 
         String title = childName + " is requesting access";
         String body  = childName + " wants to use " + appName;
@@ -280,5 +274,53 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             .setContentIntent(pi);
 
         nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Shows a notification on the parent device when a child's Accessibility Service is disabled.
+     * Called from app/index.tsx when the bare worklet emits alert:bypass.
+     */
+    @ReactMethod
+    public void showBypassAlertNotification(String childName, String childPublicKey) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "Child Time Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            nm.createNotificationChannel(channel);
+        }
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle(childName + "'s parental controls disabled")
+            .setContentText(childName + " turned off the PearGuard Accessibility Service")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Builds a PendingIntent that deep-links to the child's Alerts tab in PearGuard.
+     * URL: pear://pearguard/alerts?childPublicKey=<key>
+     */
+    private PendingIntent buildAlertsPendingIntent(String childPublicKey, int reqCode) {
+        String url = "pear://pearguard/alerts?childPublicKey=" +
+            Uri.encode(childPublicKey != null ? childPublicKey : "");
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        intent.setPackage(reactContext.getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(
+            reactContext, reqCode, intent,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
     }
 }

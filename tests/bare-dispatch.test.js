@@ -35,7 +35,7 @@ describe('bare dispatch', () => {
     expect(mockDb.put).toHaveBeenCalledWith('mode', 'parent')
 
     const result = await dispatch('getMode', [])
-    expect(result).toBe('parent')
+    expect(result).toEqual({ mode: 'parent' })
   })
 
   test('setMode rejects invalid mode', async () => {
@@ -1291,6 +1291,13 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        createReadStream: jest.fn(({ gt, lt } = {}) => {
+          const entries = Object.entries(stored)
+            .filter(([k]) => (!gt || k > gt) && (!lt || k < lt))
+            .map(([key, value]) => ({ key, value }))
+          return (async function * () { yield * entries })()
+        }),
         _stored: stored,
       }
     }

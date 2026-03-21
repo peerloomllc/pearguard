@@ -2,6 +2,8 @@ package com.pearguard;
 
 import android.app.AppOpsManager;
 import android.app.NotificationChannel;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.usage.UsageStats;
@@ -52,19 +54,56 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         PearGuardReactHost.set(null);
     }
 
-    /**
-     * Returns whether the app has been granted PACKAGE_USAGE_STATS permission.
-     * Call this before getUsage() to check if the permission wizard needs to run.
-     */
-    @ReactMethod
-    public void hasUsagePermission(Promise promise) {
+    private boolean hasUsageStatsPermission() {
         AppOpsManager appOps = (AppOpsManager) reactContext.getSystemService(Context.APP_OPS_SERVICE);
         int mode = appOps.checkOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),
             reactContext.getPackageName()
         );
-        promise.resolve(mode == AppOpsManager.MODE_ALLOWED);
+        return mode == AppOpsManager.MODE_ALLOWED;
+    }
+
+    private boolean isAccessibilityEnabled() {
+        String prefString;
+        try {
+            prefString = Settings.Secure.getString(
+                reactContext.getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            );
+        } catch (Exception e) {
+            return false;
+        }
+        if (TextUtils.isEmpty(prefString)) return false;
+        // AppBlockerModule is in the same package; .class.getName() produces the FQCN
+        String ourService = reactContext.getPackageName() + "/" + AppBlockerModule.class.getName();
+        TextUtils.SimpleStringSplitter splitter = new TextUtils.SimpleStringSplitter(':');
+        splitter.setString(prefString);
+        while (splitter.hasNext()) {
+            if (splitter.next().equalsIgnoreCase(ourService)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns whether the app has been granted PACKAGE_USAGE_STATS permission.
+     * Call this before getUsage() to check if the permission wizard needs to run.
+     */
+    @ReactMethod
+    public void hasUsagePermission(Promise promise) {
+        promise.resolve(hasUsageStatsPermission());
+    }
+
+    /**
+     * Returns whether both child-required permissions are granted.
+     * Used by the child setup wizard to poll and auto-advance steps.
+     */
+    @ReactMethod
+    public void checkChildPermissions(Promise promise) {
+        WritableMap result = Arguments.createMap();
+        result.putBoolean("accessibility", isAccessibilityEnabled());
+        result.putBoolean("usageStats", hasUsageStatsPermission());
+        promise.resolve(result);
     }
 
     /**

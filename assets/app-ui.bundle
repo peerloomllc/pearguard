@@ -15053,15 +15053,25 @@
     const isRequest = alert.type === "time_request";
     async function handleApprove() {
       setResolving(true);
-      await onApprove(alert);
-      setResolved(true);
-      setResolving(false);
+      try {
+        await onApprove(alert);
+        setResolved(true);
+      } catch (e) {
+        console.error("Approve failed:", e);
+      } finally {
+        setResolving(false);
+      }
     }
     async function handleDeny() {
       setResolving(true);
-      await onDeny(alert);
-      setResolved(true);
-      setResolving(false);
+      try {
+        await onDeny(alert);
+        setResolved(true);
+      } catch (e) {
+        console.error("Deny failed:", e);
+      } finally {
+        setResolving(false);
+      }
     }
     return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertRow, children: [
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...styles6.typeBadge, backgroundColor: meta.color }, children: meta.label }),
@@ -15100,17 +15110,26 @@
   function AlertsTab({ childPublicKey }) {
     const [alerts, setAlerts] = (0, import_react6.useState)([]);
     const [loading, setLoading] = (0, import_react6.useState)(true);
-    (0, import_react6.useEffect)(() => {
+    function reload() {
       window.callBare("alerts:list", { childPublicKey }).then((list) => {
         setAlerts(list || []);
         setLoading(false);
       }).catch(() => setLoading(false));
+    }
+    (0, import_react6.useEffect)(() => {
+      reload();
+      const unsubBypass = window.onBareEvent("alert:bypass", reload);
+      const unsubRequest = window.onBareEvent("time:request:received", reload);
+      return () => {
+        unsubBypass();
+        unsubRequest();
+      };
     }, [childPublicKey]);
     async function handleApprove(alert) {
-      await window.callBare("time:extend", {
+      await window.callBare("app:decide", {
         childPublicKey,
         packageName: alert.packageName,
-        extraSeconds: alert.requestedSeconds || 1800
+        decision: "approve"
       });
     }
     async function handleDeny(alert) {

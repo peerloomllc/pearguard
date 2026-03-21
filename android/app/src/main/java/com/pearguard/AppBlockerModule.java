@@ -85,6 +85,16 @@ public class AppBlockerModule extends AccessibilityService {
         lazySodium = new LazySodiumAndroid(new SodiumAndroid());
 
         createBypassNotificationChannel();
+
+        // Start the enforcement polling service. BootReceiverModule handles post-reboot
+        // startup, but the service must also start when the Accessibility Service connects
+        // (i.e. on first enable and on any app restart that re-connects the service).
+        Intent enforcementIntent = new Intent(this, EnforcementService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(enforcementIntent);
+        } else {
+            startService(enforcementIntent);
+        }
     }
 
     @Override

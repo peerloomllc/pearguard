@@ -32,6 +32,7 @@ const MOCK_ALERTS = [
 
 beforeEach(() => {
   window.callBare = jest.fn().mockResolvedValue(MOCK_ALERTS);
+  window.onBareEvent = jest.fn().mockReturnValue(() => {}); // returns unsubscribe fn
 });
 
 test('renders loading then alert list', async () => {
@@ -53,16 +54,16 @@ test('renders Approve and Deny buttons only for time_request alerts', async () =
   expect(screen.queryByLabelText('Approve time request for com.android.settings')).not.toBeInTheDocument();
 });
 
-test('Approve button calls time:extend with correct args', async () => {
+test('Approve button calls app:decide with decision approve', async () => {
   render(<AlertsTab childPublicKey="pk1" />);
   await waitFor(() => screen.getByLabelText('Approve time request for com.example.game'));
   window.callBare.mockResolvedValue({}); // for the approve call
   fireEvent.click(screen.getByLabelText('Approve time request for com.example.game'));
   await waitFor(() => {
-    expect(window.callBare).toHaveBeenCalledWith('time:extend', {
+    expect(window.callBare).toHaveBeenCalledWith('app:decide', {
       childPublicKey: 'pk1',
       packageName: 'com.example.game',
-      extraSeconds: 1800,
+      decision: 'approve',
     });
   });
 });

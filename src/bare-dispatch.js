@@ -528,7 +528,7 @@ async function handleAppDecision (payload, db, send) {
     if (value.packageName === packageName && value.status === 'pending') {
       const updated = { ...value, status: requestStatus }
       await db.put(key, updated)
-      send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus } })
+      send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
     }
   }
 }

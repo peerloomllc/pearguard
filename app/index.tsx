@@ -350,6 +350,14 @@ export default function Root () {
                 const appLabel = appName || packageName || 'an app'
                 NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
               }
+              // Show a notification on the child device when parent approves/denies a time request
+              if (msg.event === 'request:updated') {
+                const { appName, packageName, status } = msg.data ?? {}
+                if (status === 'approved' || status === 'denied') {
+                  const label = appName || packageName || 'an app'
+                  NativeModules.UsageStatsModule?.showDecisionNotification?.(label, status)
+                }
+              }
               // Show a notification on the parent device when a child's accessibility service is disabled
               if (msg.event === 'alert:bypass') {
                 const { childPublicKey, childDisplayName } = msg.data ?? {}

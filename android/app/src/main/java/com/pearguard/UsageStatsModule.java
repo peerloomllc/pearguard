@@ -308,6 +308,48 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         nm.notify(notificationId++, builder.build());
     }
 
+    @ReactMethod
+    public void showDecisionNotification(String appName, String decision) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "Child Time Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            nm.createNotificationChannel(channel);
+        }
+
+        boolean approved = "approved".equals(decision);
+        String title = approved ? "Request approved" : "Request denied";
+        String text = approved
+            ? "Your parent allowed more time on " + appName
+            : "Your parent denied the request for " + appName;
+
+        Intent launchIntent = reactContext.getPackageManager()
+            .getLaunchIntentForPackage(reactContext.getPackageName());
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        }
+        PendingIntent pi = PendingIntent.getActivity(
+            reactContext, notificationId, launchIntent != null ? launchIntent : new Intent(),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(approved ? android.R.drawable.ic_dialog_info : android.R.drawable.ic_dialog_alert)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
     /**
      * Builds a PendingIntent that deep-links to the child's Alerts tab in PearGuard.
      * URL: pear://pearguard/alerts?childPublicKey=<key>

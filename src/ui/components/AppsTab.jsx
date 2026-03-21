@@ -31,15 +31,17 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
   return (
     <div style={styles.appRow}>
       <div style={styles.appInfo}>
-        <span style={styles.pkgName}>{packageName}</span>
-        {isPending && <span style={styles.pendingBadge}>Pending Approval</span>}
+        <div style={styles.appNameBlock}>
+          <span style={styles.appName}>{appData.appName || packageName}</span>
+          {appData.appName && <span style={styles.pkgName}>{packageName}</span>}
+        </div>
       </div>
       {isPending ? (
         <div style={styles.actions}>
-          <button style={styles.approveBtn} onClick={handleApprove} aria-label={`Approve ${packageName}`}>
+          <button style={styles.approveBtn} onClick={handleApprove} aria-label={`Approve ${appData.appName || packageName}`}>
             Approve
           </button>
-          <button style={styles.denyBtn} onClick={handleDeny} aria-label={`Deny ${packageName}`}>
+          <button style={styles.denyBtn} onClick={handleDeny} aria-label={`Deny ${appData.appName || packageName}`}>
             Deny
           </button>
         </div>
@@ -50,7 +52,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
               type="checkbox"
               checked={appData.status === 'allowed'}
               onChange={(e) => setStatus(e.target.checked ? 'allowed' : 'blocked')}
-              aria-label={`Toggle ${packageName}`}
+              aria-label={`Toggle ${appData.appName || packageName}`}
             />
             <span style={{ marginLeft: '4px' }}>{appData.status === 'allowed' ? 'Allowed' : 'Blocked'}</span>
           </label>
@@ -63,7 +65,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
               onChange={(e) => setLimitInput(e.target.value)}
               onBlur={handleLimitBlur}
               style={styles.limitInput}
-              aria-label={`Daily limit for ${packageName} in minutes`}
+              aria-label={`Daily limit for ${appData.appName || packageName} in minutes`}
               placeholder="∞"
             />
             min/day
@@ -131,14 +133,9 @@ const styles = {
     gap: '8px',
   },
   appInfo: { display: 'flex', alignItems: 'center', gap: '8px' },
-  pkgName: { fontSize: '13px', fontFamily: 'monospace', color: '#333', flex: 1 },
-  pendingBadge: {
-    fontSize: '11px',
-    backgroundColor: '#fbbc04',
-    color: '#000',
-    borderRadius: '4px',
-    padding: '2px 6px',
-  },
+  appNameBlock: { display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 },
+  appName: { fontSize: '14px', color: '#111', fontWeight: '500' },
+  pkgName: { fontSize: '11px', fontFamily: 'monospace', color: '#888' },
   actions: { display: 'flex', gap: '8px' },
   approveBtn: {
     padding: '6px 14px', border: 'none', borderRadius: '6px',

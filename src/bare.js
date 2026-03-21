@@ -180,7 +180,15 @@ async function onPeerConnection (conn, info) {
     }
   })
 
-  conn.on('error', e => console.error('[bare] peer error:', e.message))
+  conn.on('error', e => {
+    console.error('[bare] peer error:', e.message)
+    // Proactively reset parent connection state so subsequent sendToParent calls
+    // queue rather than write to the dead socket (close may not fire on all errors)
+    if (mode === 'child' && parentPeer && parentPeer.remoteKeyHex === remoteKeyHex) {
+      peerConnected = false
+      parentPeer = null
+    }
+  })
   conn.on('close', () => {
     peers.delete(remoteKeyHex)
     // Reset parent connection state if this was the parent peer

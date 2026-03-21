@@ -97,7 +97,12 @@ export default function ChildRequests() {
             }}
           >
             <div>
-              <div style={{ fontWeight: 'bold' }}>{req.packageName}</div>
+              <div style={{ fontWeight: 'bold' }}>{req.appName || req.packageName}</div>
+              {req.appName && (
+                <div style={{ color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
+                  {req.packageName}
+                </div>
+              )}
               <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
                 {new Date(req.requestedAt).toLocaleTimeString()}
               </div>

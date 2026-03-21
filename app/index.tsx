@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -24,6 +24,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 
 let _worklet: any = null
 let _workletStarted = false
+let _mode: string | null = null
+let _dbReady = false
 let _nextId = 1
 const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
@@ -288,6 +290,21 @@ export default function Root () {
           sendToWorklet({ method: 'pin:used', args: e })
         }),
 
+        // App foregrounded — kick Hyperswarm to reconnect in case connection dropped while backgrounded
+        AppState.addEventListener('change', (state) => {
+          if (state !== 'active') return
+          sendToWorklet({ method: 'swarm:reconnect' })
+          // Re-appear check: only after DB is ready and mode is known
+          if (_dbReady && _mode === 'child') {
+            NativeModules.UsageStatsModule?.checkChildPermissions?.()
+              .then((p: { accessibility: boolean; usageStats: boolean }) => {
+                if (!p.accessibility) router.replace('/child-setup?step=1')
+                else if (!p.usageStats) router.replace('/child-setup?step=2')
+              })
+              .catch((e: unknown) => console.warn('[index] checkChildPermissions error:', e))
+          }
+        }),
+
         // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
         DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
           webViewRef.current?.injectJavaScript(
@@ -391,6 +408,8 @@ export default function Root () {
 
       // When init completes, bare emits 'ready' — dispatch is now initialized
       onEvent('ready', (data) => {
+        _mode = data.mode
+        _dbReady = true
         setDbReady(true)
         // Flush any invite URL that arrived before the worklet was ready
         if (_pendingInviteUrl) {

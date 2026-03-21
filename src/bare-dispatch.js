@@ -203,11 +203,12 @@ function createDispatch (ctx) {
       }
 
       case 'time:request': {
-        const { packageName } = args
+        const { packageName, appName } = args
         const requestId = 'req:' + Date.now() + ':' + packageName
         const request = {
           id: requestId,
           packageName,
+          appName: appName || packageName,
           requestedAt: Date.now(),
           status: 'pending',
         }
@@ -302,6 +303,13 @@ function createDispatch (ctx) {
         }
 
         return { count: newCount }
+      }
+
+      case 'swarm:reconnect': {
+        if (ctx.swarm) {
+          await ctx.swarm.flush().catch(e => console.warn('[bare] swarm:reconnect flush failed:', e.message))
+        }
+        return {}
       }
 
       case 'heartbeat:send': {

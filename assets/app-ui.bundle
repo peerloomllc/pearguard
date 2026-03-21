@@ -14610,13 +14610,13 @@
     }
     const isPending = appData.status === "pending";
     return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appRow, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appInfo, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName }),
-        isPending && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pendingBadge, children: "Pending Approval" })
-      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.appInfo, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appNameBlock, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.appName, children: appData.appName || packageName }),
+        appData.appName && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName })
+      ] }) }),
       isPending ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.actions, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.approveBtn, onClick: handleApprove, "aria-label": `Approve ${packageName}`, children: "Approve" }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.denyBtn, onClick: handleDeny, "aria-label": `Deny ${packageName}`, children: "Deny" })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.approveBtn, onClick: handleApprove, "aria-label": `Approve ${appData.appName || packageName}`, children: "Approve" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.denyBtn, onClick: handleDeny, "aria-label": `Deny ${appData.appName || packageName}`, children: "Deny" })
       ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.controls, children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("label", { style: styles3.toggle, children: [
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
@@ -14625,7 +14625,7 @@
               type: "checkbox",
               checked: appData.status === "allowed",
               onChange: (e) => setStatus(e.target.checked ? "allowed" : "blocked"),
-              "aria-label": `Toggle ${packageName}`
+              "aria-label": `Toggle ${appData.appName || packageName}`
             }
           ),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { marginLeft: "4px" }, children: appData.status === "allowed" ? "Allowed" : "Blocked" })
@@ -14641,7 +14641,7 @@
               onChange: (e) => setLimitInput(e.target.value),
               onBlur: handleLimitBlur,
               style: styles3.limitInput,
-              "aria-label": `Daily limit for ${packageName} in minutes`,
+              "aria-label": `Daily limit for ${appData.appName || packageName} in minutes`,
               placeholder: "\u221E"
             }
           ),
@@ -14700,14 +14700,9 @@
       gap: "8px"
     },
     appInfo: { display: "flex", alignItems: "center", gap: "8px" },
-    pkgName: { fontSize: "13px", fontFamily: "monospace", color: "#333", flex: 1 },
-    pendingBadge: {
-      fontSize: "11px",
-      backgroundColor: "#fbbc04",
-      color: "#000",
-      borderRadius: "4px",
-      padding: "2px 6px"
-    },
+    appNameBlock: { display: "flex", flexDirection: "column", gap: "2px", flex: 1 },
+    appName: { fontSize: "14px", color: "#111", fontWeight: "500" },
+    pkgName: { fontSize: "11px", fontFamily: "monospace", color: "#888" },
     actions: { display: "flex", gap: "8px" },
     approveBtn: {
       padding: "6px 14px",
@@ -16052,7 +16047,8 @@
             },
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { fontWeight: "bold" }, children: req.packageName }),
+                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { fontWeight: "bold" }, children: req.appName || req.packageName }),
+                req.appName && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { color: "#888", fontSize: 11, fontFamily: "monospace", marginTop: 2 }, children: req.packageName }),
                 /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { color: "#888", fontSize: 12, marginTop: 4 }, children: new Date(req.requestedAt).toLocaleTimeString() })
               ] }),
               /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { color: badge.color, fontWeight: "bold" }, children: badge.label })

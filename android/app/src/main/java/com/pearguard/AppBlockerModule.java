@@ -66,14 +66,21 @@ public class AppBlockerModule extends AccessibilityService {
     // In-memory override: packageName -> expiry time in ms
     private final HashMap<String, Long> overrides = new HashMap<>();
 
-    // Packages that have a pending time request — suppress overlay re-trigger while waiting
-    // for parent response. Cleared via clearPendingRequest() when policy updates arrive.
+    // Packages that have an in-flight time request — used to change button label in overlay.
+    // Cleared via clearPendingRequest() when a parent decision arrives via setPolicy().
     private static final Set<String> pendingRequestPackages = new HashSet<>();
 
     /** Called from UsageStatsModule.setPolicy() when a parent decision arrives. */
     public static void clearPendingRequest(String packageName) {
         pendingRequestPackages.remove(packageName);
     }
+
+    // Cooldown: after dismissing an overlay, ignore TYPE_WINDOW_STATE_CHANGED events for the
+    // same package for DISMISS_COOLDOWN_MS. This prevents the blocked app's background
+    // activity-destruction event from re-triggering the overlay over the home screen.
+    private String recentlyDismissedPackage = null;
+    private long dismissedAt = 0;
+    private static final long DISMISS_COOLDOWN_MS = 2000;
 
     private LazySodiumAndroid lazySodium;
 
@@ -198,16 +205,9 @@ public class AppBlockerModule extends AccessibilityService {
                 JSONObject appPolicy = apps.getJSONObject(packageName);
                 String status = appPolicy.optString("status", "allowed");
                 if ("blocked".equals(status)) {
-                    // Parent explicitly denied — clear any pending request and show overlay
-                    pendingRequestPackages.remove(packageName);
                     return "This app is blocked by your parent.";
                 }
                 if ("pending".equals(status)) {
-                    // If the child already sent a request, suppress the overlay so it doesn't
-                    // re-appear over the home screen while waiting for the parent's response.
-                    if (pendingRequestPackages.contains(packageName)) {
-                        return null;
-                    }
                     return "This app is waiting for parent approval.";
                 }
             }
@@ -316,6 +316,15 @@ public class AppBlockerModule extends AccessibilityService {
     // --- Overlay UI ---
 
     private void showOverlay(String packageName, String reason) {
+        // Skip during cooldown window after the overlay was just dismissed for this package.
+        // The blocked app fires a final TYPE_WINDOW_STATE_CHANGED as its activity destructs
+        // (e.g. after back gesture or Send Request). Without this guard that event would
+        // re-trigger the overlay over the home screen.
+        if (packageName.equals(recentlyDismissedPackage)
+                && System.currentTimeMillis() - dismissedAt < DISMISS_COOLDOWN_MS) {
+            return;
+        }
+
         // Skip if overlay is already showing or pending for this package.
         // overlayPending covers the window between Handler.post() and addView() executing,
         // during which overlayView is still null but we've already committed to showing.
@@ -359,7 +368,8 @@ public class AppBlockerModule extends AccessibilityService {
         layout.addView(reasonView);
 
         Button requestButton = new Button(this);
-        requestButton.setText("Send Request");
+        boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
+        requestButton.setText(requestAlreadySent ? "Resend Request" : "Send Request");
         requestButton.setOnClickListener(v -> onSendRequest(packageName));
         layout.addView(requestButton);
 
@@ -405,6 +415,10 @@ public class AppBlockerModule extends AccessibilityService {
             pinDialogView = null;
         }
         if (overlayView != null) {
+            // Record cooldown so the dismissed package's background destruction events
+            // don't immediately re-trigger the overlay over the home screen.
+            recentlyDismissedPackage = currentOverlayPackage;
+            dismissedAt = System.currentTimeMillis();
             try {
                 windowManager.removeView(overlayView);
             } catch (Exception ignored) {}

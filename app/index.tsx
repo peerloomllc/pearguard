@@ -301,7 +301,7 @@ export default function Root () {
                 if (!p.accessibility) router.replace('/child-setup?step=1')
                 else if (!p.usageStats) router.replace('/child-setup?step=2')
               })
-              .catch(() => {})
+              .catch((e: unknown) => console.warn('[index] checkChildPermissions error:', e))
           }
         }),
 

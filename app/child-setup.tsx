@@ -82,6 +82,7 @@ export default function ChildSetupScreen() {
           setPolling(false)
           setStep(2)
         } else if (step === 2 && p.usageStats) {
+          clearInterval(timerId)
           router.replace('/')
         }
       } catch (e) {

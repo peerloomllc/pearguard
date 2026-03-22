@@ -112,7 +112,7 @@ A safety valve for when the parent-child relationship needs to be reset or in an
 - **Parent device**: Option in ChildDetail to "Remove child" that sends an `unpair` P2P message before clearing local peer record.
 - **Edge case**: Child with no internet / offline — the child-side failsafe must work without a P2P connection.
 
-### [ ] 21. Clear old / stale Requests
+### [x] 21. Clear old / stale Requests — 2026-03-22
 Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete them.
 
 - **Auto-expire**: Requests older than N days (e.g. 7) could be auto-deleted on startup or during `usage:flush`.

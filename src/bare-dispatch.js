@@ -229,14 +229,29 @@ function createDispatch (ctx) {
       }
 
       case 'requests:list': {
-        // Scan Hyperbee for all keys matching 'req:*'
+        // Scan Hyperbee for all keys matching 'req:*'; auto-expire entries older than 7 days
         const requests = []
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
         for await (const { key, value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
-          requests.push(value)
+          if (value.requestedAt < cutoff) {
+            await ctx.db.del(key)
+          } else {
+            requests.push(value)
+          }
         }
         // Sort by requestedAt descending
         requests.sort((a, b) => b.requestedAt - a.requestedAt)
         return { requests }
+      }
+
+      case 'requests:clear': {
+        // Delete all resolved (approved or denied) req:* entries
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+          if (value.status === 'approved' || value.status === 'denied') {
+            await ctx.db.del(key)
+          }
+        }
+        return { ok: true }
       }
 
       case 'app:installed': {

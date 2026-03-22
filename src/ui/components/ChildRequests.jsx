@@ -11,12 +11,20 @@ function statusBadge(status) {
 export default function ChildRequests() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
+  const [clearing, setClearing] = useState(false)
 
   async function loadRequests() {
     setLoading(true)
     const { requests } = await window.callBare('requests:list')
     setRequests(requests || [])
     setLoading(false)
+  }
+
+  async function handleClearResolved() {
+    setClearing(true)
+    await window.callBare('requests:clear')
+    await loadRequests()
+    setClearing(false)
   }
 
   useEffect(() => {
@@ -40,8 +48,17 @@ export default function ChildRequests() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h2 style={{ margin: 0 }}>My Requests</h2>
+        {requests.some((r) => r.status === 'approved' || r.status === 'denied') && (
+          <button
+            onClick={handleClearResolved}
+            disabled={clearing}
+            style={{ fontSize: 13, padding: '6px 12px', border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: clearing ? 'not-allowed' : 'pointer', color: '#555' }}
+          >
+            {clearing ? 'Clearing…' : 'Clear resolved'}
+          </button>
+        )}
       </div>
 
       {requests.length === 0 && (

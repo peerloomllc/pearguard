@@ -4,21 +4,25 @@ import AddChildFlow from './AddChildFlow.jsx';
 export default function ChildrenList() {
   const [children, setChildren] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [pairedName, setPairedName] = useState(null);
 
   useEffect(() => {
     window.callBare('children:list').then(setChildren).catch(() => {});
     // Also refresh when a child connects (fires whether or not AddChildFlow is open)
-    const unsub = window.onBareEvent('child:connected', () => {
+    const unsub = window.onBareEvent('child:connected', (data) => {
       setShowAdd(false);
       window.callBare('children:list').then(setChildren).catch(() => {});
+      setPairedName(data?.displayName || 'Child');
+      setTimeout(() => setPairedName(null), 3000);
     });
     return unsub;
   }, []);
 
   function handleChildConnected(data) {
     setShowAdd(false);
-    // Refresh list
     window.callBare('children:list').then(setChildren).catch(() => {});
+    setPairedName(data?.displayName || 'Child');
+    setTimeout(() => setPairedName(null), 3000);
   }
 
   if (showAdd) {
@@ -32,6 +36,9 @@ export default function ChildrenList() {
 
   return (
     <div style={styles.container}>
+      {pairedName && (
+        <div style={styles.banner}>Successfully paired with {pairedName}!</div>
+      )}
       <div style={styles.header}>
         <h2 style={styles.heading}>Children</h2>
         <button style={styles.addBtn} onClick={() => setShowAdd(true)}>
@@ -69,6 +76,10 @@ const styles = {
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '14px',
+  },
+  banner: {
+    backgroundColor: '#e6f4ea', color: '#1e7e34', border: '1px solid #a8d5b5',
+    borderRadius: '6px', padding: '10px 14px', marginBottom: '12px', fontSize: '14px', fontWeight: '500',
   },
   empty: { color: '#888', fontSize: '14px' },
   row: {

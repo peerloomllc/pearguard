@@ -134,7 +134,7 @@ export default function Profile({ mode }) {
           )}
 
           {pairState === 'success' && (
-            <p style={styles.success}>Paired! Waiting for parent to confirm…</p>
+            <p style={styles.success}>Pairing in progress…</p>
           )}
 
           {pairState === 'error' && (

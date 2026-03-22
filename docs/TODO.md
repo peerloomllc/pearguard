@@ -164,6 +164,29 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 - **Sort option**: Toggle between alphabetical and install/discovery date (order apps were added to policy)
 - **Where**: `src/ui/components/AppsTab.jsx` — sort `Object.entries(policy.apps)` before rendering; add a sort control in the header
 
+## Added 2026-03-22
+
+### [ ] 28. Prevent child from clearing app storage to deactivate PearGuard
+Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear Storage) wipes all Hyperbee data — keypair, pairing records, policy — effectively unpairing the device without parent knowledge.
+
+- **Investigate**: Does `DevicePolicyManager` allow restricting "Clear Data" for a specific app when PearGuard is a Device Admin?
+- **Detect**: On next launch after a wipe, the child setup wizard would re-run (no `mode` key in DB). This could be used as a signal to notify the parent if they're still reachable.
+- **Related**: TODO #20 (failsafe unpair), TODO #23 (force-close stops enforcement)
+
+### [ ] 29. Bug: Initial pairing should not send "app installed" notifications to parent
+When a child first pairs (or reconnects after being offline), `apps:sync` relays all installed apps as a batch. The parent currently shows a push notification for each newly-discovered app and logs `app_installed` alert entries. For the initial sync this is noise — only installs that happen *after* pairing should trigger notifications.
+
+- **Where**: `handleIncomingAppsSync` in `src/bare-dispatch.js` — distinguish first-sync (no prior policy for this child) from incremental sync; suppress notifications on first-sync
+- **Also**: `handleIncomingAppInstalled` (P2P message path) — should this also be suppressed on initial connect? Needs decision.
+
+### [ ] 30. Design decision: default policy for apps discovered at initial pairing
+When a child pairs for the first time, all installed apps arrive via `apps:sync`. Currently they all default to `status: 'pending'`. Consider whether the right default is:
+
+- **Approve all** (allow everything until parent actively blocks) — less friction, easier onboarding
+- **Deny all** (block everything until parent reviews) — more secure, but child can't use their device until parent approves
+- **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
+- **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
+
 ## Known Limitations
 
 ### Overlay not triggered for already-open apps

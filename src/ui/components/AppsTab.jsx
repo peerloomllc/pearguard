@@ -27,6 +27,9 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
   }
 
   const isPending = appData.status === 'pending';
+  const addedDate = appData.addedAt
+    ? new Date(appData.addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
 
   return (
     <div style={styles.appRow}>
@@ -34,6 +37,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
         <div style={styles.appNameBlock}>
           <span style={styles.appName}>{appData.appName || packageName}</span>
           {appData.appName && <span style={styles.pkgName}>{packageName}</span>}
+          {addedDate && <span style={styles.addedDate}>Added {addedDate}</span>}
         </div>
       </div>
       {isPending ? (
@@ -79,6 +83,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
 export default function AppsTab({ childPublicKey }) {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sortOrder, setSortOrder] = useState('alpha'); // 'alpha' | 'date'
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -107,9 +112,29 @@ export default function AppsTab({ childPublicKey }) {
     return <div style={styles.msg}>No apps found. Apps appear here after they are installed on the child device.</div>;
   }
 
+  const sortedEntries = Object.entries(policy.apps).slice().sort((a, b) => {
+    if (sortOrder === 'alpha') {
+      const nameA = (a[1].appName || a[0]).toLowerCase();
+      const nameB = (b[1].appName || b[0]).toLowerCase();
+      return nameA.localeCompare(nameB);
+    }
+    // date: newest first — most useful for "what did my kid just install?"
+    return (b[1].addedAt || 0) - (a[1].addedAt || 0);
+  });
+
   return (
     <div style={styles.container}>
-      {Object.entries(policy.apps).map(([pkg, data]) => (
+      <div style={styles.header}>
+        <span style={styles.appCount}>{sortedEntries.length} app{sortedEntries.length !== 1 ? 's' : ''}</span>
+        <button
+          style={styles.sortBtn}
+          onClick={() => setSortOrder(s => s === 'alpha' ? 'date' : 'alpha')}
+          aria-label="Toggle sort order"
+        >
+          {sortOrder === 'alpha' ? '🔤 A–Z' : '🕐 Date'}
+        </button>
+      </div>
+      {sortedEntries.map(([pkg, data]) => (
         <AppRow
           key={pkg}
           childPublicKey={childPublicKey}
@@ -125,6 +150,24 @@ export default function AppsTab({ childPublicKey }) {
 const styles = {
   container: { padding: '16px' },
   msg: { padding: '16px', color: '#666', fontSize: '14px' },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px',
+    paddingBottom: '8px',
+    borderBottom: '2px solid #eee',
+  },
+  appCount: { fontSize: '13px', color: '#888' },
+  sortBtn: {
+    padding: '4px 10px',
+    fontSize: '12px',
+    border: '1px solid #ccc',
+    borderRadius: '12px',
+    background: '#f5f5f5',
+    cursor: 'pointer',
+    color: '#444',
+  },
   appRow: {
     padding: '12px 0',
     borderBottom: '1px solid #eee',
@@ -136,6 +179,7 @@ const styles = {
   appNameBlock: { display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 },
   appName: { fontSize: '14px', color: '#111', fontWeight: '500' },
   pkgName: { fontSize: '11px', fontFamily: 'monospace', color: '#888' },
+  addedDate: { fontSize: '11px', color: '#aaa', marginTop: '1px' },
   actions: { display: 'flex', gap: '8px' },
   approveBtn: {
     padding: '6px 14px', border: 'none', borderRadius: '6px',

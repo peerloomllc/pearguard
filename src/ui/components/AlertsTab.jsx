@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
 const TYPE_META = {
-  bypass: { label: 'Bypass Attempt', color: '#ea4335', icon: '⚠' },
-  pin_use: { label: 'PIN Used', color: '#fbbc04', icon: '🔑' },
-  time_request: { label: 'Time Request', color: '#1a73e8', icon: '⏱' },
+  bypass:          { label: 'Bypass Attempt',  color: '#ea4335', icon: '⚠'  },
+  pin_use:         { label: 'PIN Used',         color: '#fbbc04', icon: '🔑' },
+  time_request:    { label: 'Time Request',     color: '#1a73e8', icon: '⏱' },
+  app_installed:   { label: 'App Installed',    color: '#34a853', icon: '📲' },
+  app_uninstalled: { label: 'App Uninstalled',  color: '#ff6d00', icon: '🗑' },
 };
 
 function formatTime(iso) {
@@ -104,10 +106,12 @@ export default function AlertsTab({ childPublicKey }) {
 
   useEffect(() => {
     reload();
-    // Refresh when a new bypass alert or time request arrives in real-time
-    const unsubBypass = window.onBareEvent('alert:bypass', reload);
-    const unsubRequest = window.onBareEvent('time:request:received', reload);
-    return () => { unsubBypass(); unsubRequest(); };
+    // Refresh when a new bypass alert, time request, or app install/uninstall arrives
+    const unsubBypass       = window.onBareEvent('alert:bypass',          reload);
+    const unsubRequest      = window.onBareEvent('time:request:received', reload);
+    const unsubInstalled    = window.onBareEvent('app:installed',         reload);
+    const unsubUninstalled  = window.onBareEvent('app:uninstalled',       reload);
+    return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); };
   }, [childPublicKey]);
 
   async function handleApprove(alert) {

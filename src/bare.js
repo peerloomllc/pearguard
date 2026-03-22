@@ -10,7 +10,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, queueMessage, flushMessageQueue } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, queueMessage, flushMessageQueue } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -264,6 +264,9 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       break
     case 'app:installed':
       await handleIncomingAppInstalled(msg.payload, msg.from, db, send)
+      break
+    case 'app:uninstalled':
+      await handleIncomingAppUninstalled(msg.payload, msg.from, db, send)
       break
     case 'apps:sync':
       await handleIncomingAppsSync(msg.payload, msg.from, db, send)

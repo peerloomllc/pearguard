@@ -1,0 +1,5 @@
+{"type":"server-started","port":54972,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:54972","screen_dir":"/home/tim/peerloomllc/pearguard/.superpowers/brainstorm/249630-1774126735"}
+{"type":"screen-added","file":"/home/tim/peerloomllc/pearguard/.superpowers/brainstorm/249630-1774126735/welcome.html"}
+{"type":"screen-added","file":"/home/tim/peerloomllc/pearguard/.superpowers/brainstorm/249630-1774126735/wizard-steps.html"}
+{"type":"screen-added","file":"/home/tim/peerloomllc/pearguard/.superpowers/brainstorm/249630-1774126735/waiting-1.html"}
+{"type":"server-stopped","reason":"idle timeout"}

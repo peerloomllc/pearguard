@@ -248,14 +248,14 @@ function createDispatch (ctx) {
 
         // Mark as pending if not already in policy
         if (!policy.apps[packageName]) {
-          policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
+          policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: Date.now() }
           await ctx.db.put('policy', policy)
 
           // Notify native enforcement of updated policy
           ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
 
-          // Notify parent
-          ctx.send({ type: 'event', event: 'app:installed', data: { packageName, detectedAt: Date.now() } })
+          // Notify parent (event carries appName for notification label)
+          ctx.send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, detectedAt: Date.now() } })
 
           // Notify WebView
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
@@ -266,6 +266,30 @@ function createDispatch (ctx) {
         }
 
         return { status: policy.apps[packageName].status }
+      }
+
+      case 'app:uninstalled': {
+        // Child device: an app was removed. Strip it from local child policy,
+        // update native enforcement, and relay to parent so their Apps list stays clean.
+        const { packageName } = args
+        if (!packageName) return { ok: false }
+
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : { apps: {} }
+        if (!policy.apps || !policy.apps[packageName]) return { ok: true } // already absent
+
+        delete policy.apps[packageName]
+        await ctx.db.put('policy', policy)
+
+        // Keep native enforcement in sync
+        ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
+
+        // Relay to parent so they can prune their Apps list
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'app:uninstalled', payload: { packageName } })
+        }
+
+        return { ok: true }
       }
 
       case 'apps:sync': {
@@ -288,7 +312,7 @@ function createDispatch (ctx) {
         for (const { packageName, appName, isLauncher } of apps) {
           if (!policy.apps[packageName]) {
             const status = (isInitialSync || isLauncher) ? 'allowed' : 'pending'
-            policy.apps[packageName] = { status, appName: appName || packageName }
+            policy.apps[packageName] = { status, appName: appName || packageName, addedAt: Date.now() }
             newCount++
           }
         }
@@ -678,9 +702,28 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send) {
   if (!policy.apps) policy.apps = {}
 
   if (!policy.apps[packageName]) {
-    policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
+    const now = Date.now()
+    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now }
     await db.put('policy:' + childPublicKey, policy)
-    send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, detectedAt: Date.now() } })
+
+    const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+    const childDisplayName = peerRecord?.value?.displayName || 'Your child'
+
+    // Write an informational alert entry so it appears in the parent's Alerts tab
+    const alertEntry = {
+      id: 'app_installed:' + now,
+      type: 'app_installed',
+      timestamp: now,
+      packageName,
+      appDisplayName: appName || packageName,
+      childPublicKey,
+      childDisplayName,
+    }
+    await db.put('alert:' + childPublicKey + ':' + now, alertEntry)
+
+    // apps:synced refreshes the Apps tab; app:installed carries data for the notification
+    send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })
+    send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, childDisplayName } })
   }
 }
 
@@ -697,16 +740,43 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send) {
   const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
   if (!policy.apps) policy.apps = {}
 
+  const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+  const childDisplayName = peerRecord?.value?.displayName || 'Your child'
+
   let newCount = 0
+  // Use a single timestamp for the whole batch so apps from the same sync
+  // sort together by date rather than getting subtly different millisecond values.
+  const batchAddedAt = Date.now()
+  const newApps = []
   for (const { packageName, appName } of apps) {
     if (!policy.apps[packageName]) {
-      policy.apps[packageName] = { status: 'pending', appName: appName || packageName }
+      policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: batchAddedAt }
+      newApps.push({ packageName, appName: appName || packageName })
       newCount++
     }
   }
 
   if (newCount > 0) {
     await db.put('policy:' + childPublicKey, policy)
+
+    // Write alert entries and emit per-app events so the UI and notifications
+    // fire even when new apps arrive via the reconnect batch sync rather than
+    // the individual app:installed P2P message path.
+    for (const { packageName, appName } of newApps) {
+      const now = Date.now()
+      const alertEntry = {
+        id: 'app_installed:' + now + ':' + packageName,
+        type: 'app_installed',
+        timestamp: now,
+        packageName,
+        appDisplayName: appName,
+        childPublicKey,
+        childDisplayName,
+      }
+      await db.put('alert:' + childPublicKey + ':' + now + ':' + packageName, alertEntry)
+      send({ type: 'event', event: 'app:installed', data: { packageName, appName, childPublicKey, childDisplayName } })
+    }
+
     send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })
   }
 }
@@ -735,4 +805,50 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
   send({ type: 'event', event: 'time:request:received', data: request })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }
+/**
+ * Handle an incoming `app:uninstalled` P2P message from a child peer.
+ * Removes the package from the child's policy on the PARENT device so the
+ * Apps list no longer shows stale entries for apps that no longer exist.
+ * Runs on the PARENT device.
+ */
+async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) {
+  const { packageName } = payload
+  if (!packageName) {
+    console.warn('[bare] app:uninstalled from child: missing packageName')
+    return
+  }
+
+  const raw = await db.get('policy:' + childPublicKey)
+  if (!raw) return
+
+  const policy = raw.value
+  if (!policy.apps || !policy.apps[packageName]) return
+
+  // Grab the display name before deleting so the alert has a readable label
+  const appName = policy.apps[packageName].appName || packageName
+
+  delete policy.apps[packageName]
+  await db.put('policy:' + childPublicKey, policy)
+
+  const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+  const childDisplayName = peerRecord?.value?.displayName || 'Your child'
+
+  // Write an informational alert entry so it appears in the parent's Alerts tab
+  const now = Date.now()
+  const alertEntry = {
+    id: 'app_uninstalled:' + now,
+    type: 'app_uninstalled',
+    timestamp: now,
+    packageName,
+    appDisplayName: appName,
+    childPublicKey,
+    childDisplayName,
+  }
+  await db.put('alert:' + childPublicKey + ':' + now, alertEntry)
+
+  // apps:synced refreshes the Apps tab; app:uninstalled carries data for the notification
+  send({ type: 'event', event: 'apps:synced', data: { childPublicKey } })
+  send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName, childPublicKey, childDisplayName } })
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

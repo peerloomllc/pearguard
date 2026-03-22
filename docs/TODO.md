@@ -33,13 +33,6 @@ After the child completes pairing (`acceptInvite` resolves), the Profile screen 
 - **Where**: `src/ui/components/Profile.jsx` — `pairState === 'success'` already shows a message; ensure the parents list also reloads at that point
 - **Bare event**: `peer:paired` already triggers a refresh — verify it fires reliably after `acceptInvite` completes
 
-### [ ] 6. Guided Accessibility Service setup on Child device
-After a user selects "Child" mode during first-launch setup, display step-by-step instructions guiding them to enable the PearGuard Accessibility Service in Android Settings.
-
-- **Where**: `app/setup.tsx` (first-launch mode selection) or a new `ChildSetup` screen
-- **Flow**: Select "Child" → see instructions screen → "Open Accessibility Settings" deep-link button → user enables service → return to app and confirm service is active
-- **Detection**: Poll or listen for `AccessibilityManager` service state to auto-advance once enabled
-
 ### [ ] 8. Display app icons in Apps list
 Show the app's launcher icon next to its name in the parent's Apps tab.
 
@@ -52,9 +45,6 @@ When a child sends a time request, the parent currently has no dedicated UI to v
 - **Where**: `src/ui/components/ChildDetail.jsx` — add a "Requests" tab alongside Apps/Schedule/Usage
 - **Data**: read from `request:{requestId}` keys in Hyperbee; listen for `time:request:received` event to refresh
 - **Actions**: Approve (grant timed override) / Deny buttons per request
-
-### [ ] 11. Time limits not honored — ensure Usage Stats permission is granted on child
-`AppBlockerModule.getDailyUsageSeconds` requires `PACKAGE_USAGE_STATS` permission, which must be manually granted by the user in Settings → Apps → Special app access → Usage access. If not granted, usage is always 0 and limits never trigger. Extend the child setup wizard (TODO #6) to also guide the user through granting usage access.
 
 ### [ ] 12. Persistent parent identity key (invite URL never changes)
 
@@ -182,6 +172,12 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 6. Guided Accessibility Service setup on Child device — 2026-03-21
+Mandatory two-step wizard (`app/child-setup.tsx`) guides child device users through enabling Accessibility Service and Usage Stats permission on first launch and whenever either is missing. Auto-advances via 1.5s polling. Re-triggers on app foreground if permissions are revoked.
+
+### [x] 11. Time limits not honored — ensure Usage Stats permission is granted on child — 2026-03-21
+Resolved as part of TODO #6. Step 2 of the child setup wizard guides the user through granting Usage Access permission before reaching the main screen.
 
 ### [x] 7. Remove "Pending Approval" badge from Apps list — 2026-03-21
 The yellow "Pending Approval" badge on each row was redundant — the Approve/Deny buttons immediately below it already convey pending state.

@@ -270,8 +270,13 @@ export default function Root () {
       // return check below, they would be cleaned up on unmount and never re-added.
       nativeSubs.push(
         // New app installed — forward to bare worklet as app:installed
-        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string }) => {
-          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName } })
+        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string; appName?: string }) => {
+          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName, appName: e.appName } })
+        }),
+
+        // App uninstalled — forward to bare worklet so parent's Apps list stays current
+        DeviceEventEmitter.addListener('onAppUninstalled', (e: { packageName: string }) => {
+          sendToWorklet({ method: 'app:uninstalled', args: { packageName: e.packageName } })
         }),
 
         // Accessibility Service or Device Admin disabled — forward as bypass:detected
@@ -381,6 +386,32 @@ export default function Root () {
                 const childName = childDisplayName || 'Your child'
                 NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
               }
+              // Notify about app installs — behaviour differs by mode:
+              // Parent: show "X installed a new app" notification (childDisplayName present = came via P2P)
+              // Child: show "You installed a new app" notification (no childDisplayName = local event)
+              if (msg.event === 'app:installed') {
+                const { childPublicKey, childDisplayName, appName, packageName } = msg.data ?? {}
+                const appLabel = appName || packageName || 'an app'
+                if (childDisplayName) {
+                  // Parent device — message arrived from child over P2P
+                  NativeModules.UsageStatsModule?.showAppInstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
+                } else if (_mode === 'child') {
+                  // Child device — local install event, notify the child themselves
+                  NativeModules.UsageStatsModule?.showAppInstalledNotification?.('You', appLabel, '')
+                }
+              }
+              // Notify about app uninstalls — same mode-split pattern
+              if (msg.event === 'app:uninstalled') {
+                const { childPublicKey, childDisplayName, appName, packageName } = msg.data ?? {}
+                const appLabel = appName || packageName || 'an app'
+                if (childDisplayName) {
+                  // Parent device — message arrived from child over P2P
+                  NativeModules.UsageStatsModule?.showAppUninstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
+                } else if (_mode === 'child') {
+                  // Child device — local uninstall event
+                  NativeModules.UsageStatsModule?.showAppUninstalledNotification?.('You', appLabel, '')
+                }
+              }
               // Forward all other Bare events to WebView
               webViewRef.current?.injectJavaScript(
                 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
@@ -389,12 +420,25 @@ export default function Root () {
             } else if (msg.method === 'native:setPolicy') {
               // Write policy to SharedPreferences so native enforcement modules can read it
               NativeModules.UsageStatsModule?.setPolicy(msg.args.json)
+              // Auto-dismiss overlay if the currently-blocked app is now allowed in the new policy.
+              // Parse the JSON policy to find which packages are now allowed/overridden.
+              try {
+                const policy = JSON.parse(msg.args.json)
+                const apps: Record<string, { status: string }> = policy?.apps ?? {}
+                for (const [pkg, appData] of Object.entries(apps)) {
+                  if (appData.status === 'allowed') {
+                    NativeModules.UsageStatsModule?.dismissOverlayForPackage?.(pkg)
+                  }
+                }
+              } catch (_) {}
             } else if (msg.method === 'native:grantOverride') {
               // Write P2P-granted override expiry to SharedPreferences so AppBlockerModule can read it
               NativeModules.UsageStatsModule?.grantOverride(
                 msg.args.packageName,
                 msg.args.expiresAt
               )
+              // Auto-dismiss the overlay for this package — the parent just granted access
+              NativeModules.UsageStatsModule?.dismissOverlayForPackage?.(msg.args.packageName)
             } else if (msg.type === 'response') {
               const resolve = _pending.get(msg.id)
               if (resolve) { _pending.delete(msg.id); resolve(msg) }

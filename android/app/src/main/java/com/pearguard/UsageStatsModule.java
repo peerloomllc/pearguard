@@ -57,9 +57,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     private boolean hasUsageStatsPermission() {
         AppOpsManager appOps = (AppOpsManager) reactContext.getSystemService(Context.APP_OPS_SERVICE);
         int mode = appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            reactContext.getPackageName()
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                reactContext.getPackageName()
         );
         return mode == AppOpsManager.MODE_ALLOWED;
     }
@@ -68,8 +68,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         String prefString;
         try {
             prefString = Settings.Secure.getString(
-                reactContext.getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                    reactContext.getContentResolver(),
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             );
         } catch (Exception e) {
             return false;
@@ -113,7 +113,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getUsage(String packageName, Promise promise) {
         UsageStatsManager usm = (UsageStatsManager)
-            reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
+                reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
 
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, 0);
@@ -140,7 +140,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getDailyUsageAll(Promise promise) {
         UsageStatsManager usm = (UsageStatsManager)
-            reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
+                reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
         PackageManager pm = reactContext.getPackageManager();
 
         Calendar cal = Calendar.getInstance();
@@ -228,7 +228,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getWeeklyUsage(String packageName, Promise promise) {
         UsageStatsManager usm = (UsageStatsManager)
-            reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
+                reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
 
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.DAY_OF_WEEK, cal.getFirstDayOfWeek());
@@ -293,6 +293,18 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         promise.resolve(null);
     }
 
+    /**
+     * Dismisses the block overlay if it is currently showing for the given package.
+     * Called from app/index.tsx after a P2P override or policy update makes a package accessible.
+     * Delegates to AppBlockerModule.dismissIfShowing() which is a no-op if the service is not
+     * running or the overlay is showing a different package.
+     */
+    @ReactMethod
+    public void dismissOverlayForPackage(String packageName, Promise promise) {
+        AppBlockerModule.dismissIfShowing(packageName);
+        promise.resolve(null);
+    }
+
     private static final String REQUEST_CHANNEL_ID = "pearguard_time_requests";
     private static int notificationId = 2000;
 
@@ -303,14 +315,14 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void showTimeRequestNotification(String childName, String appName, String childPublicKey) {
         NotificationManager nm =
-            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+                (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                REQUEST_CHANNEL_ID,
-                "Child Time Requests",
-                NotificationManager.IMPORTANCE_HIGH
+                    REQUEST_CHANNEL_ID,
+                    "Child Time Requests",
+                    NotificationManager.IMPORTANCE_HIGH
             );
             channel.setDescription("Alerts when a child requests access to a blocked app");
             nm.createNotificationChannel(channel);
@@ -322,12 +334,12 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         String body  = childName + " wants to use " + appName;
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pi);
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
 
         nm.notify(notificationId++, builder.build());
     }
@@ -339,14 +351,14 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void showBypassAlertNotification(String childName, String childPublicKey) {
         NotificationManager nm =
-            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+                (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                REQUEST_CHANNEL_ID,
-                "Child Time Requests",
-                NotificationManager.IMPORTANCE_HIGH
+                    REQUEST_CHANNEL_ID,
+                    "Child Time Requests",
+                    NotificationManager.IMPORTANCE_HIGH
             );
             nm.createNotificationChannel(channel);
         }
@@ -354,12 +366,12 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(childName + "'s parental controls disabled")
-            .setContentText(childName + " turned off the PearGuard Accessibility Service")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pi);
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(childName + "'s parental controls disabled")
+                .setContentText(childName + " turned off the PearGuard Accessibility Service")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
 
         nm.notify(notificationId++, builder.build());
     }
@@ -367,14 +379,14 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void showDecisionNotification(String appName, String decision) {
         NotificationManager nm =
-            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+                (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                REQUEST_CHANNEL_ID,
-                "Child Time Requests",
-                NotificationManager.IMPORTANCE_HIGH
+                    REQUEST_CHANNEL_ID,
+                    "Child Time Requests",
+                    NotificationManager.IMPORTANCE_HIGH
             );
             nm.createNotificationChannel(channel);
         }
@@ -382,26 +394,99 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         boolean approved = "approved".equals(decision);
         String title = approved ? "Request approved" : "Request denied";
         String text = approved
-            ? "Your parent allowed more time on " + appName
-            : "Your parent denied the request for " + appName;
+                ? "Your parent allowed more time on " + appName
+                : "Your parent denied the request for " + appName;
 
         Intent launchIntent = reactContext.getPackageManager()
-            .getLaunchIntentForPackage(reactContext.getPackageName());
+                .getLaunchIntentForPackage(reactContext.getPackageName());
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         }
         PendingIntent pi = PendingIntent.getActivity(
-            reactContext, notificationId, launchIntent != null ? launchIntent : new Intent(),
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                reactContext, notificationId, launchIntent != null ? launchIntent : new Intent(),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pi);
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Shows an app-installed notification. Works for both child device ("You installed…")
+     * and parent device ("Alice installed…") depending on the childName passed.
+     * Called from app/index.tsx when bare emits the app:installed event.
+     */
+    @ReactMethod
+    public void showAppInstalledNotification(String childName, String appName, String childPublicKey) {
+        NotificationManager nm =
+                (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    REQUEST_CHANNEL_ID, "Child Time Requests", NotificationManager.IMPORTANCE_HIGH);
+            nm.createNotificationChannel(channel);
+        }
+
+        boolean isSelf = "You".equals(childName);
+        String title = isSelf
+                ? "You installed " + appName
+                : childName + " installed " + appName;
+        String body = isSelf
+                ? appName + " has been installed on your device"
+                : appName + " is pending your approval";
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Shows an app-uninstalled notification. Works for both child and parent devices.
+     * Called from app/index.tsx when bare emits the app:uninstalled event.
+     */
+    @ReactMethod
+    public void showAppUninstalledNotification(String childName, String appName, String childPublicKey) {
+        NotificationManager nm =
+                (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    REQUEST_CHANNEL_ID, "Child Time Requests", NotificationManager.IMPORTANCE_HIGH);
+            nm.createNotificationChannel(channel);
+        }
+
+        boolean isSelf = "You".equals(childName);
+        String title = isSelf
+                ? "You uninstalled " + appName
+                : childName + " uninstalled " + appName;
+        String body = isSelf
+                ? appName + " has been removed from your device"
+                : appName + " has been removed from " + childName + "'s device";
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
 
         nm.notify(notificationId++, builder.build());
     }
@@ -412,13 +497,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
      */
     private PendingIntent buildAlertsPendingIntent(String childPublicKey, int reqCode) {
         String url = "pear://pearguard/alerts?childPublicKey=" +
-            Uri.encode(childPublicKey != null ? childPublicKey : "");
+                Uri.encode(childPublicKey != null ? childPublicKey : "");
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         intent.setPackage(reactContext.getPackageName());
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         return PendingIntent.getActivity(
-            reactContext, reqCode, intent,
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                reactContext, reqCode, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
     }
 }

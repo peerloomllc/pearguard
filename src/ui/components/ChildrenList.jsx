@@ -7,7 +7,6 @@ export default function ChildrenList() {
 
   useEffect(() => {
     window.callBare('children:list').then(setChildren).catch(() => {});
-    // Also refresh when a child connects (fires whether or not AddChildFlow is open)
     const unsub = window.onBareEvent('child:connected', () => {
       setShowAdd(false);
       window.callBare('children:list').then(setChildren).catch(() => {});
@@ -15,9 +14,8 @@ export default function ChildrenList() {
     return unsub;
   }, []);
 
-  function handleChildConnected(data) {
+  function handleChildConnected() {
     setShowAdd(false);
-    // Refresh list
     window.callBare('children:list').then(setChildren).catch(() => {});
   }
 

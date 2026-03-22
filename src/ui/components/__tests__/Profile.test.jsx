@@ -38,7 +38,7 @@ test('child mode: calls qr:scan then acceptInvite on button press', async () => 
     expect(window.callBare).toHaveBeenCalledWith('qr:scan');
     expect(window.callBare).toHaveBeenCalledWith('acceptInvite', ['pear://pearguard/join?t=abc123']);
   });
-  expect(await screen.findByText(/paired!/i)).toBeInTheDocument();
+  expect(await screen.findByText(/pairing in progress/i)).toBeInTheDocument();
 });
 
 test('child mode: shows connecting state after scan, while acceptInvite is pending', async () => {
@@ -55,7 +55,7 @@ test('child mode: shows connecting state after scan, while acceptInvite is pendi
   // connecting appears only after qr:scan resolves and acceptInvite is pending
   expect(await screen.findByText(/connecting to parent/i)).toBeInTheDocument();
   resolveAccept({});
-  expect(await screen.findByText(/paired!/i)).toBeInTheDocument();
+  expect(await screen.findByText(/pairing in progress/i)).toBeInTheDocument();
 });
 
 // ── Child mode — cancel ───────────────────────────────────────────────────────

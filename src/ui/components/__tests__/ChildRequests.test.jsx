@@ -197,6 +197,41 @@ test('after request:updated event, list re-fetches', async () => {
   })
 })
 
+test('"Clear resolved" button is hidden when all requests are pending', async () => {
+  window.callBare.mockResolvedValue({
+    requests: [
+      { id: 'req:1', packageName: 'com.example.app', requestedAt: Date.now(), status: 'pending' },
+    ],
+  })
+  render(<ChildRequests />)
+  await waitFor(() => {
+    expect(screen.getByText('Pending...')).toBeInTheDocument()
+  })
+  expect(screen.queryByRole('button', { name: 'Clear resolved' })).not.toBeInTheDocument()
+})
+
+test('"Clear resolved" button appears when a resolved request exists and calls requests:clear', async () => {
+  window.callBare.mockResolvedValue({
+    requests: [
+      { id: 'req:1', packageName: 'com.example.app', requestedAt: Date.now(), status: 'approved' },
+    ],
+  })
+  render(<ChildRequests />)
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Clear resolved' })).toBeInTheDocument()
+  })
+
+  // After clicking, requests:clear is called followed by a reload
+  window.callBare.mockClear()
+  window.callBare.mockResolvedValue({ ok: true })
+  const btn = screen.getByRole('button', { name: 'Clear resolved' })
+  act(() => { btn.click() })
+
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith('requests:clear')
+  })
+})
+
 test('displays package names and formatted timestamps', async () => {
   const now = Date.now()
   window.callBare.mockResolvedValue({

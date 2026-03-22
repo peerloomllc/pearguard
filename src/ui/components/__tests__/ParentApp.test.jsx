@@ -2,6 +2,11 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ParentApp from '../ParentApp.jsx';
 
+beforeEach(() => {
+  window.callBare = jest.fn().mockResolvedValue({});
+  window.onBareEvent = jest.fn().mockReturnValue(() => {});
+});
+
 // Stub child panels to avoid cascading IPC calls in this unit test
 jest.mock('../Dashboard.jsx', () => () => <div>Dashboard panel</div>);
 jest.mock('../ChildrenList.jsx', () => () => <div>Children panel</div>);

@@ -21,13 +21,13 @@ Add avatar/photo support on the Profile page and during forced profile setup.
 - **Where**: `src/ui/components/Profile.jsx` — replace the initials circle with photo when set
 - **Storage**: encode avatar as base64 in Hyperbee `profile` record; include thumbnail in `hello` payload
 
-### [ ] 4. Parent UI: show pairing confirmation + refresh Children list
+### [x] 4. Parent UI: show pairing confirmation + refresh Children list — 2026-03-22
 When a child device pairs with the parent, the parent's Children tab should immediately refresh its list and display a "Successfully paired" confirmation message.
 
 - **Where**: `src/ui/components/ChildrenList.jsx` — already listens for `child:connected`; needs a success banner rendered briefly after the event fires
 - **Bare event**: `child:connected`
 
-### [ ] 5. Child UI: show pairing confirmation + refresh Profile
+### [x] 5. Child UI: show pairing confirmation + refresh Profile — 2026-03-22
 After the child completes pairing (`acceptInvite` resolves), the Profile screen should immediately reflect the new parent connection (refresh the parents list) and display a "Successfully paired" confirmation.
 
 - **Where**: `src/ui/components/Profile.jsx` — `pairState === 'success'` already shows a message; ensure the parents list also reloads at that point

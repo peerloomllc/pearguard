@@ -33,6 +33,13 @@ const _eventHandlers = new Map<string, ((data: any) => void)[]>()
 let _pendingInviteUrl: string | null = null
 // childPublicKey from pear://pearguard/alerts deep link — injected into WebView after dbReady
 let _pendingAlertsNav: string | null = null
+// Events that fired before the WebView finished loading — replayed once onLoad fires.
+// Bare auto-reconnects on startup (reloads persisted topics), so peer:paired /
+// child:connected can fire before the WebView is ready to receive them.
+let _webViewLoaded = false
+const _pendingWebViewEvents: { event: string; data: any }[] = []
+// Stable inject function updated each render so buffered events reach current WebView ref.
+let _injectToWebView: ((js: string) => void) | null = null
 
 // ── Module-level deep link listeners ──────────────────────────────────────────
 // These must live outside the component so they are never removed on unmount.
@@ -174,6 +181,9 @@ export default function Root () {
   const scanResolve = useRef<((url: string) => void) | null>(null)
   const scanReject  = useRef<((reason: string) => void) | null>(null)
   const router = useRouter()
+
+  // Keep module-level inject pointer in sync with current WebView ref on every render
+  _injectToWebView = (js: string) => webViewRef.current?.injectJavaScript(js)
 
   // Handle messages from the WebView
   const onWebViewMessage = useCallback((e: any) => {
@@ -412,10 +422,13 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.showAppUninstalledNotification?.('You', appLabel, '')
                 }
               }
-              // Forward all other Bare events to WebView
-              webViewRef.current?.injectJavaScript(
-                'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
-              )
+              // Forward all other Bare events to WebView (buffer if not yet loaded)
+              const pearEventJs = 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
+              if (_webViewLoaded) {
+                _injectToWebView?.(pearEventJs)
+              } else {
+                _pendingWebViewEvents.push({ event: msg.event, data: msg.data })
+              }
               ;(_eventHandlers.get(msg.event) ?? []).forEach(fn => fn(msg.data))
             } else if (msg.method === 'native:setPolicy') {
               // Write policy to SharedPreferences so native enforcement modules can read it
@@ -508,7 +521,18 @@ export default function Root () {
         source={{ html }}
         style={styles.webview}
         onMessage={onWebViewMessage}
-        onLoad={() => setWebViewReady(true)}
+        onLoad={() => {
+          _webViewLoaded = true
+          setWebViewReady(true)
+          // Replay events that fired before the WebView was ready (e.g. peer:paired
+          // from bare's startup topic-rejoin running before the WebView finishes loading)
+          const queued = _pendingWebViewEvents.splice(0)
+          for (const { event, data } of queued) {
+            webViewRef.current?.injectJavaScript(
+              'window.__pearEvent(' + JSON.stringify(event) + ',' + JSON.stringify(data) + ');true;'
+            )
+          }
+        }}
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}

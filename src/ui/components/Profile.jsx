@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
 function getInitials(name) {
   return name.trim()
@@ -14,6 +14,8 @@ export default function Profile({ mode }) {
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
   const [pairError, setPairError] = useState(null)
   const [parents, setParents] = useState([]) // child mode: list of paired parents
+  const [pairedBanner, setPairedBanner] = useState(false)
+  const pairDoneRef = useRef(false) // true once peer:paired fires; prevents acceptInvite overriding state
 
   useEffect(() => {
     window.callBare('identity:getName')
@@ -30,8 +32,11 @@ export default function Profile({ mode }) {
     if (mode !== 'child') return
     window.callBare('children:list').then(setParents).catch(() => {})
     const unsub = window.onBareEvent('peer:paired', () => {
+      pairDoneRef.current = true
       window.callBare('children:list').then(setParents).catch(() => {})
       setPairState('idle')
+      setPairedBanner(true)
+      setTimeout(() => setPairedBanner(false), 3000)
     })
     return unsub
   }, [mode])
@@ -53,12 +58,18 @@ export default function Profile({ mode }) {
   }
 
   async function handlePair() {
+    pairDoneRef.current = false
     setPairError(null)
     try {
       const url = await window.callBare('qr:scan')  // camera opens natively; wait for scan
       setPairState('connecting')                      // show connecting only after scan
       await window.callBare('acceptInvite', [url])
-      setPairState('success')
+      // Only show "Pairing in progress" if peer:paired hasn't already fired and
+      // reset the state (race condition on fast LAN: hello exchange completes before
+      // swarm.flush() resolves and acceptInvite returns).
+      if (!pairDoneRef.current) {
+        setPairState('success')
+      }
     } catch (e) {
       if (e.message === 'cancelled') {
         setPairState('idle')
@@ -106,6 +117,10 @@ export default function Profile({ mode }) {
           {saving ? 'Saving…' : 'Save Name'}
         </button>
       </div>
+
+      {mode === 'child' && pairedBanner && (
+        <div style={styles.banner}>Successfully paired with parent!</div>
+      )}
 
       {mode === 'child' && (
         <div style={styles.section}>
@@ -175,6 +190,10 @@ const styles = {
   btnDisabled: { backgroundColor: '#ccc', cursor: 'not-allowed' },
   success: { color: '#34a853', fontSize: '13px', margin: 0 },
   error: { color: '#ea4335', fontSize: '13px', margin: 0 },
+  banner: {
+    backgroundColor: '#e6f4ea', color: '#1e7e34', border: '1px solid #a8d5b5',
+    borderRadius: '6px', padding: '10px 14px', marginTop: '16px', fontSize: '14px', fontWeight: '500',
+  },
   section:        { marginTop: '32px' },
   sectionHeading: { fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#333' },
   hint:           { color: '#888', fontSize: '14px' },

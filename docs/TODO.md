@@ -166,6 +166,20 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 
 ## Added 2026-03-22
 
+### [ ] 31. Parent setup: require override PIN before first use
+Before the parent device becomes operational, force the parent to set an override PIN. Without a PIN, the child can never request access to a blocked app, making enforcement useless.
+
+- **Where**: `app/setup.tsx` — add a PIN-entry step after mode selection; do not proceed until a valid PIN is saved via `pin:set`
+- **Related**: TODO #1 (force profile name at setup) — these could be combined into a single setup wizard step
+
+### [ ] 32. Parent-initiated unpair / remote deactivation of child
+The parent should be able to sever the pairing from their side, which should remotely deactivate PearGuard enforcement on the child device.
+
+- **Parent side**: "Remove child" option in ChildDetail → sends an `unpair` P2P message to the child, then deletes `peers:{childPublicKey}` and `policy:{childPublicKey}` locally
+- **Child side**: On receiving `unpair`, delete `peers:*`, `policy`, and `mode` from Hyperbee; navigate to setup screen
+- **Offline case**: If child is offline, queue the `unpair` message; deliver on next reconnect
+- **Related**: TODO #20 (failsafe unpair from child side)
+
 ### [ ] 28. Prevent child from clearing app storage to deactivate PearGuard
 Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear Storage) wipes all Hyperbee data — keypair, pairing records, policy — effectively unpairing the device without parent knowledge.
 

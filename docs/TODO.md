@@ -21,13 +21,13 @@ Add avatar/photo support on the Profile page and during forced profile setup.
 - **Where**: `src/ui/components/Profile.jsx` — replace the initials circle with photo when set
 - **Storage**: encode avatar as base64 in Hyperbee `profile` record; include thumbnail in `hello` payload
 
-### [ ] 4. Parent UI: show pairing confirmation + refresh Children list
+### [x] 4. Parent UI: show pairing confirmation + refresh Children list — 2026-03-22
 When a child device pairs with the parent, the parent's Children tab should immediately refresh its list and display a "Successfully paired" confirmation message.
 
 - **Where**: `src/ui/components/ChildrenList.jsx` — already listens for `child:connected`; needs a success banner rendered briefly after the event fires
 - **Bare event**: `child:connected`
 
-### [ ] 5. Child UI: show pairing confirmation + refresh Profile
+### [x] 5. Child UI: show pairing confirmation + refresh Profile — 2026-03-22
 After the child completes pairing (`acceptInvite` resolves), the Profile screen should immediately reflect the new parent connection (refresh the parents list) and display a "Successfully paired" confirmation.
 
 - **Where**: `src/ui/components/Profile.jsx` — `pairState === 'success'` already shows a message; ensure the parents list also reloads at that point
@@ -39,7 +39,7 @@ Show the app's launcher icon next to its name in the parent's Apps tab.
 - **Where**: `src/ui/components/AppsTab.jsx` — when child sends `app:installed`, include a base64 icon in the payload; display in `AppRow`
 - **How**: `getInstalledPackages` in Java can fetch `pm.getApplicationIcon(ai)` and encode as base64
 
-### [ ] 10. "Child Requests" management page on parent
+### [x] 10. "Child Requests" management page on parent — 2026-03-22
 When a child sends a time request, the parent currently has no dedicated UI to view and approve/deny pending requests. Add a requests tab or section to the parent's ChildDetail screen.
 
 - **Where**: `src/ui/components/ChildDetail.jsx` — add a "Requests" tab alongside Apps/Schedule/Usage
@@ -112,7 +112,7 @@ A safety valve for when the parent-child relationship needs to be reset or in an
 - **Parent device**: Option in ChildDetail to "Remove child" that sends an `unpair` P2P message before clearing local peer record.
 - **Edge case**: Child with no internet / offline — the child-side failsafe must work without a P2P connection.
 
-### [ ] 21. Clear old / stale Requests
+### [x] 21. Clear old / stale Requests — 2026-03-22
 Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete them.
 
 - **Auto-expire**: Requests older than N days (e.g. 7) could be auto-deleted on startup or during `usage:flush`.
@@ -163,6 +163,60 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 - **Default**: Sort alphabetically by `appName` (falling back to `packageName`)
 - **Sort option**: Toggle between alphabetical and install/discovery date (order apps were added to policy)
 - **Where**: `src/ui/components/AppsTab.jsx` — sort `Object.entries(policy.apps)` before rendering; add a sort control in the header
+
+## Added 2026-03-22
+
+### [ ] 31. Parent setup: require override PIN before first use
+Before the parent device becomes operational, force the parent to set an override PIN. Without a PIN, the child can never request access to a blocked app, making enforcement useless.
+
+- **Where**: `app/setup.tsx` — add a PIN-entry step after mode selection; do not proceed until a valid PIN is saved via `pin:set`
+- **Related**: TODO #1 (force profile name at setup) — these could be combined into a single setup wizard step
+
+### [ ] 32. Parent-initiated unpair / remote deactivation of child
+The parent should be able to sever the pairing from their side, which should remotely deactivate PearGuard enforcement on the child device.
+
+- **Parent side**: "Remove child" option in ChildDetail → sends an `unpair` P2P message to the child, then deletes `peers:{childPublicKey}` and `policy:{childPublicKey}` locally
+- **Child side**: On receiving `unpair`, delete `peers:*`, `policy`, and `mode` from Hyperbee; navigate to setup screen
+- **Offline case**: If child is offline, queue the `unpair` message; deliver on next reconnect
+- **Related**: TODO #20 (failsafe unpair from child side)
+
+### [ ] 28. Prevent child from clearing app storage to deactivate PearGuard
+Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear Storage) wipes all Hyperbee data — keypair, pairing records, policy — effectively unpairing the device without parent knowledge.
+
+- **Investigate**: Does `DevicePolicyManager` allow restricting "Clear Data" for a specific app when PearGuard is a Device Admin?
+- **Detect**: On next launch after a wipe, the child setup wizard would re-run (no `mode` key in DB). This could be used as a signal to notify the parent if they're still reachable.
+- **Related**: TODO #20 (failsafe unpair), TODO #23 (force-close stops enforcement)
+
+### [ ] 29. Bug: Initial pairing should not send "app installed" notifications to parent
+When a child first pairs (or reconnects after being offline), `apps:sync` relays all installed apps as a batch. The parent currently shows a push notification for each newly-discovered app and logs `app_installed` alert entries. For the initial sync this is noise — only installs that happen *after* pairing should trigger notifications.
+
+- **Where**: `handleIncomingAppsSync` in `src/bare-dispatch.js` — distinguish first-sync (no prior policy for this child) from incremental sync; suppress notifications on first-sync
+- **Also**: `handleIncomingAppInstalled` (P2P message path) — should this also be suppressed on initial connect? Needs decision.
+
+### [ ] 30. Design decision: default policy for apps discovered at initial pairing
+When a child pairs for the first time, all installed apps arrive via `apps:sync`. Currently they all default to `status: 'pending'`. Consider whether the right default is:
+
+- **Approve all** (allow everything until parent actively blocks) — less friction, easier onboarding
+- **Deny all** (block everything until parent reviews) — more secure, but child can't use their device until parent approves
+- **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
+- **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
+
+### [ ] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail
+When the parent taps Back from ChildDetail and later returns, the previously active tab still appears highlighted even if the tab state resets. Investigate whether the active tab indicator is persisting across mounts.
+
+- **Where**: `src/ui/components/ChildDetail.jsx` — verify `initialTab` default and that state resets on unmount
+
+### [ ] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab
+When the parent receives a push notification for a child's time request and taps it, they are taken to the Activity tab rather than the Requests tab where they can act on it.
+
+- **Where**: `app/index.tsx` — find where `time:request:received` notification tap is handled; change the deep-link or tab navigation target from `alerts` to `requests` in ChildDetail
+
+### [ ] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab
+When a child's time request is approved and they tap the notification, nothing useful happens. It should either launch the approved app directly or open PearGuard to the child's Requests tab.
+
+- **Option A**: Extract `packageName` from the notification intent extras; call `startActivity` with a `CATEGORY_LAUNCHER` intent for that package
+- **Option B**: Navigate to the child's Requests tab in the WebView as a fallback if the app can't be launched
+- **Where**: `android/.../UsageStatsModule.java` or wherever notifications are built for the child; `app/index.tsx` for the WebView navigation fallback
 
 ## Known Limitations
 

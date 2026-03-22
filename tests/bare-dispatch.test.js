@@ -727,14 +727,16 @@ describe('bare dispatch', () => {
     }
 
     test('returns requests sorted by requestedAt descending', async () => {
+      const now = Date.now()
       const items = [
-        { key: 'req:100:com.a', value: { id: 'req:100:com.a', packageName: 'com.a', requestedAt: 100, status: 'pending' } },
-        { key: 'req:300:com.b', value: { id: 'req:300:com.b', packageName: 'com.b', requestedAt: 300, status: 'pending' } },
-        { key: 'req:200:com.c', value: { id: 'req:200:com.c', packageName: 'com.c', requestedAt: 200, status: 'approved' } },
+        { key: 'req:1:com.a', value: { id: 'req:1:com.a', packageName: 'com.a', requestedAt: now - 100, status: 'pending' } },
+        { key: 'req:3:com.b', value: { id: 'req:3:com.b', packageName: 'com.b', requestedAt: now - 300, status: 'pending' } },
+        { key: 'req:2:com.c', value: { id: 'req:2:com.c', packageName: 'com.c', requestedAt: now - 200, status: 'approved' } },
       ]
       const mockDb = {
         put: jest.fn(),
         get: jest.fn(),
+        del: jest.fn(),
         createReadStream: jest.fn().mockReturnValue(makeAsyncIterable(items)),
       }
       const mockSend = jest.fn()
@@ -745,16 +747,17 @@ describe('bare dispatch', () => {
 
       expect(result).toHaveProperty('requests')
       expect(result.requests).toHaveLength(3)
-      // Sorted descending by requestedAt
-      expect(result.requests[0].requestedAt).toBe(300)
-      expect(result.requests[1].requestedAt).toBe(200)
-      expect(result.requests[2].requestedAt).toBe(100)
+      // Sorted descending by requestedAt (now-100 is most recent)
+      expect(result.requests[0].packageName).toBe('com.a')
+      expect(result.requests[1].packageName).toBe('com.c')
+      expect(result.requests[2].packageName).toBe('com.b')
     })
 
     test('calls createReadStream with correct range options', async () => {
       const mockDb = {
         put: jest.fn(),
         get: jest.fn(),
+        del: jest.fn(),
         createReadStream: jest.fn().mockReturnValue(makeAsyncIterable([])),
       }
       const ctx = { db: mockDb, send: jest.fn() }
@@ -769,6 +772,7 @@ describe('bare dispatch', () => {
       const mockDb = {
         put: jest.fn(),
         get: jest.fn(),
+        del: jest.fn(),
         createReadStream: jest.fn().mockReturnValue(makeAsyncIterable([])),
       }
       const ctx = { db: mockDb, send: jest.fn() }

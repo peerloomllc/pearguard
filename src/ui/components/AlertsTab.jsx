@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const TYPE_META = {
   bypass:          { label: 'Bypass Attempt',  color: '#ea4335', icon: '⚠'  },
@@ -23,35 +23,8 @@ function formatSeconds(s) {
   return `${m}m`;
 }
 
-function AlertRow({ alert, onApprove, onDeny }) {
-  const [resolving, setResolving] = useState(false);
-  const [resolved, setResolved] = useState(alert.resolved || false);
+function AlertRow({ alert }) {
   const meta = TYPE_META[alert.type] || { label: alert.type, color: '#888', icon: '•' };
-  const isRequest = alert.type === 'time_request';
-
-  async function handleApprove() {
-    setResolving(true);
-    try {
-      await onApprove(alert);
-      setResolved(true);
-    } catch (e) {
-      console.error('Approve failed:', e);
-    } finally {
-      setResolving(false);
-    }
-  }
-
-  async function handleDeny() {
-    setResolving(true);
-    try {
-      await onDeny(alert);
-      setResolved(true);
-    } catch (e) {
-      console.error('Deny failed:', e);
-    } finally {
-      setResolving(false);
-    }
-  }
 
   return (
     <div style={styles.alertRow}>
@@ -61,34 +34,11 @@ function AlertRow({ alert, onApprove, onDeny }) {
       <div style={styles.alertBody}>
         <div style={styles.alertDesc}>
           {alert.appDisplayName || alert.packageName || 'Unknown app'}
-          {isRequest && alert.requestedSeconds
+          {alert.type === 'time_request' && alert.requestedSeconds
             ? ` — requesting ${formatSeconds(alert.requestedSeconds)}`
             : ''}
         </div>
         <div style={styles.alertTime}>{formatTime(alert.timestamp)}</div>
-        {isRequest && !resolved && (
-          <div style={styles.actions}>
-            <button
-              style={styles.approveBtn}
-              onClick={handleApprove}
-              disabled={resolving}
-              aria-label={`Approve time request for ${alert.packageName}`}
-            >
-              Approve
-            </button>
-            <button
-              style={styles.denyBtn}
-              onClick={handleDeny}
-              disabled={resolving}
-              aria-label={`Deny time request for ${alert.packageName}`}
-            >
-              Deny
-            </button>
-          </div>
-        )}
-        {isRequest && resolved && (
-          <div style={styles.resolvedLabel}>Resolved</div>
-        )}
       </div>
     </div>
   );
@@ -106,7 +56,6 @@ export default function AlertsTab({ childPublicKey }) {
 
   useEffect(() => {
     reload();
-    // Refresh when a new bypass alert, time request, or app install/uninstall arrives
     const unsubBypass       = window.onBareEvent('alert:bypass',          reload);
     const unsubRequest      = window.onBareEvent('time:request:received', reload);
     const unsubInstalled    = window.onBareEvent('app:installed',         reload);
@@ -114,34 +63,13 @@ export default function AlertsTab({ childPublicKey }) {
     return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); };
   }, [childPublicKey]);
 
-  async function handleApprove(alert) {
-    await window.callBare('app:decide', {
-      childPublicKey,
-      packageName: alert.packageName,
-      decision: 'approve',
-    });
-  }
-
-  async function handleDeny(alert) {
-    await window.callBare('app:decide', {
-      childPublicKey,
-      packageName: alert.packageName,
-      decision: 'deny',
-    });
-  }
-
-  if (loading) return <div style={styles.msg}>Loading alerts...</div>;
-  if (alerts.length === 0) return <div style={styles.msg}>No alerts. All quiet!</div>;
+  if (loading) return <div style={styles.msg}>Loading activity...</div>;
+  if (alerts.length === 0) return <div style={styles.msg}>No activity yet.</div>;
 
   return (
     <div style={styles.container}>
       {alerts.map((alert) => (
-        <AlertRow
-          key={alert.id}
-          alert={alert}
-          onApprove={handleApprove}
-          onDeny={handleDeny}
-        />
+        <AlertRow key={alert.id} alert={alert} />
       ))}
     </div>
   );

@@ -2,12 +2,13 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ChildDetail from '../ChildDetail.jsx';
 
-// Mock all five child-specific tabs
+// Mock all child-specific tabs
 jest.mock('../UsageTab.jsx', () => ({ childPublicKey }) => <div>Usage content {childPublicKey}</div>);
 jest.mock('../AppsTab.jsx', () => ({ childPublicKey }) => <div>Apps content</div>);
+jest.mock('../RequestsTab.jsx', () => ({ childPublicKey }) => <div>Requests content</div>);
 jest.mock('../ScheduleTab.jsx', () => ({ childPublicKey }) => <div>Schedule content</div>);
 jest.mock('../ContactsTab.jsx', () => ({ childPublicKey }) => <div>Contacts content</div>);
-jest.mock('../AlertsTab.jsx', () => ({ childPublicKey }) => <div>Alerts content</div>);
+jest.mock('../AlertsTab.jsx', () => ({ childPublicKey }) => <div>Activity content</div>);
 
 const MOCK_CHILD = { publicKey: 'pk-alice', displayName: 'Alice' };
 
@@ -16,9 +17,9 @@ test('renders child display name in header', () => {
   expect(screen.getByText('Alice')).toBeInTheDocument();
 });
 
-test('renders all five tab buttons', () => {
+test('renders all six tab buttons', () => {
   render(<ChildDetail child={MOCK_CHILD} onBack={() => {}} />);
-  ['Usage', 'Apps', 'Schedule', 'Contacts', 'Alerts'].forEach((label) => {
+  ['Usage', 'Apps', 'Requests', 'Schedule', 'Contacts', 'Activity'].forEach((label) => {
     expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
   });
 });
@@ -34,10 +35,16 @@ test('clicking Apps tab shows Apps content', () => {
   expect(screen.getByText('Apps content')).toBeInTheDocument();
 });
 
-test('clicking Alerts tab shows Alerts content', () => {
+test('clicking Requests tab shows Requests content', () => {
   render(<ChildDetail child={MOCK_CHILD} onBack={() => {}} />);
-  fireEvent.click(screen.getByRole('tab', { name: 'Alerts' }));
-  expect(screen.getByText('Alerts content')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Requests' }));
+  expect(screen.getByText('Requests content')).toBeInTheDocument();
+});
+
+test('clicking Activity tab shows Activity content', () => {
+  render(<ChildDetail child={MOCK_CHILD} onBack={() => {}} />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+  expect(screen.getByText('Activity content')).toBeInTheDocument();
 });
 
 test('back button calls onBack', () => {

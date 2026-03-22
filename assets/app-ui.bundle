@@ -14609,10 +14609,15 @@
       onUpdate(packageName, { ...appData, status: "blocked" });
     }
     const isPending = appData.status === "pending";
+    const addedDate = appData.addedAt ? new Date(appData.addedAt).toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }) : null;
     return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appRow, children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.appInfo, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appNameBlock, children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.appName, children: appData.appName || packageName }),
-        appData.appName && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName })
+        appData.appName && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName }),
+        addedDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: styles3.addedDate, children: [
+          "Added ",
+          addedDate
+        ] })
       ] }) }),
       isPending ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.actions, children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.approveBtn, onClick: handleApprove, "aria-label": `Approve ${appData.appName || packageName}`, children: "Approve" }),
@@ -14653,6 +14658,7 @@
   function AppsTab({ childPublicKey }) {
     const [policy, setPolicy] = (0, import_react3.useState)(null);
     const [loading, setLoading] = (0, import_react3.useState)(true);
+    const [sortOrder, setSortOrder] = (0, import_react3.useState)("alpha");
     const loadPolicy = (0, import_react3.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
@@ -14678,20 +14684,64 @@
     if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
       return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.msg, children: "No apps found. Apps appear here after they are installed on the child device." });
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.container, children: Object.entries(policy.apps).map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      AppRow,
-      {
-        childPublicKey,
-        packageName: pkg,
-        appData: data,
-        onUpdate: handleUpdate
-      },
-      pkg
-    )) });
+    const sortedEntries = Object.entries(policy.apps).slice().sort((a, b) => {
+      if (sortOrder === "alpha") {
+        const nameA = (a[1].appName || a[0]).toLowerCase();
+        const nameB = (b[1].appName || b[0]).toLowerCase();
+        return nameA.localeCompare(nameB);
+      }
+      return (b[1].addedAt || 0) - (a[1].addedAt || 0);
+    });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: styles3.appCount, children: [
+          sortedEntries.length,
+          " app",
+          sortedEntries.length !== 1 ? "s" : ""
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "button",
+          {
+            style: styles3.sortBtn,
+            onClick: () => setSortOrder((s) => s === "alpha" ? "date" : "alpha"),
+            "aria-label": "Toggle sort order",
+            children: sortOrder === "alpha" ? "\u{1F524} A\u2013Z" : "\u{1F550} Date"
+          }
+        )
+      ] }),
+      sortedEntries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        AppRow,
+        {
+          childPublicKey,
+          packageName: pkg,
+          appData: data,
+          onUpdate: handleUpdate
+        },
+        pkg
+      ))
+    ] });
   }
   var styles3 = {
     container: { padding: "16px" },
     msg: { padding: "16px", color: "#666", fontSize: "14px" },
+    header: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "8px",
+      paddingBottom: "8px",
+      borderBottom: "2px solid #eee"
+    },
+    appCount: { fontSize: "13px", color: "#888" },
+    sortBtn: {
+      padding: "4px 10px",
+      fontSize: "12px",
+      border: "1px solid #ccc",
+      borderRadius: "12px",
+      background: "#f5f5f5",
+      cursor: "pointer",
+      color: "#444"
+    },
     appRow: {
       padding: "12px 0",
       borderBottom: "1px solid #eee",
@@ -14703,6 +14753,7 @@
     appNameBlock: { display: "flex", flexDirection: "column", gap: "2px", flex: 1 },
     appName: { fontSize: "14px", color: "#111", fontWeight: "500" },
     pkgName: { fontSize: "11px", fontFamily: "monospace", color: "#888" },
+    addedDate: { fontSize: "11px", color: "#aaa", marginTop: "1px" },
     actions: { display: "flex", gap: "8px" },
     approveBtn: {
       padding: "6px 14px",
@@ -15026,7 +15077,9 @@
   var TYPE_META = {
     bypass: { label: "Bypass Attempt", color: "#ea4335", icon: "\u26A0" },
     pin_use: { label: "PIN Used", color: "#fbbc04", icon: "\u{1F511}" },
-    time_request: { label: "Time Request", color: "#1a73e8", icon: "\u23F1" }
+    time_request: { label: "Time Request", color: "#1a73e8", icon: "\u23F1" },
+    app_installed: { label: "App Installed", color: "#34a853", icon: "\u{1F4F2}" },
+    app_uninstalled: { label: "App Uninstalled", color: "#ff6d00", icon: "\u{1F5D1}" }
   };
   function formatTime(iso) {
     try {
@@ -15115,9 +15168,13 @@
       reload();
       const unsubBypass = window.onBareEvent("alert:bypass", reload);
       const unsubRequest = window.onBareEvent("time:request:received", reload);
+      const unsubInstalled = window.onBareEvent("app:installed", reload);
+      const unsubUninstalled = window.onBareEvent("app:uninstalled", reload);
       return () => {
         unsubBypass();
         unsubRequest();
+        unsubInstalled();
+        unsubUninstalled();
       };
     }, [childPublicKey]);
     async function handleApprove(alert) {
@@ -15973,9 +16030,6 @@
   function ChildRequests() {
     const [requests, setRequests] = (0, import_react15.useState)([]);
     const [loading, setLoading] = (0, import_react15.useState)(true);
-    const [lastBlockedPackage, setLastBlockedPackage] = (0, import_react15.useState)(null);
-    const [submitting, setSubmitting] = (0, import_react15.useState)(false);
-    const [submitted, setSubmitted] = (0, import_react15.useState)(false);
     async function loadRequests() {
       setLoading(true);
       const { requests: requests2 } = await window.callBare("requests:list");
@@ -15993,43 +16047,15 @@
       const unsubUpdated = window.onBareEvent("request:updated", () => {
         if (isMounted) loadRequests();
       });
-      const unsubBlock = window.onBareEvent("block:occurred", (data) => {
-        if (isMounted) setLastBlockedPackage(data.packageName);
-      });
       return () => {
         isMounted = false;
         unsubSubmit();
         unsubUpdated();
-        unsubBlock();
       };
     }, []);
-    async function handleNewRequest() {
-      if (submitting || !lastBlockedPackage) return;
-      setSubmitting(true);
-      try {
-        await window.callBare("time:request", { packageName: lastBlockedPackage });
-        setSubmitted(true);
-        setLastBlockedPackage(null);
-        await loadRequests();
-      } finally {
-        setSubmitting(false);
-      }
-    }
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
     return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { padding: 24 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }),
-        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
-          "button",
-          {
-            onClick: handleNewRequest,
-            disabled: !lastBlockedPackage || submitting || submitted,
-            style: { padding: "8px 16px", opacity: !lastBlockedPackage || submitting || submitted ? 0.4 : 1 },
-            children: submitting ? "Sending\u2026" : "New Request"
-          }
-        )
-      ] }),
-      submitted && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { color: "#34a853", fontSize: 14, marginBottom: 12 }, children: "Request sent! Your parent will be notified." }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { marginBottom: 16 }, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }) }),
       requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
       requests.map((req) => {
         const badge = statusBadge(req.status);

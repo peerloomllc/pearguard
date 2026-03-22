@@ -75,6 +75,25 @@ public class AppBlockerModule extends AccessibilityService {
         pendingRequestPackages.remove(packageName);
     }
 
+    // Singleton reference — set in onServiceConnected, cleared in onDestroy.
+    private static AppBlockerModule sInstance = null;
+
+    /**
+     * Called from UsageStatsModule when a policy update or P2P override arrives that
+     * makes a previously-blocked package now allowed.  If the overlay is currently
+     * showing for that package it is dismissed immediately so the child doesn't have
+     * to tap anything — the app just becomes accessible.
+     */
+    public static void dismissIfShowing(String packageName) {
+        AppBlockerModule inst = sInstance;
+        if (inst == null || packageName == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (packageName.equals(inst.currentOverlayPackage)) {
+                inst.dismissOverlay();
+            }
+        });
+    }
+
     // Cooldown: after dismissing an overlay, ignore TYPE_WINDOW_STATE_CHANGED events for the
     // same package for DISMISS_COOLDOWN_MS. This prevents the blocked app's background
     // activity-destruction event from re-triggering the overlay over the home screen.
@@ -94,7 +113,7 @@ public class AppBlockerModule extends AccessibilityService {
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.notificationTimeout = 100;
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+                | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         setServiceInfo(info);
 
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -111,6 +130,14 @@ public class AppBlockerModule extends AccessibilityService {
         } else {
             startService(enforcementIntent);
         }
+
+        sInstance = this;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (sInstance == this) sInstance = null;
     }
 
     @Override
@@ -239,8 +266,8 @@ public class AppBlockerModule extends AccessibilityService {
     private boolean isPhoneOrMessagingApp(String packageName) {
         if (PHONE_PACKAGES.contains(packageName)) return true;
         return packageName.contains("dialer")
-            || packageName.contains("sms")
-            || packageName.contains("messaging");
+                || packageName.contains("sms")
+                || packageName.contains("messaging");
     }
 
     private String getScheduleBlockReason(JSONObject policy) {
@@ -287,7 +314,7 @@ public class AppBlockerModule extends AccessibilityService {
 
     private int getDailyUsageSeconds(String packageName) {
         android.app.usage.UsageStatsManager usm = (android.app.usage.UsageStatsManager)
-            getSystemService(Context.USAGE_STATS_SERVICE);
+                getSystemService(Context.USAGE_STATS_SERVICE);
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, 0);
         cal.set(Calendar.MINUTE, 0);
@@ -295,7 +322,7 @@ public class AppBlockerModule extends AccessibilityService {
         cal.set(Calendar.MILLISECOND, 0);
         long startOfDay = cal.getTimeInMillis();
         Map<String, android.app.usage.UsageStats> stats =
-            usm.queryAndAggregateUsageStats(startOfDay, System.currentTimeMillis());
+                usm.queryAndAggregateUsageStats(startOfDay, System.currentTimeMillis());
         if (stats != null && stats.containsKey(packageName)) {
             return (int)(stats.get(packageName).getTotalTimeInForeground() / 1000);
         }
@@ -340,7 +367,7 @@ public class AppBlockerModule extends AccessibilityService {
             WritableMap evt = Arguments.createMap();
             evt.putString("packageName", packageName);
             rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                .emit("onBlockOccurred", evt);
+                    .emit("onBlockOccurred", evt);
         }
 
         String appName = getAppName(packageName);
@@ -386,14 +413,14 @@ public class AppBlockerModule extends AccessibilityService {
         // PearGuard's own package name, triggering dismissOverlay() and causing
         // the flash loop. Touch events (button clicks) are unaffected by this flag.
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
         );
 
         new Handler(Looper.getMainLooper()).post(() -> {
@@ -446,8 +473,8 @@ public class AppBlockerModule extends AccessibilityService {
             params.putString("packageName", packageName);
             params.putString("appName", getAppName(packageName));
             reactContext
-                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                .emit("onTimeRequest", params);
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                    .emit("onTimeRequest", params);
             Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
@@ -505,7 +532,7 @@ public class AppBlockerModule extends AccessibilityService {
             rowLayout.setOrientation(LinearLayout.HORIZONTAL);
             rowLayout.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             rowParams.setMargins(0, 8, 0, 0);
             rowLayout.setLayoutParams(rowParams);
 
@@ -515,7 +542,7 @@ public class AppBlockerModule extends AccessibilityService {
                 btn.setTextColor(Color.WHITE);
                 btn.setTextSize(20);
                 LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
                 btnParams.setMargins(6, 0, 6, 0);
                 btn.setLayoutParams(btnParams);
                 btn.setBackgroundColor(Color.argb(200, 60, 60, 60));
@@ -551,7 +578,7 @@ public class AppBlockerModule extends AccessibilityService {
                                         evt.putDouble("timestamp", System.currentTimeMillis());
                                         evt.putInt("durationSeconds", durationSeconds);
                                         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                                            .emit("onPinSuccess", evt);
+                                                .emit("onPinSuccess", evt);
                                     }
 
                                     try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
@@ -582,7 +609,7 @@ public class AppBlockerModule extends AccessibilityService {
         cancelBtn.setTextColor(Color.WHITE);
         cancelBtn.setBackgroundColor(Color.argb(200, 100, 30, 30));
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         cancelParams.setMargins(0, 24, 0, 0);
         cancelBtn.setLayoutParams(cancelParams);
         cancelBtn.setOnClickListener(v -> {
@@ -592,13 +619,13 @@ public class AppBlockerModule extends AccessibilityService {
         dialogLayout.addView(cancelBtn);
 
         WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // no IME needed — using button pad
-            PixelFormat.TRANSLUCENT
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // no IME needed — using button pad
+                PixelFormat.TRANSLUCENT
         );
         dialogParams.gravity = Gravity.CENTER;
 
@@ -643,9 +670,9 @@ public class AppBlockerModule extends AccessibilityService {
     private void createBypassNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "PearGuard Enforcement Warning",
-                NotificationManager.IMPORTANCE_HIGH
+                    CHANNEL_ID,
+                    "PearGuard Enforcement Warning",
+                    NotificationManager.IMPORTANCE_HIGH
             );
             channel.setDescription("Alerts when enforcement is disabled");
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -659,23 +686,23 @@ public class AppBlockerModule extends AccessibilityService {
      */
     public static void showBypassNotification(Context context) {
         NotificationManager nm =
-            (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
         Intent openSettings = new Intent(
-            android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
         PendingIntent pi = PendingIntent.getActivity(
-            context, 0, openSettings,
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                context, 0, openSettings,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("PearGuard enforcement disabled")
-            .setContentText("Tap to re-enable parental controls in Accessibility settings.")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setOngoing(true)
-            .setContentIntent(pi)
-            .setAutoCancel(false);
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("PearGuard enforcement disabled")
+                .setContentText("Tap to re-enable parental controls in Accessibility settings.")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOngoing(true)
+                .setContentIntent(pi)
+                .setAutoCancel(false);
 
         nm.notify(1001, builder.build());
     }

@@ -527,6 +527,7 @@ function createDispatch (ctx) {
             timestamp: value.requestedAt,
             packageName: value.packageName,
             appDisplayName: value.appName,
+            status: value.status,
             resolved: value.status !== 'pending',
             childPublicKey,
           })

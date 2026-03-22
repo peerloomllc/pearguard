@@ -39,7 +39,7 @@ Show the app's launcher icon next to its name in the parent's Apps tab.
 - **Where**: `src/ui/components/AppsTab.jsx` — when child sends `app:installed`, include a base64 icon in the payload; display in `AppRow`
 - **How**: `getInstalledPackages` in Java can fetch `pm.getApplicationIcon(ai)` and encode as base64
 
-### [ ] 10. "Child Requests" management page on parent
+### [x] 10. "Child Requests" management page on parent — 2026-03-22
 When a child sends a time request, the parent currently has no dedicated UI to view and approve/deny pending requests. Add a requests tab or section to the parent's ChildDetail screen.
 
 - **Where**: `src/ui/components/ChildDetail.jsx` — add a "Requests" tab alongside Apps/Schedule/Usage
@@ -200,6 +200,23 @@ When a child pairs for the first time, all installed apps arrive via `apps:sync`
 - **Deny all** (block everything until parent reviews) — more secure, but child can't use their device until parent approves
 - **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
 - **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
+
+### [ ] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail
+When the parent taps Back from ChildDetail and later returns, the previously active tab still appears highlighted even if the tab state resets. Investigate whether the active tab indicator is persisting across mounts.
+
+- **Where**: `src/ui/components/ChildDetail.jsx` — verify `initialTab` default and that state resets on unmount
+
+### [ ] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab
+When the parent receives a push notification for a child's time request and taps it, they are taken to the Activity tab rather than the Requests tab where they can act on it.
+
+- **Where**: `app/index.tsx` — find where `time:request:received` notification tap is handled; change the deep-link or tab navigation target from `alerts` to `requests` in ChildDetail
+
+### [ ] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab
+When a child's time request is approved and they tap the notification, nothing useful happens. It should either launch the approved app directly or open PearGuard to the child's Requests tab.
+
+- **Option A**: Extract `packageName` from the notification intent extras; call `startActivity` with a `CATEGORY_LAUNCHER` intent for that package
+- **Option B**: Navigate to the child's Requests tab in the WebView as a fallback if the app can't be launched
+- **Where**: `android/.../UsageStatsModule.java` or wherever notifications are built for the child; `app/index.tsx` for the WebView navigation fallback
 
 ## Known Limitations
 

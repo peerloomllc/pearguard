@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import AlertsTab from '../AlertsTab.jsx';
 
 const MOCK_ALERTS = [
@@ -32,12 +32,12 @@ const MOCK_ALERTS = [
 
 beforeEach(() => {
   window.callBare = jest.fn().mockResolvedValue(MOCK_ALERTS);
-  window.onBareEvent = jest.fn().mockReturnValue(() => {}); // returns unsubscribe fn
+  window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
 
-test('renders loading then alert list', async () => {
+test('renders loading then activity list', async () => {
   render(<AlertsTab childPublicKey="pk1" />);
-  expect(screen.getByText(/loading alerts/i)).toBeInTheDocument();
+  expect(screen.getByText(/loading activity/i)).toBeInTheDocument();
   await waitFor(() => {
     expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.getByText('YouTube')).toBeInTheDocument();
@@ -45,58 +45,25 @@ test('renders loading then alert list', async () => {
   });
 });
 
-test('renders Approve and Deny buttons only for time_request alerts', async () => {
+test('shows type badges for each alert', async () => {
+  render(<AlertsTab childPublicKey="pk1" />);
+  await waitFor(() => screen.getByText('Settings'));
+  expect(screen.getByText('Bypass Attempt')).toBeInTheDocument();
+  expect(screen.getByText('PIN Used')).toBeInTheDocument();
+  expect(screen.getByText('Time Request')).toBeInTheDocument();
+});
+
+test('does not show Approve or Deny buttons (Activity is informational only)', async () => {
   render(<AlertsTab childPublicKey="pk1" />);
   await waitFor(() => screen.getByText(/My Game/));
-  expect(screen.getByLabelText('Approve time request for com.example.game')).toBeInTheDocument();
-  expect(screen.getByLabelText('Deny time request for com.example.game')).toBeInTheDocument();
-  // No buttons for bypass or pin_use
-  expect(screen.queryByLabelText('Approve time request for com.android.settings')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /deny/i })).not.toBeInTheDocument();
 });
 
-test('Approve button calls app:decide with decision approve', async () => {
-  render(<AlertsTab childPublicKey="pk1" />);
-  await waitFor(() => screen.getByLabelText('Approve time request for com.example.game'));
-  window.callBare.mockResolvedValue({}); // for the approve call
-  fireEvent.click(screen.getByLabelText('Approve time request for com.example.game'));
-  await waitFor(() => {
-    expect(window.callBare).toHaveBeenCalledWith('app:decide', {
-      childPublicKey: 'pk1',
-      packageName: 'com.example.game',
-      decision: 'approve',
-    });
-  });
-});
-
-test('Deny button calls app:decide with decision deny', async () => {
-  render(<AlertsTab childPublicKey="pk1" />);
-  await waitFor(() => screen.getByLabelText('Deny time request for com.example.game'));
-  window.callBare.mockResolvedValue({});
-  fireEvent.click(screen.getByLabelText('Deny time request for com.example.game'));
-  await waitFor(() => {
-    expect(window.callBare).toHaveBeenCalledWith('app:decide', {
-      childPublicKey: 'pk1',
-      packageName: 'com.example.game',
-      decision: 'deny',
-    });
-  });
-});
-
-test('after approving, shows Resolved label instead of buttons', async () => {
-  render(<AlertsTab childPublicKey="pk1" />);
-  await waitFor(() => screen.getByLabelText('Approve time request for com.example.game'));
-  window.callBare.mockResolvedValue({});
-  fireEvent.click(screen.getByLabelText('Approve time request for com.example.game'));
-  await waitFor(() => {
-    expect(screen.getByText('Resolved')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Approve time request for com.example.game')).not.toBeInTheDocument();
-  });
-});
-
-test('shows quiet message when no alerts', async () => {
+test('shows quiet message when no activity', async () => {
   window.callBare.mockResolvedValue([]);
   render(<AlertsTab childPublicKey="pk1" />);
   await waitFor(() => {
-    expect(screen.getByText(/no alerts/i)).toBeInTheDocument();
+    expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
   });
 });

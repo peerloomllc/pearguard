@@ -4,13 +4,15 @@ import AppsTab from './AppsTab.jsx';
 import ScheduleTab from './ScheduleTab.jsx';
 import ContactsTab from './ContactsTab.jsx';
 import AlertsTab from './AlertsTab.jsx';
+import RequestsTab from './RequestsTab.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', Component: UsageTab },
   { key: 'apps', label: 'Apps', Component: AppsTab },
+  { key: 'requests', label: 'Requests', Component: RequestsTab },
   { key: 'schedule', label: 'Schedule', Component: ScheduleTab },
   { key: 'contacts', label: 'Contacts', Component: ContactsTab },
-  { key: 'alerts', label: 'Alerts', Component: AlertsTab },
+  { key: 'alerts', label: 'Activity', Component: AlertsTab },
 ];
 
 export default function ChildDetail({ child, onBack, initialTab }) {

@@ -31,8 +31,8 @@ const _pending = new Map<number, (msg: any) => void>()
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
 // Invite URL received before worklet was ready — sent once dispatch is initialized
 let _pendingInviteUrl: string | null = null
-// childPublicKey from pear://pearguard/alerts deep link — injected into WebView after dbReady
-let _pendingAlertsNav: string | null = null
+// { childPublicKey, tab } from pear://pearguard/alerts deep link — injected into WebView after dbReady
+let _pendingAlertsNav: { childPublicKey: string; tab?: string } | null = null
 // Events that fired before the WebView finished loading — replayed once onLoad fires.
 // Bare auto-reconnects on startup (reloads persisted topics), so peer:paired /
 // child:connected can fire before the WebView is ready to receive them.
@@ -53,8 +53,9 @@ Linking.addEventListener('url', ({ url }) => {
     sendToWorklet({ method: 'acceptInvite', args: [url] })
   } else if (url && url.startsWith('pear://pearguard/alerts')) {
     const qs = url.split('?')[1] ?? ''
-    const match = qs.match(/childPublicKey=([^&]+)/)
-    if (match) _pendingAlertsNav = decodeURIComponent(match[1])
+    const keyMatch = qs.match(/childPublicKey=([^&]+)/)
+    const tabMatch = qs.match(/tab=([^&]+)/)
+    if (keyMatch) _pendingAlertsNav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
   }
 })
 
@@ -487,8 +488,9 @@ export default function Root () {
           _pendingInviteUrl = _pendingInviteUrl ?? url
         } else if (url && url.startsWith('pear://pearguard/alerts')) {
           const qs = url.split('?')[1] ?? ''
-          const match = qs.match(/childPublicKey=([^&]+)/)
-          if (match) _pendingAlertsNav = _pendingAlertsNav ?? decodeURIComponent(match[1])
+          const keyMatch = qs.match(/childPublicKey=([^&]+)/)
+          const tabMatch = qs.match(/tab=([^&]+)/)
+          if (keyMatch) _pendingAlertsNav = _pendingAlertsNav ?? { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
         }
       }).catch(() => {})
     }
@@ -497,15 +499,15 @@ export default function Root () {
     return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
 
-  // When db is ready and a notification-tap deep link is pending, navigate to that child's Alerts tab
+  // When db is ready and a notification-tap deep link is pending, navigate to that child's tab
   useEffect(() => {
     if (!dbReady || !_pendingAlertsNav) return
-    const childPublicKey = _pendingAlertsNav
+    const { childPublicKey, tab } = _pendingAlertsNav
     _pendingAlertsNav = null
     // Give the WebView React app 600ms to fully render before injecting navigation
     setTimeout(() => {
       webViewRef.current?.injectJavaScript(
-        'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey }) + ');true;'
+        'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey, tab }) + ');true;'
       )
     }, 600)
   }, [dbReady])

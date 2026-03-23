@@ -327,17 +327,30 @@ function sendToPeer (remoteKeyHex, msg) {
 }
 
 /**
- * Send a message to the connected parent, or queue it in Hyperbee if not connected.
+ * Send a message to the connected parent. Always queues the message in Hyperbee
+ * first so it survives a stale/dropped connection, then attempts immediate delivery
+ * if connected. The queue is flushed on the next handleHello (reconnect), ensuring
+ * delivery even when the initial write goes to a connection that dropped while the
+ * app was backgrounded.
  * Child mode only.
  * @param {{ type: string, payload: object }} message
  */
 async function sendToParent (message) {
+  // Always persist to queue so no message is silently lost on a stale connection
+  await queueMessage(message, db)
+
   if (peerConnected && parentPeer && parentPeer.conn) {
-    const signed = signMessage(message, identity)
-    parentPeer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
-  } else {
-    await queueMessage(message, db)
+    try {
+      const signed = signMessage(message, identity)
+      parentPeer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+    } catch (e) {
+      // Write failed — connection was dead; reset state so future calls queue correctly
+      peerConnected = false
+      parentPeer = null
+    }
   }
+  // Message stays in queue as backup; handleHello will flush it on next reconnect.
+  // Receivers deduplicate by key so re-delivery is idempotent.
 }
 
 /**

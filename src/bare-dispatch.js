@@ -808,6 +808,11 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
     return
   }
 
+  // Deduplicate: re-delivered messages (from queue flush after reconnect) should not
+  // fire a second notification or create a duplicate entry.
+  const existing = await db.get('request:' + requestId).catch(() => null)
+  if (existing) return
+
   // Look up child display name and app name for notification
   const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
   const childDisplayName = peerRecord ? (peerRecord.value.displayName || 'Child') : 'Child'

@@ -1519,5 +1519,21 @@ describe('bare dispatch', () => {
       expect(mockDb.put).not.toHaveBeenCalled()
       expect(mockSend).not.toHaveBeenCalled()
     })
+
+    test('duplicate: does not re-emit event or overwrite existing entry', async () => {
+      const existing = { id: 'req:1234:com.example.tiktok', packageName: 'com.example.tiktok', requestedAt: 1234, status: 'pending', childPublicKey: 'childpk1' }
+      const mockDb = makeMockDb({ 'request:req:1234:com.example.tiktok': existing })
+      const mockSend = jest.fn()
+
+      await handleIncomingTimeRequest(
+        { requestId: 'req:1234:com.example.tiktok', packageName: 'com.example.tiktok', requestedAt: 1234 },
+        'childpk1',
+        mockDb,
+        mockSend
+      )
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+      expect(mockSend).not.toHaveBeenCalled()
+    })
   })
 })

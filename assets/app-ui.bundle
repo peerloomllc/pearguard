@@ -773,7 +773,7 @@
   var require_react_dom_production = __commonJS({
     "node_modules/react-dom/cjs/react-dom.production.js"(exports) {
       "use strict";
-      var React19 = require_react();
+      var React20 = require_react();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
         if (1 < arguments.length) {
@@ -813,7 +813,7 @@
           implementation
         };
       }
-      var ReactSharedInternals = React19.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React20.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       function getCrossOriginStringAs(as, input) {
         if ("font" === as) return "";
         if ("string" === typeof input)
@@ -949,7 +949,7 @@
     "node_modules/react-dom/cjs/react-dom-client.production.js"(exports) {
       "use strict";
       var Scheduler = require_scheduler();
-      var React19 = require_react();
+      var React20 = require_react();
       var ReactDOM = require_react_dom();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
@@ -1133,7 +1133,7 @@
         return null;
       }
       var isArrayImpl = Array.isArray;
-      var ReactSharedInternals = React19.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React20.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var sharedNotPendingObject = {
         pending: false,
@@ -1910,18 +1910,18 @@
         var isCustomProperty = 0 === styleName.indexOf("--");
         null == value || "boolean" === typeof value || "" === value ? isCustomProperty ? style2.setProperty(styleName, "") : "float" === styleName ? style2.cssFloat = "" : style2[styleName] = "" : isCustomProperty ? style2.setProperty(styleName, value) : "number" !== typeof value || 0 === value || unitlessNumbers.has(styleName) ? "float" === styleName ? style2.cssFloat = value : style2[styleName] = ("" + value).trim() : style2[styleName] = value + "px";
       }
-      function setValueForStyles(node, styles15, prevStyles) {
-        if (null != styles15 && "object" !== typeof styles15)
+      function setValueForStyles(node, styles16, prevStyles) {
+        if (null != styles16 && "object" !== typeof styles16)
           throw Error(formatProdErrorMessage(62));
         node = node.style;
         if (null != prevStyles) {
           for (var styleName in prevStyles)
-            !prevStyles.hasOwnProperty(styleName) || null != styles15 && styles15.hasOwnProperty(styleName) || (0 === styleName.indexOf("--") ? node.setProperty(styleName, "") : "float" === styleName ? node.cssFloat = "" : node[styleName] = "");
-          for (var styleName$16 in styles15)
-            styleName = styles15[styleName$16], styles15.hasOwnProperty(styleName$16) && prevStyles[styleName$16] !== styleName && setValueForStyle(node, styleName$16, styleName);
+            !prevStyles.hasOwnProperty(styleName) || null != styles16 && styles16.hasOwnProperty(styleName) || (0 === styleName.indexOf("--") ? node.setProperty(styleName, "") : "float" === styleName ? node.cssFloat = "" : node[styleName] = "");
+          for (var styleName$16 in styles16)
+            styleName = styles16[styleName$16], styles16.hasOwnProperty(styleName$16) && prevStyles[styleName$16] !== styleName && setValueForStyle(node, styleName$16, styleName);
         } else
-          for (var styleName$17 in styles15)
-            styles15.hasOwnProperty(styleName$17) && setValueForStyle(node, styleName$17, styles15[styleName$17]);
+          for (var styleName$17 in styles16)
+            styles16.hasOwnProperty(styleName$17) && setValueForStyle(node, styleName$17, styles16[styleName$17]);
       }
       function isCustomElement(tagName) {
         if (-1 === tagName.indexOf("-")) return false;
@@ -11165,9 +11165,9 @@
         previousDispatcher.S(href, precedence, options2);
         var ownerDocument = globalDocument;
         if (ownerDocument && href) {
-          var styles15 = getResourcesFromRoot(ownerDocument).hoistableStyles, key = getStyleKey(href);
+          var styles16 = getResourcesFromRoot(ownerDocument).hoistableStyles, key = getStyleKey(href);
           precedence = precedence || "default";
-          var resource = styles15.get(key);
+          var resource = styles16.get(key);
           if (!resource) {
             var state = { loading: 0, preload: null };
             if (resource = ownerDocument.querySelector(
@@ -11202,7 +11202,7 @@
               count: 1,
               state
             };
-            styles15.set(key, resource);
+            styles16.set(key, resource);
           }
         }
       }
@@ -12125,7 +12125,7 @@
           0 === i && attemptExplicitHydrationTarget(target);
         }
       };
-      var isomorphicReactPackageVersion$jscomp$inline_1785 = React19.version;
+      var isomorphicReactPackageVersion$jscomp$inline_1785 = React20.version;
       if ("19.1.4" !== isomorphicReactPackageVersion$jscomp$inline_1785)
         throw Error(
           formatProdErrorMessage(
@@ -14371,17 +14371,17 @@
   });
 
   // src/ui/main.jsx
-  var import_react18 = __toESM(require_react());
+  var import_react19 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/ui/App.jsx
-  var import_react17 = __toESM(require_react());
+  var import_react18 = __toESM(require_react());
 
   // src/ui/components/ParentApp.jsx
-  var import_react13 = __toESM(require_react());
+  var import_react14 = __toESM(require_react());
 
   // src/ui/components/Dashboard.jsx
-  var import_react8 = __toESM(require_react());
+  var import_react9 = __toESM(require_react());
 
   // src/ui/components/ChildCard.jsx
   var import_react = __toESM(require_react());
@@ -14482,7 +14482,7 @@
   };
 
   // src/ui/components/ChildDetail.jsx
-  var import_react7 = __toESM(require_react());
+  var import_react8 = __toESM(require_react());
 
   // src/ui/components/UsageTab.jsx
   var import_react2 = __toESM(require_react());
@@ -15094,64 +15094,16 @@
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   }
-  function AlertRow({ alert, onApprove, onDeny }) {
-    const [resolving, setResolving] = (0, import_react6.useState)(false);
-    const [resolved, setResolved] = (0, import_react6.useState)(alert.resolved || false);
+  function AlertRow({ alert }) {
     const meta = TYPE_META[alert.type] || { label: alert.type, color: "#888", icon: "\u2022" };
-    const isRequest = alert.type === "time_request";
-    async function handleApprove() {
-      setResolving(true);
-      try {
-        await onApprove(alert);
-        setResolved(true);
-      } catch (e) {
-        console.error("Approve failed:", e);
-      } finally {
-        setResolving(false);
-      }
-    }
-    async function handleDeny() {
-      setResolving(true);
-      try {
-        await onDeny(alert);
-        setResolved(true);
-      } catch (e) {
-        console.error("Deny failed:", e);
-      } finally {
-        setResolving(false);
-      }
-    }
     return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertRow, children: [
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...styles6.typeBadge, backgroundColor: meta.color }, children: meta.label }),
       /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertBody, children: [
         /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertDesc, children: [
           alert.appDisplayName || alert.packageName || "Unknown app",
-          isRequest && alert.requestedSeconds ? ` \u2014 requesting ${formatSeconds3(alert.requestedSeconds)}` : ""
+          alert.type === "time_request" && alert.requestedSeconds ? ` \u2014 requesting ${formatSeconds3(alert.requestedSeconds)}` : ""
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.alertTime, children: formatTime(alert.timestamp) }),
-        isRequest && !resolved && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.actions, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
-            "button",
-            {
-              style: styles6.approveBtn,
-              onClick: handleApprove,
-              disabled: resolving,
-              "aria-label": `Approve time request for ${alert.packageName}`,
-              children: "Approve"
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
-            "button",
-            {
-              style: styles6.denyBtn,
-              onClick: handleDeny,
-              disabled: resolving,
-              "aria-label": `Deny time request for ${alert.packageName}`,
-              children: "Deny"
-            }
-          )
-        ] }),
-        isRequest && resolved && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.resolvedLabel, children: "Resolved" })
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.alertTime, children: formatTime(alert.timestamp) })
       ] })
     ] });
   }
@@ -15177,31 +15129,9 @@
         unsubUninstalled();
       };
     }, [childPublicKey]);
-    async function handleApprove(alert) {
-      await window.callBare("app:decide", {
-        childPublicKey,
-        packageName: alert.packageName,
-        decision: "approve"
-      });
-    }
-    async function handleDeny(alert) {
-      await window.callBare("app:decide", {
-        childPublicKey,
-        packageName: alert.packageName,
-        decision: "deny"
-      });
-    }
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.msg, children: "Loading alerts..." });
-    if (alerts.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.msg, children: "No alerts. All quiet!" });
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.container, children: alerts.map((alert) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
-      AlertRow,
-      {
-        alert,
-        onApprove: handleApprove,
-        onDeny: handleDeny
-      },
-      alert.id
-    )) });
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.msg, children: "Loading activity..." });
+    if (alerts.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.msg, children: "No activity yet." });
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.container, children: alerts.map((alert) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AlertRow, { alert }, alert.id)) });
   }
   var styles6 = {
     container: { padding: "16px" },
@@ -15246,31 +15176,155 @@
     resolvedLabel: { fontSize: "12px", color: "#888", fontStyle: "italic" }
   };
 
-  // src/ui/components/ChildDetail.jsx
+  // src/ui/components/RequestsTab.jsx
+  var import_react7 = __toESM(require_react());
   var import_jsx_runtime7 = __toESM(require_jsx_runtime());
+  function formatTime2(ts) {
+    try {
+      return new Date(ts).toLocaleString();
+    } catch {
+      return ts;
+    }
+  }
+  function RequestRow({ req, childPublicKey, onResolved }) {
+    const [acting, setActing] = (0, import_react7.useState)(false);
+    async function decide(decision) {
+      setActing(true);
+      try {
+        await window.callBare("app:decide", { childPublicKey, packageName: req.packageName, decision });
+        onResolved();
+      } catch (e) {
+        console.error("app:decide failed:", e);
+      } finally {
+        setActing(false);
+      }
+    }
+    const isPending = !req.resolved;
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.row, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.rowBody, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.appName, children: req.appDisplayName || req.packageName }),
+        req.appDisplayName && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.pkgName, children: req.packageName }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.time, children: formatTime2(req.timestamp) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.rowRight, children: isPending ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.actions, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+          "button",
+          {
+            style: styles7.approveBtn,
+            onClick: () => decide("approve"),
+            disabled: acting,
+            "aria-label": `Approve request for ${req.packageName}`,
+            children: "Approve"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+          "button",
+          {
+            style: styles7.denyBtn,
+            onClick: () => decide("deny"),
+            disabled: acting,
+            "aria-label": `Deny request for ${req.packageName}`,
+            children: "Deny"
+          }
+        )
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { ...styles7.statusLabel, color: req.status === "approved" ? "#34a853" : "#ea4335" }, children: req.status === "approved" ? "Approved" : req.status === "denied" ? "Denied" : "Resolved" }) })
+    ] });
+  }
+  function RequestsTab({ childPublicKey }) {
+    const [requests, setRequests] = (0, import_react7.useState)([]);
+    const [loading, setLoading] = (0, import_react7.useState)(true);
+    function reload() {
+      window.callBare("alerts:list", { childPublicKey }).then((list) => {
+        const reqs = (list || []).filter((a) => a.type === "time_request");
+        reqs.sort((a, b) => {
+          if (!a.resolved && b.resolved) return -1;
+          if (a.resolved && !b.resolved) return 1;
+          return b.timestamp - a.timestamp;
+        });
+        setRequests(reqs);
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    }
+    (0, import_react7.useEffect)(() => {
+      reload();
+      const unsub = window.onBareEvent("time:request:received", reload);
+      return unsub;
+    }, [childPublicKey]);
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.msg, children: "Loading..." });
+    if (requests.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.msg, children: "No requests yet." });
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.container, children: requests.map((req) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      RequestRow,
+      {
+        req,
+        childPublicKey,
+        onResolved: reload
+      },
+      req.id
+    )) });
+  }
+  var styles7 = {
+    container: { padding: "16px" },
+    msg: { padding: "16px", color: "#666", fontSize: "14px" },
+    row: {
+      display: "flex",
+      alignItems: "flex-start",
+      gap: "12px",
+      padding: "12px 0",
+      borderBottom: "1px solid #eee"
+    },
+    rowBody: { flex: 1 },
+    rowRight: { flexShrink: 0, paddingTop: "2px" },
+    appName: { fontSize: "14px", fontWeight: "600", color: "#333" },
+    pkgName: { fontSize: "11px", color: "#888", fontFamily: "monospace", marginTop: "2px" },
+    time: { fontSize: "11px", color: "#888", marginTop: "4px" },
+    actions: { display: "flex", gap: "8px" },
+    approveBtn: {
+      padding: "6px 14px",
+      border: "none",
+      borderRadius: "6px",
+      backgroundColor: "#34a853",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "13px"
+    },
+    denyBtn: {
+      padding: "6px 14px",
+      border: "none",
+      borderRadius: "6px",
+      backgroundColor: "#ea4335",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "13px"
+    },
+    statusLabel: { fontSize: "13px", fontWeight: "600" }
+  };
+
+  // src/ui/components/ChildDetail.jsx
+  var import_jsx_runtime8 = __toESM(require_jsx_runtime());
   var TABS = [
     { key: "usage", label: "Usage", Component: UsageTab },
     { key: "apps", label: "Apps", Component: AppsTab },
+    { key: "requests", label: "Requests", Component: RequestsTab },
     { key: "schedule", label: "Schedule", Component: ScheduleTab },
     { key: "contacts", label: "Contacts", Component: ContactsTab },
-    { key: "alerts", label: "Alerts", Component: AlertsTab }
+    { key: "alerts", label: "Activity", Component: AlertsTab }
   ];
   function ChildDetail({ child, onBack, initialTab }) {
-    const [activeTab, setActiveTab] = (0, import_react7.useState)(initialTab || "usage");
+    const [activeTab, setActiveTab] = (0, import_react8.useState)(initialTab || "usage");
     const active = TABS.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.topBar, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { style: styles7.backBtn, onClick: onBack, "aria-label": "Back to Dashboard", children: "\u2190 Back" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: styles7.childName, children: child.displayName })
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.topBar, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.backBtn, onClick: onBack, "aria-label": "Back to Dashboard", children: "\u2190 Back" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: styles8.childName, children: child.displayName })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.tabBar, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.tabBar, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         "button",
         {
           onClick: () => setActiveTab(tab.key),
           style: {
-            ...styles7.tabBtn,
-            ...activeTab === tab.key ? styles7.tabActive : styles7.tabInactive
+            ...styles8.tabBtn,
+            ...activeTab === tab.key ? styles8.tabActive : styles8.tabInactive
           },
           "aria-selected": activeTab === tab.key,
           role: "tab",
@@ -15278,10 +15332,10 @@
         },
         tab.key
       )) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.content, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ActiveComponent, { childPublicKey: child.publicKey }) })
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.content, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ActiveComponent, { childPublicKey: child.publicKey }) })
     ] });
   }
-  var styles7 = {
+  var styles8 = {
     container: { display: "flex", flexDirection: "column", height: "100vh", fontFamily: "sans-serif" },
     topBar: {
       display: "flex",
@@ -15322,13 +15376,13 @@
   };
 
   // src/ui/components/Dashboard.jsx
-  var import_jsx_runtime8 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime9 = __toESM(require_jsx_runtime());
   function Dashboard() {
-    const [children, setChildren] = (0, import_react8.useState)([]);
-    const [loading, setLoading] = (0, import_react8.useState)(true);
-    const [initialTab, setInitialTab] = (0, import_react8.useState)(null);
-    const [selectedChild, setSelectedChild] = (0, import_react8.useState)(null);
-    const loadChildren = (0, import_react8.useCallback)(() => {
+    const [children, setChildren] = (0, import_react9.useState)([]);
+    const [loading, setLoading] = (0, import_react9.useState)(true);
+    const [initialTab, setInitialTab] = (0, import_react9.useState)(null);
+    const [selectedChild, setSelectedChild] = (0, import_react9.useState)(null);
+    const loadChildren = (0, import_react9.useCallback)(() => {
       window.callBare("children:list").then((list) => {
         setChildren(
           list.map((c) => ({
@@ -15343,7 +15397,7 @@
         setLoading(false);
       }).catch(() => setLoading(false));
     }, []);
-    (0, import_react8.useEffect)(() => {
+    (0, import_react9.useEffect)(() => {
       loadChildren();
       const unsubUsage = window.onBareEvent("child:usageReport", ({ childPublicKey, todayScreenTimeSeconds, currentApp }) => {
         setChildren(
@@ -15366,11 +15420,11 @@
           )
         );
       });
-      const unsubNav = window.onBareEvent("navigate:child:alerts", ({ childPublicKey }) => {
+      const unsubNav = window.onBareEvent("navigate:child:alerts", ({ childPublicKey, tab }) => {
         window.callBare("children:list").then((list) => {
           const child = list.find((c) => c.publicKey === childPublicKey);
           if (child) {
-            setInitialTab("alerts");
+            setInitialTab(tab || "alerts");
             setSelectedChild(child);
           }
         }).catch(() => {
@@ -15384,7 +15438,7 @@
       };
     }, [loadChildren]);
     if (selectedChild) {
-      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
         ChildDetail,
         {
           child: selectedChild,
@@ -15397,11 +15451,11 @@
         }
       );
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h2", { style: styles8.heading, children: "Dashboard" }),
-      loading && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { style: styles8.msg, children: "Loading..." }),
-      !loading && children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { style: styles8.msg, children: "No children paired yet. Go to the Children tab to add one." }),
-      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles9.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h2", { style: styles9.heading, children: "Dashboard" }),
+      loading && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.msg, children: "Loading..." }),
+      !loading && children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.msg, children: "No children paired yet. Go to the Children tab to add one." }),
+      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
         ChildCard,
         {
           child,
@@ -15411,32 +15465,32 @@
       ))
     ] });
   }
-  var styles8 = {
+  var styles9 = {
     container: { padding: "16px" },
     heading: { fontSize: "20px", fontWeight: "700", marginBottom: "16px" },
     msg: { color: "#666", fontSize: "14px" }
   };
 
   // src/ui/components/ChildrenList.jsx
-  var import_react10 = __toESM(require_react());
+  var import_react11 = __toESM(require_react());
 
   // src/ui/components/AddChildFlow.jsx
-  var import_react9 = __toESM(require_react());
+  var import_react10 = __toESM(require_react());
   var import_qrcode = __toESM(require_browser());
-  var import_jsx_runtime9 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime10 = __toESM(require_jsx_runtime());
   function AddChildFlow({ onConnected, onCancel }) {
-    const [invite, setInvite] = (0, import_react9.useState)(null);
-    const [error, setError] = (0, import_react9.useState)(null);
-    const [sharing, setSharing] = (0, import_react9.useState)(false);
-    const canvasRef = (0, import_react9.useRef)(null);
-    (0, import_react9.useEffect)(() => {
+    const [invite, setInvite] = (0, import_react10.useState)(null);
+    const [error, setError] = (0, import_react10.useState)(null);
+    const [sharing, setSharing] = (0, import_react10.useState)(false);
+    const canvasRef = (0, import_react10.useRef)(null);
+    (0, import_react10.useEffect)(() => {
       window.callBare("invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
       const unsub = window.onBareEvent("child:connected", (data) => {
         onConnected(data);
       });
       return unsub;
     }, [onConnected]);
-    (0, import_react9.useEffect)(() => {
+    (0, import_react10.useEffect)(() => {
       if (invite?.inviteLink && canvasRef.current) {
         import_qrcode.default.toCanvas(canvasRef.current, invite.inviteLink, {
           width: 240,
@@ -15451,28 +15505,28 @@
       window.callBare("share:text", { text: invite.inviteLink }).finally(() => setSharing(false));
     }
     if (error) {
-      return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles9.container, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.error, children: error }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles9.cancelBtn, onClick: onCancel, children: "Go Back" })
+      return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.container, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.error, children: error }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.cancelBtn, onClick: onCancel, children: "Go Back" })
       ] });
     }
     if (!invite) {
-      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: styles9.container, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.hint, children: "Generating invite\u2026" }) });
+      return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: styles10.container, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.hint, children: "Generating invite\u2026" }) });
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles9.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h3", { style: styles9.heading, children: "Add a Child Device" }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.hint, children: "Ask the child to scan this QR code, or share the link below via SMS or a messaging app." }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: styles9.qrWrap, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("canvas", { ref: canvasRef }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.linkLabel, children: "Or share this link:" }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles9.linkRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: styles9.link, children: invite.inviteLink }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles9.copyBtn, onClick: handleShare, disabled: sharing, children: "Share" })
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h3", { style: styles10.heading, children: "Add a Child Device" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.hint, children: "Ask the child to scan this QR code, or share the link below via SMS or a messaging app." }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: styles10.qrWrap, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("canvas", { ref: canvasRef }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.linkLabel, children: "Or share this link:" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.linkRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: styles10.link, children: invite.inviteLink }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.copyBtn, onClick: handleShare, disabled: sharing, children: "Share" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.waiting, children: "Waiting for child to connect\u2026" }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles9.cancelBtn, onClick: onCancel, children: "Cancel" })
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.waiting, children: "Waiting for child to connect\u2026" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.cancelBtn, onClick: onCancel, children: "Cancel" })
     ] });
   }
-  var styles9 = {
+  var styles10 = {
     container: { padding: "16px" },
     heading: { fontSize: "18px", fontWeight: "700", marginBottom: "8px" },
     hint: { color: "#555", fontSize: "13px", marginBottom: "16px" },
@@ -15525,11 +15579,11 @@
   };
 
   // src/ui/components/ChildrenList.jsx
-  var import_jsx_runtime10 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime11 = __toESM(require_jsx_runtime());
   function ChildrenList() {
-    const [children, setChildren] = (0, import_react10.useState)([]);
-    const [showAdd, setShowAdd] = (0, import_react10.useState)(false);
-    (0, import_react10.useEffect)(() => {
+    const [children, setChildren] = (0, import_react11.useState)([]);
+    const [showAdd, setShowAdd] = (0, import_react11.useState)(false);
+    (0, import_react11.useEffect)(() => {
       window.callBare("children:list").then(setChildren).catch(() => {
       });
       const unsub = window.onBareEvent("child:connected", () => {
@@ -15539,13 +15593,13 @@
       });
       return unsub;
     }, []);
-    function handleChildConnected(data) {
+    function handleChildConnected() {
       setShowAdd(false);
       window.callBare("children:list").then(setChildren).catch(() => {
       });
     }
     if (showAdd) {
-      return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+      return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
         AddChildFlow,
         {
           onConnected: handleChildConnected,
@@ -15553,23 +15607,23 @@
         }
       );
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.header, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h2", { style: styles10.heading, children: "Children" }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.addBtn, onClick: () => setShowAdd(true), children: "+ Add Child" })
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { style: styles11.heading, children: "Children" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { style: styles11.addBtn, onClick: () => setShowAdd(true), children: "+ Add Child" })
       ] }),
-      children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.empty, children: "No children paired yet." }),
-      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.row, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: {
-          ...styles10.dot,
+      children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles11.empty, children: "No children paired yet." }),
+      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.row, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: {
+          ...styles11.dot,
           backgroundColor: child.isOnline ? "#34a853" : "#bbb"
         } }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: styles10.name, children: child.displayName }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: styles10.lastSeen, children: child.isOnline ? "Online" : child.lastSeen ? `Last seen: ${new Date(child.lastSeen).toLocaleString()}` : "Never connected" })
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: styles11.name, children: child.displayName }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: styles11.lastSeen, children: child.isOnline ? "Online" : child.lastSeen ? `Last seen: ${new Date(child.lastSeen).toLocaleString()}` : "Never connected" })
       ] }, child.publicKey))
     ] });
   }
-  var styles10 = {
+  var styles11 = {
     container: { padding: "16px" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" },
     heading: { fontSize: "20px", fontWeight: "700", margin: 0 },
@@ -15596,12 +15650,12 @@
   };
 
   // src/ui/components/Settings.jsx
-  var import_react11 = __toESM(require_react());
-  var import_jsx_runtime11 = __toESM(require_jsx_runtime());
+  var import_react12 = __toESM(require_react());
+  var import_jsx_runtime12 = __toESM(require_jsx_runtime());
   function Settings() {
-    const [newPin, setNewPin] = (0, import_react11.useState)("");
-    const [confirmPin, setConfirmPin] = (0, import_react11.useState)("");
-    const [pinStatus, setPinStatus] = (0, import_react11.useState)(null);
+    const [newPin, setNewPin] = (0, import_react12.useState)("");
+    const [confirmPin, setConfirmPin] = (0, import_react12.useState)("");
+    const [pinStatus, setPinStatus] = (0, import_react12.useState)(null);
     function handlePinSubmit(e) {
       e.preventDefault();
       if (newPin.length < 4) {
@@ -15625,15 +15679,15 @@
         setPinStatus(err.message || "Failed to set PIN. Please try again.");
       });
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { style: styles11.pageHead, children: "Settings" }),
-      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("section", { style: styles11.section, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h3", { style: styles11.sectionHead, children: "Override PIN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles11.hint, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("form", { onSubmit: handlePinSubmit, style: styles11.form, "aria-label": "Change PIN form", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { style: styles11.label, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { style: styles12.pageHead, children: "Settings" }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("section", { style: styles12.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: styles12.sectionHead, children: "Override PIN" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.hint, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("form", { onSubmit: handlePinSubmit, style: styles12.form, "aria-label": "Change PIN form", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles12.label, children: [
             "New PIN",
-            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
               "input",
               {
                 type: "text",
@@ -15643,15 +15697,15 @@
                   setPinStatus(null);
                 },
                 placeholder: "e.g. 1234",
-                style: styles11.input,
+                style: styles12.input,
                 "aria-label": "New PIN",
                 inputMode: "numeric"
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("label", { style: styles11.label, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles12.label, children: [
             "Confirm PIN",
-            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
               "input",
               {
                 type: "text",
@@ -15661,20 +15715,20 @@
                   setPinStatus(null);
                 },
                 placeholder: "Repeat PIN",
-                style: styles11.input,
+                style: styles12.input,
                 "aria-label": "Confirm PIN",
                 inputMode: "numeric"
               }
             )
           ] }),
-          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles11.errorText, role: "alert", children: pinStatus }),
-          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles11.successText, role: "status", children: "PIN updated successfully." }),
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { type: "submit", style: styles11.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
+          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.errorText, role: "alert", children: pinStatus }),
+          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.successText, role: "status", children: "PIN updated successfully." }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { type: "submit", style: styles12.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
         ] })
       ] })
     ] });
   }
-  var styles11 = {
+  var styles12 = {
     container: { padding: "16px", fontFamily: "sans-serif" },
     pageHead: { fontSize: "20px", fontWeight: "700", marginBottom: "20px" },
     section: { marginBottom: "32px" },
@@ -15704,20 +15758,22 @@
   };
 
   // src/ui/components/Profile.jsx
-  var import_react12 = __toESM(require_react());
-  var import_jsx_runtime12 = __toESM(require_jsx_runtime());
+  var import_react13 = __toESM(require_react());
+  var import_jsx_runtime13 = __toESM(require_jsx_runtime());
   function getInitials(name) {
     return name.trim() ? name.trim().split(/\s+/).map((w) => w[0].toUpperCase()).slice(0, 2).join("") : "?";
   }
   function Profile({ mode }) {
-    const [name, setName] = (0, import_react12.useState)("");
-    const [savedName, setSavedName] = (0, import_react12.useState)("");
-    const [saving, setSaving] = (0, import_react12.useState)(false);
-    const [status, setStatus] = (0, import_react12.useState)(null);
-    const [pairState, setPairState] = (0, import_react12.useState)("idle");
-    const [pairError, setPairError] = (0, import_react12.useState)(null);
-    const [parents, setParents] = (0, import_react12.useState)([]);
-    (0, import_react12.useEffect)(() => {
+    const [name, setName] = (0, import_react13.useState)("");
+    const [savedName, setSavedName] = (0, import_react13.useState)("");
+    const [saving, setSaving] = (0, import_react13.useState)(false);
+    const [status, setStatus] = (0, import_react13.useState)(null);
+    const [pairState, setPairState] = (0, import_react13.useState)("idle");
+    const [pairError, setPairError] = (0, import_react13.useState)(null);
+    const [parents, setParents] = (0, import_react13.useState)([]);
+    const [pairedBanner, setPairedBanner] = (0, import_react13.useState)(false);
+    const pairDoneRef = (0, import_react13.useRef)(false);
+    (0, import_react13.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName }) => {
         const n = displayName || "";
         setName(n);
@@ -15725,14 +15781,17 @@
       }).catch(() => {
       });
     }, []);
-    (0, import_react12.useEffect)(() => {
+    (0, import_react13.useEffect)(() => {
       if (mode !== "child") return;
       window.callBare("children:list").then(setParents).catch(() => {
       });
       const unsub = window.onBareEvent("peer:paired", () => {
+        pairDoneRef.current = true;
         window.callBare("children:list").then(setParents).catch(() => {
         });
         setPairState("idle");
+        setPairedBanner(true);
+        setTimeout(() => setPairedBanner(false), 3e3);
       });
       return unsub;
     }, [mode]);
@@ -15752,12 +15811,15 @@
       }
     }
     async function handlePair() {
+      pairDoneRef.current = false;
       setPairError(null);
       try {
         const url = await window.callBare("qr:scan");
         setPairState("connecting");
         await window.callBare("acceptInvite", [url]);
-        setPairState("success");
+        if (!pairDoneRef.current) {
+          setPairState("success");
+        }
       } catch (e) {
         if (e.message === "cancelled") {
           setPairState("idle");
@@ -15770,13 +15832,13 @@
     const label = mode === "parent" ? "Parent Name" : "Your Name";
     const placeholder = mode === "parent" ? "e.g. Mom" : "e.g. Alex";
     const unchanged = name.trim() === savedName || !name.trim();
-    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { style: styles12.heading, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles12.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles12.avatar, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: styles12.initials, children: getInitials(savedName) }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.field, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles12.label, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: styles13.heading, children: "Profile" }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatar, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.initials, children: getInitials(savedName) }) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.field, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { style: styles13.label, children: [
           label,
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
             "input",
             {
               type: "text",
@@ -15786,40 +15848,41 @@
                 setStatus(null);
               },
               placeholder,
-              style: styles12.input
+              style: styles13.input
             }
           )
         ] }),
-        status === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.success, children: "Name saved." }),
-        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.error, children: "Failed to save name." }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+        status === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.success, children: "Name saved." }),
+        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.error, children: "Failed to save name." }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
           "button",
           {
             onClick: handleSave,
             disabled: saving || unchanged,
-            style: { ...styles12.btn, ...saving || unchanged ? styles12.btnDisabled : {} },
+            style: { ...styles13.btn, ...saving || unchanged ? styles13.btnDisabled : {} },
             children: saving ? "Saving\u2026" : "Save Name"
           }
         )
       ] }),
-      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.section, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: styles12.sectionHeading, children: "Parents" }),
-        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles12.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.parentRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...styles12.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: styles12.parentName, children: p.displayName || "Parent Device" }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: styles12.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
+      mode === "child" && pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.banner, children: "Successfully paired with parent!" }),
+      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: styles13.sectionHeading, children: "Parents" }),
+        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.parentRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: { ...styles13.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.parentName, children: p.displayName || "Parent Device" }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
         ] }, p.publicKey)) }),
-        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { style: styles12.btn, onClick: handlePair, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
-        pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.hint, children: "Connecting to parent\u2026" }),
-        pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.success, children: "Paired! Waiting for parent to confirm\u2026" }),
-        pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.error, children: pairError }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { style: styles12.btn, onClick: () => setPairState("idle"), children: "Try Again" })
+        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles13.btn, onClick: handlePair, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
+        pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.hint, children: "Connecting to parent\u2026" }),
+        pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.success, children: "Pairing in progress\u2026" }),
+        pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.error, children: pairError }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles13.btn, onClick: () => setPairState("idle"), children: "Try Again" })
         ] })
       ] })
     ] });
   }
-  var styles12 = {
+  var styles13 = {
     container: { padding: "16px", fontFamily: "sans-serif" },
     heading: { fontSize: "20px", fontWeight: "700", marginBottom: "24px" },
     avatarWrap: { display: "flex", justifyContent: "center", marginBottom: "24px" },
@@ -15856,6 +15919,16 @@
     btnDisabled: { backgroundColor: "#ccc", cursor: "not-allowed" },
     success: { color: "#34a853", fontSize: "13px", margin: 0 },
     error: { color: "#ea4335", fontSize: "13px", margin: 0 },
+    banner: {
+      backgroundColor: "#e6f4ea",
+      color: "#1e7e34",
+      border: "1px solid #a8d5b5",
+      borderRadius: "6px",
+      padding: "10px 14px",
+      marginTop: "16px",
+      fontSize: "14px",
+      fontWeight: "500"
+    },
     section: { marginTop: "32px" },
     sectionHeading: { fontSize: "16px", fontWeight: "600", marginBottom: "12px", color: "#333" },
     hint: { color: "#888", fontSize: "14px" },
@@ -15867,8 +15940,8 @@
   };
 
   // src/ui/components/ParentApp.jsx
-  var import_jsx_runtime13 = __toESM(require_jsx_runtime());
-  var ParentProfile = () => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Profile, { mode: "parent" });
+  var import_jsx_runtime14 = __toESM(require_jsx_runtime());
+  var ParentProfile = () => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Profile, { mode: "parent" });
   var TABS2 = [
     { key: "dashboard", label: "Dashboard", Component: Dashboard },
     { key: "children", label: "Children", Component: ChildrenList },
@@ -15876,18 +15949,34 @@
     { key: "profile", label: "Profile", Component: ParentProfile }
   ];
   function ParentApp() {
-    const [activeTab, setActiveTab] = (0, import_react13.useState)("dashboard");
+    const [activeTab, setActiveTab] = (0, import_react14.useState)("dashboard");
+    const [pairedName, setPairedName] = (0, import_react14.useState)(null);
+    (0, import_react14.useEffect)(() => {
+      const unsub = window.onBareEvent("child:connected", (data) => {
+        setPairedName(data?.displayName || "Child");
+        setTimeout(() => {
+          setPairedName(null);
+          setActiveTab("dashboard");
+        }, 3e3);
+      });
+      return unsub;
+    }, []);
     const active = TABS2.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
-    return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.content, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ActiveComponent, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("nav", { style: styles13.tabBar, children: TABS2.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.container, children: [
+      pairedName && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.banner, children: [
+        "Successfully paired with ",
+        pairedName,
+        "!"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.content, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActiveComponent, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("nav", { style: styles14.tabBar, children: TABS2.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
         "button",
         {
           onClick: () => setActiveTab(tab.key),
           style: {
-            ...styles13.tabButton,
-            ...activeTab === tab.key ? styles13.tabActive : styles13.tabInactive
+            ...styles14.tabButton,
+            ...activeTab === tab.key ? styles14.tabActive : styles14.tabInactive
           },
           "aria-selected": activeTab === tab.key,
           role: "tab",
@@ -15897,13 +15986,23 @@
       )) })
     ] });
   }
-  var styles13 = {
+  var styles14 = {
     container: {
       display: "flex",
       flexDirection: "column",
       height: "100vh",
       fontFamily: "sans-serif",
       backgroundColor: "#fff"
+    },
+    banner: {
+      backgroundColor: "#e6f4ea",
+      color: "#1e7e34",
+      border: "1px solid #a8d5b5",
+      padding: "12px 16px",
+      fontSize: "14px",
+      fontWeight: "500",
+      textAlign: "center",
+      flexShrink: 0
     },
     content: {
       flex: 1,
@@ -15933,11 +16032,11 @@
   };
 
   // src/ui/components/ChildApp.jsx
-  var import_react16 = __toESM(require_react());
+  var import_react17 = __toESM(require_react());
 
   // src/ui/components/ChildHome.jsx
-  var import_react14 = __toESM(require_react());
-  var import_jsx_runtime14 = __toESM(require_jsx_runtime());
+  var import_react15 = __toESM(require_react());
+  var import_jsx_runtime15 = __toESM(require_jsx_runtime());
   var STATUS = {
     GOOD: "good",
     BEDTIME: "bedtime",
@@ -15957,9 +16056,9 @@
     }
   }
   function ChildHome() {
-    const [status, setStatus] = (0, import_react14.useState)(STATUS.LOADING);
-    const [scheduleLabel, setScheduleLabel] = (0, import_react14.useState)(null);
-    (0, import_react14.useEffect)(() => {
+    const [status, setStatus] = (0, import_react15.useState)(STATUS.LOADING);
+    const [scheduleLabel, setScheduleLabel] = (0, import_react15.useState)(null);
+    (0, import_react15.useEffect)(() => {
       let isMounted = true;
       window.callBare("policy:getCurrent").then(({ policy }) => {
         if (!isMounted) return;
@@ -15994,7 +16093,7 @@
       };
     }, []);
     const isOffline = status === STATUS.OFFLINE;
-    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: { padding: 24 }, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+    return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { padding: 24 }, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
       "div",
       {
         style: {
@@ -16006,17 +16105,17 @@
           borderStyle: "solid"
         },
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { style: { color: isOffline ? "#CC0000" : "#007733", margin: 0 }, children: statusLabel(status) }),
-          status === STATUS.BEDTIME && scheduleLabel && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: { marginTop: 8, color: "#555" }, children: scheduleLabel }),
-          isOffline && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: { marginTop: 8, color: "#CC0000" }, children: "Parental controls are not active. Ask a parent to re-enable accessibility access." })
+          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { style: { color: isOffline ? "#CC0000" : "#007733", margin: 0 }, children: statusLabel(status) }),
+          status === STATUS.BEDTIME && scheduleLabel && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { marginTop: 8, color: "#555" }, children: scheduleLabel }),
+          isOffline && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { marginTop: 8, color: "#CC0000" }, children: "Parental controls are not active. Ask a parent to re-enable accessibility access." })
         ]
       }
     ) });
   }
 
   // src/ui/components/ChildRequests.jsx
-  var import_react15 = __toESM(require_react());
-  var import_jsx_runtime15 = __toESM(require_jsx_runtime());
+  var import_react16 = __toESM(require_react());
+  var import_jsx_runtime16 = __toESM(require_jsx_runtime());
   function statusBadge(status) {
     switch (status) {
       case "approved":
@@ -16028,15 +16127,22 @@
     }
   }
   function ChildRequests() {
-    const [requests, setRequests] = (0, import_react15.useState)([]);
-    const [loading, setLoading] = (0, import_react15.useState)(true);
+    const [requests, setRequests] = (0, import_react16.useState)([]);
+    const [loading, setLoading] = (0, import_react16.useState)(true);
+    const [clearing, setClearing] = (0, import_react16.useState)(false);
     async function loadRequests() {
       setLoading(true);
       const { requests: requests2 } = await window.callBare("requests:list");
       setRequests(requests2 || []);
       setLoading(false);
     }
-    (0, import_react15.useEffect)(() => {
+    async function handleClearResolved() {
+      setClearing(true);
+      await window.callBare("requests:clear");
+      await loadRequests();
+      setClearing(false);
+    }
+    (0, import_react16.useEffect)(() => {
       let isMounted = true;
       loadRequests().then(() => {
         if (!isMounted) return;
@@ -16053,13 +16159,24 @@
         unsubUpdated();
       };
     }, []);
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
-    return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { padding: 24 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { marginBottom: 16 }, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }) }),
-      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
+    return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { padding: 24 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }),
+        requests.some((r) => r.status === "approved" || r.status === "denied") && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+          "button",
+          {
+            onClick: handleClearResolved,
+            disabled: clearing,
+            style: { fontSize: 13, padding: "6px 12px", border: "1px solid #ccc", borderRadius: 6, background: "#fff", cursor: clearing ? "not-allowed" : "pointer", color: "#555" },
+            children: clearing ? "Clearing\u2026" : "Clear resolved"
+          }
+        )
+      ] }),
+      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
       requests.map((req) => {
         const badge = statusBadge(req.status);
-        return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+        return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
           "div",
           {
             style: {
@@ -16072,12 +16189,12 @@
               alignItems: "center"
             },
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { fontWeight: "bold" }, children: req.appName || req.packageName }),
-                req.appName && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { color: "#888", fontSize: 11, fontFamily: "monospace", marginTop: 2 }, children: req.packageName }),
-                /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { color: "#888", fontSize: 12, marginTop: 4 }, children: new Date(req.requestedAt).toLocaleTimeString() })
+              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { fontWeight: "bold" }, children: req.appName || req.packageName }),
+                req.appName && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { color: "#888", fontSize: 11, fontFamily: "monospace", marginTop: 2 }, children: req.packageName }),
+                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { color: "#888", fontSize: 12, marginTop: 4 }, children: new Date(req.requestedAt).toLocaleTimeString() })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { color: badge.color, fontWeight: "bold" }, children: badge.label })
+              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { color: badge.color, fontWeight: "bold" }, children: badge.label })
             ]
           },
           req.id
@@ -16087,19 +16204,19 @@
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_jsx_runtime16 = __toESM(require_jsx_runtime());
-  var ChildProfile = () => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Profile, { mode: "child" });
+  var import_jsx_runtime17 = __toESM(require_jsx_runtime());
+  var ChildProfile = () => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Profile, { mode: "child" });
   var TABS3 = [
     { id: "home", label: "Home", Component: ChildHome },
     { id: "requests", label: "Requests", Component: ChildRequests },
     { id: "profile", label: "Profile", Component: ChildProfile }
   ];
   function ChildApp() {
-    const [activeTab, setActiveTab] = (0, import_react16.useState)("home");
+    const [activeTab, setActiveTab] = (0, import_react17.useState)("home");
     const ActiveComponent = TABS3.find((t) => t.id === activeTab).Component;
-    return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(ActiveComponent, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ActiveComponent, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
         "div",
         {
           style: {
@@ -16107,7 +16224,7 @@
             borderTop: "1px solid #DDD",
             backgroundColor: "#FFF"
           },
-          children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+          children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
             "button",
             {
               onClick: () => setActiveTab(tab.id),
@@ -16129,26 +16246,26 @@
   }
 
   // src/ui/App.jsx
-  var import_jsx_runtime17 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime18 = __toESM(require_jsx_runtime());
   function ModeSetup() {
-    return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: styles14.center, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { children: "Welcome to PearGuard" }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { children: "Please complete setup in the PearGuard app to choose your mode." })
+    return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles15.center, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { children: "Welcome to PearGuard" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { children: "Please complete setup in the PearGuard app to choose your mode." })
     ] });
   }
   function App() {
-    const [mode, setMode] = (0, import_react17.useState)(void 0);
-    (0, import_react17.useEffect)(() => {
+    const [mode, setMode] = (0, import_react18.useState)(void 0);
+    (0, import_react18.useEffect)(() => {
       window.callBare("identity:getMode").then(({ mode: mode2 }) => setMode(mode2)).catch(() => setMode(null));
     }, []);
     if (mode === void 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: styles14.center, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { children: "Loading..." }) });
+      return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles15.center, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { children: "Loading..." }) });
     }
-    if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ParentApp, {});
-    if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ChildApp, {});
-    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ModeSetup, {});
+    if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ParentApp, {});
+    if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ChildApp, {});
+    return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ModeSetup, {});
   }
-  var styles14 = {
+  var styles15 = {
     center: {
       display: "flex",
       flexDirection: "column",
@@ -16161,7 +16278,7 @@
   };
 
   // src/ui/main.jsx
-  var import_jsx_runtime18 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime19 = __toESM(require_jsx_runtime());
   var pending = {};
   var nextId = 1;
   window.__pearResponse = function(id, result, error) {
@@ -16192,7 +16309,7 @@
     });
   };
   var root = (0, import_client.createRoot)(document.getElementById("root"));
-  root.render(/* @__PURE__ */ (0, import_jsx_runtime18.jsx)(App, {}));
+  root.render(/* @__PURE__ */ (0, import_jsx_runtime19.jsx)(App, {}));
 })();
 /*! Bundled license information:
 

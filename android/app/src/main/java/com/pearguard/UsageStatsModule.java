@@ -328,7 +328,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             nm.createNotificationChannel(channel);
         }
 
-        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+        PendingIntent pi = buildRequestsPendingIntent(childPublicKey, notificationId);
 
         String title = childName + " is requesting access";
         String body  = childName + " wants to use " + appName;
@@ -492,12 +492,28 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Builds a PendingIntent that deep-links to the child's Alerts tab in PearGuard.
+     * Builds a PendingIntent that deep-links to the child's Activity tab in PearGuard.
      * URL: pear://pearguard/alerts?childPublicKey=<key>
      */
     private PendingIntent buildAlertsPendingIntent(String childPublicKey, int reqCode) {
         String url = "pear://pearguard/alerts?childPublicKey=" +
                 Uri.encode(childPublicKey != null ? childPublicKey : "");
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        intent.setPackage(reactContext.getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(
+                reactContext, reqCode, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+    }
+
+    /**
+     * Builds a PendingIntent that deep-links to the child's Requests tab in PearGuard.
+     * URL: pear://pearguard/alerts?childPublicKey=<key>&tab=requests
+     */
+    private PendingIntent buildRequestsPendingIntent(String childPublicKey, int reqCode) {
+        String url = "pear://pearguard/alerts?childPublicKey=" +
+                Uri.encode(childPublicKey != null ? childPublicKey : "") + "&tab=requests";
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         intent.setPackage(reactContext.getPackageName());
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);

@@ -206,10 +206,14 @@ When the parent taps Back from ChildDetail and later returns, the previously act
 
 - **Where**: `src/ui/components/ChildDetail.jsx` — verify `initialTab` default and that state resets on unmount
 
-### [ ] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab
-When the parent receives a push notification for a child's time request and taps it, they are taken to the Activity tab rather than the Requests tab where they can act on it.
+### [x] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab — 2026-03-22
+`showTimeRequestNotification` now uses `buildRequestsPendingIntent` which appends `&tab=requests` to the deep link URL. `index.tsx` parses the `tab` param and passes it in the `navigate:child:alerts` event payload. `Dashboard.jsx` reads `tab` (defaulting to `'alerts'`) and sets `initialTab` accordingly.
 
-- **Where**: `app/index.tsx` — find where `time:request:received` notification tap is handled; change the deep-link or tab navigation target from `alerts` to `requests` in ChildDetail
+### [ ] 36. Bug: "Successfully paired" banner fires on every reconnect, not just first pairing
+`peer:paired` fires on every hello exchange (every reconnect after background). `ParentApp.jsx` shows the "Successfully paired with {name}!" banner unconditionally on `child:connected`. It should only show on first-time pairing.
+
+- **Where**: `src/ui/components/ParentApp.jsx` — check if the child's `pairedAt` timestamp is within the last few seconds before showing the banner
+- **Or**: `bare.js` `handleHello` — emit a separate `child:reconnected` event for subsequent connections vs `child:connected` for first-time pairing
 
 ### [ ] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab
 When a child's time request is approved and they tap the notification, nothing useful happens. It should either launch the approved app directly or open PearGuard to the child's Requests tab.

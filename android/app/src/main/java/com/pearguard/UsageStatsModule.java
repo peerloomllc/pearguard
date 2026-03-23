@@ -397,13 +397,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 ? "Your parent allowed more time on " + appName
                 : "Your parent denied the request for " + appName;
 
-        Intent launchIntent = reactContext.getPackageManager()
-                .getLaunchIntentForPackage(reactContext.getPackageName());
-        if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        }
+        // Deep link to child's Requests tab so tapping the notification is actionable
+        Intent intent = new Intent(Intent.ACTION_VIEW,
+                Uri.parse("pear://pearguard/child-requests"));
+        intent.setPackage(reactContext.getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(
-                reactContext, notificationId, launchIntent != null ? launchIntent : new Intent(),
+                reactContext, notificationId, intent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
 

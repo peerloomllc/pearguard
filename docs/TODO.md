@@ -210,12 +210,8 @@ Root cause: `tabInactive` style had no `borderBottom` key, so React never remove
 ### [x] 36. Bug: "Successfully paired" banner fires on every reconnect, not just first pairing — 2026-03-22
 `bare.js` `handleHello` now checks `existingRecord`: if null → first-time pairing → emits `child:connected`; otherwise → reconnect → emits `child:reconnected`. `ParentApp.jsx` only listens for `child:connected`, so the banner only fires on first pairing. `ChildrenList.jsx` also subscribes to `child:reconnected` to refresh the list (lastSeen, displayName) on reconnect.
 
-### [ ] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab
-When a child's time request is approved and they tap the notification, nothing useful happens. It should either launch the approved app directly or open PearGuard to the child's Requests tab.
-
-- **Option A**: Extract `packageName` from the notification intent extras; call `startActivity` with a `CATEGORY_LAUNCHER` intent for that package
-- **Option B**: Navigate to the child's Requests tab in the WebView as a fallback if the app can't be launched
-- **Where**: `android/.../UsageStatsModule.java` or wherever notifications are built for the child; `app/index.tsx` for the WebView navigation fallback
+### [x] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab — 2026-03-22
+`showDecisionNotification` now builds a `pear://pearguard/child-requests` deep link PendingIntent. `index.tsx` parses this URL and sets `_pendingChildRequestsNav = true`; the `dbReady` useEffect fires `navigate:child:requests` into the WebView. `ChildApp.jsx` listens for that event and calls `setActiveTab('requests')`.
 
 ## Known Limitations
 

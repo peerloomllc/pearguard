@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import ChildHome from './ChildHome'
 import ChildRequests from './ChildRequests'
 import Profile from './Profile.jsx'
@@ -14,6 +14,13 @@ const TABS = [
 export default function ChildApp() {
   const [activeTab, setActiveTab] = useState('home')
   const ActiveComponent = TABS.find((t) => t.id === activeTab).Component
+
+  useEffect(() => {
+    const unsub = window.onBareEvent('navigate:child:requests', () => {
+      setActiveTab('requests')
+    })
+    return unsub
+  }, [])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#fff' }}>

@@ -211,6 +211,19 @@ When the child sends a message while the parent app is backgrounded, Android dro
 - **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
 - **Where**: `app/index.tsx`, new foreground service, or FCM integration
 
+### [ ] 38. Bug: Usage tab not populating any data
+The Usage tab in ChildDetail shows no screen time data.
+
+- **Investigate**: Verify `UsageStatsModule.getTodayScreenTime` is returning data; check that `usage:report` events are being emitted and received by the parent; confirm `UsageTab.jsx` is reading the right data shape
+- **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
+
+### [ ] 39. Schedules and Time Limits need to work together properly
+Time-limit enforcement and scheduled block windows should interoperate correctly — e.g. a scheduled block should override an active time-limit grant, and an approved time extension should not bypass a scheduled block window.
+
+- **Investigate**: How `EnforcementService` and `AppBlockerModule` currently prioritize policy fields (`schedule`, `dailyLimitSeconds`, active overrides)
+- **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
+- **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
+
 ## Known Limitations
 
 ### Overlay not triggered for already-open apps

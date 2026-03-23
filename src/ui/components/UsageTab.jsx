@@ -58,6 +58,15 @@ export default function UsageTab({ childPublicKey }) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+
+    // Also update when a fresh report arrives over P2P while the tab is open
+    const unsub = window.onBareEvent('usage:report', (data) => {
+      if (data && data.childPublicKey === childPublicKey) {
+        setReport(data);
+        setLoading(false);
+      }
+    });
+    return unsub;
   }, [childPublicKey]);
 
   if (loading) return <div style={styles.msg}>Loading usage data...</div>;

@@ -218,6 +218,19 @@ Time-limit enforcement and scheduled block windows should interoperate correctly
 - **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
 - **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
 
+### [x] 42. Bug: Usage tab data disappears after leaving and returning to the app — 2026-03-23
+Usage stats were visible, but after backgrounding the app and returning the Usage tab showed empty again. The `usageReport:{childPublicKey}:{timestamp}` entries may be getting lost across app restarts, or `usage:getLatest` is not finding them on re-mount.
+
+- **Investigate**: Confirm `usageReport:*` keys are persisted in Hyperbee across app restarts (not just in-memory); check if the bare worklet re-initializes and clears state on foreground
+- **Also check**: `UsageTab` calls `usage:getLatest` on mount — verify the query range `gt/lt` matches the actual stored keys
+
+### [ ] 41. System apps must be exempt from policies and filtered from Usage report
+System apps (Launcher, Google Play Services, Settings, Phone, SMS, etc.) should never be blocked by the overlay and should not appear in the Usage tab on the parent's dashboard.
+
+- **Policy exemption**: In `AppBlockerModule.java` `getBlockReason`, skip enforcement for known system packages (those with `FLAG_SYSTEM` + `FLAG_UPDATED_SYSTEM_APP`, or a curated allowlist of critical services like `com.android.launcher`, `com.google.android.gms`)
+- **Usage filter**: In `UsageStatsModule.java` `getDailyUsageAll`, exclude system apps before returning the list — same FLAG_SYSTEM check or launcher-intent filter (only include apps that appear in the launcher)
+- **Apps list**: `handleIncomingAppsSync` in `bare-dispatch.js` already uses a launcher-intent filter for the initial sync; verify system apps are excluded there too
+
 ## Known Limitations
 
 ### Overlay not triggered for already-open apps

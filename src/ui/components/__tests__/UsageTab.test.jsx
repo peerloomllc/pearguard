@@ -24,6 +24,7 @@ const MOCK_REPORT = {
 
 beforeEach(() => {
   window.callBare = jest.fn().mockResolvedValue(MOCK_REPORT);
+  window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
 
 test('shows loading state initially', () => {

@@ -1454,6 +1454,38 @@ describe('bare dispatch', () => {
       expect(events[0][0].data).toMatchObject({ packageName: 'com.example.app', childPublicKey: 'childpk1' })
     })
 
+    test('new app: sends policy:update to child via sendToPeer using stored noiseKey', async () => {
+      const mockDb = makeMockDb({ 'peers:childpk1': { noiseKey: 'noise-abc', displayName: 'Kid' } })
+      const mockSend = jest.fn()
+      const mockSendToPeer = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.example.app', appName: 'Example App', detectedAt: 1000 },
+        'childpk1',
+        mockDb,
+        mockSend,
+        mockSendToPeer
+      )
+
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({
+        type: 'policy:update',
+        payload: expect.objectContaining({ apps: expect.objectContaining({ 'com.example.app': expect.objectContaining({ status: 'pending' }) }) }),
+      }))
+    })
+
+    test('new app: no sendToPeer call when child has no noiseKey', async () => {
+      const mockDb = makeMockDb({ 'peers:childpk1': { displayName: 'Kid' } }) // no noiseKey
+      const mockSend = jest.fn()
+      const mockSendToPeer = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.example.app', appName: 'Example App', detectedAt: 1000 },
+        'childpk1', mockDb, mockSend, mockSendToPeer
+      )
+
+      expect(mockSendToPeer).not.toHaveBeenCalled()
+    })
+
     test('already-known app: no db write, no event', async () => {
       const existing = { apps: { 'com.example.app': { status: 'allowed' } }, childPublicKey: 'childpk1', version: 1 }
       const mockDb = makeMockDb({ 'policy:childpk1': existing })
@@ -1514,14 +1546,15 @@ describe('bare dispatch', () => {
       expect(syncedEvents).toHaveLength(1)
     })
 
-    test('incremental sync: emits app:installed and writes alert for new apps', async () => {
+    test('incremental sync: emits app:installed, writes alert, and sends policy:update to child', async () => {
       const existing = { apps: { 'com.example.old': { status: 'allowed' } }, childPublicKey: 'childpk1', version: 0 }
-      const mockDb = makeMockDb({ 'policy:childpk1': existing })
+      const mockDb = makeMockDb({ 'policy:childpk1': existing, 'peers:childpk1': { noiseKey: 'noise-abc' } })
       const mockSend = jest.fn()
+      const mockSendToPeer = jest.fn()
 
       await handleIncomingAppsSync(
         { apps: [{ packageName: 'com.example.new', appName: 'New App' }] },
-        'childpk1', mockDb, mockSend
+        'childpk1', mockDb, mockSend, mockSendToPeer
       )
 
       const alertPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('alert:'))
@@ -1530,6 +1563,8 @@ describe('bare dispatch', () => {
       const appInstalledEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
       expect(appInstalledEvents).toHaveLength(1)
       expect(appInstalledEvents[0][0].data).toMatchObject({ packageName: 'com.example.new', childPublicKey: 'childpk1' })
+
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({ type: 'policy:update' }))
     })
 
     test('incremental sync: already-known apps are not re-emitted', async () => {

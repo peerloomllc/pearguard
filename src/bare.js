@@ -265,13 +265,13 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       await handleAppDecision(msg.payload, db, send)
       break
     case 'app:installed':
-      await handleIncomingAppInstalled(msg.payload, msg.from, db, send)
+      await handleIncomingAppInstalled(msg.payload, msg.from, db, send, sendToPeer)
       break
     case 'app:uninstalled':
       await handleIncomingAppUninstalled(msg.payload, msg.from, db, send)
       break
     case 'apps:sync':
-      await handleIncomingAppsSync(msg.payload, msg.from, db, send)
+      await handleIncomingAppsSync(msg.payload, msg.from, db, send, sendToPeer)
       break
     case 'time:request':
       await handleIncomingTimeRequest(msg.payload, msg.from, db, send)

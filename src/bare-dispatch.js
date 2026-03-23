@@ -706,7 +706,7 @@ async function flushMessageQueue (db, writeMessage) {
  * Handle an incoming `app:installed` P2P message from a child peer.
  * Runs on the PARENT device.
  */
-async function handleIncomingAppInstalled (payload, childPublicKey, db, send) {
+async function handleIncomingAppInstalled (payload, childPublicKey, db, send, sendToPeer) {
   const { packageName, appName } = payload
   if (!packageName) {
     console.warn('[bare] app:installed from child: missing packageName')
@@ -720,10 +720,21 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send) {
   if (!policy.apps[packageName]) {
     const now = Date.now()
     policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now }
+    policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
     const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
     const childDisplayName = peerRecord?.value?.displayName || 'Your child'
+
+    // Push updated policy to child so overlay fires immediately when they open the new app
+    if (sendToPeer) {
+      try {
+        const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+        if (noiseKey) sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+      } catch (_e) {
+        // child offline — stored policy will be pushed on next reconnect via handleHello
+      }
+    }
 
     // Write an informational alert entry so it appears in the parent's Alerts tab
     const alertEntry = {
@@ -748,7 +759,7 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send) {
  * Receives all installed apps in one batch — avoids read-modify-write races.
  * Runs on the PARENT device.
  */
-async function handleIncomingAppsSync (payload, childPublicKey, db, send) {
+async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendToPeer) {
   const { apps } = payload
   if (!Array.isArray(apps) || apps.length === 0) return
 
@@ -774,12 +785,22 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send) {
   }
 
   if (newCount > 0) {
+    policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
     // On first sync (no prior policy), suppress per-app alert entries and
     // app:installed events — the flood of notifications at initial pairing
     // is noise. Only incremental syncs (new installs after pairing) notify.
     if (!isFirstSync) {
+      // Push updated policy to child so overlay fires for newly discovered apps
+      if (sendToPeer) {
+        try {
+          const peerRec = await db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRec && peerRec.value && peerRec.value.noiseKey
+          if (noiseKey) sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+        } catch (_e) {}
+      }
+
       for (const { packageName, appName } of newApps) {
         const now = Date.now()
         const alertEntry = {

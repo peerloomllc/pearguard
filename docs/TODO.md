@@ -138,15 +138,8 @@ After initial pairing, if the child or parent changes their display name in Prof
 - **Root cause**: `hello` messages (which carry `displayName`) are only sent at connection time. A name change after pairing never triggers a new `hello`.
 - **Fix**: When `identity:setName` is called, also broadcast a `profile:update` P2P message to all connected peers with the new name. Peers update their `peers:{publicKey}` Hyperbee entry on receipt.
 
-### [ ] 25. New app install: notify parent and auto-block until approved
-
-When the child installs a new app, it is immediately usable — the parent has no chance to review it first.
-
-- **Notify parent**: When `app:installed` is received on the parent, show a push notification ("Child installed [App Name]") so the parent is alerted right away, not just when they next open PearGuard
-- **Auto-block new installs**: Add a policy setting on the parent (`blockNewInstalls: true/false`, default `true`). When enabled, any app relayed via `app:installed` that has no existing policy entry is automatically set to `status: 'pending'` in the child's policy and pushed to the child via `policy:update`. The child then sees the overlay immediately when they try to open the new app.
-- **Where (notification)**: `app/index.tsx` — intercept `app:installed` event; call `UsageStatsModule.showNotification` with child name + app name
-- **Where (auto-block)**: `src/bare-dispatch.js` `handleIncomingAppInstalled` — if `blockNewInstalls` is set in the child's policy, add the package as `pending` before emitting the event
-- **Edge case**: System apps and apps already in the policy should be excluded from auto-block
+### [x] 25. New app install: notify parent and auto-block until approved — 2026-03-23
+`handleIncomingAppInstalled` and `handleIncomingAppsSync` (incremental syncs only) now receive `sendToPeer` and push a `policy:update` back to the child after storing the new app as `pending`. The child's `handlePolicyUpdate` stores the policy and calls `native:setPolicy`, so the overlay fires immediately when the child tries to open the new app. First-sync apps remain suppressed (no notifications, no auto-block flood at initial pairing).
 
 ## Added 2026-03-21
 
@@ -209,6 +202,14 @@ Root cause: `tabInactive` style had no `borderBottom` key, so React never remove
 
 ### [x] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab — 2026-03-22
 `showDecisionNotification` now builds a `pear://pearguard/child-requests` deep link PendingIntent. `index.tsx` parses this URL and sets `_pendingChildRequestsNav = true`; the `dbReady` useEffect fires `navigate:child:requests` into the WebView. `ChildApp.jsx` listens for that event and calls `setActiveTab('requests')`.
+
+### [ ] 37. Bug: P2P messages (app installs, time requests) not delivered to parent while app is backgrounded
+When the child sends a message while the parent app is backgrounded, Android drops the Hyperswarm TCP connection. The message is queued on the child and delivered the next time the parent foregrounds (triggering `swarm:reconnect` → new connection → `handleHello` → `flushPendingMessages`). The parent receives no push notification until it opens the app.
+
+- **Root cause**: Hyperswarm requires an active foreground TCP connection; there is no background push path
+- **Option A**: Android foreground service on the parent — keeps Hyperswarm alive even when backgrounded, delivering messages in real time
+- **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
+- **Where**: `app/index.tsx`, new foreground service, or FCM integration
 
 ## Known Limitations
 

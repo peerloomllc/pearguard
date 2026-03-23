@@ -753,6 +753,7 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send) {
   if (!Array.isArray(apps) || apps.length === 0) return
 
   const raw = await db.get('policy:' + childPublicKey)
+  const isFirstSync = !raw
   const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
   if (!policy.apps) policy.apps = {}
 
@@ -775,22 +776,24 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send) {
   if (newCount > 0) {
     await db.put('policy:' + childPublicKey, policy)
 
-    // Write alert entries and emit per-app events so the UI and notifications
-    // fire even when new apps arrive via the reconnect batch sync rather than
-    // the individual app:installed P2P message path.
-    for (const { packageName, appName } of newApps) {
-      const now = Date.now()
-      const alertEntry = {
-        id: 'app_installed:' + now + ':' + packageName,
-        type: 'app_installed',
-        timestamp: now,
-        packageName,
-        appDisplayName: appName,
-        childPublicKey,
-        childDisplayName,
+    // On first sync (no prior policy), suppress per-app alert entries and
+    // app:installed events — the flood of notifications at initial pairing
+    // is noise. Only incremental syncs (new installs after pairing) notify.
+    if (!isFirstSync) {
+      for (const { packageName, appName } of newApps) {
+        const now = Date.now()
+        const alertEntry = {
+          id: 'app_installed:' + now + ':' + packageName,
+          type: 'app_installed',
+          timestamp: now,
+          packageName,
+          appDisplayName: appName,
+          childPublicKey,
+          childDisplayName,
+        }
+        await db.put('alert:' + childPublicKey + ':' + now + ':' + packageName, alertEntry)
+        send({ type: 'event', event: 'app:installed', data: { packageName, appName, childPublicKey, childDisplayName } })
       }
-      await db.put('alert:' + childPublicKey + ':' + now + ':' + packageName, alertEntry)
-      send({ type: 'event', event: 'app:installed', data: { packageName, appName, childPublicKey, childDisplayName } })
     }
 
     send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })

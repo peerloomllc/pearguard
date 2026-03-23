@@ -187,11 +187,8 @@ Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear 
 - **Detect**: On next launch after a wipe, the child setup wizard would re-run (no `mode` key in DB). This could be used as a signal to notify the parent if they're still reachable.
 - **Related**: TODO #20 (failsafe unpair), TODO #23 (force-close stops enforcement)
 
-### [ ] 29. Bug: Initial pairing should not send "app installed" notifications to parent
-When a child first pairs (or reconnects after being offline), `apps:sync` relays all installed apps as a batch. The parent currently shows a push notification for each newly-discovered app and logs `app_installed` alert entries. For the initial sync this is noise — only installs that happen *after* pairing should trigger notifications.
-
-- **Where**: `handleIncomingAppsSync` in `src/bare-dispatch.js` — distinguish first-sync (no prior policy for this child) from incremental sync; suppress notifications on first-sync
-- **Also**: `handleIncomingAppInstalled` (P2P message path) — should this also be suppressed on initial connect? Needs decision.
+### [x] 29. Bug: Initial pairing should not send "app installed" notifications to parent — 2026-03-22
+`handleIncomingAppsSync` now checks `raw` (the existing policy record) before processing: if null it's the first sync, so alert entries and `app:installed` events are suppressed. `apps:synced` still fires so the Apps tab refreshes. Incremental syncs (reconnects after initial pairing) continue to notify for genuinely new installs.
 
 ### [ ] 30. Design decision: default policy for apps discovered at initial pairing
 When a child pairs for the first time, all installed apps arrive via `apps:sync`. Currently they all default to `status: 'pending'`. Consider whether the right default is:

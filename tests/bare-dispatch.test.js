@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -1478,6 +1478,74 @@ describe('bare dispatch', () => {
 
       expect(mockDb.put).not.toHaveBeenCalled()
       expect(mockSend).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('handleIncomingAppsSync', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      }
+    }
+
+    test('first sync: saves policy but suppresses app:installed events and alert entries', async () => {
+      const mockDb = makeMockDb({}) // no prior policy
+      const mockSend = jest.fn()
+
+      await handleIncomingAppsSync(
+        { apps: [{ packageName: 'com.example.app', appName: 'Example' }] },
+        'childpk1', mockDb, mockSend
+      )
+
+      // Policy should be written
+      expect(mockDb.put).toHaveBeenCalledWith('policy:childpk1', expect.objectContaining({ apps: expect.any(Object) }))
+
+      // No alert: entries written
+      const alertPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('alert:'))
+      expect(alertPuts).toHaveLength(0)
+
+      // No app:installed events emitted
+      const appInstalledEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
+      expect(appInstalledEvents).toHaveLength(0)
+
+      // apps:synced should still fire so the UI refreshes
+      const syncedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'apps:synced')
+      expect(syncedEvents).toHaveLength(1)
+    })
+
+    test('incremental sync: emits app:installed and writes alert for new apps', async () => {
+      const existing = { apps: { 'com.example.old': { status: 'allowed' } }, childPublicKey: 'childpk1', version: 0 }
+      const mockDb = makeMockDb({ 'policy:childpk1': existing })
+      const mockSend = jest.fn()
+
+      await handleIncomingAppsSync(
+        { apps: [{ packageName: 'com.example.new', appName: 'New App' }] },
+        'childpk1', mockDb, mockSend
+      )
+
+      const alertPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('alert:'))
+      expect(alertPuts).toHaveLength(1)
+
+      const appInstalledEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
+      expect(appInstalledEvents).toHaveLength(1)
+      expect(appInstalledEvents[0][0].data).toMatchObject({ packageName: 'com.example.new', childPublicKey: 'childpk1' })
+    })
+
+    test('incremental sync: already-known apps are not re-emitted', async () => {
+      const existing = { apps: { 'com.example.app': { status: 'pending' } }, childPublicKey: 'childpk1', version: 0 }
+      const mockDb = makeMockDb({ 'policy:childpk1': existing })
+      const mockSend = jest.fn()
+
+      await handleIncomingAppsSync(
+        { apps: [{ packageName: 'com.example.app', appName: 'Example' }] },
+        'childpk1', mockDb, mockSend
+      )
+
+      const appInstalledEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
+      expect(appInstalledEvents).toHaveLength(0)
+      // No policy write needed since nothing changed
+      expect(mockDb.put).not.toHaveBeenCalled()
     })
   })
 

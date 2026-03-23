@@ -346,22 +346,6 @@ function createDispatch (ctx) {
 
       case 'swarm:reconnect': {
         if (ctx.swarm) {
-          // Child mode only: proactively destroy the parent connection so
-          // Hyperswarm establishes a fresh one. Android often drops TCP sockets
-          // silently when backgrounded — without destroying here, Hyperswarm
-          // thinks the connection is alive and never creates a replacement,
-          // so no new hello exchange occurs and the pending queue is never flushed.
-          // Parent mode: just flush (parent has multiple children; destroying
-          // all their connections simultaneously breaks re-establishment).
-          if (ctx.getMode && ctx.getMode() === 'child') {
-            for (const peer of ctx.peers.values()) {
-              if (peer.conn) {
-                try { peer.conn.destroy() } catch (_) {}
-              }
-            }
-            ctx.peers.clear()
-            if (ctx.resetParentConnection) ctx.resetParentConnection()
-          }
           await ctx.swarm.flush().catch(e => console.warn('[bare] swarm:reconnect flush failed:', e.message))
         }
         return {}

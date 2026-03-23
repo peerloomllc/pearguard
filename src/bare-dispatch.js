@@ -346,6 +346,18 @@ function createDispatch (ctx) {
 
       case 'swarm:reconnect': {
         if (ctx.swarm) {
+          // Destroy all existing connections before flushing so Hyperswarm
+          // establishes fresh ones. Stale TCP sockets (dropped while backgrounded)
+          // may not emit 'close', leaving Hyperswarm thinking the connection is
+          // alive and never creating a replacement. Destroying forces a clean
+          // reconnect → new hello exchange → pending message queue is flushed.
+          for (const peer of ctx.peers.values()) {
+            if (peer.conn) {
+              try { peer.conn.destroy() } catch (_) {}
+            }
+          }
+          ctx.peers.clear()
+          if (ctx.resetParentConnection) ctx.resetParentConnection()
           await ctx.swarm.flush().catch(e => console.warn('[bare] swarm:reconnect flush failed:', e.message))
         }
         return {}

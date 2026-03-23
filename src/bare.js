@@ -107,7 +107,9 @@ async function init (dataDir) {
   // Build dispatch with live context
   dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
     joinTopic, sendToPeer, sendToParent, sodium,
-    onModeChange: (m) => { mode = m } })
+    onModeChange: (m) => { mode = m },
+    getMode: () => mode,
+    resetParentConnection: () => { peerConnected = false; parentPeer = null } })
 
   // Rejoin any persisted swarm topics so peers can reconnect after app restart
   const topicHexes = []

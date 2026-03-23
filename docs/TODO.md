@@ -209,11 +209,8 @@ When the parent taps Back from ChildDetail and later returns, the previously act
 ### [x] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab — 2026-03-22
 `showTimeRequestNotification` now uses `buildRequestsPendingIntent` which appends `&tab=requests` to the deep link URL. `index.tsx` parses the `tab` param and passes it in the `navigate:child:alerts` event payload. `Dashboard.jsx` reads `tab` (defaulting to `'alerts'`) and sets `initialTab` accordingly.
 
-### [ ] 36. Bug: "Successfully paired" banner fires on every reconnect, not just first pairing
-`peer:paired` fires on every hello exchange (every reconnect after background). `ParentApp.jsx` shows the "Successfully paired with {name}!" banner unconditionally on `child:connected`. It should only show on first-time pairing.
-
-- **Where**: `src/ui/components/ParentApp.jsx` — check if the child's `pairedAt` timestamp is within the last few seconds before showing the banner
-- **Or**: `bare.js` `handleHello` — emit a separate `child:reconnected` event for subsequent connections vs `child:connected` for first-time pairing
+### [x] 36. Bug: "Successfully paired" banner fires on every reconnect, not just first pairing — 2026-03-22
+`bare.js` `handleHello` now checks `existingRecord`: if null → first-time pairing → emits `child:connected`; otherwise → reconnect → emits `child:reconnected`. `ParentApp.jsx` only listens for `child:connected`, so the banner only fires on first pairing. `ChildrenList.jsx` also subscribes to `child:reconnected` to refresh the list (lastSeen, displayName) on reconnect.
 
 ### [ ] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab
 When a child's time request is approved and they tap the notification, nothing useful happens. It should either launch the approved app directly or open PearGuard to the child's Requests tab.

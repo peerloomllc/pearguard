@@ -399,12 +399,15 @@ async function handleHello (msg, conn, remoteKeyHex) {
     peer.displayName = displayName ?? 'Unknown'
   }
 
-  console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName)
+  const isFirstPairing = !existingRecord
+  console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName, isFirstPairing ? '(new)' : '(reconnect)')
   send({ type: 'event', event: 'peer:paired', data: peerRecord })
 
   // Notify the parent UI that a child has connected
   if (mode === 'parent') {
-    send({ type: 'event', event: 'child:connected', data: peerRecord })
+    // Emit child:connected only for first-time pairings; child:reconnected for subsequent reconnects
+    const eventName = isFirstPairing ? 'child:connected' : 'child:reconnected'
+    send({ type: 'event', event: eventName, data: peerRecord })
 
     // Push the latest stored policy to the child so enforcement stays current
     const storedPolicy = await db.get('policy:' + peerIdentityKeyHex).catch(() => null)

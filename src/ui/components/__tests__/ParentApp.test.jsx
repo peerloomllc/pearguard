@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import ParentApp from '../ParentApp.jsx';
 
 beforeEach(() => {
@@ -34,6 +34,28 @@ test('clicking Settings tab shows Settings panel', () => {
   render(<ParentApp />);
   fireEvent.click(screen.getByText('Settings'));
   expect(screen.getByText('Settings panel')).toBeInTheDocument();
+});
+
+test('shows pairing banner when child:connected fires', () => {
+  let connectedHandler;
+  window.onBareEvent = jest.fn((event, handler) => {
+    if (event === 'child:connected') connectedHandler = handler;
+    return () => {};
+  });
+  render(<ParentApp />);
+  expect(screen.queryByText(/successfully paired/i)).not.toBeInTheDocument();
+  act(() => connectedHandler({ displayName: 'Alice' }));
+  expect(screen.getByText(/successfully paired with alice/i)).toBeInTheDocument();
+});
+
+test('does not subscribe to child:reconnected (banner is first-pairing only)', () => {
+  const subscribedEvents = [];
+  window.onBareEvent = jest.fn((event) => {
+    subscribedEvents.push(event);
+    return () => {};
+  });
+  render(<ParentApp />);
+  expect(subscribedEvents).not.toContain('child:reconnected');
 });
 
 test('active tab has aria-selected=true', () => {

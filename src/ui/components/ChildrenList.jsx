@@ -7,11 +7,15 @@ export default function ChildrenList() {
 
   useEffect(() => {
     window.callBare('children:list').then(setChildren).catch(() => {});
-    const unsub = window.onBareEvent('child:connected', () => {
+    const unsubConnected = window.onBareEvent('child:connected', () => {
       setShowAdd(false);
       window.callBare('children:list').then(setChildren).catch(() => {});
     });
-    return unsub;
+    // Also refresh on reconnect so lastSeen / displayName stay current
+    const unsubReconnected = window.onBareEvent('child:reconnected', () => {
+      window.callBare('children:list').then(setChildren).catch(() => {});
+    });
+    return () => { unsubConnected(); unsubReconnected(); };
   }, []);
 
   function handleChildConnected() {

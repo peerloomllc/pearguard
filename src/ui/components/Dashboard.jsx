@@ -62,11 +62,11 @@ export default function Dashboard() {
       );
     });
 
-    // Notification tap: navigate directly to a child's Alerts tab
-    const unsubNav = window.onBareEvent('navigate:child:alerts', ({ childPublicKey }) => {
+    // Notification tap: navigate directly to a child's tab (tab defaults to 'alerts')
+    const unsubNav = window.onBareEvent('navigate:child:alerts', ({ childPublicKey, tab }) => {
       window.callBare('children:list').then((list) => {
         const child = list.find((c) => c.publicKey === childPublicKey);
-        if (child) { setInitialTab('alerts'); setSelectedChild(child); }
+        if (child) { setInitialTab(tab || 'alerts'); setSelectedChild(child); }
       }).catch(() => {});
     });
 

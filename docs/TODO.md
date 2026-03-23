@@ -201,10 +201,8 @@ When a child pairs for the first time, all installed apps arrive via `apps:sync`
 - **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
 - **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
 
-### [ ] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail
-When the parent taps Back from ChildDetail and later returns, the previously active tab still appears highlighted even if the tab state resets. Investigate whether the active tab indicator is persisting across mounts.
-
-- **Where**: `src/ui/components/ChildDetail.jsx` — verify `initialTab` default and that state resets on unmount
+### [x] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail — 2026-03-22
+Root cause: `tabInactive` style had no `borderBottom` key, so React never removed the active `borderBottom` when a tab switched from active to inactive within a render cycle. Fixed by adding `borderBottom: '2px solid transparent'` to `tabInactive` so React explicitly clears the highlight. `initialTab` reset in Dashboard `onBack` was already correct.
 
 ### [x] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab — 2026-03-22
 `showTimeRequestNotification` now uses `buildRequestsPendingIntent` which appends `&tab=requests` to the deep link URL. `index.tsx` parses the `tab` param and passes it in the `navigate:child:alerts` event payload. `Dashboard.jsx` reads `tab` (defaulting to `'alerts'`) and sets `initialTab` accordingly.

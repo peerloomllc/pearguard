@@ -73,6 +73,6 @@ const styles = {
     fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap',
   },
   tabActive: { color: '#1a73e8', borderBottom: '2px solid #1a73e8' },
-  tabInactive: { color: '#666' },
+  tabInactive: { color: '#666', borderBottom: '2px solid transparent' },
   content: { flex: 1, overflowY: 'auto' },
 };

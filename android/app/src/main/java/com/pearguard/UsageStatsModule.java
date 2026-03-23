@@ -153,11 +153,27 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
 
         Map<String, UsageStats> statsMap = usm.queryAndAggregateUsageStats(startOfDay, now);
 
+        // Build a set of launcher-visible packages so we only report user-facing apps.
+        // System services (Google Play Services, SystemUI, etc.) have no launcher icon
+        // and should never appear in the Usage report.
+        java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+        if (resolveInfos != null) {
+            for (ResolveInfo ri : resolveInfos) {
+                launcherPackages.add(ri.activityInfo.packageName);
+            }
+        }
+
         WritableArray result = Arguments.createArray();
         if (statsMap != null) {
             for (Map.Entry<String, UsageStats> entry : statsMap.entrySet()) {
                 long ms = entry.getValue().getTotalTimeInForeground();
                 if (ms <= 0) continue;
+
+                // Skip system services and non-launcher apps
+                if (!launcherPackages.contains(entry.getKey())) continue;
 
                 String label = entry.getKey();
                 try {

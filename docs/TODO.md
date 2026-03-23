@@ -224,12 +224,23 @@ Usage stats were visible, but after backgrounding the app and returning the Usag
 - **Investigate**: Confirm `usageReport:*` keys are persisted in Hyperbee across app restarts (not just in-memory); check if the bare worklet re-initializes and clears state on foreground
 - **Also check**: `UsageTab` calls `usage:getLatest` on mount — verify the query range `gt/lt` matches the actual stored keys
 
-### [ ] 41. System apps must be exempt from policies and filtered from Usage report
-System apps (Launcher, Google Play Services, Settings, Phone, SMS, etc.) should never be blocked by the overlay and should not appear in the Usage tab on the parent's dashboard.
+### [x] 41. System apps must be exempt from policies and filtered from Usage report — 2026-03-23
+`AppBlockerModule.java` `getBlockReason` now calls `isSystemOverlayPackage` at the top to exempt system services with no launcher icon. `UsageStatsModule.java` `getDailyUsageAll` now builds a launcher-package set and skips any app not in it.
 
-- **Policy exemption**: In `AppBlockerModule.java` `getBlockReason`, skip enforcement for known system packages (those with `FLAG_SYSTEM` + `FLAG_UPDATED_SYSTEM_APP`, or a curated allowlist of critical services like `com.android.launcher`, `com.google.android.gms`)
-- **Usage filter**: In `UsageStatsModule.java` `getDailyUsageAll`, exclude system apps before returning the list — same FLAG_SYSTEM check or launcher-intent filter (only include apps that appear in the launcher)
-- **Apps list**: `handleIncomingAppsSync` in `bare-dispatch.js` already uses a launcher-intent filter for the initial sync; verify system apps are excluded there too
+### [ ] 43. UX: Schedule rule form should show validation error when Label is empty
+Currently the form silently refuses to save without a label — there is no feedback to the user.
+
+- **Where**: `src/ui/components/ScheduleTab.jsx` — show an inline error message (e.g. "Label is required") when the user tries to save without filling in the label field
+
+### [ ] 44. Child: warn at 10 and 5 minutes before a schedule restriction starts
+Give the child advance notice before a schedule block kicks in so they can save their work.
+
+- **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
+
+### [ ] 45. Parent: ability to edit existing schedule rules
+Schedule rules can currently be added and deleted but not edited in place.
+
+- **Where**: `src/ui/components/ScheduleTab.jsx` — add an Edit button per rule that populates the form fields with the rule's current values; saving replaces the existing rule
 
 ## Known Limitations
 

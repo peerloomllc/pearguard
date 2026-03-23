@@ -138,15 +138,8 @@ After initial pairing, if the child or parent changes their display name in Prof
 - **Root cause**: `hello` messages (which carry `displayName`) are only sent at connection time. A name change after pairing never triggers a new `hello`.
 - **Fix**: When `identity:setName` is called, also broadcast a `profile:update` P2P message to all connected peers with the new name. Peers update their `peers:{publicKey}` Hyperbee entry on receipt.
 
-### [ ] 25. New app install: notify parent and auto-block until approved
-
-When the child installs a new app, it is immediately usable — the parent has no chance to review it first.
-
-- **Notify parent**: When `app:installed` is received on the parent, show a push notification ("Child installed [App Name]") so the parent is alerted right away, not just when they next open PearGuard
-- **Auto-block new installs**: Add a policy setting on the parent (`blockNewInstalls: true/false`, default `true`). When enabled, any app relayed via `app:installed` that has no existing policy entry is automatically set to `status: 'pending'` in the child's policy and pushed to the child via `policy:update`. The child then sees the overlay immediately when they try to open the new app.
-- **Where (notification)**: `app/index.tsx` — intercept `app:installed` event; call `UsageStatsModule.showNotification` with child name + app name
-- **Where (auto-block)**: `src/bare-dispatch.js` `handleIncomingAppInstalled` — if `blockNewInstalls` is set in the child's policy, add the package as `pending` before emitting the event
-- **Edge case**: System apps and apps already in the policy should be excluded from auto-block
+### [x] 25. New app install: notify parent and auto-block until approved — 2026-03-23
+`handleIncomingAppInstalled` and `handleIncomingAppsSync` (incremental syncs only) now receive `sendToPeer` and push a `policy:update` back to the child after storing the new app as `pending`. The child's `handlePolicyUpdate` stores the policy and calls `native:setPolicy`, so the overlay fires immediately when the child tries to open the new app. First-sync apps remain suppressed (no notifications, no auto-block flood at initial pairing).
 
 ## Added 2026-03-21
 
@@ -187,11 +180,8 @@ Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear 
 - **Detect**: On next launch after a wipe, the child setup wizard would re-run (no `mode` key in DB). This could be used as a signal to notify the parent if they're still reachable.
 - **Related**: TODO #20 (failsafe unpair), TODO #23 (force-close stops enforcement)
 
-### [ ] 29. Bug: Initial pairing should not send "app installed" notifications to parent
-When a child first pairs (or reconnects after being offline), `apps:sync` relays all installed apps as a batch. The parent currently shows a push notification for each newly-discovered app and logs `app_installed` alert entries. For the initial sync this is noise — only installs that happen *after* pairing should trigger notifications.
-
-- **Where**: `handleIncomingAppsSync` in `src/bare-dispatch.js` — distinguish first-sync (no prior policy for this child) from incremental sync; suppress notifications on first-sync
-- **Also**: `handleIncomingAppInstalled` (P2P message path) — should this also be suppressed on initial connect? Needs decision.
+### [x] 29. Bug: Initial pairing should not send "app installed" notifications to parent — 2026-03-22
+`handleIncomingAppsSync` now checks `raw` (the existing policy record) before processing: if null it's the first sync, so alert entries and `app:installed` events are suppressed. `apps:synced` still fires so the Apps tab refreshes. Incremental syncs (reconnects after initial pairing) continue to notify for genuinely new installs.
 
 ### [ ] 30. Design decision: default policy for apps discovered at initial pairing
 When a child pairs for the first time, all installed apps arrive via `apps:sync`. Currently they all default to `status: 'pending'`. Consider whether the right default is:
@@ -201,26 +191,44 @@ When a child pairs for the first time, all installed apps arrive via `apps:sync`
 - **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
 - **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
 
-### [ ] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail
-When the parent taps Back from ChildDetail and later returns, the previously active tab still appears highlighted even if the tab state resets. Investigate whether the active tab indicator is persisting across mounts.
-
-- **Where**: `src/ui/components/ChildDetail.jsx` — verify `initialTab` default and that state resets on unmount
+### [x] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail — 2026-03-22
+Root cause: `tabInactive` style had no `borderBottom` key, so React never removed the active `borderBottom` when a tab switched from active to inactive within a render cycle. Fixed by adding `borderBottom: '2px solid transparent'` to `tabInactive` so React explicitly clears the highlight. `initialTab` reset in Dashboard `onBack` was already correct.
 
 ### [x] 34. Bug: Tapping a time-request notification on parent routes to Activity tab instead of Requests tab — 2026-03-22
 `showTimeRequestNotification` now uses `buildRequestsPendingIntent` which appends `&tab=requests` to the deep link URL. `index.tsx` parses the `tab` param and passes it in the `navigate:child:alerts` event payload. `Dashboard.jsx` reads `tab` (defaulting to `'alerts'`) and sets `initialTab` accordingly.
 
-### [ ] 36. Bug: "Successfully paired" banner fires on every reconnect, not just first pairing
-`peer:paired` fires on every hello exchange (every reconnect after background). `ParentApp.jsx` shows the "Successfully paired with {name}!" banner unconditionally on `child:connected`. It should only show on first-time pairing.
+### [x] 36. Bug: "Successfully paired" banner fires on every reconnect, not just first pairing — 2026-03-22
+`bare.js` `handleHello` now checks `existingRecord`: if null → first-time pairing → emits `child:connected`; otherwise → reconnect → emits `child:reconnected`. `ParentApp.jsx` only listens for `child:connected`, so the banner only fires on first pairing. `ChildrenList.jsx` also subscribes to `child:reconnected` to refresh the list (lastSeen, displayName) on reconnect.
 
-- **Where**: `src/ui/components/ParentApp.jsx` — check if the child's `pairedAt` timestamp is within the last few seconds before showing the banner
-- **Or**: `bare.js` `handleHello` — emit a separate `child:reconnected` event for subsequent connections vs `child:connected` for first-time pairing
+### [x] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab — 2026-03-22
+`showDecisionNotification` now builds a `pear://pearguard/child-requests` deep link PendingIntent. `index.tsx` parses this URL and sets `_pendingChildRequestsNav = true`; the `dbReady` useEffect fires `navigate:child:requests` into the WebView. `ChildApp.jsx` listens for that event and calls `setActiveTab('requests')`.
 
-### [ ] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab
-When a child's time request is approved and they tap the notification, nothing useful happens. It should either launch the approved app directly or open PearGuard to the child's Requests tab.
+### [ ] 37. Bug: P2P messages (app installs, time requests) not delivered to parent while app is backgrounded
+When the child sends a message while the parent app is backgrounded, Android drops the Hyperswarm TCP connection. The message is queued on the child and delivered the next time the parent foregrounds (triggering `swarm:reconnect` → new connection → `handleHello` → `flushPendingMessages`). The parent receives no push notification until it opens the app.
 
-- **Option A**: Extract `packageName` from the notification intent extras; call `startActivity` with a `CATEGORY_LAUNCHER` intent for that package
-- **Option B**: Navigate to the child's Requests tab in the WebView as a fallback if the app can't be launched
-- **Where**: `android/.../UsageStatsModule.java` or wherever notifications are built for the child; `app/index.tsx` for the WebView navigation fallback
+- **Root cause**: Hyperswarm requires an active foreground TCP connection; there is no background push path
+- **Option A**: Android foreground service on the parent — keeps Hyperswarm alive even when backgrounded, delivering messages in real time
+- **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
+- **Where**: `app/index.tsx`, new foreground service, or FCM integration
+
+### [ ] 40. Tapping "app installed" notification on parent should deep-link to Apps tab
+Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.
+
+- **Where**: `android/.../UsageStatsModule.java` `showAppInstalledNotification` — build a `pear://pearguard/alerts?childPublicKey=X&tab=apps` PendingIntent (mirrors the existing alerts deep link pattern)
+- `app/index.tsx` and `src/ui/components/ChildDetail.jsx` already support the `tab` param, so no UI changes needed
+
+### [ ] 38. Bug: Usage tab not populating any data
+The Usage tab in ChildDetail shows no screen time data.
+
+- **Investigate**: Verify `UsageStatsModule.getTodayScreenTime` is returning data; check that `usage:report` events are being emitted and received by the parent; confirm `UsageTab.jsx` is reading the right data shape
+- **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
+
+### [ ] 39. Schedules and Time Limits need to work together properly
+Time-limit enforcement and scheduled block windows should interoperate correctly — e.g. a scheduled block should override an active time-limit grant, and an approved time extension should not bypass a scheduled block window.
+
+- **Investigate**: How `EnforcementService` and `AppBlockerModule` currently prioritize policy fields (`schedule`, `dailyLimitSeconds`, active overrides)
+- **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
+- **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
 
 ## Known Limitations
 

@@ -5,6 +5,10 @@ import ChildApp from '../ChildApp'
 jest.mock('../ChildHome', () => () => <div>ChildHome</div>)
 jest.mock('../ChildRequests', () => () => <div>ChildRequests</div>)
 
+beforeEach(() => {
+  window.onBareEvent = jest.fn().mockReturnValue(() => {})
+})
+
 describe('ChildApp', () => {
   it('renders Home and Requests tab buttons', () => {
     render(<ChildApp />)

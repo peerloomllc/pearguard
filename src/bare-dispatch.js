@@ -403,19 +403,23 @@ function createDispatch (ctx) {
       }
 
       case 'usage:flush': {
-        // Build usage report from PIN log and identity
+        // Build usage report from PIN log, identity, and native usage stats
         const pinLog = await getPinUseLog(ctx.db)
         const identityRaw = await ctx.db.get('identity')
         const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
 
-        // TODO: nativeStats would be fetched via a request/response IPC call to native
-        // (native:getUsageStats). For now, use empty stats.
-        // This will be properly implemented in a future task.
+        // args.usage is [{ packageName, appName, secondsToday }] from getDailyUsageAll()
+        const apps = (args.usage || []).map((a) => ({
+          packageName: a.packageName,
+          displayName: a.appName || a.packageName,
+          todaySeconds: a.secondsToday || 0,
+          weekSeconds: 0,
+        }))
 
         const report = {
           type: 'usage:report',
           timestamp: Date.now(),
-          usageStats: {},  // TODO: populate when native:getUsageStats is implemented
+          apps,
           pinOverrides: pinLog,
           childPublicKey,
         }
@@ -423,7 +427,6 @@ function createDispatch (ctx) {
         // Persist report to Hyperbee
         await ctx.db.put('usage:' + report.timestamp, report)
 
-        // Emit event to RN which can relay to parent (sendToParent not yet implemented — see Task 13)
         ctx.send({ type: 'event', event: 'usage:report', data: report })
 
         if (ctx.sendToParent) {
@@ -434,6 +437,21 @@ function createDispatch (ctx) {
         await ctx.db.put('pinLog', [])
 
         return { flushed: true, timestamp: report.timestamp }
+      }
+
+      case 'usage:getLatest': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid usage:getLatest args')
+        let latest = null
+        for await (const { value } of ctx.db.createReadStream({
+          gt: 'usageReport:' + childPublicKey + ':',
+          lt: 'usageReport:' + childPublicKey + ':~',
+          reverse: true,
+          limit: 1,
+        })) {
+          latest = value
+        }
+        return latest || null
       }
 
       case 'policy:get': {
@@ -607,6 +625,24 @@ async function handlePolicyUpdate (payload, db, send) {
   // Sending as a type:'event' would only forward it to the WebView, never to the native module.
   send({ method: 'native:setPolicy', args: { json: JSON.stringify(payload) } })
   send({ type: 'event', event: 'policy:updated', data: payload })
+
+  // Sync pending req:* entries with the new policy so ChildRequests shows the correct status.
+  // This handles the case where app:decision was not delivered directly (e.g., child was offline
+  // and the parent's decision arrives via the policy:update pushed on reconnect).
+  const apps = payload.apps || {}
+  for await (const { key, value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+    if (value.status !== 'pending') continue
+    const appEntry = apps[value.packageName]
+    const appStatus = appEntry && appEntry.status
+    if (appStatus === 'allowed' || appStatus === 'blocked') {
+      const newStatus = appStatus === 'allowed' ? 'approved' : 'denied'
+      await db.put(key, { ...value, status: newStatus })
+      send({ type: 'event', event: 'request:updated', data: {
+        requestId: value.id, status: newStatus,
+        packageName: value.packageName, appName: value.appName || value.packageName,
+      } })
+    }
+  }
 }
 
 /**

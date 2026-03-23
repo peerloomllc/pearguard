@@ -99,11 +99,8 @@ When the child uses the swipe-up-from-bottom gesture (Android navigation), the o
 - **Investigate**: What package name does the TYPE_WINDOW_STATE_CHANGED event carry during a swipe-up gesture? Likely the launcher/gesture nav overlay.
 - **Fix candidate**: Ignore events from known system gesture/nav packages, or add a short debounce (e.g. 150ms) before showing the overlay so rapid show→dismiss sequences are coalesced.
 
-### [ ] 19. Overlay: auto-dismiss when conditions are no longer met
-Currently the overlay only disappears when the user taps a button or navigates away. If the parent approves the app (policy update arrives over P2P), the overlay should auto-dismiss.
-
-- **How**: When `policy:updated` or `override:granted` event arrives in RN while an overlay is showing for that package, emit a native event (e.g. `onOverridGranted`) to `AppBlockerModule` to call `dismissOverlay()`.
-- Alternatively: re-evaluate `getBlockReason` for `currentOverlayPackage` on every policy update.
+### [x] 19. Overlay: auto-dismiss when conditions are no longer met — 2026-03-23
+Already implemented: `app/index.tsx` `native:setPolicy` handler parses the policy JSON and calls `NativeModules.UsageStatsModule.dismissOverlayForPackage(pkg)` for every app with `status: 'allowed'`. `native:grantOverride` also calls `dismissOverlayForPackage` directly.
 
 ### [ ] 20. Failsafe: unpair / deactivate all restrictions at once
 A safety valve for when the parent-child relationship needs to be reset or in an emergency.
@@ -119,11 +116,8 @@ Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete the
 - **Manual clear**: "Clear all resolved requests" button in child's My Requests tab.
 - **Where**: `src/ui/components/ChildRequests.jsx` + `bare-dispatch.js` `requests:list` / new `requests:clear` method
 
-### [ ] 22. Bug: Requests showing Pending even after approval (New Request button path)
-Requests created via the "New Request" button (not from the overlay block) may stay Pending even after the parent approves the app. The `handleAppDecision` fix in this session should address the P2P path, but needs verification. May be worth removing the standalone "New Request" button entirely and only allowing requests from the overlay.
-
-- **Test**: approve an app on parent → check child's Requests list updates to Approved
-- **Potential simplification**: remove the "New Request" button; requests should only originate from the overlay so the blocked state is always the trigger
+### [x] 22. Bug: Requests showing Pending even after approval — 2026-03-23
+Root cause: `handlePolicyUpdate` (child side) updated the policy but did not sync pending `req:*` entries. When the parent was offline during child's approval or reconnect pushed a `policy:update`, pending requests stayed Pending. Fix: `handlePolicyUpdate` now scans `req:*` entries and updates any pending ones where the app is now `allowed`/`blocked`, emitting `request:updated` so `ChildRequests` refreshes.
 
 ### [ ] 23. Bug: PearGuard force-close stops enforcement
 If the child force-closes PearGuard, the Accessibility Service (which is hosted in the same process) also stops. Enforcement silently ceases.
@@ -143,12 +137,8 @@ After initial pairing, if the child or parent changes their display name in Prof
 
 ## Added 2026-03-21
 
-### [ ] 26. Remove uninstalled apps from parent's Apps list
-When a child uninstalls an app, it remains in the parent's Apps tab indefinitely. The parent needs a way to clear stale entries.
-
-- **Detect uninstall**: `PackageMonitorModule` already listens for `ACTION_PACKAGE_REMOVED`; relay an `app:uninstalled` P2P message to the parent when triggered
-- **Parent side**: `handleIncomingAppUninstalled` in `bare-dispatch.js` removes the package from the child's policy and emits `apps:synced` to refresh the UI
-- **Where**: `src/bare-dispatch.js`, `android/.../PackageMonitorModule.java`, `app/index.tsx`
+### [x] 26. Remove uninstalled apps from parent's Apps list — 2026-03-23
+Already fully implemented: `PackageMonitorModule` fires `onAppUninstalled` event → `index.tsx` forwards to worklet → `bare-dispatch.js` `app:uninstalled` removes from child policy and calls `sendToParent` with `app:uninstalled` P2P → parent's `handleIncomingAppUninstalled` deletes from `policy:{childPublicKey}.apps` and emits `app:uninstalled` event. `index.tsx` shows `showAppUninstalledNotification` on parent.
 
 ### [ ] 27. Alphabetize Apps list; add sort option
 The Apps tab has no defined order, making it hard to find apps on a real device with many entries.
@@ -211,16 +201,14 @@ When the child sends a message while the parent app is backgrounded, Android dro
 - **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
 - **Where**: `app/index.tsx`, new foreground service, or FCM integration
 
-### [ ] 40. Tapping "app installed" notification on parent should deep-link to Apps tab
+### [x] 40. Tapping "app installed" notification on parent should deep-link to Apps tab — 2026-03-23
 Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.
 
 - **Where**: `android/.../UsageStatsModule.java` `showAppInstalledNotification` — build a `pear://pearguard/alerts?childPublicKey=X&tab=apps` PendingIntent (mirrors the existing alerts deep link pattern)
 - `app/index.tsx` and `src/ui/components/ChildDetail.jsx` already support the `tab` param, so no UI changes needed
 
-### [ ] 38. Bug: Usage tab not populating any data
-The Usage tab in ChildDetail shows no screen time data.
-
-- **Investigate**: Verify `UsageStatsModule.getTodayScreenTime` is returning data; check that `usage:report` events are being emitted and received by the parent; confirm `UsageTab.jsx` is reading the right data shape
+### [x] 38. Bug: Usage tab not populating any data — 2026-03-23
+Two bugs: (1) `usage:flush` in `bare-dispatch.js` ignored `args.usage` (native data passed from `index.tsx` → `getDailyUsageAll()`) and always sent `usageStats: {}`; fixed to map native array into `report.apps`. (2) `usage:getLatest` didn't exist; added handler that reads latest `usageReport:{childPublicKey}:*` entry from Hyperbee via `createReadStream({ reverse: true, limit: 1 })`.
 - **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
 
 ### [ ] 39. Schedules and Time Limits need to work together properly

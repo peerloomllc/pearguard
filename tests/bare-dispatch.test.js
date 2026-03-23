@@ -78,11 +78,11 @@ describe('bare dispatch', () => {
     // is ever called. There is therefore no "bad signature" test in this file — that
     // path is covered by integration testing on a physical device.
 
-    function makeMockDb () {
-      const stored = {}
+    function makeMockDb (stored = {}) {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] ? { value: stored[k] } : null),
+        createReadStream: jest.fn(async function * () {}),
         _stored: stored,
       }
     }
@@ -140,6 +140,94 @@ describe('bare dispatch', () => {
 
       expect(mockDb.put).not.toHaveBeenCalled()
       expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    test('syncs pending req:* entries when policy marks app as allowed', async () => {
+      const pendingReq = {
+        id: 'req:1000:com.example.app',
+        packageName: 'com.example.app',
+        appName: 'Example App',
+        status: 'pending',
+        requestedAt: 1000,
+      }
+      const stored = { 'req:1000:com.example.app': pendingReq }
+      const mockDb = makeMockDb(stored)
+      mockDb.createReadStream = jest.fn(async function * () {
+        yield { key: 'req:1000:com.example.app', value: pendingReq }
+      })
+      const mockSend = jest.fn()
+      const payload = {
+        version: 2,
+        childPublicKey: 'deadbeef',
+        apps: { 'com.example.app': { status: 'allowed', appName: 'Example App' } },
+      }
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      // req:* should be updated to approved
+      const reqPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('req:'))
+      expect(reqPuts).toHaveLength(1)
+      expect(reqPuts[0][1].status).toBe('approved')
+
+      // request:updated event should fire
+      const updatedEvents = mockSend.mock.calls.filter(
+        ([m]) => m.type === 'event' && m.event === 'request:updated'
+      )
+      expect(updatedEvents).toHaveLength(1)
+      expect(updatedEvents[0][0].data.status).toBe('approved')
+    })
+
+    test('syncs pending req:* entries when policy marks app as blocked', async () => {
+      const pendingReq = {
+        id: 'req:2000:com.blocked.app',
+        packageName: 'com.blocked.app',
+        appName: 'Blocked App',
+        status: 'pending',
+        requestedAt: 2000,
+      }
+      const stored = { 'req:2000:com.blocked.app': pendingReq }
+      const mockDb = makeMockDb(stored)
+      mockDb.createReadStream = jest.fn(async function * () {
+        yield { key: 'req:2000:com.blocked.app', value: pendingReq }
+      })
+      const mockSend = jest.fn()
+      const payload = {
+        version: 2,
+        childPublicKey: 'deadbeef',
+        apps: { 'com.blocked.app': { status: 'blocked', appName: 'Blocked App' } },
+      }
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      const reqPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('req:'))
+      expect(reqPuts).toHaveLength(1)
+      expect(reqPuts[0][1].status).toBe('denied')
+    })
+
+    test('does not update req:* entries that are already resolved', async () => {
+      const resolvedReq = {
+        id: 'req:3000:com.example.app',
+        packageName: 'com.example.app',
+        status: 'approved',
+        requestedAt: 3000,
+      }
+      const stored = { 'req:3000:com.example.app': resolvedReq }
+      const mockDb = makeMockDb(stored)
+      mockDb.createReadStream = jest.fn(async function * () {
+        yield { key: 'req:3000:com.example.app', value: resolvedReq }
+      })
+      const mockSend = jest.fn()
+      const payload = {
+        version: 2,
+        childPublicKey: 'deadbeef',
+        apps: { 'com.example.app': { status: 'allowed', appName: 'Example App' } },
+      }
+
+      await handlePolicyUpdate(payload, mockDb, mockSend)
+
+      // No req:* puts — already resolved
+      const reqPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('req:'))
+      expect(reqPuts).toHaveLength(0)
     })
   })
 
@@ -399,7 +487,7 @@ describe('bare dispatch', () => {
       expect(value).toHaveProperty('timestamp', result.timestamp)
       expect(value).toHaveProperty('pinOverrides')
       expect(value).toHaveProperty('childPublicKey')
-      expect(value).toHaveProperty('usageStats')
+      expect(value).toHaveProperty('apps')
     })
 
     test('includes pinLog entries in pinOverrides', async () => {
@@ -521,6 +609,72 @@ describe('bare dispatch', () => {
         type: 'usage:report',
         payload: expect.objectContaining({ type: 'usage:report' }),
       }))
+    })
+
+    test('populates apps from args.usage native data', async () => {
+      const identity = { publicKey: 'abc123', secretKey: 'secret' }
+      const stored = { identity }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const nativeUsage = [
+        { packageName: 'com.example.chrome', appName: 'Chrome', secondsToday: 3600 },
+        { packageName: 'com.example.maps', appName: 'Maps', secondsToday: 120 },
+      ]
+
+      await dispatch('usage:flush', { usage: nativeUsage })
+
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      const [, report] = usagePuts[0]
+      expect(report.apps).toHaveLength(2)
+      expect(report.apps[0]).toEqual({ packageName: 'com.example.chrome', displayName: 'Chrome', todaySeconds: 3600, weekSeconds: 0 })
+    })
+  })
+
+  describe('usage:getLatest', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('returns the latest usageReport for childPublicKey', async () => {
+      const report = { type: 'usage:report', timestamp: 5000, apps: [], childPublicKey: 'pk-child' }
+      const mockDb = makeMockDb()
+      mockDb.createReadStream = jest.fn(async function * () {
+        yield { value: report }
+      })
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:getLatest', { childPublicKey: 'pk-child' })
+      expect(result).toEqual(report)
+    })
+
+    test('returns null when no report exists', async () => {
+      const mockDb = makeMockDb()
+      mockDb.createReadStream = jest.fn(async function * () {})
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:getLatest', { childPublicKey: 'pk-child' })
+      expect(result).toBeNull()
+    })
+
+    test('throws when childPublicKey is missing', async () => {
+      const mockDb = makeMockDb()
+      mockDb.createReadStream = jest.fn(async function * () {})
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      await expect(dispatch('usage:getLatest', {})).rejects.toThrow('invalid usage:getLatest args')
     })
   })
 

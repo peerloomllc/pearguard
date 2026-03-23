@@ -443,7 +443,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 ? appName + " has been installed on your device"
                 : appName + " is pending your approval";
 
-        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+        PendingIntent pi = buildAppsTabPendingIntent(childPublicKey, notificationId);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
@@ -514,6 +514,22 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     private PendingIntent buildRequestsPendingIntent(String childPublicKey, int reqCode) {
         String url = "pear://pearguard/alerts?childPublicKey=" +
                 Uri.encode(childPublicKey != null ? childPublicKey : "") + "&tab=requests";
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        intent.setPackage(reactContext.getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(
+                reactContext, reqCode, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+    }
+
+    /**
+     * Builds a PendingIntent that deep-links to the child's Apps tab in PearGuard.
+     * URL: pear://pearguard/alerts?childPublicKey=<key>&tab=apps
+     */
+    private PendingIntent buildAppsTabPendingIntent(String childPublicKey, int reqCode) {
+        String url = "pear://pearguard/alerts?childPublicKey=" +
+                Uri.encode(childPublicKey != null ? childPublicKey : "") + "&tab=apps";
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         intent.setPackage(reactContext.getPackageName());
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);

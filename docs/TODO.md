@@ -149,11 +149,8 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 
 ## Added 2026-03-22
 
-### [ ] 31. Parent setup: require override PIN before first use
-Before the parent device becomes operational, force the parent to set an override PIN. Without a PIN, the child can never request access to a blocked app, making enforcement useless.
-
-- **Where**: `app/setup.tsx` — add a PIN-entry step after mode selection; do not proceed until a valid PIN is saved via `pin:set`
-- **Related**: TODO #1 (force profile name at setup) — these could be combined into a single setup wizard step
+### [x] 31. Parent setup: require override PIN before first use — 2026-03-23
+Two gates added. Gate 1 (`app/setup.tsx`): after tapping "I'm a Parent", a PIN setup step is shown inline before navigating to the dashboard. Gate 2 (`src/ui/components/ParentApp.jsx`): on mount, checks `pin:isSet`; if false, renders a full-screen PIN overlay until a valid PIN is saved. New `pin:isSet` bare dispatch method reads parent's own `'policy'` key. All PIN inputs restricted to exactly 4 digits with auto-focus from entry to confirm field on 4th digit. Same 4-digit restriction and auto-focus applied to `Settings.jsx`.
 
 ### [ ] 32. Parent-initiated unpair / remote deactivation of child
 The parent should be able to sever the pairing from their side, which should remotely deactivate PearGuard enforcement on the child device.
@@ -173,13 +170,8 @@ Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear 
 ### [x] 29. Bug: Initial pairing should not send "app installed" notifications to parent — 2026-03-22
 `handleIncomingAppsSync` now checks `raw` (the existing policy record) before processing: if null it's the first sync, so alert entries and `app:installed` events are suppressed. `apps:synced` still fires so the Apps tab refreshes. Incremental syncs (reconnects after initial pairing) continue to notify for genuinely new installs.
 
-### [ ] 30. Design decision: default policy for apps discovered at initial pairing
-When a child pairs for the first time, all installed apps arrive via `apps:sync`. Currently they all default to `status: 'pending'`. Consider whether the right default is:
-
-- **Approve all** (allow everything until parent actively blocks) — less friction, easier onboarding
-- **Deny all** (block everything until parent reviews) — more secure, but child can't use their device until parent approves
-- **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
-- **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
+### [x] 30. Default policy for apps discovered at initial pairing — 2026-03-23
+`handleIncomingAppsSync`: when `isFirstSync` is true, apps now default to `status: 'allowed'` instead of `'pending'`. `sendToPeer` (policy push to child) moved outside the `!isFirstSync` guard so it fires unconditionally on every sync, ensuring the child receives the allowed policy immediately at first pairing. Post-pairing installs still default to `pending`.
 
 ### [x] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail — 2026-03-22
 Root cause: `tabInactive` style had no `borderBottom` key, so React never removed the active `borderBottom` when a tab switched from active to inactive within a render cycle. Fixed by adding `borderBottom: '2px solid transparent'` to `tabInactive` so React explicitly clears the highlight. `initialTab` reset in Dashboard `onBack` was already correct.

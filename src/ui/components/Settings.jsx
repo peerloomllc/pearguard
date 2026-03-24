@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 export default function Settings() {
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinStatus, setPinStatus] = useState(null); // null | 'success' | Error string
+  const confirmPinRef = useRef(null);
   function handlePinSubmit(e) {
     e.preventDefault();
-    if (newPin.length < 4) {
-      setPinStatus('PIN must be at least 4 digits.');
+    if (newPin.length !== 4) {
+      setPinStatus('PIN must be exactly 4 digits.');
       return;
     }
     if (!/^\d+$/.test(newPin)) {
@@ -45,16 +46,22 @@ export default function Settings() {
             <input
               type="text"
               value={newPin}
-              onChange={(e) => { setNewPin(e.target.value); setPinStatus(null); }}
+              onChange={(e) => {
+                setNewPin(e.target.value);
+                setPinStatus(null);
+                if (e.target.value.length === 4) confirmPinRef.current?.focus();
+              }}
               placeholder="e.g. 1234"
               style={styles.input}
               aria-label="New PIN"
               inputMode="numeric"
+              maxLength={4}
             />
           </label>
           <label style={styles.label}>
             Confirm PIN
             <input
+              ref={confirmPinRef}
               type="text"
               value={confirmPin}
               onChange={(e) => { setConfirmPin(e.target.value); setPinStatus(null); }}
@@ -62,6 +69,7 @@ export default function Settings() {
               style={styles.input}
               aria-label="Confirm PIN"
               inputMode="numeric"
+              maxLength={4}
             />
           </label>
           {pinStatus && pinStatus !== 'success' && (

@@ -27,7 +27,7 @@ test('shows error when PIN is shorter than 4 digits', async () => {
   fireEvent.change(screen.getByLabelText('New PIN'), { target: { value: '12' } });
   fireEvent.change(screen.getByLabelText('Confirm PIN'), { target: { value: '12' } });
   fireEvent.click(screen.getByLabelText('Save PIN'));
-  expect(await screen.findByText(/at least 4 digits/i)).toBeInTheDocument();
+  expect(await screen.findByText(/exactly 4 digits/i)).toBeInTheDocument();
 });
 
 test('shows error when PIN contains non-digits', async () => {

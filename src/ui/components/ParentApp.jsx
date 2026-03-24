@@ -85,9 +85,15 @@ export default function ParentApp() {
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
 
   useEffect(() => {
-    window.callBare('pin:isSet', {})
-      .then(({ isSet }) => setPinCheckState(isSet ? 'done' : 'needed'))
-      .catch(() => setPinCheckState('needed'));
+    function checkPin() {
+      window.callBare('pin:isSet', {})
+        .then(({ isSet }) => setPinCheckState(isSet ? 'done' : 'needed'))
+        .catch(() => setPinCheckState('needed'));
+    }
+    checkPin();
+    // Re-check when worklet re-initializes (e.g. returning from setup) so a PIN
+    // set during the setup flow is picked up without requiring a full remount.
+    return window.onBareEvent('ready', checkPin);
   }, []);
 
   useEffect(() => {

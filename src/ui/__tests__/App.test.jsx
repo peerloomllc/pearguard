@@ -8,6 +8,7 @@ jest.mock('../components/ChildApp.jsx', () => () => <div>Child mode</div>);
 
 beforeEach(() => {
   window.callBare = jest.fn();
+  window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
 
 test('renders Loading... while waiting for identity:getMode', () => {

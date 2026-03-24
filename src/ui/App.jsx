@@ -15,9 +15,15 @@ export default function App() {
   const [mode, setMode] = useState(undefined); // undefined = loading, null = no mode
 
   useEffect(() => {
-    window.callBare('identity:getMode')
-      .then(({ mode }) => setMode(mode))
-      .catch(() => setMode(null));
+    function fetchMode() {
+      window.callBare('identity:getMode')
+        .then(({ mode }) => setMode(mode))
+        .catch(() => setMode(null));
+    }
+    fetchMode();
+    // Re-fetch when the worklet re-initializes (e.g. returning from setup screen)
+    // so the UI transitions from ModeSetup → ParentApp/ChildApp without a full remount.
+    return window.onBareEvent('ready', fetchMode);
   }, []);
 
   if (mode === undefined) {

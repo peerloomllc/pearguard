@@ -2,7 +2,7 @@
 
 ## UI / UX
 
-### [ ] 1. Force profile name creation at setup
+### [x] 1. Force profile name creation at setup — 2026-03-24
 Before completing first-launch setup (parent or child mode), require the user to enter a display name. The name is used in `hello` messages so the other device shows the real name instead of "PearGuard Device".
 
 - **Where**: `app/setup.tsx` — add a name input step before or during mode selection
@@ -242,6 +242,9 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 1. Force profile name creation at setup — 2026-03-24
+Added name-entry step to `app/setup.tsx` between mode selection and PIN setup. Also fixed `pin:set`/`pin:verify` to use BLAKE2b (`crypto_generichash`) instead of argon2id which silently failed in the Android Bare worklet, causing the PIN overlay to reappear on every launch.
 
 ### [x] 6. Guided Accessibility Service setup on Child device — 2026-03-21
 Mandatory two-step wizard (`app/child-setup.tsx`) guides child device users through enabling Accessibility Service and Usage Stats permission on first launch and whenever either is missing. Auto-advances via 1.5s polling. Re-triggers on app foreground if permissions are revoked.

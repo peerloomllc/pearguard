@@ -1801,4 +1801,41 @@ describe('bare dispatch', () => {
       expect(mockSend).not.toHaveBeenCalled()
     })
   })
+
+  describe('pin:isSet', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        createReadStream: jest.fn(async function * () {}),
+      }
+    }
+
+    test('returns { isSet: true } when pinHash is stored in policy', async () => {
+      const mockDb = makeMockDb({ policy: { pinHash: '$argon2id$...' } })
+      const ctx = { db: mockDb, send: jest.fn() }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:isSet', {})
+      expect(result).toEqual({ isSet: true })
+    })
+
+    test('returns { isSet: false } when policy exists but has no pinHash', async () => {
+      const mockDb = makeMockDb({ policy: { apps: {} } })
+      const ctx = { db: mockDb, send: jest.fn() }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:isSet', {})
+      expect(result).toEqual({ isSet: false })
+    })
+
+    test('returns { isSet: false } when no policy key exists at all', async () => {
+      const mockDb = makeMockDb({}) // empty DB
+      const ctx = { db: mockDb, send: jest.fn() }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:isSet', {})
+      expect(result).toEqual({ isSet: false })
+    })
+  })
 })

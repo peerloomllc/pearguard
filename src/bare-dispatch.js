@@ -202,6 +202,14 @@ function createDispatch (ctx) {
         return { granted: true, expiresAt }
       }
 
+      case 'pin:isSet': {
+        // Reads the parent's own 'policy' key — NOT a per-child 'policy:{childPK}' key.
+        // pin:set stores pinHash here (ctx.db.put('policy', policy)).
+        // valueEncoding: 'json' means raw.value is already a parsed JS object.
+        const raw = await ctx.db.get('policy')
+        return { isSet: !!(raw && raw.value && raw.value.pinHash) }
+      }
+
       case 'time:request': {
         const { packageName, appName } = args
         const requestId = 'req:' + Date.now() + ':' + packageName

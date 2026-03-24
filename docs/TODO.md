@@ -8,7 +8,7 @@ Before completing first-launch setup (parent or child mode), require the user to
 - **Where**: `app/setup.tsx` — add a name input step before or during mode selection
 - **Bare method**: `identity:setName`
 
-### [ ] 2. Share profile names between devices (Children tab)
+### [x] 2. Share profile names between devices (Children tab) — 2026-03-24
 The Children tab currently shows the name the child declared in its `hello` message. Since we now include the real profile name in `hello`, this will update on reconnect. But the parent's own name shown on the child's Profile screen also uses `hello` reply, which now includes profile name too.
 
 - Verify Children tab shows child's real name after reconnect (should work with the `hello` fix)
@@ -93,7 +93,7 @@ Add haptic feedback on key interactions: overlay button taps, PIN digit entry, P
 - **Overlay (Java)**: `android.os.Vibrator` / `VibrationEffect` — short pulse on button press, error pattern on wrong PIN, success pattern on correct PIN
 - **WebView UI (JS)**: `navigator.vibrate()` for request submission confirmation
 
-### [ ] 18. Bug: Swipe-up gesture causes overlay to briefly flash
+### [x] 18. Bug: Swipe-up gesture causes overlay to briefly flash — 2026-03-24
 When the child uses the swipe-up-from-bottom gesture (Android navigation), the overlay briefly flashes before disappearing. The gesture likely causes a transient window state change that re-triggers `showOverlay`, then the gesture completes and the overlay is dismissed.
 
 - **Investigate**: What package name does the TYPE_WINDOW_STATE_CHANGED event carry during a swipe-up gesture? Likely the launcher/gesture nav overlay.
@@ -126,7 +126,7 @@ If the child force-closes PearGuard, the Accessibility Service (which is hosted 
 - **Detect**: `EnforcementService` should detect when PearGuard's main process is not running and alert the parent.
 - **Mitigation**: Device admin (`DevicePolicyManager`) can prevent force-close of designated apps on some Android versions.
 
-### [ ] 24. Bug: Profile name changes don't sync to paired devices
+### [x] 24. Bug: Profile name changes don't sync to paired devices — 2026-03-24
 After initial pairing, if the child or parent changes their display name in Profile, the other device still shows the old name.
 
 - **Root cause**: `hello` messages (which carry `displayName`) are only sent at connection time. A name change after pairing never triggers a new `hello`.
@@ -140,7 +140,7 @@ After initial pairing, if the child or parent changes their display name in Prof
 ### [x] 26. Remove uninstalled apps from parent's Apps list — 2026-03-23
 Already fully implemented: `PackageMonitorModule` fires `onAppUninstalled` event → `index.tsx` forwards to worklet → `bare-dispatch.js` `app:uninstalled` removes from child policy and calls `sendToParent` with `app:uninstalled` P2P → parent's `handleIncomingAppUninstalled` deletes from `policy:{childPublicKey}.apps` and emits `app:uninstalled` event. `index.tsx` shows `showAppUninstalledNotification` on parent.
 
-### [ ] 27. Alphabetize Apps list; add sort option
+### [x] 27. Alphabetize Apps list; add sort option — 2026-03-24
 The Apps tab has no defined order, making it hard to find apps on a real device with many entries.
 
 - **Default**: Sort alphabetically by `appName` (falling back to `packageName`)
@@ -219,7 +219,7 @@ Usage stats were visible, but after backgrounding the app and returning the Usag
 ### [x] 41. System apps must be exempt from policies and filtered from Usage report — 2026-03-23
 `AppBlockerModule.java` `getBlockReason` now calls `isSystemOverlayPackage` at the top to exempt system services with no launcher icon. `UsageStatsModule.java` `getDailyUsageAll` now builds a launcher-package set and skips any app not in it.
 
-### [ ] 43. UX: Schedule rule form should show validation error when Label is empty
+### [x] 43. UX: Schedule rule form should show validation error when Label is empty — 2026-03-24
 Currently the form silently refuses to save without a label — there is no feedback to the user.
 
 - **Where**: `src/ui/components/ScheduleTab.jsx` — show an inline error message (e.g. "Label is required") when the user tries to save without filling in the label field
@@ -230,6 +230,11 @@ Give the child advance notice before a schedule block kicks in so they can save 
 - **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
 
 ### [ ] 45. Parent: ability to edit existing schedule rules
+
+### [ ] 46. Bug: "Requesting app access" notification shows package name instead of app name
+The notification text uses the raw package name (e.g. `com.android.chrome`) instead of the human-readable app name.
+
+- **Where**: `android/.../UsageStatsModule.java` `showTimeRequestNotification` (or whichever method builds the request notification) — ensure `appName` is passed and used as the label, falling back to `packageName` only if absent
 Schedule rules can currently be added and deleted but not edited in place.
 
 - **Where**: `src/ui/components/ScheduleTab.jsx` — add an Edit button per rule that populates the form fields with the rule's current values; saving replaces the existing rule
@@ -242,6 +247,20 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 2. Share profile names between devices (Children tab) — 2026-03-24
+Children tab shows child's real name via `hello` message on reconnect. Child's Profile screen shows parent's real name in the Parents list.
+
+### [x] 18. Bug: Swipe-up gesture causes overlay to briefly flash — 2026-03-24
+
+### [x] 24. Bug: Profile name changes don't sync to paired devices — 2026-03-24
+`identity:setName` now broadcasts a `profile:update` P2P message to all connected peers; peers update their `peers:{publicKey}` Hyperbee entry on receipt.
+
+### [x] 27. Alphabetize Apps list; add sort option — 2026-03-24
+Apps tab now sorts alphabetically by `appName` by default with a toggle for install/discovery order.
+
+### [x] 43. UX: Schedule rule form should show validation error when Label is empty — 2026-03-24
+Inline "Label is required" error shown in `ScheduleTab.jsx` when user attempts to save without a label.
 
 ### [x] 1. Force profile name creation at setup — 2026-03-24
 Added name-entry step to `app/setup.tsx` between mode selection and PIN setup. Also fixed `pin:set`/`pin:verify` to use BLAKE2b (`crypto_generichash`) instead of argon2id which silently failed in the Android Bare worklet, causing the PIN overlay to reappear on every launch.

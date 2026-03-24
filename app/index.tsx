@@ -285,8 +285,8 @@ export default function Root () {
       // return check below, they would be cleaned up on unmount and never re-added.
       nativeSubs.push(
         // New app installed — forward to bare worklet as app:installed
-        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string; appName?: string }) => {
-          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName, appName: e.appName } })
+        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string; appName?: string; iconBase64?: string }) => {
+          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName, appName: e.appName, iconBase64: e.iconBase64 } })
         }),
 
         // App uninstalled — forward to bare worklet so parent's Apps list stays current

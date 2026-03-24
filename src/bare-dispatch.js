@@ -743,7 +743,7 @@ async function flushMessageQueue (db, writeMessage) {
  * Runs on the PARENT device.
  */
 async function handleIncomingAppInstalled (payload, childPublicKey, db, send, sendToPeer) {
-  const { packageName, appName } = payload
+  const { packageName, appName, iconBase64 } = payload
   if (!packageName) {
     console.warn('[bare] app:installed from child: missing packageName')
     return
@@ -755,7 +755,7 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
 
   if (!policy.apps[packageName]) {
     const now = Date.now()
-    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now }
+    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }) }
     policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
@@ -808,20 +808,25 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
   const childDisplayName = peerRecord?.value?.displayName || 'Your child'
 
   let newCount = 0
+  let iconUpdateCount = 0
   // Use a single timestamp for the whole batch so apps from the same sync
   // sort together by date rather than getting subtly different millisecond values.
   const batchAddedAt = Date.now()
   const newApps = []
-  for (const { packageName, appName } of apps) {
+  for (const { packageName, appName, iconBase64 } of apps) {
     if (!policy.apps[packageName]) {
-      policy.apps[packageName] = { status: isFirstSync ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt }
+      policy.apps[packageName] = { status: isFirstSync ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(iconBase64 && { iconBase64 }) }
       newApps.push({ packageName, appName: appName || packageName })
       newCount++
+    } else if (iconBase64 && !policy.apps[packageName].iconBase64) {
+      // Back-fill icon for apps already in the policy (e.g. from before this feature)
+      policy.apps[packageName].iconBase64 = iconBase64
+      iconUpdateCount++
     }
   }
 
-  if (newCount > 0) {
-    policy.version = (policy.version || 0) + 1
+  if (newCount > 0 || iconUpdateCount > 0) {
+    if (newCount > 0) policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
     // Push policy to child on every sync (first AND incremental) so the child

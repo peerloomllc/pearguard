@@ -42,14 +42,24 @@ public class PackageMonitorModule extends BroadcastReceiver {
 
         if (isAdded) {
             // Resolve human-readable app name so the parent sees a real label, not a package string.
+            android.content.pm.PackageManager pm = context.getPackageManager();
             try {
-                android.content.pm.PackageManager pm = context.getPackageManager();
                 android.content.pm.ApplicationInfo ai =
                         pm.getApplicationInfo(packageName, 0);
                 params.putString("appName", pm.getApplicationLabel(ai).toString());
             } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
                 params.putString("appName", packageName);
             }
+            try {
+                android.graphics.drawable.Drawable drawable = pm.getApplicationIcon(packageName);
+                android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(144, 144, android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                drawable.setBounds(0, 0, 144, 144);
+                drawable.draw(canvas);
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos);
+                params.putString("iconBase64", android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP));
+            } catch (Exception ignored) {}
         }
 
         String eventName = isAdded ? "onAppInstalled" : "onAppUninstalled";

@@ -232,6 +232,16 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             item.putString("packageName", ai.packageName);
             item.putString("appName", appName);
             item.putBoolean("isLauncher", ai.packageName.equals(launcherPackage));
+            try {
+                android.graphics.drawable.Drawable drawable = pm.getApplicationIcon(ai.packageName);
+                android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(144, 144, android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                drawable.setBounds(0, 0, 144, 144);
+                drawable.draw(canvas);
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos);
+                item.putString("iconBase64", android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP));
+            } catch (Exception ignored) {}
             result.pushMap(item);
         }
         promise.resolve(result);

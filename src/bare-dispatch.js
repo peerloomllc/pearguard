@@ -416,9 +416,17 @@ function createDispatch (ctx) {
           weekSeconds: 0,
         }))
 
+        // Skip storing/sending if no usage data — avoids overwriting a valid
+        // report with an empty one when the native stats aren't available yet
+        if (apps.length === 0) {
+          return { flushed: false, reason: 'no data' }
+        }
+
+        const now = Date.now()
         const report = {
           type: 'usage:report',
-          timestamp: Date.now(),
+          timestamp: now,
+          lastSynced: now,
           apps,
           pinOverrides: pinLog,
           childPublicKey,

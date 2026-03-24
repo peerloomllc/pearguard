@@ -115,6 +115,10 @@ public class EnforcementService extends Service {
             reactContext
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                 .emit("onUsageFlush", params);
+        } else {
+            // RN bridge is not active (app backgrounded/killed) — reset so we
+            // retry on the next loop iteration rather than waiting a full 5 minutes
+            lastUsageFlushTime = 0;
         }
     }
 

@@ -138,11 +138,6 @@ async function init (dataDir, attempt = 0) {
     mode,
   }})
 
-  // Start 5-minute usage reporting timer
-  setInterval(() => {
-    handleDispatch('usage:flush', {}, null)
-  }, 5 * 60 * 1000)
-
   // Start 60-second heartbeat timer
   setInterval(() => {
     handleDispatch('heartbeat:send', {}, null)
@@ -291,7 +286,10 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       await handleIncomingTimeRequest(msg.payload, msg.from, db, send)
       break
     case 'usage:report': {
-      const childPublicKey = msg.from
+      // Prefer the identity key carried in the signed payload (set by usage:flush on the child)
+      // over msg.from (the Hyperswarm noise key), which may differ from the Ed25519 identity key.
+      // usage:getLatest queries by child.publicKey (identity key), so both sides must agree.
+      const childPublicKey = msg.payload.childPublicKey || msg.from
       await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
       send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey } })
       break
@@ -464,6 +462,8 @@ async function handleHello (msg, conn, remoteKeyHex) {
     await flushPendingMessages(conn)
     // Ask RN shell to scan installed apps and relay each as app:installed
     send({ type: 'event', event: 'apps:syncRequested', data: {} })
+    // Ask RN shell to gather usage stats and send a fresh report to the parent
+    send({ type: 'event', event: 'usageFlushRequested', data: {} })
   }
 }
 

@@ -380,6 +380,15 @@ export default function Root () {
                   .catch((e: any) => console.warn('[RN] getInstalledPackages failed:', e))
                 return
               }
+              // Handle usageFlushRequested locally — gather usage stats and flush immediately
+              if (msg.event === 'usageFlushRequested') {
+                NativeModules.UsageStatsModule?.getDailyUsageAll?.()
+                  .then((usageList: { packageName: string; appName: string; secondsToday: number }[]) => {
+                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
+                  })
+                  .catch((e: any) => console.warn('[RN] usageFlushRequested getDailyUsageAll failed:', e))
+                return
+              }
               // Show a notification on the parent device when a child sends a time request
               if (msg.event === 'time:request:received') {
                 const { childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}

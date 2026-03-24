@@ -20,12 +20,14 @@ export function setBareCaller (fn: (method: string, args: any) => Promise<any>) 
 }
 
 export default function SetupScreen () {
-  const [step, setStep]           = useState<'mode' | 'pin'>('mode')
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState<string | null>(null)
-  const [pin, setPin]             = useState('')
-  const [confirmPin, setConfirmPin] = useState('')
-  const confirmPinRef             = useRef<TextInput>(null)
+  const [step, setStep]               = useState<'mode' | 'name' | 'pin'>('mode')
+  const [selectedMode, setSelectedMode] = useState<'parent' | 'child' | null>(null)
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+  const [name, setName]               = useState('')
+  const [pin, setPin]                 = useState('')
+  const [confirmPin, setConfirmPin]   = useState('')
+  const confirmPinRef                 = useRef<TextInput>(null)
   const router = useRouter()
 
   async function selectMode (mode: 'parent' | 'child') {
@@ -33,14 +35,30 @@ export default function SetupScreen () {
     setLoading(true)
     try {
       await _callBare('setMode', [mode])
-      if (mode === 'child') {
-        router.replace('/child-setup')
-      } else {
-        setLoading(false)
-        setStep('pin')
-      }
+      setSelectedMode(mode)
+      setLoading(false)
+      setStep('name')
     } catch (e: any) {
       setError(e.message)
+      setLoading(false)
+    }
+  }
+
+  async function handleSetName () {
+    if (!_callBare) return
+    if (!name.trim()) { setError('Name is required.'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      await _callBare('identity:setName', { name: name.trim() })
+      setLoading(false)
+      if (selectedMode === 'parent') {
+        setStep('pin')
+      } else {
+        router.replace('/child-setup')
+      }
+    } catch (e: any) {
+      setError(e.message || 'Failed to save name. Please try again.')
       setLoading(false)
     }
   }
@@ -59,6 +77,38 @@ export default function SetupScreen () {
       setError(e.message || 'Failed to set PIN. Please try again.')
       setLoading(false)
     }
+  }
+
+  if (step === 'name') {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>What's your name?</Text>
+        <Text style={styles.subtitle}>
+          This name is shown to the other device when you pair.
+        </Text>
+
+        {error && <Text style={styles.error}>{error}</Text>}
+
+        {loading ? (
+          <ActivityIndicator color="#6FCF97" size="large" />
+        ) : (
+          <View style={styles.form}>
+            <Text style={styles.label}>Your name</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={(v) => { setName(v); setError(null) }}
+              placeholder="Your name"
+              maxLength={30}
+              autoFocus
+            />
+            <TouchableOpacity style={styles.btnSave} onPress={handleSetName}>
+              <Text style={styles.btnSaveText}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    )
   }
 
   if (step === 'pin') {

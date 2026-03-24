@@ -67,7 +67,7 @@ async function handleDispatch (method, args, id) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-async function init (dataDir) {
+async function init (dataDir, attempt = 0) {
   // Idempotent: if already initialized, just re-emit 'ready' so the remounted
   // RN component can set dbReady=true without reopening the Hypercore.
   if (_initialized) {
@@ -77,11 +77,23 @@ async function init (dataDir) {
     }})
     return
   }
-  _initialized = true
 
-  // Open (or create) the local Hypercore + Hyperbee
-  core = new Hypercore(dataDir + '/pearguard/core')
-  await core.ready()
+  // Open (or create) the local Hypercore + Hyperbee.
+  // Retry up to 20 times on lock errors — Bare may restart before the previous
+  // instance releases the Hypercore lock file.
+  try {
+    core = new Hypercore(dataDir + '/pearguard/core')
+    await core.ready()
+  } catch (e) {
+    if (e.message && e.message.includes('lock') && attempt < 20) {
+      console.warn('[bare] init lock retry', attempt + 1, e.message)
+      await new Promise(r => setTimeout(r, 1000))
+      return init(dataDir, attempt + 1)
+    }
+    throw e
+  }
+
+  _initialized = true
   db = new Hyperbee(core, { keyEncoding: 'utf-8', valueEncoding: 'json' })
   await db.ready()
 
@@ -199,6 +211,8 @@ async function onPeerConnection (conn, info) {
       parentPeer = null
     }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
+    // Signal Hyperswarm to expedite reconnection
+    if (swarm) swarm.flush().catch(() => {})
   })
 
   // Store the connection for sending

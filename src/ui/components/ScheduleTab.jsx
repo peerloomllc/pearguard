@@ -25,6 +25,7 @@ export default function ScheduleTab({ childPublicKey }) {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newRule, setNewRule] = useState(BLANK_RULE);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -46,10 +47,12 @@ export default function ScheduleTab({ childPublicKey }) {
   }
 
   function handleAddRule() {
+    setSubmitAttempted(true);
     if (!newRule.label.trim() || newRule.days.length === 0) return;
     const schedules = [...(policy.schedules || []), newRule];
     saveSchedules(schedules);
     setNewRule(BLANK_RULE);
+    setSubmitAttempted(false);
   }
 
   function toggleDay(dayIndex) {
@@ -80,9 +83,12 @@ export default function ScheduleTab({ childPublicKey }) {
             value={newRule.label}
             onChange={(e) => setNewRule({ ...newRule, label: e.target.value })}
             placeholder="e.g. Bedtime"
-            style={styles.textInput}
+            style={{ ...styles.textInput, ...(submitAttempted && !newRule.label.trim() ? styles.inputError : {}) }}
             aria-label="Rule label"
           />
+          {submitAttempted && !newRule.label.trim() && (
+            <span style={styles.errorMsg}>Label is required</span>
+          )}
         </label>
 
         <div style={styles.daysRow}>
@@ -98,6 +104,9 @@ export default function ScheduleTab({ childPublicKey }) {
             </label>
           ))}
         </div>
+        {submitAttempted && newRule.days.length === 0 && (
+          <span style={styles.errorMsg}>Select at least one day</span>
+        )}
 
         <div style={styles.timeRow}>
           <label style={styles.formLabel}>
@@ -125,7 +134,6 @@ export default function ScheduleTab({ childPublicKey }) {
         <button
           style={styles.addBtn}
           onClick={handleAddRule}
-          disabled={!newRule.label.trim() || newRule.days.length === 0}
           aria-label="Add schedule rule"
         >
           Add Rule
@@ -168,4 +176,6 @@ const styles = {
     padding: '10px', border: 'none', borderRadius: '6px',
     backgroundColor: '#1a73e8', color: '#fff', cursor: 'pointer', fontSize: '14px',
   },
+  inputError: { borderColor: '#ea4335' },
+  errorMsg: { color: '#ea4335', fontSize: '12px', marginTop: '2px' },
 };

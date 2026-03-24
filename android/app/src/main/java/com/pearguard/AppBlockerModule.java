@@ -15,6 +15,8 @@ import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -346,6 +348,24 @@ public class AppBlockerModule extends AccessibilityService {
         }
     }
 
+    // --- Haptics ---
+
+    private static final long[] PATTERN_TAP     = { 0, 30 };  // digit key press
+    private static final long[] PATTERN_BUTTON  = { 0, 60 };  // main action buttons
+    private static final long[] PATTERN_ERROR   = { 0, 80, 60, 80 };
+    private static final long[] PATTERN_SUCCESS = { 0, 150 };
+
+    @SuppressWarnings("deprecation")
+    private void vibrate(long[] pattern) {
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v == null || !v.hasVibrator()) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            v.vibrate(VibrationEffect.createWaveform(pattern, -1));
+        } else {
+            v.vibrate(pattern, -1);
+        }
+    }
+
     // --- Overlay UI ---
 
     private void showOverlay(String packageName, String reason) {
@@ -403,13 +423,13 @@ public class AppBlockerModule extends AccessibilityService {
         Button requestButton = new Button(this);
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
         requestButton.setText(requestAlreadySent ? "Resend Request" : "Send Request");
-        requestButton.setOnClickListener(v -> onSendRequest(packageName));
+        requestButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName); });
         layout.addView(requestButton);
 
         Button pinButton = new Button(this);
         pinButton.setText("Enter PIN");
         pinButton.setPadding(0, 24, 0, 0);
-        pinButton.setOnClickListener(v -> onEnterPin(packageName));
+        pinButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onEnterPin(packageName); });
         layout.addView(pinButton);
 
         final View pendingOverlay = layout;
@@ -556,6 +576,7 @@ public class AppBlockerModule extends AccessibilityService {
                 btn.setOnClickListener(v -> {
                     if ("⌫".equals(digit)) {
                         if (!enteredPin[0].isEmpty()) {
+                            vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0].substring(0, enteredPin[0].length() - 1);
                             updateDisplay.run();
                         }
@@ -563,12 +584,14 @@ public class AppBlockerModule extends AccessibilityService {
                         // placeholder cell — no action
                     } else {
                         if (enteredPin[0].length() < 4) {
+                            vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0] + digit;
                             updateDisplay.run();
 
                             // Auto-submit when 4 digits entered
                             if (enteredPin[0].length() == 4) {
                                 if (verifyPin(enteredPin[0])) {
+                                    vibrate(PATTERN_SUCCESS);
                                     JSONObject policy = loadPolicy();
                                     int durationSeconds = 3600;
                                     if (policy != null) {
@@ -591,6 +614,7 @@ public class AppBlockerModule extends AccessibilityService {
                                     pinDialogView = null;
                                     dismissOverlay();
                                 } else {
+                                    vibrate(PATTERN_ERROR);
                                     enteredPin[0] = "";
                                     pinDisplay.setTextColor(Color.RED);
                                     pinDisplay.setText("Incorrect PIN");

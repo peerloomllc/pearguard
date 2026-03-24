@@ -193,6 +193,14 @@ When the child sends a message while the parent app is backgrounded, Android dro
 - **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
 - **Where**: `app/index.tsx`, new foreground service, or FCM integration
 
+### [ ] 52. Maximize background delivery reliability for Requests and Alerts
+Requests and alerts (time requests, app installs, bypass alerts) must reach the parent as consistently as possible even when the app is backgrounded. Related to #37 but broader in scope — covers both parent and child sides and all alert types.
+
+- **Audit**: Confirm all alert types (time request, app install, bypass alert) are queued and flushed on reconnect
+- **Parent-side**: Keep Hyperswarm alive in background via a foreground service (preferred) or FCM wakeup
+- **Child-side**: Ensure queued messages are flushed immediately on reconnect, not just on `handleHello`
+- **Goal**: Parent should receive an Android notification within seconds of a child event, even if the app was not open
+
 ### [x] 40. Tapping "app installed" notification on parent should deep-link to Apps tab — 2026-03-23
 Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.
 
@@ -245,6 +253,12 @@ Some apps (e.g. phone, messaging) should be usable even during a schedule blacko
 The current label/description language is ambiguous. Make it clear that a schedule rule defines when apps are **blocked** (a blackout/lockdown window), not when they are allowed.
 
 - **Where**: `src/ui/components/ScheduleTab.jsx` — update section heading, form labels, and placeholder text
+
+### [ ] 51. Bug: Correct PIN not working on child device
+Child enters the correct PIN on the block overlay but it is not accepted.
+
+- **Investigate**: Whether the child device is receiving the policy (including `pinHash`) from the parent via P2P sync; log `loadPolicy()` output in `verifyPin` to confirm `pinHash` is present
+- **Related**: TODO #1 (PIN stored using BLAKE2b) — confirm the hash stored in policy matches what `verifyPin` expects
 
 ## Known Limitations
 

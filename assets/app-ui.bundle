@@ -14542,7 +14542,7 @@
         setLoading(false);
       }).catch(() => setLoading(false));
       const unsub = window.onBareEvent("usage:report", (data) => {
-        if (data && data.childPublicKey === childPublicKey) {
+        if (data && data.childPublicKey === childPublicKey && data.apps && data.apps.length > 0) {
           setReport(data);
           setLoading(false);
         }
@@ -14556,7 +14556,7 @@
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles2.container, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: styles2.syncLabel, children: [
         "Last synced: ",
-        timeAgo(report.lastSynced)
+        timeAgo(report.lastSynced || report.timestamp)
       ] }),
       report.apps.map((app) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         UsageBar,
@@ -15393,7 +15393,7 @@
         },
         tab.key
       )) }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.content, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ActiveComponent, { childPublicKey: child.publicKey }) })
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.content, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { display: activeTab === tab.key ? "block" : "none" }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(tab.Component, { childPublicKey: child.publicKey }) }, tab.key)) })
     ] });
   }
   var styles8 = {

@@ -440,7 +440,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      const result = await dispatch('usage:flush', [])
+      const result = await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       expect(result).toHaveProperty('flushed', true)
       expect(result).toHaveProperty('timestamp')
@@ -459,7 +459,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      const result = await dispatch('usage:flush', [])
+      const result = await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       // Find the db.put call with the usage: key
       const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
@@ -486,7 +486,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      await dispatch('usage:flush', [])
+      await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
       const [, report] = usagePuts[0]
@@ -505,7 +505,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      const result = await dispatch('usage:flush', [])
+      const result = await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       // Find the event:usage:report call
       const eventCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'usage:report')
@@ -530,7 +530,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      await dispatch('usage:flush', [])
+      await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       // Find the db.put call that clears pinLog
       const logPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pinLog')
@@ -549,7 +549,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      const result = await dispatch('usage:flush', [])
+      const result = await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       expect(result).toHaveProperty('flushed', true)
 
@@ -569,7 +569,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend }
       const dispatch = createDispatch(ctx)
 
-      const result = await dispatch('usage:flush', [])
+      const result = await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       expect(result).toHaveProperty('flushed', true)
 
@@ -587,7 +587,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, send: mockSend, sendToParent: mockSendToParent }
       const dispatch = createDispatch(ctx)
 
-      await dispatch('usage:flush', [])
+      await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
 
       expect(mockSendToParent).toHaveBeenCalledWith(expect.objectContaining({
         type: 'usage:report',
@@ -614,6 +614,39 @@ describe('bare dispatch', () => {
       const [, report] = usagePuts[0]
       expect(report.apps).toHaveLength(2)
       expect(report.apps[0]).toEqual({ packageName: 'com.example.chrome', displayName: 'Chrome', todaySeconds: 3600, weekSeconds: 0 })
+    })
+
+    test('returns flushed:false without storing when apps is empty', async () => {
+      const stored = { identity: { publicKey: 'abc123', secretKey: 'secret' } }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', { usage: [] })
+
+      expect(result).toEqual({ flushed: false, reason: 'no data' })
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      expect(usagePuts).toHaveLength(0)
+      const eventCalls = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'usage:report')
+      expect(eventCalls).toHaveLength(0)
+    })
+
+    test('report includes lastSynced timestamp', async () => {
+      const identity = { publicKey: 'abc123', secretKey: 'secret' }
+      const stored = { identity }
+      const mockDb = makeMockDb(stored)
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
+
+      const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
+      const [, report] = usagePuts[0]
+      expect(report).toHaveProperty('lastSynced')
+      expect(typeof report.lastSynced).toBe('number')
+      expect(report.lastSynced).toBe(result.timestamp)
     })
   })
 

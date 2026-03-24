@@ -47,7 +47,11 @@ export default function ChildDetail({ child, onBack, initialTab }) {
       </div>
 
       <div style={styles.content}>
-        <ActiveComponent childPublicKey={child.publicKey} />
+        {TABS.map((tab) => (
+          <div key={tab.key} style={{ display: activeTab === tab.key ? 'block' : 'none' }}>
+            <tab.Component childPublicKey={child.publicKey} />
+          </div>
+        ))}
       </div>
     </div>
   );

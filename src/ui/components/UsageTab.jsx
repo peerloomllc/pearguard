@@ -59,9 +59,12 @@ export default function UsageTab({ childPublicKey }) {
       })
       .catch(() => setLoading(false));
 
-    // Also update when a fresh report arrives over P2P while the tab is open
+    // Also update when a fresh report arrives over P2P while the tab is open.
+    // Only overwrite if the incoming report has actual app data — empty reports
+    // (e.g. from a flush that ran before permissions were granted) should not
+    // wipe out a previously displayed valid report.
     const unsub = window.onBareEvent('usage:report', (data) => {
-      if (data && data.childPublicKey === childPublicKey) {
+      if (data && data.childPublicKey === childPublicKey && data.apps && data.apps.length > 0) {
         setReport(data);
         setLoading(false);
       }
@@ -76,7 +79,7 @@ export default function UsageTab({ childPublicKey }) {
 
   return (
     <div style={styles.container}>
-      <p style={styles.syncLabel}>Last synced: {timeAgo(report.lastSynced)}</p>
+      <p style={styles.syncLabel}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
       {report.apps.map((app) => (
         <UsageBar
           key={app.packageName}

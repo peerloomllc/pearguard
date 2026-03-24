@@ -121,20 +121,14 @@ function createDispatch (ctx) {
         const { pin } = args
         if (!pin || typeof pin !== 'string') throw new Error('invalid pin')
 
-        // Hash the PIN using pwhash (slow by design — runs in worker context)
-        const hash = Buffer.alloc(ctx.sodium.crypto_pwhash_STRBYTES)
-        ctx.sodium.crypto_pwhash_str(
-          hash,
-          Buffer.from(pin),
-          ctx.sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
-          ctx.sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
-        )
-
-        // Strip null-padding bytes — crypto_pwhash_str fills the rest of the buffer
-        // with \0 after the actual hash string. Keeping them corrupts the value when
-        // passed through JNI (Java Modified UTF-8 encodes \0 as 0xC080, not 0x00).
-        const nullIdx = hash.indexOf(0)
-        const hashStr = nullIdx >= 0 ? hash.slice(0, nullIdx).toString() : hash.toString()
+        // Hash the PIN using BLAKE2b (crypto_generichash) — a core libsodium primitive
+        // that is reliably available in all builds including Android/Bare.
+        // crypto_pwhash_str (argon2id) is intentionally NOT used here because its
+        // availability in the Android libsodium build is not guaranteed.
+        const hashBuf = Buffer.alloc(ctx.sodium.crypto_generichash_BYTES)
+        ctx.sodium.crypto_generichash(hashBuf, Buffer.from(pin))
+        const hashStr = hashBuf.toString('hex')
+        if (!hashStr) throw new Error('PIN hashing failed — crypto_generichash returned empty result')
 
         // Store in parent's own policy key
         const raw = await ctx.db.get('policy')
@@ -172,13 +166,11 @@ function createDispatch (ctx) {
         const policy = raw.value  // Hyperbee uses valueEncoding:'json' so raw.value is already parsed
         if (!policy.pinHash) { return { granted: false, reason: 'no-pin' } }
 
-        // crypto_pwhash_str_verify: compares plaintext against stored hash
-        // This is deliberately slow (~100-500ms) — runs in bare worklet (worker context), not main thread
-        const pinBuffer = Buffer.from(pin)
-        // Pad hash back to crypto_pwhash_STRBYTES so sodium-native receives the correct buffer length
-        const storedHash = Buffer.alloc(ctx.sodium.crypto_pwhash_STRBYTES)
-        Buffer.from(policy.pinHash).copy(storedHash)
-        const verified = ctx.sodium.crypto_pwhash_str_verify(storedHash, pinBuffer)
+        // Verify using the same BLAKE2b hash used in pin:set
+        const enteredHashBuf = Buffer.alloc(ctx.sodium.crypto_generichash_BYTES)
+        ctx.sodium.crypto_generichash(enteredHashBuf, Buffer.from(pin))
+        const enteredHash = enteredHashBuf.toString('hex')
+        const verified = enteredHash === policy.pinHash
 
         if (!verified) {
           ctx.send({ type: 'event', event: 'override:denied', data: { packageName, reason: 'wrong-pin' } })

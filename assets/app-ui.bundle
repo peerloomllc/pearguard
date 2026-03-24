@@ -14541,6 +14541,13 @@
         setReport(data);
         setLoading(false);
       }).catch(() => setLoading(false));
+      const unsub = window.onBareEvent("usage:report", (data) => {
+        if (data && data.childPublicKey === childPublicKey) {
+          setReport(data);
+          setLoading(false);
+        }
+      });
+      return unsub;
     }, [childPublicKey]);
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: styles2.msg, children: "Loading usage data..." });
     if (!report || !report.apps || report.apps.length === 0) {
@@ -14804,6 +14811,7 @@
     const [policy, setPolicy] = (0, import_react4.useState)(null);
     const [loading, setLoading] = (0, import_react4.useState)(true);
     const [newRule, setNewRule] = (0, import_react4.useState)(BLANK_RULE);
+    const [submitAttempted, setSubmitAttempted] = (0, import_react4.useState)(false);
     const loadPolicy = (0, import_react4.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
@@ -14823,10 +14831,12 @@
       saveSchedules(schedules2);
     }
     function handleAddRule() {
+      setSubmitAttempted(true);
       if (!newRule.label.trim() || newRule.days.length === 0) return;
       const schedules2 = [...policy.schedules || [], newRule];
       saveSchedules(schedules2);
       setNewRule(BLANK_RULE);
+      setSubmitAttempted(false);
     }
     function toggleDay(dayIndex) {
       const days = newRule.days.includes(dayIndex) ? newRule.days.filter((d) => d !== dayIndex) : [...newRule.days, dayIndex].sort((a, b) => a - b);
@@ -14849,10 +14859,11 @@
               value: newRule.label,
               onChange: (e) => setNewRule({ ...newRule, label: e.target.value }),
               placeholder: "e.g. Bedtime",
-              style: styles4.textInput,
+              style: { ...styles4.textInput, ...submitAttempted && !newRule.label.trim() ? styles4.inputError : {} },
               "aria-label": "Rule label"
             }
-          )
+          ),
+          submitAttempted && !newRule.label.trim() && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.errorMsg, children: "Label is required" })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles4.daysRow, children: DAY_LABELS.map((day, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.dayCheck, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
@@ -14866,6 +14877,7 @@
           ),
           day
         ] }, i)) }),
+        submitAttempted && newRule.days.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.errorMsg, children: "Select at least one day" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.timeRow, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
             "Start",
@@ -14899,7 +14911,6 @@
           {
             style: styles4.addBtn,
             onClick: handleAddRule,
-            disabled: !newRule.label.trim() || newRule.days.length === 0,
             "aria-label": "Add schedule rule",
             children: "Add Rule"
           }
@@ -14958,7 +14969,9 @@
       color: "#fff",
       cursor: "pointer",
       fontSize: "14px"
-    }
+    },
+    inputError: { borderColor: "#ea4335" },
+    errorMsg: { color: "#ea4335", fontSize: "12px", marginTop: "2px" }
   };
 
   // src/ui/components/ContactsTab.jsx
@@ -15371,7 +15384,7 @@
       whiteSpace: "nowrap"
     },
     tabActive: { color: "#1a73e8", borderBottom: "2px solid #1a73e8" },
-    tabInactive: { color: "#666" },
+    tabInactive: { color: "#666", borderBottom: "2px solid transparent" },
     content: { flex: 1, overflowY: "auto" }
   };
 
@@ -15586,12 +15599,19 @@
     (0, import_react11.useEffect)(() => {
       window.callBare("children:list").then(setChildren).catch(() => {
       });
-      const unsub = window.onBareEvent("child:connected", () => {
+      const unsubConnected = window.onBareEvent("child:connected", () => {
         setShowAdd(false);
         window.callBare("children:list").then(setChildren).catch(() => {
         });
       });
-      return unsub;
+      const unsubReconnected = window.onBareEvent("child:reconnected", () => {
+        window.callBare("children:list").then(setChildren).catch(() => {
+        });
+      });
+      return () => {
+        unsubConnected();
+        unsubReconnected();
+      };
     }, []);
     function handleChildConnected() {
       setShowAdd(false);
@@ -15656,10 +15676,11 @@
     const [newPin, setNewPin] = (0, import_react12.useState)("");
     const [confirmPin, setConfirmPin] = (0, import_react12.useState)("");
     const [pinStatus, setPinStatus] = (0, import_react12.useState)(null);
+    const confirmPinRef = (0, import_react12.useRef)(null);
     function handlePinSubmit(e) {
       e.preventDefault();
-      if (newPin.length < 4) {
-        setPinStatus("PIN must be at least 4 digits.");
+      if (newPin.length !== 4) {
+        setPinStatus("PIN must be exactly 4 digits.");
         return;
       }
       if (!/^\d+$/.test(newPin)) {
@@ -15695,11 +15716,13 @@
                 onChange: (e) => {
                   setNewPin(e.target.value);
                   setPinStatus(null);
+                  if (e.target.value.length === 4) confirmPinRef.current?.focus();
                 },
                 placeholder: "e.g. 1234",
                 style: styles12.input,
                 "aria-label": "New PIN",
-                inputMode: "numeric"
+                inputMode: "numeric",
+                maxLength: 4
               }
             )
           ] }),
@@ -15708,6 +15731,7 @@
             /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
               "input",
               {
+                ref: confirmPinRef,
                 type: "text",
                 value: confirmPin,
                 onChange: (e) => {
@@ -15717,7 +15741,8 @@
                 placeholder: "Repeat PIN",
                 style: styles12.input,
                 "aria-label": "Confirm PIN",
-                inputMode: "numeric"
+                inputMode: "numeric",
+                maxLength: 4
               }
             )
           ] }),
@@ -15948,9 +15973,89 @@
     { key: "settings", label: "Settings", Component: Settings },
     { key: "profile", label: "Profile", Component: ParentProfile }
   ];
+  function PinSetupOverlay({ onDone }) {
+    const [pin, setPin] = (0, import_react14.useState)("");
+    const [confirmPin, setConfirmPin] = (0, import_react14.useState)("");
+    const [error, setError] = (0, import_react14.useState)(null);
+    const confirmRef = (0, import_react14.useRef)(null);
+    function handleSubmit(e) {
+      e.preventDefault();
+      if (pin.length !== 4) {
+        setError("PIN must be exactly 4 digits.");
+        return;
+      }
+      if (!/^\d+$/.test(pin)) {
+        setError("PIN must contain only digits.");
+        return;
+      }
+      if (pin !== confirmPin) {
+        setError("PINs do not match.");
+        setConfirmPin("");
+        return;
+      }
+      setError(null);
+      window.callBare("pin:set", { pin }).then(onDone).catch((err) => setError(err.message || "Failed to set PIN. Please try again."));
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.overlay, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.overlayCard, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { style: styles14.overlayTitle, children: "Set Override PIN" }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles14.overlayHint, children: "Children enter this PIN on the block screen to request temporary access." }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("form", { onSubmit: handleSubmit, style: styles14.form, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { style: styles14.label, children: [
+          "Set PIN",
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+            "input",
+            {
+              type: "text",
+              value: pin,
+              onChange: (e) => {
+                setPin(e.target.value);
+                setError(null);
+                if (e.target.value.length === 4) confirmRef.current?.focus();
+              },
+              placeholder: "e.g. 1234",
+              inputMode: "numeric",
+              maxLength: 4,
+              style: styles14.input,
+              "aria-label": "Set PIN"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { style: styles14.label, children: [
+          "Confirm PIN",
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+            "input",
+            {
+              type: "text",
+              ref: confirmRef,
+              value: confirmPin,
+              onChange: (e) => {
+                setConfirmPin(e.target.value);
+                setError(null);
+              },
+              placeholder: "Repeat PIN",
+              inputMode: "numeric",
+              maxLength: 4,
+              style: styles14.input,
+              "aria-label": "Confirm PIN"
+            }
+          )
+        ] }),
+        error && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles14.errorText, role: "alert", children: error }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "submit", style: styles14.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
+      ] })
+    ] }) });
+  }
   function ParentApp() {
     const [activeTab, setActiveTab] = (0, import_react14.useState)("dashboard");
     const [pairedName, setPairedName] = (0, import_react14.useState)(null);
+    const [pinCheckState, setPinCheckState] = (0, import_react14.useState)("loading");
+    (0, import_react14.useEffect)(() => {
+      function checkPin() {
+        window.callBare("pin:isSet", {}).then(({ isSet }) => setPinCheckState(isSet ? "done" : "needed")).catch(() => setPinCheckState("needed"));
+      }
+      checkPin();
+      return window.onBareEvent("ready", checkPin);
+    }, []);
     (0, import_react14.useEffect)(() => {
       const unsub = window.onBareEvent("child:connected", (data) => {
         setPairedName(data?.displayName || "Child");
@@ -15961,6 +16066,12 @@
       });
       return unsub;
     }, []);
+    if (pinCheckState === "loading") {
+      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.checking, children: "Checking..." });
+    }
+    if (pinCheckState === "needed") {
+      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PinSetupOverlay, { onDone: () => setPinCheckState("done") });
+    }
     const active = TABS2.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
     return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.container, children: [
@@ -15994,6 +16105,51 @@
       fontFamily: "sans-serif",
       backgroundColor: "#fff"
     },
+    checking: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#888", fontSize: "14px" },
+    overlay: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "#111",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px"
+    },
+    overlayCard: {
+      backgroundColor: "#1a1a1a",
+      borderRadius: "16px",
+      padding: "32px",
+      width: "100%",
+      maxWidth: "360px",
+      border: "1px solid #333"
+    },
+    overlayTitle: { color: "#fff", fontSize: "22px", fontWeight: "700", marginBottom: "8px" },
+    overlayHint: { color: "#888", fontSize: "13px", marginBottom: "24px" },
+    form: { display: "flex", flexDirection: "column", gap: "16px" },
+    label: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "14px", color: "#aaa" },
+    input: {
+      padding: "12px",
+      border: "1px solid #444",
+      borderRadius: "8px",
+      fontSize: "16px",
+      marginTop: "4px",
+      backgroundColor: "#222",
+      color: "#fff"
+    },
+    errorText: { color: "#ea4335", fontSize: "13px", margin: 0 },
+    submitBtn: {
+      padding: "14px",
+      border: "none",
+      borderRadius: "8px",
+      backgroundColor: "#6FCF97",
+      color: "#111",
+      cursor: "pointer",
+      fontSize: "16px",
+      fontWeight: "700"
+    },
     banner: {
       backgroundColor: "#e6f4ea",
       color: "#1e7e34",
@@ -16004,15 +16160,8 @@
       textAlign: "center",
       flexShrink: 0
     },
-    content: {
-      flex: 1,
-      overflowY: "auto"
-    },
-    tabBar: {
-      display: "flex",
-      borderTop: "1px solid #ddd",
-      backgroundColor: "#fff"
-    },
+    content: { flex: 1, overflowY: "auto" },
+    tabBar: { display: "flex", borderTop: "1px solid #ddd", backgroundColor: "#fff" },
     tabButton: {
       flex: 1,
       padding: "12px 0",
@@ -16022,13 +16171,8 @@
       fontSize: "14px",
       fontWeight: "500"
     },
-    tabActive: {
-      color: "#1a73e8",
-      borderTop: "2px solid #1a73e8"
-    },
-    tabInactive: {
-      color: "#666"
-    }
+    tabActive: { color: "#1a73e8", borderTop: "2px solid #1a73e8" },
+    tabInactive: { color: "#666" }
   };
 
   // src/ui/components/ChildApp.jsx
@@ -16214,6 +16358,12 @@
   function ChildApp() {
     const [activeTab, setActiveTab] = (0, import_react17.useState)("home");
     const ActiveComponent = TABS3.find((t) => t.id === activeTab).Component;
+    (0, import_react17.useEffect)(() => {
+      const unsub = window.onBareEvent("navigate:child:requests", () => {
+        setActiveTab("requests");
+      });
+      return unsub;
+    }, []);
     return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ActiveComponent, {}) }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
@@ -16256,7 +16406,11 @@
   function App() {
     const [mode, setMode] = (0, import_react18.useState)(void 0);
     (0, import_react18.useEffect)(() => {
-      window.callBare("identity:getMode").then(({ mode: mode2 }) => setMode(mode2)).catch(() => setMode(null));
+      function fetchMode() {
+        window.callBare("identity:getMode").then(({ mode: mode2 }) => setMode(mode2)).catch(() => setMode(null));
+      }
+      fetchMode();
+      return window.onBareEvent("ready", fetchMode);
     }, []);
     if (mode === void 0) {
       return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles15.center, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { children: "Loading..." }) });

@@ -232,17 +232,12 @@ describe('bare dispatch', () => {
   })
 
   describe('pin:verify', () => {
-    // pwhash is intentionally slow (~300ms) — generate once and reuse across all test cases
+    // Generate the BLAKE2b hash used by pin:set/pin:verify
     let pinHash
 
     beforeAll(() => {
-      pinHash = Buffer.alloc(sodium.crypto_pwhash_STRBYTES)
-      sodium.crypto_pwhash_str(
-        pinHash,
-        Buffer.from('1234'),
-        sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
-        sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
-      )
+      pinHash = Buffer.alloc(sodium.crypto_generichash_BYTES)
+      sodium.crypto_generichash(pinHash, Buffer.from('1234'))
     })
 
     function makeMockDb (stored = {}) {
@@ -257,7 +252,7 @@ describe('bare dispatch', () => {
       const policyObj = {
         version: 1,
         childPublicKey: 'abc',
-        pinHash: pinHash.toString(),
+        pinHash: pinHash.toString('hex'),
         overrideDurationSeconds: 600,
       }
       const stored = { policy: policyObj }
@@ -296,7 +291,7 @@ describe('bare dispatch', () => {
       const policyObj = {
         version: 1,
         childPublicKey: 'abc',
-        pinHash: pinHash.toString(),
+        pinHash: pinHash.toString('hex'),
       }
       const stored = { policy: policyObj }
       const mockDb = makeMockDb(stored)
@@ -347,17 +342,12 @@ describe('bare dispatch', () => {
   })
 
   describe('pin:set', () => {
-    // pwhash is intentionally slow (~300ms) — generate once and reuse across all test cases
+    // Pre-compute expected BLAKE2b hash for PIN '5678'
     let pinHash
 
     beforeAll(() => {
-      pinHash = Buffer.alloc(sodium.crypto_pwhash_STRBYTES)
-      sodium.crypto_pwhash_str(
-        pinHash,
-        Buffer.from('5678'),
-        sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
-        sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE
-      )
+      pinHash = Buffer.alloc(sodium.crypto_generichash_BYTES)
+      sodium.crypto_generichash(pinHash, Buffer.from('5678'))
     })
 
     function makeMockDb (stored = {}) {
@@ -390,16 +380,10 @@ describe('bare dispatch', () => {
         pinHash: expect.any(String),
       }))
 
-      // The stored pinHash should be non-empty
+      // The stored pinHash should be the expected BLAKE2b hex string
       const savedPolicy = mockDb.put.mock.calls.find(([k]) => k === 'policy')[1]
       expect(savedPolicy.pinHash.length).toBeGreaterThan(0)
-
-      // The stored hash should verify correctly against the original PIN.
-      // Pad back to crypto_pwhash_STRBYTES since sodium-native requires the full buffer.
-      const padded = Buffer.alloc(sodium.crypto_pwhash_STRBYTES)
-      Buffer.from(savedPolicy.pinHash).copy(padded)
-      const verifyResult = sodium.crypto_pwhash_str_verify(padded, Buffer.from('5678'))
-      expect(verifyResult).toBe(true)
+      expect(savedPolicy.pinHash).toBe(pinHash.toString('hex'))
     })
 
     test('pin:set merges pinHash into existing policy without overwriting other fields', async () => {

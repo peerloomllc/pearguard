@@ -814,7 +814,7 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
   const newApps = []
   for (const { packageName, appName } of apps) {
     if (!policy.apps[packageName]) {
-      policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: batchAddedAt }
+      policy.apps[packageName] = { status: isFirstSync ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt }
       newApps.push({ packageName, appName: appName || packageName })
       newCount++
     }
@@ -824,19 +824,18 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
     policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
-    // On first sync (no prior policy), suppress per-app alert entries and
-    // app:installed events — the flood of notifications at initial pairing
-    // is noise. Only incremental syncs (new installs after pairing) notify.
-    if (!isFirstSync) {
-      // Push updated policy to child so overlay fires for newly discovered apps
-      if (sendToPeer) {
-        try {
-          const peerRec = await db.get('peers:' + childPublicKey).catch(() => null)
-          const noiseKey = peerRec && peerRec.value && peerRec.value.noiseKey
-          if (noiseKey) sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
-        } catch (_e) {}
-      }
+    // Push policy to child on every sync (first AND incremental) so the child
+    // immediately receives the allowed/pending status for new apps.
+    if (sendToPeer) {
+      try {
+        const peerRec = await db.get('peers:' + childPublicKey).catch(() => null)
+        const noiseKey = peerRec && peerRec.value && peerRec.value.noiseKey
+        if (noiseKey) sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+      } catch (_e) {}
+    }
 
+    // On first sync only suppress per-app alert entries and app:installed events.
+    if (!isFirstSync) {
       for (const { packageName, appName } of newApps) {
         const now = Date.now()
         const alertEntry = {

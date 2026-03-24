@@ -1675,27 +1675,35 @@ describe('bare dispatch', () => {
       }
     }
 
-    test('first sync: saves policy but suppresses app:installed events and alert entries', async () => {
-      const mockDb = makeMockDb({}) // no prior policy
+    test('first sync: apps get status allowed, policy:update sent to child, events suppressed', async () => {
+      const mockDb = makeMockDb({ 'peers:childpk1': { noiseKey: 'noise-abc' } }) // no prior policy
       const mockSend = jest.fn()
+      const mockSendToPeer = jest.fn()
 
       await handleIncomingAppsSync(
         { apps: [{ packageName: 'com.example.app', appName: 'Example' }] },
-        'childpk1', mockDb, mockSend
+        'childpk1', mockDb, mockSend, mockSendToPeer
       )
 
-      // Policy should be written
-      expect(mockDb.put).toHaveBeenCalledWith('policy:childpk1', expect.objectContaining({ apps: expect.any(Object) }))
+      // Policy written with status 'allowed' (not 'pending')
+      expect(mockDb.put).toHaveBeenCalledWith('policy:childpk1', expect.objectContaining({
+        apps: expect.objectContaining({
+          'com.example.app': expect.objectContaining({ status: 'allowed' }),
+        }),
+      }))
 
-      // No alert: entries written
+      // Policy pushed to child on first sync
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({ type: 'policy:update' }))
+
+      // Alert entries suppressed
       const alertPuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('alert:'))
       expect(alertPuts).toHaveLength(0)
 
-      // No app:installed events emitted
+      // app:installed events suppressed
       const appInstalledEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
       expect(appInstalledEvents).toHaveLength(0)
 
-      // apps:synced should still fire so the UI refreshes
+      // apps:synced still fires
       const syncedEvents = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'apps:synced')
       expect(syncedEvents).toHaveLength(1)
     })

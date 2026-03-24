@@ -222,7 +222,7 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'request:submitted', data: request })
 
         if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'time:request', payload: { requestId, packageName, requestedAt: request.requestedAt } })
+          await ctx.sendToParent({ type: 'time:request', payload: { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt } })
         }
 
         return { requestId, status: 'pending' }
@@ -874,7 +874,7 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
  * Runs on the PARENT device.
  */
 async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
-  const { requestId, packageName, requestedAt } = payload
+  const { requestId, packageName, appName: payloadAppName, requestedAt } = payload
   if (!requestId || !packageName) {
     console.warn('[bare] time:request from child: missing fields')
     return
@@ -885,13 +885,14 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
   const existing = await db.get('request:' + requestId).catch(() => null)
   if (existing) return
 
-  // Look up child display name and app name for notification
+  // Look up child display name; prefer app name from payload (sent by child) over policy cache
   const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
   const childDisplayName = peerRecord ? (peerRecord.value.displayName || 'Child') : 'Child'
   const childPolicyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
-  const appName = childPolicyRaw && childPolicyRaw.value.apps && childPolicyRaw.value.apps[packageName]
-    ? (childPolicyRaw.value.apps[packageName].appName || packageName)
-    : packageName
+  const policyAppName = childPolicyRaw && childPolicyRaw.value.apps && childPolicyRaw.value.apps[packageName]
+    ? childPolicyRaw.value.apps[packageName].appName
+    : null
+  const appName = payloadAppName || policyAppName || packageName
 
   const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', childPublicKey, childDisplayName }
   await db.put('request:' + requestId, request)

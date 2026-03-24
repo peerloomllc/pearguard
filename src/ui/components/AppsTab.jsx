@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
+const ICON_COLORS = ['#4285f4','#ea4335','#fbbc05','#34a853','#ff6d00','#46bdc6','#7b1fa2','#c62828'];
+
+function getInitials(name) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+}
+
+function getIconColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
+}
+
 function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
   const [limitInput, setLimitInput] = useState(
     appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ''
@@ -34,6 +46,23 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
   return (
     <div style={styles.appRow}>
       <div style={styles.appInfo}>
+        {appData.iconBase64 ? (
+          <img
+            src={`data:image/png;base64,${appData.iconBase64}`}
+            alt={`${appData.appName || packageName} icon`}
+            style={styles.appIcon}
+          />
+        ) : (
+          <div
+            style={{
+              ...styles.initialsCircle,
+              backgroundColor: getIconColor(appData.appName || packageName),
+            }}
+            aria-hidden="true"
+          >
+            {getInitials(appData.appName || packageName)}
+          </div>
+        )}
         <div style={styles.appNameBlock}>
           <span style={styles.appName}>{appData.appName || packageName}</span>
           {appData.appName && <span style={styles.pkgName}>{packageName}</span>}
@@ -176,6 +205,25 @@ const styles = {
     gap: '8px',
   },
   appInfo: { display: 'flex', alignItems: 'center', gap: '8px' },
+  appIcon: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '8px',
+    objectFit: 'contain',
+    flexShrink: 0,
+  },
+  initialsCircle: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '700',
+    flexShrink: 0,
+  },
   appNameBlock: { display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 },
   appName: { fontSize: '14px', color: '#111', fontWeight: '500' },
   pkgName: { fontSize: '11px', fontFamily: 'monospace', color: '#888' },

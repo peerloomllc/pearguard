@@ -4,7 +4,7 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const BLANK_RULE = { label: '', days: [], start: '21:00', end: '07:00' };
 
-function RuleRow({ rule, onDelete }) {
+function RuleRow({ rule, onEdit, onDelete }) {
   const activeDays = DAY_LABELS.filter((_, i) => rule.days.includes(i)).join(', ');
   return (
     <div style={styles.ruleRow}>
@@ -14,6 +14,9 @@ function RuleRow({ rule, onDelete }) {
           {activeDays || 'No days'} • {rule.start}–{rule.end}
         </span>
       </div>
+      <button style={styles.editBtn} onClick={onEdit} aria-label={`Edit rule ${rule.label}`}>
+        Edit
+      </button>
       <button style={styles.deleteBtn} onClick={onDelete} aria-label={`Delete rule ${rule.label}`}>
         Delete
       </button>
@@ -25,6 +28,7 @@ export default function ScheduleTab({ childPublicKey }) {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newRule, setNewRule] = useState(BLANK_RULE);
+  const [editingIndex, setEditingIndex] = useState(null);
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const loadPolicy = useCallback(() => {
@@ -46,12 +50,30 @@ export default function ScheduleTab({ childPublicKey }) {
     saveSchedules(schedules);
   }
 
-  function handleAddRule() {
+  function handleEditRule(index) {
+    setEditingIndex(index);
+    setNewRule({ ...policy.schedules[index] });
+    setSubmitAttempted(false);
+  }
+
+  function handleCancelEdit() {
+    setEditingIndex(null);
+    setNewRule(BLANK_RULE);
+    setSubmitAttempted(false);
+  }
+
+  function handleSaveRule() {
     setSubmitAttempted(true);
     if (!newRule.label.trim() || newRule.days.length === 0) return;
-    const schedules = [...(policy.schedules || []), newRule];
+    let schedules;
+    if (editingIndex !== null) {
+      schedules = policy.schedules.map((r, i) => i === editingIndex ? newRule : r);
+    } else {
+      schedules = [...(policy.schedules || []), newRule];
+    }
     saveSchedules(schedules);
     setNewRule(BLANK_RULE);
+    setEditingIndex(null);
     setSubmitAttempted(false);
   }
 
@@ -71,10 +93,10 @@ export default function ScheduleTab({ childPublicKey }) {
       <h3 style={styles.sectionHead}>Active Rules</h3>
       {schedules.length === 0 && <p style={styles.empty}>No schedule rules yet.</p>}
       {schedules.map((rule, i) => (
-        <RuleRow key={i} rule={rule} onDelete={() => handleDeleteRule(i)} />
+        <RuleRow key={i} rule={rule} onEdit={() => handleEditRule(i)} onDelete={() => handleDeleteRule(i)} />
       ))}
 
-      <h3 style={{ ...styles.sectionHead, marginTop: '24px' }}>Add Rule</h3>
+      <h3 style={{ ...styles.sectionHead, marginTop: '24px' }}>{editingIndex !== null ? 'Edit Rule' : 'Add Rule'}</h3>
       <div style={styles.form}>
         <label style={styles.formLabel}>
           Label
@@ -131,13 +153,20 @@ export default function ScheduleTab({ childPublicKey }) {
           </label>
         </div>
 
-        <button
-          style={styles.addBtn}
-          onClick={handleAddRule}
-          aria-label="Add schedule rule"
-        >
-          Add Rule
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            style={styles.addBtn}
+            onClick={handleSaveRule}
+            aria-label={editingIndex !== null ? 'Save schedule rule' : 'Add schedule rule'}
+          >
+            {editingIndex !== null ? 'Save Changes' : 'Add Rule'}
+          </button>
+          {editingIndex !== null && (
+            <button style={styles.cancelBtn} onClick={handleCancelEdit} aria-label="Cancel edit">
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -155,9 +184,17 @@ const styles = {
   ruleInfo: { flex: 1 },
   ruleLabel: { fontSize: '14px', fontWeight: '600', display: 'block' },
   ruleDetails: { fontSize: '12px', color: '#666' },
+  editBtn: {
+    padding: '5px 12px', border: '1px solid #1a73e8', borderRadius: '6px',
+    color: '#1a73e8', background: '#fff', cursor: 'pointer', fontSize: '12px',
+  },
   deleteBtn: {
     padding: '5px 12px', border: '1px solid #ea4335', borderRadius: '6px',
     color: '#ea4335', background: '#fff', cursor: 'pointer', fontSize: '12px',
+  },
+  cancelBtn: {
+    padding: '10px', border: '1px solid #ccc', borderRadius: '6px',
+    background: '#fff', cursor: 'pointer', fontSize: '14px', color: '#555',
   },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   formLabel: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', color: '#555' },

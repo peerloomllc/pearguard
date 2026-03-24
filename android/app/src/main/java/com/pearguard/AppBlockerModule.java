@@ -217,6 +217,12 @@ public class AppBlockerModule extends AccessibilityService {
             return null; // P2P override is active, allow
         }
 
+        // System services with no launcher icon (e.g. Google Play Services, SystemUI) must
+        // never be blocked — they are invisible to the user and required for device operation.
+        if (isSystemOverlayPackage(packageName)) {
+            return null;
+        }
+
         // Phone/messaging apps with contact exceptions: skip all block checks
         if (isPhoneOrMessagingApp(packageName)) {
             return null;

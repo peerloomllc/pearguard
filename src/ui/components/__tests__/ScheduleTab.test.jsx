@@ -62,10 +62,17 @@ test('add rule form updates list and calls policy:update', async () => {
   });
 });
 
-test('Add Rule button is disabled when no label or no days selected', async () => {
+test('Add Rule button shows validation errors when label or days are missing', async () => {
   render(<ScheduleTab childPublicKey="pk1" />);
   await waitFor(() => screen.getByLabelText('Add schedule rule'));
-  expect(screen.getByLabelText('Add schedule rule')).toBeDisabled();
+
+  // Button should be enabled (errors shown on tap, not via disabled)
+  expect(screen.getByLabelText('Add schedule rule')).not.toBeDisabled();
+
+  // Tap with empty label and no days — should show both error messages
+  fireEvent.click(screen.getByLabelText('Add schedule rule'));
+  expect(screen.getByText('Label is required')).toBeInTheDocument();
+  expect(screen.getByText('Select at least one day')).toBeInTheDocument();
 });
 
 test('clears form after adding a rule', async () => {

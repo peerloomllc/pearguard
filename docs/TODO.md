@@ -99,11 +99,8 @@ When the child uses the swipe-up-from-bottom gesture (Android navigation), the o
 - **Investigate**: What package name does the TYPE_WINDOW_STATE_CHANGED event carry during a swipe-up gesture? Likely the launcher/gesture nav overlay.
 - **Fix candidate**: Ignore events from known system gesture/nav packages, or add a short debounce (e.g. 150ms) before showing the overlay so rapid show→dismiss sequences are coalesced.
 
-### [ ] 19. Overlay: auto-dismiss when conditions are no longer met
-Currently the overlay only disappears when the user taps a button or navigates away. If the parent approves the app (policy update arrives over P2P), the overlay should auto-dismiss.
-
-- **How**: When `policy:updated` or `override:granted` event arrives in RN while an overlay is showing for that package, emit a native event (e.g. `onOverridGranted`) to `AppBlockerModule` to call `dismissOverlay()`.
-- Alternatively: re-evaluate `getBlockReason` for `currentOverlayPackage` on every policy update.
+### [x] 19. Overlay: auto-dismiss when conditions are no longer met — 2026-03-23
+Already implemented: `app/index.tsx` `native:setPolicy` handler parses the policy JSON and calls `NativeModules.UsageStatsModule.dismissOverlayForPackage(pkg)` for every app with `status: 'allowed'`. `native:grantOverride` also calls `dismissOverlayForPackage` directly.
 
 ### [ ] 20. Failsafe: unpair / deactivate all restrictions at once
 A safety valve for when the parent-child relationship needs to be reset or in an emergency.
@@ -119,11 +116,8 @@ Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete the
 - **Manual clear**: "Clear all resolved requests" button in child's My Requests tab.
 - **Where**: `src/ui/components/ChildRequests.jsx` + `bare-dispatch.js` `requests:list` / new `requests:clear` method
 
-### [ ] 22. Bug: Requests showing Pending even after approval (New Request button path)
-Requests created via the "New Request" button (not from the overlay block) may stay Pending even after the parent approves the app. The `handleAppDecision` fix in this session should address the P2P path, but needs verification. May be worth removing the standalone "New Request" button entirely and only allowing requests from the overlay.
-
-- **Test**: approve an app on parent → check child's Requests list updates to Approved
-- **Potential simplification**: remove the "New Request" button; requests should only originate from the overlay so the blocked state is always the trigger
+### [x] 22. Bug: Requests showing Pending even after approval — 2026-03-23
+Root cause: `handlePolicyUpdate` (child side) updated the policy but did not sync pending `req:*` entries. When the parent was offline during child's approval or reconnect pushed a `policy:update`, pending requests stayed Pending. Fix: `handlePolicyUpdate` now scans `req:*` entries and updates any pending ones where the app is now `allowed`/`blocked`, emitting `request:updated` so `ChildRequests` refreshes.
 
 ### [ ] 23. Bug: PearGuard force-close stops enforcement
 If the child force-closes PearGuard, the Accessibility Service (which is hosted in the same process) also stops. Enforcement silently ceases.
@@ -143,12 +137,8 @@ After initial pairing, if the child or parent changes their display name in Prof
 
 ## Added 2026-03-21
 
-### [ ] 26. Remove uninstalled apps from parent's Apps list
-When a child uninstalls an app, it remains in the parent's Apps tab indefinitely. The parent needs a way to clear stale entries.
-
-- **Detect uninstall**: `PackageMonitorModule` already listens for `ACTION_PACKAGE_REMOVED`; relay an `app:uninstalled` P2P message to the parent when triggered
-- **Parent side**: `handleIncomingAppUninstalled` in `bare-dispatch.js` removes the package from the child's policy and emits `apps:synced` to refresh the UI
-- **Where**: `src/bare-dispatch.js`, `android/.../PackageMonitorModule.java`, `app/index.tsx`
+### [x] 26. Remove uninstalled apps from parent's Apps list — 2026-03-23
+Already fully implemented: `PackageMonitorModule` fires `onAppUninstalled` event → `index.tsx` forwards to worklet → `bare-dispatch.js` `app:uninstalled` removes from child policy and calls `sendToParent` with `app:uninstalled` P2P → parent's `handleIncomingAppUninstalled` deletes from `policy:{childPublicKey}.apps` and emits `app:uninstalled` event. `index.tsx` shows `showAppUninstalledNotification` on parent.
 
 ### [ ] 27. Alphabetize Apps list; add sort option
 The Apps tab has no defined order, making it hard to find apps on a real device with many entries.
@@ -159,11 +149,8 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 
 ## Added 2026-03-22
 
-### [ ] 31. Parent setup: require override PIN before first use
-Before the parent device becomes operational, force the parent to set an override PIN. Without a PIN, the child can never request access to a blocked app, making enforcement useless.
-
-- **Where**: `app/setup.tsx` — add a PIN-entry step after mode selection; do not proceed until a valid PIN is saved via `pin:set`
-- **Related**: TODO #1 (force profile name at setup) — these could be combined into a single setup wizard step
+### [x] 31. Parent setup: require override PIN before first use — 2026-03-23
+Two gates added. Gate 1 (`app/setup.tsx`): after tapping "I'm a Parent", a PIN setup step is shown inline before navigating to the dashboard. Gate 2 (`src/ui/components/ParentApp.jsx`): on mount, checks `pin:isSet`; if false, renders a full-screen PIN overlay until a valid PIN is saved. New `pin:isSet` bare dispatch method reads parent's own `'policy'` key. All PIN inputs restricted to exactly 4 digits with auto-focus from entry to confirm field on 4th digit. Same 4-digit restriction and auto-focus applied to `Settings.jsx`.
 
 ### [ ] 32. Parent-initiated unpair / remote deactivation of child
 The parent should be able to sever the pairing from their side, which should remotely deactivate PearGuard enforcement on the child device.
@@ -183,13 +170,8 @@ Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear 
 ### [x] 29. Bug: Initial pairing should not send "app installed" notifications to parent — 2026-03-22
 `handleIncomingAppsSync` now checks `raw` (the existing policy record) before processing: if null it's the first sync, so alert entries and `app:installed` events are suppressed. `apps:synced` still fires so the Apps tab refreshes. Incremental syncs (reconnects after initial pairing) continue to notify for genuinely new installs.
 
-### [ ] 30. Design decision: default policy for apps discovered at initial pairing
-When a child pairs for the first time, all installed apps arrive via `apps:sync`. Currently they all default to `status: 'pending'`. Consider whether the right default is:
-
-- **Approve all** (allow everything until parent actively blocks) — less friction, easier onboarding
-- **Deny all** (block everything until parent reviews) — more secure, but child can't use their device until parent approves
-- **Keep pending** (current) — overlay fires for every app the child tries to open until parent decides; worst UX
-- **Where**: `handleIncomingAppsSync` and `handleIncomingAppInstalled` default status; may also want a prompt in the parent UI at first-pairing time
+### [x] 30. Default policy for apps discovered at initial pairing — 2026-03-23
+`handleIncomingAppsSync`: when `isFirstSync` is true, apps now default to `status: 'allowed'` instead of `'pending'`. `sendToPeer` (policy push to child) moved outside the `!isFirstSync` guard so it fires unconditionally on every sync, ensuring the child receives the allowed policy immediately at first pairing. Post-pairing installs still default to `pending`.
 
 ### [x] 33. Bug: Selected tab highlight remains after navigating away from ChildDetail — 2026-03-22
 Root cause: `tabInactive` style had no `borderBottom` key, so React never removed the active `borderBottom` when a tab switched from active to inactive within a render cycle. Fixed by adding `borderBottom: '2px solid transparent'` to `tabInactive` so React explicitly clears the highlight. `initialTab` reset in Dashboard `onBack` was already correct.
@@ -211,16 +193,14 @@ When the child sends a message while the parent app is backgrounded, Android dro
 - **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
 - **Where**: `app/index.tsx`, new foreground service, or FCM integration
 
-### [ ] 40. Tapping "app installed" notification on parent should deep-link to Apps tab
+### [x] 40. Tapping "app installed" notification on parent should deep-link to Apps tab — 2026-03-23
 Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.
 
 - **Where**: `android/.../UsageStatsModule.java` `showAppInstalledNotification` — build a `pear://pearguard/alerts?childPublicKey=X&tab=apps` PendingIntent (mirrors the existing alerts deep link pattern)
 - `app/index.tsx` and `src/ui/components/ChildDetail.jsx` already support the `tab` param, so no UI changes needed
 
-### [ ] 38. Bug: Usage tab not populating any data
-The Usage tab in ChildDetail shows no screen time data.
-
-- **Investigate**: Verify `UsageStatsModule.getTodayScreenTime` is returning data; check that `usage:report` events are being emitted and received by the parent; confirm `UsageTab.jsx` is reading the right data shape
+### [x] 38. Bug: Usage tab not populating any data — 2026-03-23
+Two bugs: (1) `usage:flush` in `bare-dispatch.js` ignored `args.usage` (native data passed from `index.tsx` → `getDailyUsageAll()`) and always sent `usageStats: {}`; fixed to map native array into `report.apps`. (2) `usage:getLatest` didn't exist; added handler that reads latest `usageReport:{childPublicKey}:*` entry from Hyperbee via `createReadStream({ reverse: true, limit: 1 })`.
 - **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
 
 ### [ ] 39. Schedules and Time Limits need to work together properly
@@ -229,6 +209,30 @@ Time-limit enforcement and scheduled block windows should interoperate correctly
 - **Investigate**: How `EnforcementService` and `AppBlockerModule` currently prioritize policy fields (`schedule`, `dailyLimitSeconds`, active overrides)
 - **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
 - **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
+
+### [x] 42. Bug: Usage tab data disappears after leaving and returning to the app — 2026-03-23
+Usage stats were visible, but after backgrounding the app and returning the Usage tab showed empty again. The `usageReport:{childPublicKey}:{timestamp}` entries may be getting lost across app restarts, or `usage:getLatest` is not finding them on re-mount.
+
+- **Investigate**: Confirm `usageReport:*` keys are persisted in Hyperbee across app restarts (not just in-memory); check if the bare worklet re-initializes and clears state on foreground
+- **Also check**: `UsageTab` calls `usage:getLatest` on mount — verify the query range `gt/lt` matches the actual stored keys
+
+### [x] 41. System apps must be exempt from policies and filtered from Usage report — 2026-03-23
+`AppBlockerModule.java` `getBlockReason` now calls `isSystemOverlayPackage` at the top to exempt system services with no launcher icon. `UsageStatsModule.java` `getDailyUsageAll` now builds a launcher-package set and skips any app not in it.
+
+### [ ] 43. UX: Schedule rule form should show validation error when Label is empty
+Currently the form silently refuses to save without a label — there is no feedback to the user.
+
+- **Where**: `src/ui/components/ScheduleTab.jsx` — show an inline error message (e.g. "Label is required") when the user tries to save without filling in the label field
+
+### [ ] 44. Child: warn at 10 and 5 minutes before a schedule restriction starts
+Give the child advance notice before a schedule block kicks in so they can save their work.
+
+- **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
+
+### [ ] 45. Parent: ability to edit existing schedule rules
+Schedule rules can currently be added and deleted but not edited in place.
+
+- **Where**: `src/ui/components/ScheduleTab.jsx` — add an Edit button per rule that populates the form fields with the rule's current values; saving replaces the existing rule
 
 ## Known Limitations
 

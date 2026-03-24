@@ -14594,6 +14594,15 @@
   // src/ui/components/AppsTab.jsx
   var import_react3 = __toESM(require_react());
   var import_jsx_runtime3 = __toESM(require_jsx_runtime());
+  var ICON_COLORS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853", "#ff6d00", "#46bdc6", "#7b1fa2", "#c62828"];
+  function getInitials(name) {
+    return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+  }
+  function getIconColor(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
+  }
   function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
     const [limitInput, setLimitInput] = (0, import_react3.useState)(
       appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ""
@@ -14618,14 +14627,34 @@
     const isPending = appData.status === "pending";
     const addedDate = appData.addedAt ? new Date(appData.addedAt).toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }) : null;
     return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appRow, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.appInfo, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appNameBlock, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.appName, children: appData.appName || packageName }),
-        appData.appName && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName }),
-        addedDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: styles3.addedDate, children: [
-          "Added ",
-          addedDate
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appInfo, children: [
+        appData.iconBase64 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "img",
+          {
+            src: `data:image/png;base64,${appData.iconBase64}`,
+            alt: `${appData.appName || packageName} icon`,
+            style: styles3.appIcon
+          }
+        ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "div",
+          {
+            style: {
+              ...styles3.initialsCircle,
+              backgroundColor: getIconColor(appData.appName || packageName)
+            },
+            "aria-hidden": "true",
+            children: getInitials(appData.appName || packageName)
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appNameBlock, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.appName, children: appData.appName || packageName }),
+          appData.appName && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName }),
+          addedDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: styles3.addedDate, children: [
+            "Added ",
+            addedDate
+          ] })
         ] })
-      ] }) }),
+      ] }),
       isPending ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.actions, children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.approveBtn, onClick: handleApprove, "aria-label": `Approve ${appData.appName || packageName}`, children: "Approve" }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.denyBtn, onClick: handleDeny, "aria-label": `Deny ${appData.appName || packageName}`, children: "Deny" })
@@ -14757,6 +14786,25 @@
       gap: "8px"
     },
     appInfo: { display: "flex", alignItems: "center", gap: "8px" },
+    appIcon: {
+      width: "40px",
+      height: "40px",
+      borderRadius: "8px",
+      objectFit: "contain",
+      flexShrink: 0
+    },
+    initialsCircle: {
+      width: "40px",
+      height: "40px",
+      borderRadius: "8px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "#fff",
+      fontSize: "14px",
+      fontWeight: "700",
+      flexShrink: 0
+    },
     appNameBlock: { display: "flex", flexDirection: "column", gap: "2px", flex: 1 },
     appName: { fontSize: "14px", color: "#111", fontWeight: "500" },
     pkgName: { fontSize: "11px", fontFamily: "monospace", color: "#888" },
@@ -15785,7 +15833,7 @@
   // src/ui/components/Profile.jsx
   var import_react13 = __toESM(require_react());
   var import_jsx_runtime13 = __toESM(require_jsx_runtime());
-  function getInitials(name) {
+  function getInitials2(name) {
     return name.trim() ? name.trim().split(/\s+/).map((w) => w[0].toUpperCase()).slice(0, 2).join("") : "?";
   }
   function Profile({ mode }) {
@@ -15859,7 +15907,7 @@
     const unchanged = name.trim() === savedName || !name.trim();
     return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.container, children: [
       /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: styles13.heading, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatar, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.initials, children: getInitials(savedName) }) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatar, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.initials, children: getInitials2(savedName) }) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.field, children: [
         /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { style: styles13.label, children: [
           label,

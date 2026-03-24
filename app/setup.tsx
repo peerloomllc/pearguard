@@ -6,7 +6,7 @@
 // Parent path: calls setMode then shows PIN setup step before navigating to /.
 // Child path: calls setMode then navigates directly to /child-setup.
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from 'react-native'
 import { useRouter } from 'expo-router'
 
@@ -25,6 +25,7 @@ export default function SetupScreen () {
   const [error, setError]         = useState<string | null>(null)
   const [pin, setPin]             = useState('')
   const [confirmPin, setConfirmPin] = useState('')
+  const confirmPinRef             = useRef<TextInput>(null)
   const router = useRouter()
 
   async function selectMode (mode: 'parent' | 'child') {
@@ -46,7 +47,7 @@ export default function SetupScreen () {
 
   async function handleSetPin () {
     if (!_callBare) return
-    if (pin.length < 4) { setError('PIN must be at least 4 digits.'); return }
+    if (pin.length !== 4) { setError('PIN must be exactly 4 digits.'); return }
     if (!/^\d+$/.test(pin)) { setError('PIN must contain only digits.'); return }
     if (pin !== confirmPin) { setError('PINs do not match.'); setConfirmPin(''); return }
     setError(null)
@@ -79,21 +80,26 @@ export default function SetupScreen () {
             <TextInput
               style={styles.input}
               value={pin}
-              onChangeText={(v) => { setPin(v); setError(null) }}
+              onChangeText={(v) => {
+                setPin(v);
+                setError(null);
+                if (v.length === 4) confirmPinRef.current?.focus();
+              }}
               placeholder="e.g. 1234"
               keyboardType="numeric"
               secureTextEntry
-              maxLength={12}
+              maxLength={4}
             />
             <Text style={styles.label}>Confirm PIN</Text>
             <TextInput
+              ref={confirmPinRef}
               style={styles.input}
               value={confirmPin}
               onChangeText={(v) => { setConfirmPin(v); setError(null) }}
               placeholder="Repeat PIN"
               keyboardType="numeric"
               secureTextEntry
-              maxLength={12}
+              maxLength={4}
             />
             <TouchableOpacity style={styles.btnSave} onPress={handleSetPin}>
               <Text style={styles.btnSaveText}>Save PIN</Text>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Dashboard from './Dashboard.jsx';
 import ChildrenList from './ChildrenList.jsx';
 import Settings from './Settings.jsx';
@@ -17,10 +17,11 @@ function PinSetupOverlay({ onDone }) {
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState(null);
+  const confirmRef = useRef(null);
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (pin.length < 4) { setError('PIN must be at least 4 digits.'); return; }
+    if (pin.length !== 4) { setError('PIN must be exactly 4 digits.'); return; }
     if (!/^\d+$/.test(pin)) { setError('PIN must contain only digits.'); return; }
     if (pin !== confirmPin) { setError('PINs do not match.'); setConfirmPin(''); return; }
     setError(null);
@@ -42,9 +43,14 @@ function PinSetupOverlay({ onDone }) {
             <input
               type="text"
               value={pin}
-              onChange={(e) => { setPin(e.target.value); setError(null); }}
+              onChange={(e) => {
+                setPin(e.target.value);
+                setError(null);
+                if (e.target.value.length === 4) confirmRef.current?.focus();
+              }}
               placeholder="e.g. 1234"
               inputMode="numeric"
+              maxLength={4}
               style={styles.input}
               aria-label="Set PIN"
             />
@@ -53,10 +59,12 @@ function PinSetupOverlay({ onDone }) {
             Confirm PIN
             <input
               type="text"
+              ref={confirmRef}
               value={confirmPin}
               onChange={(e) => { setConfirmPin(e.target.value); setError(null); }}
               placeholder="Repeat PIN"
               inputMode="numeric"
+              maxLength={4}
               style={styles.input}
               aria-label="Confirm PIN"
             />

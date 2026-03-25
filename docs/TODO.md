@@ -14,7 +14,7 @@ The Children tab currently shows the name the child declared in its `hello` mess
 - Verify Children tab shows child's real name after reconnect (should work with the `hello` fix)
 - On child Profile screen, show parent's real name in the Parents list
 
-### [ ] 54. Force pairing to parent as part of child onboarding
+### [x] 54. Force pairing to parent as part of child onboarding — 2026-03-25
 Currently, the child setup wizard only covers Accessibility Service and Usage Stats permissions. A child device is usable as "standalone" without being paired to a parent.
 
 - After permissions are granted, require the child to scan the parent's QR invite before proceeding to the main screen

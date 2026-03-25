@@ -453,6 +453,12 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.showAppUninstalledNotification?.('You', appLabel, '')
                 }
               }
+              // Child was remotely unpaired by parent — wipe local state and return to setup
+              if (msg.event === 'child:reset') {
+                router.replace('/setup')
+                return
+              }
+
               // Forward all other Bare events to WebView (buffer if not yet loaded)
               const pearEventJs = 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
               if (_webViewLoaded) {

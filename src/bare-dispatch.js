@@ -57,6 +57,59 @@ function createDispatch (ctx) {
         return children
       }
 
+      case 'child:unpair': {
+        const { childPublicKey } = args
+        console.log('[dispatch] child:unpair start, key:', childPublicKey ? childPublicKey.slice(0, 8) : 'MISSING')
+        if (!childPublicKey) throw new Error('child:unpair requires childPublicKey')
+
+        // Get noise key before deleting the peer record
+        console.log('[dispatch] child:unpair step1: db.get peers')
+        const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+        const noiseKey = peerRecord?.value?.noiseKey
+        console.log('[dispatch] child:unpair step2: noiseKey=', noiseKey ? noiseKey.slice(0, 8) : 'null')
+
+        // Write the block entry FIRST so any rapid reconnect is rejected by handleHello
+        // before we destroy the connection (Hyperswarm reconnects in <1s).
+        console.log('[dispatch] child:unpair step3: db.put blocked')
+        await ctx.db.put('blocked:' + childPublicKey, { childPublicKey, blockedAt: Date.now() })
+        console.log('[dispatch] child:unpair step4: db.put blocked done')
+
+        // Remove parent-side records.
+        // Collect keys first, then delete — avoids deadlocking Hyperbee's internal lock
+        // (createReadStream + del cannot interleave).
+        await ctx.db.del('peers:' + childPublicKey).catch(() => {})
+        console.log('[dispatch] child:unpair step5: del peers done')
+        await ctx.db.del('policy:' + childPublicKey).catch(() => {})
+        console.log('[dispatch] child:unpair step6: del policy done')
+        const alertKeys = []
+        for await (const { key } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
+          alertKeys.push(key)
+        }
+        console.log('[dispatch] child:unpair step7: alert keys collected:', alertKeys.length)
+        for (const key of alertKeys) await ctx.db.del(key).catch(() => {})
+        const usageKeys = []
+        for await (const { key } of ctx.db.createReadStream({ gt: 'usageReport:' + childPublicKey + ':', lt: 'usageReport:' + childPublicKey + ':~' })) {
+          usageKeys.push(key)
+        }
+        console.log('[dispatch] child:unpair step8: usage keys collected:', usageKeys.length)
+        for (const key of usageKeys) await ctx.db.del(key).catch(() => {})
+
+        // Notify child and gracefully close the connection AFTER deleting records.
+        // Don't call conn.destroy() — that's a hard close that drops buffered writes
+        // before the child receives the unpair message. Let the child close its end on receipt.
+        console.log('[dispatch] child:unpair step9: sendToPeer, noiseKey in peers?', noiseKey ? ctx.peers.has(noiseKey) : false)
+        if (noiseKey && ctx.peers.has(noiseKey)) {
+          try {
+            await ctx.sendToPeer(noiseKey, { type: 'unpair', payload: {} })
+          } catch (_e) { /* offline or send failed */ }
+        }
+
+        console.log('[dispatch] child:unpair step10: sending child:unpaired event')
+        ctx.send({ type: 'event', event: 'child:unpaired', data: { childPublicKey } })
+        console.log('[dispatch] child:unpair DONE')
+        return { ok: true }
+      }
+
       case 'invite:generate': {
         // Generate a random 32-byte swarm topic
         const topicBuf = Buffer.allocUnsafe(32)

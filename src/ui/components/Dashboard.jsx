@@ -70,11 +70,18 @@ export default function Dashboard() {
       }).catch(() => {});
     });
 
+    const unsubUnpaired = window.onBareEvent('child:unpaired', ({ childPublicKey }) => {
+      setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
+      setSelectedChild((prev) => (prev?.publicKey === childPublicKey ? null : prev));
+      setInitialTab(null);
+    });
+
     return () => {
       unsubUsage();
       unsubTime();
       unsubBypass();
       unsubNav();
+      unsubUnpaired();
     };
   }, [loadChildren]);
 

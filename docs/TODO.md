@@ -14,6 +14,19 @@ The Children tab currently shows the name the child declared in its `hello` mess
 - Verify Children tab shows child's real name after reconnect (should work with the `hello` fix)
 - On child Profile screen, show parent's real name in the Parents list
 
+### [ ] 54. Force pairing to parent as part of child onboarding
+Currently, the child setup wizard only covers Accessibility Service and Usage Stats permissions. A child device is usable as "standalone" without being paired to a parent.
+
+- After permissions are granted, require the child to scan the parent's QR invite before proceeding to the main screen
+- If child is already paired (has at least one parent in `peers:`), skip this step
+- **Where**: `app/child-setup.tsx` — add a step 3 for pairing if no parent is paired yet
+
+### [ ] 53. Child "Home" tab is a placeholder
+The Home tab on the child device currently just shows "All good" with no real content.
+
+- **Consider**: Show current enforcement status (which apps are blocked right now), today's screen time summary, active schedule restrictions, and any pending requests
+- **Where**: `src/ui/components/ChildHome.jsx` (or equivalent)
+
 ### [ ] 3. Avatar customization
 Add avatar/photo support on the Profile page and during forced profile setup.
 
@@ -144,13 +157,11 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 ### [x] 31. Parent setup: require override PIN before first use — 2026-03-23
 Two gates added. Gate 1 (`app/setup.tsx`): after tapping "I'm a Parent", a PIN setup step is shown inline before navigating to the dashboard. Gate 2 (`src/ui/components/ParentApp.jsx`): on mount, checks `pin:isSet`; if false, renders a full-screen PIN overlay until a valid PIN is saved. New `pin:isSet` bare dispatch method reads parent's own `'policy'` key. All PIN inputs restricted to exactly 4 digits with auto-focus from entry to confirm field on 4th digit. Same 4-digit restriction and auto-focus applied to `Settings.jsx`.
 
-### [ ] 32. Parent-initiated unpair / remote deactivation of child
-The parent should be able to sever the pairing from their side, which should remotely deactivate PearGuard enforcement on the child device.
+### [ ] 55. After unpairing child device, can't pair back to same parent
+When a parent removes a child via the "Remove" button, the parent writes a `blocked:{childPublicKey}` entry to prevent reconnects. The child's state is wiped and it returns to setup. But if the user tries to re-pair the same child to the same parent, the `blocked:` entry causes the parent to reject the child's `hello` with an `unpair` message, making re-pairing impossible without clearing the parent's data.
 
-- **Parent side**: "Remove child" option in ChildDetail → sends an `unpair` P2P message to the child, then deletes `peers:{childPublicKey}` and `policy:{childPublicKey}` locally
-- **Child side**: On receiving `unpair`, delete `peers:*`, `policy`, and `mode` from Hyperbee; navigate to setup screen
-- **Offline case**: If child is offline, queue the `unpair` message; deliver on next reconnect
-- **Related**: TODO #20 (failsafe unpair from child side)
+- **Fix**: Clear the `blocked:{childPublicKey}` entry when a new invite is generated or when the child completes the invite acceptance flow
+- **Alternative**: Add a UI option on the parent to "re-allow" a previously removed child
 
 ### [x] 28. Prevent child from clearing app storage to deactivate PearGuard — 2026-03-24
 **Investigation result**: Preventing Clear Data is not possible as a Device Admin — it requires Device Owner (enterprise MDM) privileges, which are not available to consumer apps. This is an Android OS-level user right.
@@ -247,6 +258,9 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 32. Parent-initiated unpair / remote deactivation of child — 2026-03-25
+Parent "Remove" button in ChildDetail sends `child:unpair` to the bare worklet. Parent side: writes `blocked:{childPublicKey}` first (prevents reconnect race), deletes peer/policy/alert/usageReport records, sends signed `unpair` P2P message, emits `child:unpaired` event to UI (removes child from list). Child side: on receiving `unpair`, collects all DB keys then deletes them all, emits `child:reset` → RN navigates to `/setup`. Offline case handled: if child was offline at unpair time, `handleHello` on parent now sends the signed `unpair` before returning when a blocked peer reconnects, so the child receives it on next connection.
 
 ### [x] 46. Bug: "Requesting app access" notification shows package name instead of app name — 2026-03-24
 Child now includes `appName` in the `time:request` P2P payload. Parent uses it directly, falling back to policy cache then `packageName`.

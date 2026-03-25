@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import UsageTab from './UsageTab.jsx';
 import AppsTab from './AppsTab.jsx';
 import ScheduleTab from './ScheduleTab.jsx';
@@ -17,8 +17,15 @@ const TABS = [
 
 export default function ChildDetail({ child, onBack, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'usage');
+  const [confirming, setConfirming] = useState(false);
   const active = TABS.find((t) => t.key === activeTab);
   const ActiveComponent = active.Component;
+
+  const handleRemove = useCallback(() => {
+    window.callBare('child:unpair', { childPublicKey: child.publicKey })
+      .catch((e) => console.warn('[ChildDetail] child:unpair failed:', e))
+      .finally(() => onBack());
+  }, [child.publicKey, onBack]);
 
   return (
     <div style={styles.container}>
@@ -27,6 +34,15 @@ export default function ChildDetail({ child, onBack, initialTab }) {
           ← Back
         </button>
         <span style={styles.childName}>{child.displayName}</span>
+        {!confirming ? (
+          <button style={styles.removeBtn} onClick={() => setConfirming(true)}>Remove</button>
+        ) : (
+          <span style={styles.confirmRow}>
+            <span style={styles.confirmText}>Remove {child.displayName}?</span>
+            <button style={styles.confirmYes} onClick={handleRemove}>Yes, remove</button>
+            <button style={styles.confirmNo} onClick={() => setConfirming(false)}>Cancel</button>
+          </span>
+        )}
       </div>
 
       <div style={styles.tabBar}>
@@ -62,12 +78,27 @@ const styles = {
   topBar: {
     display: 'flex', alignItems: 'center', gap: '12px',
     padding: '12px 16px', borderBottom: '1px solid #ddd', backgroundColor: '#fff',
+    flexWrap: 'wrap',
   },
   backBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
     fontSize: '16px', color: '#1a73e8', padding: '4px 8px',
   },
-  childName: { fontSize: '17px', fontWeight: '700' },
+  childName: { fontSize: '17px', fontWeight: '700', flex: 1 },
+  removeBtn: {
+    background: 'none', border: '1px solid #ea4335', borderRadius: '6px',
+    color: '#ea4335', cursor: 'pointer', fontSize: '13px', padding: '4px 10px',
+  },
+  confirmRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
+  confirmText: { fontSize: '13px', color: '#333' },
+  confirmYes: {
+    background: '#ea4335', border: 'none', borderRadius: '6px',
+    color: '#fff', cursor: 'pointer', fontSize: '13px', padding: '4px 10px',
+  },
+  confirmNo: {
+    background: 'none', border: '1px solid #aaa', borderRadius: '6px',
+    color: '#555', cursor: 'pointer', fontSize: '13px', padding: '4px 10px',
+  },
   tabBar: {
     display: 'flex', overflowX: 'auto', borderBottom: '1px solid #ddd', backgroundColor: '#fff',
   },

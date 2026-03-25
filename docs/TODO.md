@@ -68,6 +68,12 @@ When the child disables the PearGuard Accessibility Service, enforcement silentl
 - Consider whether re-enabling should require a PIN or parent approval
 - Related: TODO #6 (guided setup) — the same deep-link flow could be reused here to guide the child back to enabling it
 
+### [ ] 53. Apps list: filter by status (Blocked / Allowed / Pending)
+Add filter buttons to the Apps tab header so the parent can quickly narrow the list by policy status.
+
+- **Options**: All / Blocked / Allowed / Pending — filter `Object.entries(policy.apps)` by `appData.status`
+- **Where**: `src/ui/components/AppsTab.jsx` — add a filter control alongside the existing sort toggle
+
 ### [ ] 15. Apps list: categories, expandable/collapsible sections, search
 The Apps tab will grow large on a real device. Make it manageable.
 

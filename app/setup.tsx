@@ -19,6 +19,8 @@ export function setBareCaller (fn: (method: string, args: any) => Promise<any>) 
   _callBare = fn
 }
 
+export function getBareCaller() { return _callBare }
+
 export default function SetupScreen () {
   const [step, setStep]               = useState<'mode' | 'name' | 'pin'>('mode')
   const [selectedMode, setSelectedMode] = useState<'parent' | 'child' | null>(null)

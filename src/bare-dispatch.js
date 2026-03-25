@@ -57,6 +57,13 @@ function createDispatch (ctx) {
         return children
       }
 
+      case 'peers:hasParent': {
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (value) return { hasPeers: true }
+        }
+        return { hasPeers: false }
+      }
+
       case 'child:unpair': {
         const { childPublicKey } = args
         console.log('[dispatch] child:unpair start, key:', childPublicKey ? childPublicKey.slice(0, 8) : 'MISSING')

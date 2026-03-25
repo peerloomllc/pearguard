@@ -1,16 +1,20 @@
 // app/child-setup.tsx
 //
-// Mandatory two-step wizard shown to child device users on first launch
+// Mandatory wizard shown to child device users on first launch
 // and whenever Accessibility Service or Usage Stats permission is missing.
+// Step 1: Enable Accessibility Service
+// Step 2: Grant Usage Access
+// Step 3: Pair with parent (skipped if already paired)
 // No back button (gestureEnabled: false in _layout.tsx).
 
-import { useState, useEffect } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator } from 'react-native'
+import { useState, useEffect, useRef } from 'react'
+import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Modal } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { CameraView, useCameraPermissions } from 'expo-camera'
+import { getBareCaller } from './setup'
 
 type Permissions = { accessibility: boolean; usageStats: boolean }
 
-// Styled placeholder icons — avoid emoji for cross-Android-version rendering consistency.
 function IconA() {
   return (
     <View style={styles.iconCircle}>
@@ -25,8 +29,15 @@ function IconU() {
     </View>
   )
 }
+function IconP() {
+  return (
+    <View style={[styles.iconCircle, styles.iconCirclePair]}>
+      <Text style={[styles.iconLetter, styles.iconLetterPair]}>P</Text>
+    </View>
+  )
+}
 
-const STEPS = {
+const PERMISSION_STEPS = {
   1: {
     Icon: IconA,
     title: 'Enable Accessibility Service',
@@ -57,15 +68,79 @@ const STEPS = {
   },
 } as const
 
+// ── QR scanner modal ─────────────────────────────────────────────────────────
+
+function ScannerModal({
+  visible,
+  onScanned,
+  onCancel,
+}: {
+  visible: boolean
+  onScanned: (url: string) => void
+  onCancel: () => void
+}) {
+  const [permission, requestPermission] = useCameraPermissions()
+  const scanned = useRef(false)
+
+  useEffect(() => {
+    if (!visible) { scanned.current = false; return }
+    if (!permission?.granted) {
+      requestPermission().catch(() => {})
+    }
+  }, [visible, permission, requestPermission])
+
+  function handleBarcode(result: any) {
+    if (scanned.current) return
+    scanned.current = true
+    onScanned(result.data)
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
+      {permission?.granted ? (
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          onBarcodeScanned={handleBarcode}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        >
+          <View style={scannerStyles.overlay}>
+            <TouchableOpacity style={scannerStyles.cancelBtn} onPress={onCancel}>
+              <Text style={scannerStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      ) : (
+        <View style={scannerStyles.waiting}>
+          <ActivityIndicator color="#7B9FEB" size="large" />
+          <Text style={{ color: '#fff', marginTop: 16 }}>Requesting camera permission…</Text>
+        </View>
+      )}
+    </Modal>
+  )
+}
+
+const scannerStyles = StyleSheet.create({
+  overlay:    { flex: 1, justifyContent: 'flex-end', padding: 32 },
+  cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderRadius: 8, alignItems: 'center' },
+  cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
+})
+
+// ── Main screen ───────────────────────────────────────────────────────────────
+
 export default function ChildSetupScreen() {
   const router = useRouter()
   const { step: stepParam, source } = useLocalSearchParams<{ step?: string; source?: string }>()
-  const [step, setStep] = useState<1 | 2>(stepParam === '2' ? 2 : 1)
+  const [step, setStep] = useState<1 | 2 | 3>(stepParam === '2' ? 2 : 1)
+  const [totalSteps, setTotalSteps] = useState<2 | 3>(2)
   const [polling, setPolling] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
+  const [pairState, setPairState] = useState<'idle' | 'connecting' | 'error'>('idle')
+  const [pairError, setPairError] = useState<string | null>(null)
   const isBypassRecovery = source === 'bypass_recovery'
 
-  // Regression guard: whenever step reaches 2 (first-launch advancement or re-appear jump),
-  // verify step 1 is still satisfied before showing step 2.
+  // Regression guard: whenever step reaches 2, verify step 1 is still satisfied.
   useEffect(() => {
     if (step !== 2) return
     NativeModules.UsageStatsModule?.checkChildPermissions?.()
@@ -73,8 +148,9 @@ export default function ChildSetupScreen() {
       .catch(() => {})
   }, [step])
 
-  // Polling loop: check current permission every 1.5 s and auto-advance.
+  // Polling loop: check permissions every 1.5 s and auto-advance.
   useEffect(() => {
+    if (step === 3) return  // step 3 is driven by QR scan, not polling
     const timerId = setInterval(async () => {
       try {
         const p: Permissions = await NativeModules.UsageStatsModule?.checkChildPermissions?.()
@@ -84,7 +160,7 @@ export default function ChildSetupScreen() {
           setStep(2)
         } else if (step === 2 && p.usageStats) {
           clearInterval(timerId)
-          router.replace('/')
+          await advanceFromStep2()
         }
       } catch (e) {
         console.warn('[child-setup] checkChildPermissions error:', e)
@@ -93,19 +169,120 @@ export default function ChildSetupScreen() {
     return () => clearInterval(timerId)
   }, [step, router])
 
+  async function advanceFromStep2() {
+    const callBare = getBareCaller()
+    if (!callBare) {
+      // Worklet not ready yet — go straight to main screen
+      router.replace('/')
+      return
+    }
+    try {
+      const result = await callBare('peers:hasParent', {})
+      if (result?.hasPeers) {
+        router.replace('/')
+      } else {
+        setTotalSteps(3)
+        setStep(3)
+      }
+    } catch (_e) {
+      // If check fails, go to main screen rather than blocking the user
+      router.replace('/')
+    }
+  }
+
+  async function handleScanned(url: string) {
+    setShowScanner(false)
+    if (!url.startsWith('pear://pearguard/join')) {
+      setPairError('That QR code is not a valid PearGuard invite. Ask your parent to share their invite again.')
+      return
+    }
+    setPairError(null)
+    setPairState('connecting')
+    const callBare = getBareCaller()
+    if (!callBare) {
+      setPairState('error')
+      setPairError('App not ready. Please wait a moment and try again.')
+      return
+    }
+    try {
+      await callBare('acceptInvite', [url])
+    } catch (e: any) {
+      setPairState('error')
+      setPairError(e.message || 'Failed to process invite. Please try again.')
+      return
+    }
+    // Poll peers:hasParent until the P2P handshake completes
+    const pollId = setInterval(async () => {
+      try {
+        const r = await callBare('peers:hasParent', {})
+        if (r?.hasPeers) {
+          clearInterval(pollId)
+          router.replace('/')
+        }
+      } catch (_e) {}
+    }, 1500)
+  }
+
   function openSettings() {
+    if (step === 3) return
     setPolling(true)
-    Linking.sendIntent(STEPS[step].settingsAction).catch(() => {
-      // sendIntent is Android-only; fallback for dev/test environments
-      console.warn('[child-setup] sendIntent failed for:', STEPS[step].settingsAction)
+    Linking.sendIntent(PERMISSION_STEPS[step as 1 | 2].settingsAction).catch(() => {
+      console.warn('[child-setup] sendIntent failed for:', PERMISSION_STEPS[step as 1 | 2].settingsAction)
     })
   }
 
-  const config = STEPS[step]
+  // ── Step 3: Pair with parent ─────────────────────────────────────────────
+
+  if (step === 3) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.stepLabel}>Step 3 of 3</Text>
+
+        <IconP />
+
+        <Text style={styles.title}>Pair with your parent</Text>
+        <Text style={styles.description}>
+          Ask your parent to open PearGuard, go to their Profile tab, and tap "Share Invite". Then scan their QR code below.
+        </Text>
+
+        {pairError && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{pairError}</Text>
+          </View>
+        )}
+
+        {pairState === 'connecting' ? (
+          <View style={styles.connectingBox}>
+            <ActivityIndicator size="large" color="#7B9FEB" />
+            <Text style={styles.connectingText}>Connecting to parent…</Text>
+            <Text style={styles.connectingSubText}>This may take up to 30 seconds.</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.buttonPair}
+            onPress={() => { setPairError(null); setShowScanner(true) }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonPairText}>Scan Parent's QR Code →</Text>
+          </TouchableOpacity>
+        )}
+
+        <ScannerModal
+          visible={showScanner}
+          onScanned={handleScanned}
+          onCancel={() => setShowScanner(false)}
+        />
+      </View>
+    )
+  }
+
+  // ── Steps 1 & 2: Permissions ─────────────────────────────────────────────
+
+  const config = PERMISSION_STEPS[step as 1 | 2]
 
   return (
     <View style={styles.container}>
-      <Text style={styles.stepLabel}>Step {step} of 2</Text>
+      <Text style={styles.stepLabel}>Step {step} of {totalSteps}</Text>
 
       {isBypassRecovery && step === 1 && (
         <View style={styles.notifyBanner}>
@@ -148,6 +325,8 @@ const styles = StyleSheet.create({
   stepLabel:        { color: '#555', fontSize: 13, marginBottom: 24, textTransform: 'uppercase', letterSpacing: 1 },
   iconCircle:       { width: 72, height: 72, borderRadius: 36, backgroundColor: '#1a2e1a', borderWidth: 2, borderColor: '#6FCF97', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   iconLetter:       { color: '#6FCF97', fontSize: 28, fontWeight: '700' },
+  iconCirclePair:   { backgroundColor: '#1a1a2e', borderColor: '#7B9FEB' },
+  iconLetterPair:   { color: '#7B9FEB' },
   title:            { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
   description:      { color: '#aaa', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
   instructions:     { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#333', borderRadius: 12, padding: 16, width: '100%', marginBottom: 32 },
@@ -155,8 +334,15 @@ const styles = StyleSheet.create({
   instructionLine:  { color: '#ccc', fontSize: 14, lineHeight: 26 },
   button:           { backgroundColor: '#1a2e1a', borderWidth: 1, borderColor: '#6FCF97', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
   buttonText:       { color: '#6FCF97', fontSize: 15, fontWeight: '600' },
+  buttonPair:       { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
+  buttonPairText:   { color: '#7B9FEB', fontSize: 15, fontWeight: '600' },
   waitingRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
   waitingText:      { color: '#555', fontSize: 13 },
+  connectingBox:    { alignItems: 'center', gap: 12, marginBottom: 16 },
+  connectingText:   { color: '#7B9FEB', fontSize: 15, fontWeight: '600' },
+  connectingSubText:{ color: '#555', fontSize: 13 },
   notifyBanner:     { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#ea4335', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
   notifyText:       { color: '#ea4335', fontSize: 13, textAlign: 'center' },
+  errorBanner:      { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#ea4335', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
+  errorText:        { color: '#ea4335', fontSize: 13, textAlign: 'center' },
 })

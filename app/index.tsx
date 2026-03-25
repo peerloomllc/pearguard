@@ -453,8 +453,12 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.showAppUninstalledNotification?.('You', appLabel, '')
                 }
               }
-              // Child was remotely unpaired by parent — wipe local state and return to setup
+              // Child was remotely unpaired by parent — wipe local state and return to setup.
+              // Clear the native policy first so AppBlockerModule stops blocking and any
+              // active overlay is dismissed before navigating away.
               if (msg.event === 'child:reset') {
+                NativeModules.UsageStatsModule?.setPolicy('')
+                NativeModules.UsageStatsModule?.dismissAllOverlays?.()
                 router.replace('/setup')
                 return
               }

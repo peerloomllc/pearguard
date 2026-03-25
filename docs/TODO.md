@@ -53,13 +53,8 @@ The parent's invite URL is derived from the Hyperswarm keypair stored in the Hyp
 - **Keep as-is**: Simpler for reconnecting existing children — same key means no re-pairing.
 - **Force fresh keypair**: On first-launch setup, always generate a new keypair and clear old peer records.
 
-### [ ] 13. PIN override: prompt for duration
-
-When a PIN override is granted, the duration is fixed at `policy.overrideDurationSeconds` (default 3600s = 1 hour). The child (and parent) should be able to choose a duration at the moment of granting.
-
-- **Where** (child overlay): After 4-digit PIN is verified, show a duration picker (e.g., "15 min / 30 min / 1 hour / Custom") before dismissing
-- **Where** (parent side): Parent approving a time request should similarly choose duration
-- **Edge case**: If parent updates policy while an override is active, the override should be respected until it expires
+### [x] 13. PIN override: prompt for duration — 2026-03-24
+After correct PIN, child now sees a "How long?" picker (15 min / 30 min / 1 hour / 2 hours) before the override is granted.
 
 ---
 
@@ -254,11 +249,8 @@ The current label/description language is ambiguous. Make it clear that a schedu
 
 - **Where**: `src/ui/components/ScheduleTab.jsx` — update section heading, form labels, and placeholder text
 
-### [ ] 51. Bug: Correct PIN not working on child device
-Child enters the correct PIN on the block overlay but it is not accepted.
-
-- **Investigate**: Whether the child device is receiving the policy (including `pinHash`) from the parent via P2P sync; log `loadPolicy()` output in `verifyPin` to confirm `pinHash` is present
-- **Related**: TODO #1 (PIN stored using BLAKE2b) — confirm the hash stored in policy matches what `verifyPin` expects
+### [x] 51. Bug: Correct PIN not working on child device — 2026-03-24
+`verifyPin()` in `AppBlockerModule.java` was calling LazySodium's `cryptoPwHashStrVerify` (argon2id) while `bare-dispatch.js` `pin:set` had been switched to BLAKE2b hex in commit 129e929. Fixed by calling `crypto_generichash` via the native `SodiumAndroid` layer and comparing the resulting bytes directly.
 
 ## Known Limitations
 

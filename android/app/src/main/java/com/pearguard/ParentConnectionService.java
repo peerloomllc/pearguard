@@ -148,7 +148,7 @@ public class ParentConnectionService extends Service {
 
         Notification notif = new NotificationCompat.Builder(this, CHANNEL_OFFLINE_ID)
             .setContentTitle("PearGuard enforcement may be off")
-            .setContentText(childName + "'s device has not checked in — PearGuard may have been force-closed.")
+            .setContentText(childName + "'s device has not checked in — PearGuard may have been force-closed or app data cleared.")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentIntent(pi)
             .setAutoCancel(true)

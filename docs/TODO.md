@@ -152,12 +152,12 @@ The parent should be able to sever the pairing from their side, which should rem
 - **Offline case**: If child is offline, queue the `unpair` message; deliver on next reconnect
 - **Related**: TODO #20 (failsafe unpair from child side)
 
-### [ ] 28. Prevent child from clearing app storage to deactivate PearGuard
-Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear Storage) wipes all Hyperbee data — keypair, pairing records, policy — effectively unpairing the device without parent knowledge.
+### [x] 28. Prevent child from clearing app storage to deactivate PearGuard — 2026-03-24
+**Investigation result**: Preventing Clear Data is not possible as a Device Admin — it requires Device Owner (enterprise MDM) privileges, which are not available to consumer apps. This is an Android OS-level user right.
 
-- **Investigate**: Does `DevicePolicyManager` allow restricting "Clear Data" for a specific app when PearGuard is a Device Admin?
-- **Detect**: On next launch after a wipe, the child setup wizard would re-run (no `mode` key in DB). This could be used as a signal to notify the parent if they're still reachable.
-- **Related**: TODO #20 (failsafe unpair), TODO #23 (force-close stops enforcement)
+**Detection result**: No standard Android storage survives Clear Data for non-system apps (SharedPreferences, files, and even ciphertext encrypted with Keystore-backed keys are all in the app's data directory). There is no reliable way to detect the wipe from the child side before it happens or on first subsequent launch.
+
+**Mitigation**: The existing parent heartbeat staleness detection (from #23/#37) already covers this — when the child clears data, heartbeats stop and `ParentConnectionService` fires the "enforcement may be off" notification after 3 min. Updated the notification text in both `ParentConnectionService` and `UsageStatsModule` to say "force-closed **or app data cleared**" so the parent has the correct context. Child must re-pair after a data clear.
 
 ### [x] 29. Bug: Initial pairing should not send "app installed" notifications to parent — 2026-03-22
 `handleIncomingAppsSync` now checks `raw` (the existing policy record) before processing: if null it's the first sync, so alert entries and `app:installed` events are suppressed. `apps:synced` still fires so the Apps tab refreshes. Incremental syncs (reconnects after initial pairing) continue to notify for genuinely new installs.

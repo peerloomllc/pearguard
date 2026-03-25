@@ -575,7 +575,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, "pearguard_offline")
             .setContentTitle("PearGuard enforcement may be off")
-            .setContentText(childName + "'s device has not checked in. PearGuard may have been force-closed.")
+            .setContentText(childName + "'s device has not checked in — PearGuard may have been force-closed or app data cleared.")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentIntent(pi)
             .setAutoCancel(true)

@@ -131,6 +131,17 @@ function createDispatch (ctx) {
         // Join the swarm topic (parent listens for child connections)
         await ctx.joinTopic(topicHex)
 
+        // Clear any blocked-peer entries so previously-removed devices can be re-paired
+        // via a new invite. The block served its purpose (offline unpair delivery); once
+        // the parent deliberately generates a new invite, old blocks must not prevent re-pairing.
+        const blockedKeys = []
+        for await (const { key } of ctx.db.createReadStream({ gt: 'blocked:', lt: 'blocked:~' })) {
+          blockedKeys.push(key)
+        }
+        for (const key of blockedKeys) {
+          await ctx.db.del(key).catch(() => {})
+        }
+
         // Build and return the invite link
         const { buildInviteLink } = require('./invite')
         const inviteLink = buildInviteLink({ parentPublicKey, swarmTopic: topicHex })

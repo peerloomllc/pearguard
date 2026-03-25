@@ -333,6 +333,19 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
         allKeys.push(key)
       }
       for (const key of allKeys) await db.del(key).catch(() => {})
+
+      // Destroy the in-memory Hyperswarm so it stops auto-reconnecting on old topics.
+      // Without this, Hyperswarm would immediately reconnect on the same swarm topic
+      // before the parent generates a new invite. The parent still has blocked:{childPK}
+      // at that point and would send another unpair — creating an infinite reset loop.
+      // joinTopic() recreates the swarm lazily when the child scans a new invite.
+      if (swarm) {
+        try { await swarm.destroy() } catch (_e) {}
+        swarm = null
+      }
+      peerConnected = false
+      parentPeer = null
+
       send({ type: 'event', event: 'child:reset', data: {} })
       break
     }

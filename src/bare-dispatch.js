@@ -832,6 +832,12 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
   const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
   if (!policy.apps) policy.apps = {}
 
+  // Ensure pinHash is present — same gap as handleIncomingAppsSync after a re-pair.
+  if (!policy.pinHash) {
+    const parentPolicy = await db.get('policy').catch(() => null)
+    if (parentPolicy?.value?.pinHash) policy.pinHash = parentPolicy.value.pinHash
+  }
+
   if (!policy.apps[packageName]) {
     const now = Date.now()
     policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }) }
@@ -882,6 +888,13 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
   const isFirstSync = !raw
   const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
   if (!policy.apps) policy.apps = {}
+
+  // Ensure pinHash is always present — it may be missing if the child was removed and
+  // re-paired (child policy deleted by unpair, then recreated fresh here with no pinHash).
+  if (!policy.pinHash) {
+    const parentPolicy = await db.get('policy').catch(() => null)
+    if (parentPolicy?.value?.pinHash) policy.pinHash = parentPolicy.value.pinHash
+  }
 
   const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
   const childDisplayName = peerRecord?.value?.displayName || 'Your child'

@@ -204,12 +204,13 @@ Currently the notification routes to the Activity tab. The more actionable desti
 Two bugs: (1) `usage:flush` in `bare-dispatch.js` ignored `args.usage` (native data passed from `index.tsx` → `getDailyUsageAll()`) and always sent `usageStats: {}`; fixed to map native array into `report.apps`. (2) `usage:getLatest` didn't exist; added handler that reads latest `usageReport:{childPublicKey}:*` entry from Hyperbee via `createReadStream({ reverse: true, limit: 1 })`.
 - **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
 
-### [ ] 39. Schedules and Time Limits need to work together properly
-Time-limit enforcement and scheduled block windows should interoperate correctly — e.g. a scheduled block should override an active time-limit grant, and an approved time extension should not bypass a scheduled block window.
-
-- **Investigate**: How `EnforcementService` and `AppBlockerModule` currently prioritize policy fields (`schedule`, `dailyLimitSeconds`, active overrides)
-- **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
-- **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
+### [x] 39. Schedules and Time Limits need to work together properly — 2026-03-25
+Rewrote `getBlockReason` in `AppBlockerModule` with explicit precedence:
+1. System/phone exemptions (always allow)
+2. Active override (PIN/P2P grant) — wins over schedule, daily limit, and policy status
+3. Scheduled blackout
+4. Policy status (blocked/pending)
+5. Daily limit exceeded
 
 ### [x] 42. Bug: Usage tab data disappears after leaving and returning to the app — 2026-03-24
 Usage stats were visible, but after backgrounding the app and returning the Usage tab showed empty again. The `usageReport:{childPublicKey}:{timestamp}` entries may be getting lost across app restarts, or `usage:getLatest` is not finding them on re-mount.

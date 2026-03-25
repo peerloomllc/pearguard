@@ -341,6 +341,12 @@ export default function Root () {
             console.warn('[PearGuard] Usage flush failed:', err)
           }
         }),
+
+        // ParentConnectionService heartbeat — trigger swarm:reconnect to restore
+        // any connections that dropped while the app was backgrounded
+        DeviceEventEmitter.addListener('onParentReconnectNeeded', () => {
+          sendToWorklet({ method: 'swarm:reconnect' })
+        }),
       )
 
       // If worklet already running (e.g. returning from setup screen or after deep-link
@@ -388,6 +394,17 @@ export default function Root () {
                   })
                   .catch((e: any) => console.warn('[RN] usageFlushRequested getDailyUsageAll failed:', e))
                 return
+              }
+              // Track child heartbeat timestamps so ParentConnectionService can detect force-stop
+              if (msg.event === 'heartbeat:received') {
+                const { childPublicKey, childDisplayName, timestamp } = msg.data ?? {}
+                if (childPublicKey) {
+                  NativeModules.UsageStatsModule?.updateChildHeartbeat?.(
+                    childPublicKey,
+                    childDisplayName || 'Child',
+                    timestamp || Date.now()
+                  )
+                }
               }
               // Show a notification on the parent device when a child sends a time request
               if (msg.event === 'time:request:received') {
@@ -489,6 +506,29 @@ export default function Root () {
         }
         if (!data.mode) {
           setTimeout(() => router.replace('/setup'), 500)
+        }
+        // Start the parent background service so Hyperswarm stays connected
+        // while the app is backgrounded (keeps process alive, prevents TCP drop)
+        if (data.mode === 'parent') {
+          NativeModules.UsageStatsModule?.startParentService?.()
+        }
+
+        // Force-stop detection (child only): if enforcement was recently active
+        // (EnforcementService heartbeat <5 min old) but accessibility is now off,
+        // the app was likely force-stopped. Alert the parent via bypass:detected.
+        if (data.mode === 'child') {
+          NativeModules.UsageStatsModule?.checkChildPermissions?.()
+            .then((p: { accessibility: boolean; usageStats: boolean; enforcementHeartbeatMs: number }) => {
+              const now = Date.now()
+              const heartbeatAge = now - (p.enforcementHeartbeatMs || 0)
+              if (!p.accessibility && p.enforcementHeartbeatMs > 0 && heartbeatAge < 5 * 60 * 1000) {
+                sendToWorklet({ method: 'bypass:detected', args: { reason: 'force_stopped' } })
+                // Clear the heartbeat so this doesn't re-trigger on subsequent Root remounts
+                // (e.g. when the child-setup wizard completes and routes back to '/')
+                NativeModules.UsageStatsModule?.clearEnforcementHeartbeat?.()
+              }
+            })
+            .catch(() => {})
         }
       })
 

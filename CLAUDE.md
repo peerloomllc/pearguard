@@ -25,7 +25,7 @@ Always use `adb install -r` — **never uninstall** (preserves Hyperbee data).
 ```bash
 npm run build:ui
 cd android && ./gradlew assembleDebug && cd ..
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r /home/tim/peerloomllc/pearguard/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 **bare.js changes** (also rebuild UI after):
@@ -33,13 +33,13 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 npm run build:bare
 npm run build:ui
 cd android && ./gradlew assembleDebug && cd ..
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r /home/tim/peerloomllc/pearguard/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 **Native changes** (Java/Kotlin):
 ```bash
 cd android && ./gradlew assembleDebug && cd ..
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r /home/tim/peerloomllc/pearguard/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## Architecture

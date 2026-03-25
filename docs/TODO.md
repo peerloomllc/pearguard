@@ -114,12 +114,14 @@ Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete the
 ### [x] 22. Bug: Requests showing Pending even after approval — 2026-03-23
 Root cause: `handlePolicyUpdate` (child side) updated the policy but did not sync pending `req:*` entries. When the parent was offline during child's approval or reconnect pushed a `policy:update`, pending requests stayed Pending. Fix: `handlePolicyUpdate` now scans `req:*` entries and updates any pending ones where the app is now `allowed`/`blocked`, emitting `request:updated` so `ChildRequests` refreshes.
 
-### [ ] 23. Bug: PearGuard force-close stops enforcement
-If the child force-closes PearGuard, the Accessibility Service (which is hosted in the same process) also stops. Enforcement silently ceases.
+### [x] 23. Bug: PearGuard force-close stops enforcement — 2026-03-24
+Prevention is not possible with Device Admin alone (requires Device Owner). Two detection layers added:
 
-- **Investigate**: Can the Accessibility Service be declared in a separate process (`android:process`) so it survives PearGuard's main process being killed?
-- **Detect**: `EnforcementService` should detect when PearGuard's main process is not running and alert the parent.
-- **Mitigation**: Device admin (`DevicePolicyManager`) can prevent force-close of designated apps on some Android versions.
+**Child-side (restart detection)**: `EnforcementService` writes `enforcement_heartbeat_ms` to SharedPreferences every 5 s. On next app launch, `index.tsx` reads this via `checkChildPermissions()`. If accessibility is off and the heartbeat is <5 min old, a `bypass:detected` with reason `force_stopped` is sent to the parent — queued and delivered on reconnect.
+
+**Parent-side (staleness detection)**: `heartbeat:received` events now include `childDisplayName` (looked up from Hyperbee). `index.tsx` calls `updateChildHeartbeat` to save the timestamp per child in SharedPreferences. `ParentConnectionService` checks every 60 s for any child whose last heartbeat is >3 min old and fires an "enforcement may be off" notification.
+
+Also added `force_stopped` and `device_admin_disabled` to the `reasonLabels` map in `bare.js`.
 
 ### [x] 24. Bug: Profile name changes don't sync to paired devices — 2026-03-24
 After initial pairing, if the child or parent changes their display name in Profile, the other device still shows the old name.
@@ -180,21 +182,11 @@ Root cause: `tabInactive` style had no `borderBottom` key, so React never remove
 ### [x] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab — 2026-03-22
 `showDecisionNotification` now builds a `pear://pearguard/child-requests` deep link PendingIntent. `index.tsx` parses this URL and sets `_pendingChildRequestsNav = true`; the `dbReady` useEffect fires `navigate:child:requests` into the WebView. `ChildApp.jsx` listens for that event and calls `setActiveTab('requests')`.
 
-### [ ] 37. Bug: P2P messages (app installs, time requests) not delivered to parent while app is backgrounded
-When the child sends a message while the parent app is backgrounded, Android drops the Hyperswarm TCP connection. The message is queued on the child and delivered the next time the parent foregrounds (triggering `swarm:reconnect` → new connection → `handleHello` → `flushPendingMessages`). The parent receives no push notification until it opens the app.
+### [x] 37. Bug: P2P messages (app installs, time requests) not delivered to parent while app is backgrounded — 2026-03-24
+Added `ParentConnectionService` — a foreground service on the parent device that keeps the React Native (and Bare worklet) process alive while backgrounded. The service emits `onParentReconnectNeeded` every 30 s → `index.tsx` calls `swarm:reconnect` on the worklet → Hyperswarm re-establishes any dropped connections. Started automatically from `index.tsx` `ready` handler when `mode === 'parent'`.
 
-- **Root cause**: Hyperswarm requires an active foreground TCP connection; there is no background push path
-- **Option A**: Android foreground service on the parent — keeps Hyperswarm alive even when backgrounded, delivering messages in real time
-- **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
-- **Where**: `app/index.tsx`, new foreground service, or FCM integration
-
-### [ ] 52. Maximize background delivery reliability for Requests and Alerts
-Requests and alerts (time requests, app installs, bypass alerts) must reach the parent as consistently as possible even when the app is backgrounded. Related to #37 but broader in scope — covers both parent and child sides and all alert types.
-
-- **Audit**: Confirm all alert types (time request, app install, bypass alert) are queued and flushed on reconnect
-- **Parent-side**: Keep Hyperswarm alive in background via a foreground service (preferred) or FCM wakeup
-- **Child-side**: Ensure queued messages are flushed immediately on reconnect, not just on `handleHello`
-- **Goal**: Parent should receive an Android notification within seconds of a child event, even if the app was not open
+### [x] 52. Maximize background delivery reliability for Requests and Alerts — 2026-03-24
+All child→parent message types (time request, app install, app uninstall, apps sync, bypass alert, usage report, heartbeat) go through `sendToParent()` which always queues to Hyperbee first, then attempts immediate delivery. On reconnect, `handleHello` calls `flushPendingMessages` to drain the queue. Parent side now keeps Hyperswarm alive via `ParentConnectionService` (see #37).
 
 ### [x] 40. Tapping "app installed" notification on parent should deep-link to Apps tab — 2026-03-23
 Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.

@@ -296,7 +296,9 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     }
     case 'heartbeat': {
       const childPublicKey = msg.from
-      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey } })
+      const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+      const childDisplayName = peerRecord?.value?.displayName || 'Child'
+      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey, childDisplayName } })
       break
     }
     case 'bypass:alert': {
@@ -304,6 +306,8 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       const { reason, detectedAt } = msg.payload
       const reasonLabels = {
         accessibility_disabled: 'Accessibility Service disabled',
+        force_stopped: 'App was force-closed',
+        device_admin_disabled: 'Device Admin disabled',
       }
       const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
       const childDisplayName = peerRecord?.value?.displayName || 'Child'
@@ -341,30 +345,27 @@ function sendToPeer (remoteKeyHex, msg) {
 }
 
 /**
- * Send a message to the connected parent. Always queues the message in Hyperbee
- * first so it survives a stale/dropped connection, then attempts immediate delivery
- * if connected. The queue is flushed on the next handleHello (reconnect), ensuring
- * delivery even when the initial write goes to a connection that dropped while the
- * app was backgrounded.
+ * Send a message to the connected parent.
+ * - If connected: send immediately. No queuing — avoids duplicate delivery when the
+ *   connection is active (queue would be flushed again on next handleHello).
+ * - If not connected or send fails: queue in Hyperbee for reconnect delivery.
  * Child mode only.
  * @param {{ type: string, payload: object }} message
  */
 async function sendToParent (message) {
-  // Always persist to queue so no message is silently lost on a stale connection
-  await queueMessage(message, db)
-
   if (peerConnected && parentPeer && parentPeer.conn) {
     try {
       const signed = signMessage(message, identity)
       parentPeer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+      return  // Sent immediately; queuing would cause a duplicate on next reconnect
     } catch (e) {
-      // Write failed — connection was dead; reset state so future calls queue correctly
+      // Write failed — connection was dead; fall through to queue
       peerConnected = false
       parentPeer = null
     }
   }
-  // Message stays in queue as backup; handleHello will flush it on next reconnect.
-  // Receivers deduplicate by key so re-delivery is idempotent.
+  // Not connected (or send failed): queue for delivery on next handleHello
+  await queueMessage(message, db)
 }
 
 /**

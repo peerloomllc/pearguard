@@ -157,7 +157,7 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 ### [x] 31. Parent setup: require override PIN before first use — 2026-03-23
 Two gates added. Gate 1 (`app/setup.tsx`): after tapping "I'm a Parent", a PIN setup step is shown inline before navigating to the dashboard. Gate 2 (`src/ui/components/ParentApp.jsx`): on mount, checks `pin:isSet`; if false, renders a full-screen PIN overlay until a valid PIN is saved. New `pin:isSet` bare dispatch method reads parent's own `'policy'` key. All PIN inputs restricted to exactly 4 digits with auto-focus from entry to confirm field on 4th digit. Same 4-digit restriction and auto-focus applied to `Settings.jsx`.
 
-### [ ] 55. After unpairing child device, can't pair back to same parent
+### [x] 55. After unpairing child device, can't pair back to same parent — 2026-03-25
 When a parent removes a child via the "Remove" button, the parent writes a `blocked:{childPublicKey}` entry to prevent reconnects. The child's state is wiped and it returns to setup. But if the user tries to re-pair the same child to the same parent, the `blocked:` entry causes the parent to reject the child's `hello` with an `unpair` message, making re-pairing impossible without clearing the parent's data.
 
 - **Fix**: Clear the `blocked:{childPublicKey}` entry when a new invite is generated or when the child completes the invite acceptance flow

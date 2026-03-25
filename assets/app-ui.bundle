@@ -15411,12 +15411,25 @@
   ];
   function ChildDetail({ child, onBack, initialTab }) {
     const [activeTab, setActiveTab] = (0, import_react8.useState)(initialTab || "usage");
+    const [confirming, setConfirming] = (0, import_react8.useState)(false);
     const active = TABS.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
+    const handleRemove = (0, import_react8.useCallback)(() => {
+      window.callBare("child:unpair", { childPublicKey: child.publicKey }).catch((e) => console.warn("[ChildDetail] child:unpair failed:", e)).finally(() => onBack());
+    }, [child.publicKey, onBack]);
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.container, children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.topBar, children: [
         /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.backBtn, onClick: onBack, "aria-label": "Back to Dashboard", children: "\u2190 Back" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: styles8.childName, children: child.displayName })
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: styles8.childName, children: child.displayName }),
+        !confirming ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.removeBtn, onClick: () => setConfirming(true), children: "Remove" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: styles8.confirmRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: styles8.confirmText, children: [
+            "Remove ",
+            child.displayName,
+            "?"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.confirmYes, onClick: handleRemove, children: "Yes, remove" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.confirmNo, onClick: () => setConfirming(false), children: "Cancel" })
+        ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.tabBar, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         "button",
@@ -15446,7 +15459,8 @@
       gap: "12px",
       padding: "12px 16px",
       borderBottom: "1px solid #ddd",
-      backgroundColor: "#fff"
+      backgroundColor: "#fff",
+      flexWrap: "wrap"
     },
     backBtn: {
       background: "none",
@@ -15456,7 +15470,36 @@
       color: "#1a73e8",
       padding: "4px 8px"
     },
-    childName: { fontSize: "17px", fontWeight: "700" },
+    childName: { fontSize: "17px", fontWeight: "700", flex: 1 },
+    removeBtn: {
+      background: "none",
+      border: "1px solid #ea4335",
+      borderRadius: "6px",
+      color: "#ea4335",
+      cursor: "pointer",
+      fontSize: "13px",
+      padding: "4px 10px"
+    },
+    confirmRow: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
+    confirmText: { fontSize: "13px", color: "#333" },
+    confirmYes: {
+      background: "#ea4335",
+      border: "none",
+      borderRadius: "6px",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "13px",
+      padding: "4px 10px"
+    },
+    confirmNo: {
+      background: "none",
+      border: "1px solid #aaa",
+      borderRadius: "6px",
+      color: "#555",
+      cursor: "pointer",
+      fontSize: "13px",
+      padding: "4px 10px"
+    },
     tabBar: {
       display: "flex",
       overflowX: "auto",
@@ -15533,11 +15576,17 @@
         }).catch(() => {
         });
       });
+      const unsubUnpaired = window.onBareEvent("child:unpaired", ({ childPublicKey }) => {
+        setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
+        setSelectedChild((prev) => prev?.publicKey === childPublicKey ? null : prev);
+        setInitialTab(null);
+      });
       return () => {
         unsubUsage();
         unsubTime();
         unsubBypass();
         unsubNav();
+        unsubUnpaired();
       };
     }, [loadChildren]);
     if (selectedChild) {

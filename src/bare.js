@@ -324,6 +324,18 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       send({ type: 'event', event: 'alert:bypass', data: alertEntry })
       break
     }
+    case 'unpair': {
+      // Parent has removed this child — wipe all local state and return to setup.
+      // Collect keys first, then delete: avoids Hyperbee deadlock from writing
+      // inside a createReadStream iteration.
+      const allKeys = []
+      for await (const { key } of db.createReadStream()) {
+        allKeys.push(key)
+      }
+      for (const key of allKeys) await db.del(key).catch(() => {})
+      send({ type: 'event', event: 'child:reset', data: {} })
+      break
+    }
     default:
       send({ type: 'event', event: 'peer:message', data: msg })
       break
@@ -392,6 +404,22 @@ async function handleHello (msg, conn, remoteKeyHex) {
   // Verify signature using the declared identity key
   if (!verifyMessage(msg, peerIdentityKeyHex)) {
     console.warn('[bare] invalid hello: bad signature')
+    return
+  }
+
+  // Reject blocked peers (previously unpaired by parent).
+  // Send them the 'unpair' message before closing so they can wipe their state
+  // even if they were offline when the parent originally ran child:unpair.
+  const blockedEntry = await db.get('blocked:' + peerIdentityKeyHex).catch(() => null)
+  if (blockedEntry) {
+    console.warn('[bare] rejected hello from blocked peer:', peerIdentityKeyHex.slice(0, 8))
+    // Send 'unpair' so the child can wipe its state even if it was offline when the
+    // parent originally ran child:unpair. Don't destroy immediately — let the write
+    // flush through. The child will close the connection after processing unpair.
+    try {
+      const signed = signMessage({ type: 'unpair', payload: {} }, identity)
+      conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+    } catch (_e) { /* connection may already be closing */ }
     return
   }
 

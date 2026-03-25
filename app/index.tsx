@@ -318,7 +318,7 @@ export default function Root () {
           if (_dbReady && _mode === 'child') {
             NativeModules.UsageStatsModule?.checkChildPermissions?.()
               .then((p: { accessibility: boolean; usageStats: boolean }) => {
-                if (!p.accessibility) router.replace('/child-setup?step=1')
+                if (!p.accessibility) router.replace('/child-setup?step=1&source=bypass_recovery')
                 else if (!p.usageStats) router.replace('/child-setup?step=2')
               })
               .catch((e: unknown) => console.warn('[index] checkChildPermissions error:', e))
@@ -453,6 +453,12 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.showAppUninstalledNotification?.('You', appLabel, '')
                 }
               }
+              // Child was remotely unpaired by parent — wipe local state and return to setup
+              if (msg.event === 'child:reset') {
+                router.replace('/setup')
+                return
+              }
+
               // Forward all other Bare events to WebView (buffer if not yet loaded)
               const pearEventJs = 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
               if (_webViewLoaded) {
@@ -513,19 +519,25 @@ export default function Root () {
           NativeModules.UsageStatsModule?.startParentService?.()
         }
 
-        // Force-stop detection (child only): if enforcement was recently active
-        // (EnforcementService heartbeat <5 min old) but accessibility is now off,
-        // the app was likely force-stopped. Alert the parent via bypass:detected.
+        // Force-stop and background-bypass detection (child only).
         if (data.mode === 'child') {
           NativeModules.UsageStatsModule?.checkChildPermissions?.()
-            .then((p: { accessibility: boolean; usageStats: boolean; enforcementHeartbeatMs: number }) => {
+            .then((p: { accessibility: boolean; usageStats: boolean; enforcementHeartbeatMs: number; bypassDetectedReason: string; bypassDetectedAt: number }) => {
               const now = Date.now()
+
+              // Force-stop detection: heartbeat is recent but accessibility is now off.
               const heartbeatAge = now - (p.enforcementHeartbeatMs || 0)
               if (!p.accessibility && p.enforcementHeartbeatMs > 0 && heartbeatAge < 5 * 60 * 1000) {
                 sendToWorklet({ method: 'bypass:detected', args: { reason: 'force_stopped' } })
-                // Clear the heartbeat so this doesn't re-trigger on subsequent Root remounts
-                // (e.g. when the child-setup wizard completes and routes back to '/')
                 NativeModules.UsageStatsModule?.clearEnforcementHeartbeat?.()
+              }
+
+              // Background-bypass detection: EnforcementService persisted a bypass event
+              // while the RN JS thread was suspended (app backgrounded). Relay it now.
+              const bypassAge = now - (p.bypassDetectedAt || 0)
+              if (p.bypassDetectedReason && bypassAge < 24 * 60 * 60 * 1000) {
+                sendToWorklet({ method: 'bypass:detected', args: { reason: p.bypassDetectedReason } })
+                NativeModules.UsageStatsModule?.clearBypassDetected?.()
               }
             })
             .catch(() => {})

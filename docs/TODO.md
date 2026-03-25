@@ -14,6 +14,19 @@ The Children tab currently shows the name the child declared in its `hello` mess
 - Verify Children tab shows child's real name after reconnect (should work with the `hello` fix)
 - On child Profile screen, show parent's real name in the Parents list
 
+### [x] 54. Force pairing to parent as part of child onboarding — 2026-03-25
+Currently, the child setup wizard only covers Accessibility Service and Usage Stats permissions. A child device is usable as "standalone" without being paired to a parent.
+
+- After permissions are granted, require the child to scan the parent's QR invite before proceeding to the main screen
+- If child is already paired (has at least one parent in `peers:`), skip this step
+- **Where**: `app/child-setup.tsx` — add a step 3 for pairing if no parent is paired yet
+
+### [ ] 53. Child "Home" tab is a placeholder
+The Home tab on the child device currently just shows "All good" with no real content.
+
+- **Consider**: Show current enforcement status (which apps are blocked right now), today's screen time summary, active schedule restrictions, and any pending requests
+- **Where**: `src/ui/components/ChildHome.jsx` (or equivalent)
+
 ### [ ] 3. Avatar customization
 Add avatar/photo support on the Profile page and during forced profile setup.
 
@@ -60,13 +73,8 @@ After correct PIN, child now sees a "How long?" picker (15 min / 30 min / 1 hour
 
 ## Added 2026-03-20
 
-### [ ] 14. What happens when child turns off Accessibility Service?
-When the child disables the PearGuard Accessibility Service, enforcement silently stops. The bypass detection path (`onBypassDetected`) should already fire, but the UX around it needs verification and hardening.
-
-- Verify `EnforcementService` detects and emits `bypass:detected` when Accessibility is disabled
-- Confirm parent receives the bypass alert via P2P relay
-- Consider whether re-enabling should require a PIN or parent approval
-- Related: TODO #6 (guided setup) — the same deep-link flow could be reused here to guide the child back to enabling it
+### [x] 14. What happens when child turns off Accessibility Service? — 2026-03-24
+Detection and UX hardened. `EnforcementService` detects the accessibility→disabled transition and now also persists `bypass_detected_reason`/`bypass_detected_at` to SharedPreferences so the event survives a suspended RN JS thread. On next launch, `index.tsx` reads these and relays `bypass:detected` to the worklet (which queues `bypass:alert` to the parent), then clears them. The `child-setup` screen shows a "Your parent has been notified" red banner when navigated to via `source=bypass_recovery`. Re-enabling does not require a PIN (would block enforcement recovery).
 
 ### [ ] 15. Apps list: categories, expandable/collapsible sections, search
 The Apps tab will grow large on a real device. Make it manageable.
@@ -149,20 +157,18 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 ### [x] 31. Parent setup: require override PIN before first use — 2026-03-23
 Two gates added. Gate 1 (`app/setup.tsx`): after tapping "I'm a Parent", a PIN setup step is shown inline before navigating to the dashboard. Gate 2 (`src/ui/components/ParentApp.jsx`): on mount, checks `pin:isSet`; if false, renders a full-screen PIN overlay until a valid PIN is saved. New `pin:isSet` bare dispatch method reads parent's own `'policy'` key. All PIN inputs restricted to exactly 4 digits with auto-focus from entry to confirm field on 4th digit. Same 4-digit restriction and auto-focus applied to `Settings.jsx`.
 
-### [ ] 32. Parent-initiated unpair / remote deactivation of child
-The parent should be able to sever the pairing from their side, which should remotely deactivate PearGuard enforcement on the child device.
+### [ ] 55. After unpairing child device, can't pair back to same parent
+When a parent removes a child via the "Remove" button, the parent writes a `blocked:{childPublicKey}` entry to prevent reconnects. The child's state is wiped and it returns to setup. But if the user tries to re-pair the same child to the same parent, the `blocked:` entry causes the parent to reject the child's `hello` with an `unpair` message, making re-pairing impossible without clearing the parent's data.
 
-- **Parent side**: "Remove child" option in ChildDetail → sends an `unpair` P2P message to the child, then deletes `peers:{childPublicKey}` and `policy:{childPublicKey}` locally
-- **Child side**: On receiving `unpair`, delete `peers:*`, `policy`, and `mode` from Hyperbee; navigate to setup screen
-- **Offline case**: If child is offline, queue the `unpair` message; deliver on next reconnect
-- **Related**: TODO #20 (failsafe unpair from child side)
+- **Fix**: Clear the `blocked:{childPublicKey}` entry when a new invite is generated or when the child completes the invite acceptance flow
+- **Alternative**: Add a UI option on the parent to "re-allow" a previously removed child
 
-### [ ] 28. Prevent child from clearing app storage to deactivate PearGuard
-Clearing PearGuard's storage via Android Settings (Apps → PearGuard → Clear Storage) wipes all Hyperbee data — keypair, pairing records, policy — effectively unpairing the device without parent knowledge.
+### [x] 28. Prevent child from clearing app storage to deactivate PearGuard — 2026-03-24
+**Investigation result**: Preventing Clear Data is not possible as a Device Admin — it requires Device Owner (enterprise MDM) privileges, which are not available to consumer apps. This is an Android OS-level user right.
 
-- **Investigate**: Does `DevicePolicyManager` allow restricting "Clear Data" for a specific app when PearGuard is a Device Admin?
-- **Detect**: On next launch after a wipe, the child setup wizard would re-run (no `mode` key in DB). This could be used as a signal to notify the parent if they're still reachable.
-- **Related**: TODO #20 (failsafe unpair), TODO #23 (force-close stops enforcement)
+**Detection result**: No standard Android storage survives Clear Data for non-system apps (SharedPreferences, files, and even ciphertext encrypted with Keystore-backed keys are all in the app's data directory). There is no reliable way to detect the wipe from the child side before it happens or on first subsequent launch.
+
+**Mitigation**: The existing parent heartbeat staleness detection (from #23/#37) already covers this — when the child clears data, heartbeats stop and `ParentConnectionService` fires the "enforcement may be off" notification after 3 min. Updated the notification text in both `ParentConnectionService` and `UsageStatsModule` to say "force-closed **or app data cleared**" so the parent has the correct context. Child must re-pair after a data clear.
 
 ### [x] 29. Bug: Initial pairing should not send "app installed" notifications to parent — 2026-03-22
 `handleIncomingAppsSync` now checks `raw` (the existing policy record) before processing: if null it's the first sync, so alert entries and `app:installed` events are suppressed. `apps:synced` still fires so the Apps tab refreshes. Incremental syncs (reconnects after initial pairing) continue to notify for genuinely new installs.
@@ -252,6 +258,9 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 32. Parent-initiated unpair / remote deactivation of child — 2026-03-25
+Parent "Remove" button in ChildDetail sends `child:unpair` to the bare worklet. Parent side: writes `blocked:{childPublicKey}` first (prevents reconnect race), deletes peer/policy/alert/usageReport records, sends signed `unpair` P2P message, emits `child:unpaired` event to UI (removes child from list). Child side: on receiving `unpair`, collects all DB keys then deletes them all, emits `child:reset` → RN navigates to `/setup`. Offline case handled: if child was offline at unpair time, `handleHello` on parent now sends the signed `unpair` before returning when a blocked peer reconnects, so the child receives it on next connection.
 
 ### [x] 46. Bug: "Requesting app access" notification shows package name instead of app name — 2026-03-24
 Child now includes `appName` in the `time:request` P2P payload. Parent uses it directly, falling back to policy cache then `packageName`.

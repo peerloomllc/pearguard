@@ -187,6 +187,56 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 - **Sort option**: Toggle between alphabetical and install/discovery date (order apps were added to policy)
 - **Where**: `src/ui/components/AppsTab.jsx` — sort `Object.entries(policy.apps)` before rendering; add a sort control in the header
 
+## Added 2026-03-25
+
+### [x] 60. Bug: Parent PIN not carried over to child after Remove + re-pair — 2026-03-25
+Root cause: `unpair` deletes `policy:{childPublicKey}`, so `handleIncomingAppsSync` recreates it from scratch as `{ apps: {}, childPublicKey, version: 0 }` — no `pinHash`. Fixed in both `handleIncomingAppsSync` and `handleIncomingAppInstalled`: if `policy.pinHash` is missing, fetch it from the parent's own `'policy'` key and inject it before storing/pushing the policy.
+
+### [ ] 58. Block overlay should show reason for block
+The overlay currently shows a generic title. Show a specific reason so the child understands why they're blocked.
+
+- **Cases**: "Not approved by parent", "Daily time limit reached", "Scheduled blackout (rule label)"
+- **Where**: `AppBlockerModule.java` `showOverlay()` — the `reason` string is already passed in; verify the `reasonView` TextView is surfacing it clearly, or improve the message strings in `getBlockReason()`
+
+### [ ] 59. New app install: auto-generate a request + notification opens Requests list
+When a child installs a new app it goes to `pending` status. Currently the parent gets an "app installed" notification that opens the Apps tab. The parent should be able to action it from the Requests list instead.
+
+- **Auto-generate request**: When a new app arrives as `pending` on the parent, create a `req:*` Hyperbee entry so it appears in the Requests tab alongside time requests
+- **Notification deep link**: Change `showAppInstalledNotification` to link to `pear://pearguard/alerts?childPublicKey=X&tab=requests` instead of `tab=apps`
+- **Where**: `src/bare-dispatch.js` `handleIncomingAppInstalled`, `android/.../UsageStatsModule.java` `showAppInstalledNotification`
+
+### [ ] 61. Track and display active overrides in UI
+When a PIN or parent-approved override is active for an app, show it somewhere visible so the parent and child both know a time extension is in effect and when it expires.
+
+- **Child side**: Show active overrides on the Home tab (once #53 is built) or in My Requests — e.g. "YouTube: override active, expires in 23 min"
+- **Parent side**: Show in ChildDetail (Activity or Requests tab) — e.g. a badge or row showing the child has an active override for a specific app
+- **Where**: Requires surfacing override expiry via a bare method (e.g. `overrides:list`) so the UI can read it
+
+### [ ] 62. "Send Request" overlay should prompt for a requested duration
+Currently "Send Request" sends a generic access request with no duration. The PIN override picker already shows 15 min / 30 min / 1 hr / 2 hr options — the request flow should too, so the parent knows exactly how long the child wants.
+
+- **Child overlay** (`AppBlockerModule.java` `onSendRequest`): Show the same duration picker before sending the `onTimeRequest` event; include the selected `requestedSeconds` in the payload
+- **Bare / P2P** (`src/bare-dispatch.js` `time:request`): Pass `requestedSeconds` through the P2P message
+- **Parent Requests tab** (`src/ui/components/ChildDetail.jsx` Requests tab): Display the requested duration alongside the app name
+- **Parent approval** (`bare-dispatch.js` `request:approve`): Use the child's requested duration as the default override duration (parent can still change it)
+
+### [ ] 63. Send Request logic: approval request vs. extra time request
+The overlay "Send Request" button should behave differently based on why the app is blocked.
+
+- **Blocked / pending (unapproved)**: send an approval request — "Can I use this app?" Parent sees it in Requests tab and can approve/deny the app policy
+- **Approved but hit daily limit or schedule**: send an extra-time request — "Can I have more time?" with a duration picker (see #62); parent grants a timed override without changing the policy
+- **Where**: `AppBlockerModule.java` `onSendRequest` — check the block reason before emitting `onTimeRequest`; pass a `requestType` field (`approval` vs `extra_time`) in the event payload
+- **Bare / P2P** (`src/bare-dispatch.js` `time:request`): route `approval` type differently from `extra_time` — approval requests update app status, time requests grant an override
+- **Parent Requests tab**: display the request type clearly so the parent knows what they're approving
+
+### [ ] 64. Investigate inconsistent policy enforcement after multiple Remove/Re-pair cycles
+After removing and re-pairing a child multiple times, enforcement behavior becomes unpredictable — some apps may not be blocked when they should be, or the PIN may stop working again.
+
+- **Investigate**: Whether `peers:`, `policy:`, `blocked:`, and `req:*` keys are fully cleaned up on each Remove cycle
+- **Investigate**: Whether stale `noiseKey` values survive across re-pairs and cause `sendToPeer` to deliver policy updates to the wrong connection
+- **Investigate**: Whether the `overrides` HashMap in `AppBlockerModule` accumulates stale entries across re-pairs (in-memory, never cleared)
+- **Fix**: Ensure a full reset on each Remove — clear overrides, clear SharedPreferences policy, ensure fresh policy is pushed on each new pairing
+
 ## Added 2026-03-22
 
 ### [x] 31. Parent setup: require override PIN before first use — 2026-03-23

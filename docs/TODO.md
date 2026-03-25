@@ -185,6 +185,23 @@ Currently "Send Request" sends a generic access request with no duration. The PI
 - **Parent Requests tab** (`src/ui/components/ChildDetail.jsx` Requests tab): Display the requested duration alongside the app name
 - **Parent approval** (`bare-dispatch.js` `request:approve`): Use the child's requested duration as the default override duration (parent can still change it)
 
+### [ ] 63. Send Request logic: approval request vs. extra time request
+The overlay "Send Request" button should behave differently based on why the app is blocked.
+
+- **Blocked / pending (unapproved)**: send an approval request — "Can I use this app?" Parent sees it in Requests tab and can approve/deny the app policy
+- **Approved but hit daily limit or schedule**: send an extra-time request — "Can I have more time?" with a duration picker (see #62); parent grants a timed override without changing the policy
+- **Where**: `AppBlockerModule.java` `onSendRequest` — check the block reason before emitting `onTimeRequest`; pass a `requestType` field (`approval` vs `extra_time`) in the event payload
+- **Bare / P2P** (`src/bare-dispatch.js` `time:request`): route `approval` type differently from `extra_time` — approval requests update app status, time requests grant an override
+- **Parent Requests tab**: display the request type clearly so the parent knows what they're approving
+
+### [ ] 64. Investigate inconsistent policy enforcement after multiple Remove/Re-pair cycles
+After removing and re-pairing a child multiple times, enforcement behavior becomes unpredictable — some apps may not be blocked when they should be, or the PIN may stop working again.
+
+- **Investigate**: Whether `peers:`, `policy:`, `blocked:`, and `req:*` keys are fully cleaned up on each Remove cycle
+- **Investigate**: Whether stale `noiseKey` values survive across re-pairs and cause `sendToPeer` to deliver policy updates to the wrong connection
+- **Investigate**: Whether the `overrides` HashMap in `AppBlockerModule` accumulates stale entries across re-pairs (in-memory, never cleared)
+- **Fix**: Ensure a full reset on each Remove — clear overrides, clear SharedPreferences policy, ensure fresh policy is pushed on each new pairing
+
 ## Added 2026-03-22
 
 ### [x] 31. Parent setup: require override PIN before first use — 2026-03-23

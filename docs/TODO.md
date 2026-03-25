@@ -60,13 +60,8 @@ After correct PIN, child now sees a "How long?" picker (15 min / 30 min / 1 hour
 
 ## Added 2026-03-20
 
-### [ ] 14. What happens when child turns off Accessibility Service?
-When the child disables the PearGuard Accessibility Service, enforcement silently stops. The bypass detection path (`onBypassDetected`) should already fire, but the UX around it needs verification and hardening.
-
-- Verify `EnforcementService` detects and emits `bypass:detected` when Accessibility is disabled
-- Confirm parent receives the bypass alert via P2P relay
-- Consider whether re-enabling should require a PIN or parent approval
-- Related: TODO #6 (guided setup) — the same deep-link flow could be reused here to guide the child back to enabling it
+### [x] 14. What happens when child turns off Accessibility Service? — 2026-03-24
+Detection and UX hardened. `EnforcementService` detects the accessibility→disabled transition and now also persists `bypass_detected_reason`/`bypass_detected_at` to SharedPreferences so the event survives a suspended RN JS thread. On next launch, `index.tsx` reads these and relays `bypass:detected` to the worklet (which queues `bypass:alert` to the parent), then clears them. The `child-setup` screen shows a "Your parent has been notified" red banner when navigated to via `source=bypass_recovery`. Re-enabling does not require a PIN (would block enforcement recovery).
 
 ### [ ] 15. Apps list: categories, expandable/collapsible sections, search
 The Apps tab will grow large on a real device. Make it manageable.

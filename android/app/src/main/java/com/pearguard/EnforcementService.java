@@ -97,7 +97,14 @@ public class EnforcementService extends Service {
         boolean isEnabled = isAccessibilityServiceEnabled();
 
         if (lastAccessibilityState && !isEnabled) {
-            // Just became disabled — fire alert
+            // Just became disabled — persist to SharedPreferences so the next app launch
+            // can detect and relay this even if the RN JS thread was suspended right now.
+            getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+                .edit()
+                .putString("bypass_detected_reason", "accessibility_disabled")
+                .putLong("bypass_detected_at", System.currentTimeMillis())
+                .apply();
+
             AppBlockerModule.showBypassNotification(this);
 
             ReactContext reactContext = PearGuardReactHost.get();

@@ -96,7 +96,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
 
     /**
      * Returns whether both child-required permissions are granted, plus the last
-     * EnforcementService heartbeat timestamp for force-stop detection.
+     * EnforcementService heartbeat timestamp for force-stop detection and any
+     * persisted bypass event for background-bypass detection.
      * Used by the child setup wizard to poll and auto-advance steps.
      */
     @ReactMethod
@@ -106,7 +107,23 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         result.putBoolean("accessibility", isAccessibilityEnabled());
         result.putBoolean("usageStats", hasUsageStatsPermission());
         result.putDouble("enforcementHeartbeatMs", prefs.getLong("enforcement_heartbeat_ms", 0));
+        String bypassReason = prefs.getString("bypass_detected_reason", null);
+        result.putString("bypassDetectedReason", bypassReason != null ? bypassReason : "");
+        result.putDouble("bypassDetectedAt", prefs.getLong("bypass_detected_at", 0));
         promise.resolve(result);
+    }
+
+    /**
+     * Clears the persisted bypass event after it has been relayed to the worklet,
+     * preventing it from re-firing on subsequent app launches.
+     */
+    @ReactMethod
+    public void clearBypassDetected() {
+        reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .remove("bypass_detected_reason")
+            .remove("bypass_detected_at")
+            .apply();
     }
 
     /**

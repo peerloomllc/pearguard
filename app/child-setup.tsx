@@ -59,9 +59,10 @@ const STEPS = {
 
 export default function ChildSetupScreen() {
   const router = useRouter()
-  const { step: stepParam } = useLocalSearchParams<{ step?: string }>()
+  const { step: stepParam, source } = useLocalSearchParams<{ step?: string; source?: string }>()
   const [step, setStep] = useState<1 | 2>(stepParam === '2' ? 2 : 1)
   const [polling, setPolling] = useState(false)
+  const isBypassRecovery = source === 'bypass_recovery'
 
   // Regression guard: whenever step reaches 2 (first-launch advancement or re-appear jump),
   // verify step 1 is still satisfied before showing step 2.
@@ -105,6 +106,12 @@ export default function ChildSetupScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.stepLabel}>Step {step} of 2</Text>
+
+      {isBypassRecovery && step === 1 && (
+        <View style={styles.notifyBanner}>
+          <Text style={styles.notifyText}>Your parent has been notified of this change.</Text>
+        </View>
+      )}
 
       <config.Icon />
 
@@ -150,4 +157,6 @@ const styles = StyleSheet.create({
   buttonText:       { color: '#6FCF97', fontSize: 15, fontWeight: '600' },
   waitingRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
   waitingText:      { color: '#555', fontSize: 13 },
+  notifyBanner:     { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#ea4335', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
+  notifyText:       { color: '#ea4335', fontSize: 13, textAlign: 'center' },
 })

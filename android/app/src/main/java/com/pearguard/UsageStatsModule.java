@@ -518,6 +518,30 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Starts ParentConnectionService, keeping Hyperswarm alive while the app is backgrounded.
+     * Safe to call multiple times — Android deduplicates startForegroundService calls.
+     */
+    @ReactMethod
+    public void startParentService() {
+        Intent intent = new Intent(reactContext, ParentConnectionService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            reactContext.startForegroundService(intent);
+        } else {
+            reactContext.startService(intent);
+        }
+    }
+
+    /**
+     * Stops the ParentConnectionService. Called when the device is in child mode
+     * or when the user logs out, to avoid a stale foreground notification.
+     */
+    @ReactMethod
+    public void stopParentService() {
+        Intent intent = new Intent(reactContext, ParentConnectionService.class);
+        reactContext.stopService(intent);
+    }
+
+    /**
      * Builds a PendingIntent that deep-links to the child's Activity tab in PearGuard.
      * URL: pear://pearguard/alerts?childPublicKey=<key>
      */

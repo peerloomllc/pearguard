@@ -75,7 +75,7 @@
       </intent-filter>
     </activity>
 
-    <!-- EnforcementService: foreground service orchestrator -->
+    <!-- EnforcementService: foreground service orchestrator (child device) -->
     <service
         android:name=".EnforcementService"
         android:enabled="true"
@@ -84,6 +84,17 @@
         <property
             android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
             android:value="parental_control_enforcement" />
+    </service>
+
+    <!-- ParentConnectionService: keeps Hyperswarm alive while parent is backgrounded -->
+    <service
+        android:name=".ParentConnectionService"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="parental_control_monitoring" />
     </service>
 
     <!-- AppBlockerModule: Accessibility Service for app blocking -->

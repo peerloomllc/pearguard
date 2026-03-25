@@ -14839,7 +14839,7 @@
   var import_jsx_runtime4 = __toESM(require_jsx_runtime());
   var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var BLANK_RULE = { label: "", days: [], start: "21:00", end: "07:00" };
-  function RuleRow({ rule, onDelete }) {
+  function RuleRow({ rule, onEdit, onDelete }) {
     const activeDays = DAY_LABELS.filter((_, i) => rule.days.includes(i)).join(", ");
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.ruleRow, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.ruleInfo, children: [
@@ -14852,6 +14852,7 @@
           rule.end
         ] })
       ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.editBtn, onClick: onEdit, "aria-label": `Edit rule ${rule.label}`, children: "Edit" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.deleteBtn, onClick: onDelete, "aria-label": `Delete rule ${rule.label}`, children: "Delete" })
     ] });
   }
@@ -14859,6 +14860,7 @@
     const [policy, setPolicy] = (0, import_react4.useState)(null);
     const [loading, setLoading] = (0, import_react4.useState)(true);
     const [newRule, setNewRule] = (0, import_react4.useState)(BLANK_RULE);
+    const [editingIndex, setEditingIndex] = (0, import_react4.useState)(null);
     const [submitAttempted, setSubmitAttempted] = (0, import_react4.useState)(false);
     const loadPolicy = (0, import_react4.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
@@ -14878,12 +14880,28 @@
       const schedules2 = policy.schedules.filter((_, i) => i !== index);
       saveSchedules(schedules2);
     }
-    function handleAddRule() {
+    function handleEditRule(index) {
+      setEditingIndex(index);
+      setNewRule({ ...policy.schedules[index] });
+      setSubmitAttempted(false);
+    }
+    function handleCancelEdit() {
+      setEditingIndex(null);
+      setNewRule(BLANK_RULE);
+      setSubmitAttempted(false);
+    }
+    function handleSaveRule() {
       setSubmitAttempted(true);
       if (!newRule.label.trim() || newRule.days.length === 0) return;
-      const schedules2 = [...policy.schedules || [], newRule];
+      let schedules2;
+      if (editingIndex !== null) {
+        schedules2 = policy.schedules.map((r, i) => i === editingIndex ? newRule : r);
+      } else {
+        schedules2 = [...policy.schedules || [], newRule];
+      }
       saveSchedules(schedules2);
       setNewRule(BLANK_RULE);
+      setEditingIndex(null);
       setSubmitAttempted(false);
     }
     function toggleDay(dayIndex) {
@@ -14895,8 +14913,8 @@
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.container, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: styles4.sectionHead, children: "Active Rules" }),
       schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: styles4.empty, children: "No schedule rules yet." }),
-      schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RuleRow, { rule, onDelete: () => handleDeleteRule(i) }, i)),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: { ...styles4.sectionHead, marginTop: "24px" }, children: "Add Rule" }),
+      schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RuleRow, { rule, onEdit: () => handleEditRule(i), onDelete: () => handleDeleteRule(i) }, i)),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: { ...styles4.sectionHead, marginTop: "24px" }, children: editingIndex !== null ? "Edit Rule" : "Add Rule" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.form, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
           "Label",
@@ -14954,15 +14972,18 @@
             )
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          "button",
-          {
-            style: styles4.addBtn,
-            onClick: handleAddRule,
-            "aria-label": "Add schedule rule",
-            children: "Add Rule"
-          }
-        )
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: "8px" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "button",
+            {
+              style: styles4.addBtn,
+              onClick: handleSaveRule,
+              "aria-label": editingIndex !== null ? "Save schedule rule" : "Add schedule rule",
+              children: editingIndex !== null ? "Save Changes" : "Add Rule"
+            }
+          ),
+          editingIndex !== null && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.cancelBtn, onClick: handleCancelEdit, "aria-label": "Cancel edit", children: "Cancel" })
+        ] })
       ] })
     ] });
   }
@@ -14981,6 +15002,15 @@
     ruleInfo: { flex: 1 },
     ruleLabel: { fontSize: "14px", fontWeight: "600", display: "block" },
     ruleDetails: { fontSize: "12px", color: "#666" },
+    editBtn: {
+      padding: "5px 12px",
+      border: "1px solid #1a73e8",
+      borderRadius: "6px",
+      color: "#1a73e8",
+      background: "#fff",
+      cursor: "pointer",
+      fontSize: "12px"
+    },
     deleteBtn: {
       padding: "5px 12px",
       border: "1px solid #ea4335",
@@ -14989,6 +15019,15 @@
       background: "#fff",
       cursor: "pointer",
       fontSize: "12px"
+    },
+    cancelBtn: {
+      padding: "10px",
+      border: "1px solid #ccc",
+      borderRadius: "6px",
+      background: "#fff",
+      cursor: "pointer",
+      fontSize: "14px",
+      color: "#555"
     },
     form: { display: "flex", flexDirection: "column", gap: "12px" },
     formLabel: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", color: "#555" },
@@ -15382,7 +15421,10 @@
       /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.tabBar, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         "button",
         {
-          onClick: () => setActiveTab(tab.key),
+          onClick: () => {
+            navigator.vibrate(30);
+            setActiveTab(tab.key);
+          },
           style: {
             ...styles8.tabBtn,
             ...activeTab === tab.key ? styles8.tabActive : styles8.tabInactive
@@ -16132,7 +16174,10 @@
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("nav", { style: styles14.tabBar, children: TABS2.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
         "button",
         {
-          onClick: () => setActiveTab(tab.key),
+          onClick: () => {
+            navigator.vibrate(30);
+            setActiveTab(tab.key);
+          },
           style: {
             ...styles14.tabButton,
             ...activeTab === tab.key ? styles14.tabActive : styles14.tabInactive
@@ -16425,7 +16470,10 @@
           children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
             "button",
             {
-              onClick: () => setActiveTab(tab.id),
+              onClick: () => {
+                navigator.vibrate(30);
+                setActiveTab(tab.id);
+              },
               style: {
                 flex: 1,
                 padding: "12px 0",

@@ -341,6 +341,12 @@ export default function Root () {
             console.warn('[PearGuard] Usage flush failed:', err)
           }
         }),
+
+        // ParentConnectionService heartbeat — trigger swarm:reconnect to restore
+        // any connections that dropped while the app was backgrounded
+        DeviceEventEmitter.addListener('onParentReconnectNeeded', () => {
+          sendToWorklet({ method: 'swarm:reconnect' })
+        }),
       )
 
       // If worklet already running (e.g. returning from setup screen or after deep-link
@@ -489,6 +495,11 @@ export default function Root () {
         }
         if (!data.mode) {
           setTimeout(() => router.replace('/setup'), 500)
+        }
+        // Start the parent background service so Hyperswarm stays connected
+        // while the app is backgrounded (keeps process alive, prevents TCP drop)
+        if (data.mode === 'parent') {
+          NativeModules.UsageStatsModule?.startParentService?.()
         }
       })
 

@@ -180,21 +180,11 @@ Root cause: `tabInactive` style had no `borderBottom` key, so React never remove
 ### [x] 35. Child: tapping "Request Approved" notification should open the approved app or navigate to Requests tab — 2026-03-22
 `showDecisionNotification` now builds a `pear://pearguard/child-requests` deep link PendingIntent. `index.tsx` parses this URL and sets `_pendingChildRequestsNav = true`; the `dbReady` useEffect fires `navigate:child:requests` into the WebView. `ChildApp.jsx` listens for that event and calls `setActiveTab('requests')`.
 
-### [ ] 37. Bug: P2P messages (app installs, time requests) not delivered to parent while app is backgrounded
-When the child sends a message while the parent app is backgrounded, Android drops the Hyperswarm TCP connection. The message is queued on the child and delivered the next time the parent foregrounds (triggering `swarm:reconnect` → new connection → `handleHello` → `flushPendingMessages`). The parent receives no push notification until it opens the app.
+### [x] 37. Bug: P2P messages (app installs, time requests) not delivered to parent while app is backgrounded — 2026-03-24
+Added `ParentConnectionService` — a foreground service on the parent device that keeps the React Native (and Bare worklet) process alive while backgrounded. The service emits `onParentReconnectNeeded` every 30 s → `index.tsx` calls `swarm:reconnect` on the worklet → Hyperswarm re-establishes any dropped connections. Started automatically from `index.tsx` `ready` handler when `mode === 'parent'`.
 
-- **Root cause**: Hyperswarm requires an active foreground TCP connection; there is no background push path
-- **Option A**: Android foreground service on the parent — keeps Hyperswarm alive even when backgrounded, delivering messages in real time
-- **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
-- **Where**: `app/index.tsx`, new foreground service, or FCM integration
-
-### [ ] 52. Maximize background delivery reliability for Requests and Alerts
-Requests and alerts (time requests, app installs, bypass alerts) must reach the parent as consistently as possible even when the app is backgrounded. Related to #37 but broader in scope — covers both parent and child sides and all alert types.
-
-- **Audit**: Confirm all alert types (time request, app install, bypass alert) are queued and flushed on reconnect
-- **Parent-side**: Keep Hyperswarm alive in background via a foreground service (preferred) or FCM wakeup
-- **Child-side**: Ensure queued messages are flushed immediately on reconnect, not just on `handleHello`
-- **Goal**: Parent should receive an Android notification within seconds of a child event, even if the app was not open
+### [x] 52. Maximize background delivery reliability for Requests and Alerts — 2026-03-24
+All child→parent message types (time request, app install, app uninstall, apps sync, bypass alert, usage report, heartbeat) go through `sendToParent()` which always queues to Hyperbee first, then attempts immediate delivery. On reconnect, `handleHello` calls `flushPendingMessages` to drain the queue. Parent side now keeps Hyperswarm alive via `ParentConnectionService` (see #37).
 
 ### [x] 40. Tapping "app installed" notification on parent should deep-link to Apps tab — 2026-03-23
 Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.

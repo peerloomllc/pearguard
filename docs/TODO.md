@@ -21,6 +21,21 @@ Currently, the child setup wizard only covers Accessibility Service and Usage St
 - If child is already paired (has at least one parent in `peers:`), skip this step
 - **Where**: `app/child-setup.tsx` — add a step 3 for pairing if no parent is paired yet
 
+### [ ] 61. Track and display active overrides in UI
+When a PIN or parent-approved override is active for an app, show it somewhere visible so the parent and child both know a time extension is in effect and when it expires.
+
+- **Child side**: Show active overrides on the Home tab (once #53 is built) or in My Requests — e.g. "YouTube: override active, expires in 23 min"
+- **Parent side**: Show in ChildDetail (Activity or Requests tab) — e.g. a badge or row showing the child has an active override for a specific app
+- **Where**: Requires surfacing override expiry via a bare method (e.g. `overrides:list`) so the UI can read it
+
+### [ ] 62. "Send Request" overlay should prompt for a requested duration
+Currently "Send Request" sends a generic access request with no duration. The PIN override picker already shows 15 min / 30 min / 1 hr / 2 hr options — the request flow should too, so the parent knows exactly how long the child wants.
+
+- **Child overlay** (`AppBlockerModule.java` `onSendRequest`): Show the same duration picker before sending the `onTimeRequest` event; include the selected `requestedSeconds` in the payload
+- **Bare / P2P** (`src/bare-dispatch.js` `time:request`): Pass `requestedSeconds` through the P2P message
+- **Parent Requests tab** (`src/ui/components/ChildDetail.jsx` Requests tab): Display the requested duration alongside the app name
+- **Parent approval** (`bare-dispatch.js` `request:approve`): Use the child's requested duration as the default override duration (parent can still change it)
+
 ### [ ] 60. Bug: Parent PIN not carried over to child after Remove + re-pair
 After the parent removes a child and the child re-pairs, entering the PIN on the child's overlay fails — the child's SharedPreferences policy doesn't have the `pinHash`.
 
@@ -249,8 +264,8 @@ Currently the form silently refuses to save without a label — there is no feed
 
 - **Where**: `src/ui/components/ScheduleTab.jsx` — show an inline error message (e.g. "Label is required") when the user tries to save without filling in the label field
 
-### [ ] 44. Child: warn at 10 and 5 minutes before a schedule restriction starts
-Give the child advance notice before a schedule block kicks in so they can save their work.
+### [ ] 44. Child: warn at 10, 5 and 1 minutes before a schedule restriction or time limit starts
+Give the child advance notice before a schedule block or time limit kicks in so they can save their work.
 
 - **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
 

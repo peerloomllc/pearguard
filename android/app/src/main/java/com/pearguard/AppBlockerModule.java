@@ -97,12 +97,25 @@ public class AppBlockerModule extends AccessibilityService {
         });
     }
 
+    /**
+     * Dismisses the overlay unconditionally regardless of which package it is showing for.
+     * Called from UsageStatsModule.dismissAllOverlays() on child:reset (unpair) to clear
+     * any active overlay before the policy is wiped and the child navigates back to setup.
+     */
+    public static void dismissAll() {
+        AppBlockerModule inst = sInstance;
+        if (inst == null) return;
+        new Handler(Looper.getMainLooper()).post(inst::dismissOverlay);
+    }
+
     // Cooldown: after dismissing an overlay, ignore TYPE_WINDOW_STATE_CHANGED events for the
     // same package for DISMISS_COOLDOWN_MS. This prevents the blocked app's background
     // activity-destruction event from re-triggering the overlay over the home screen.
+    // 800ms is enough to cover the destruction event (~100-300ms) without preventing the
+    // user from re-opening the blocked app and seeing the overlay again.
     private String recentlyDismissedPackage = null;
     private long dismissedAt = 0;
-    private static final long DISMISS_COOLDOWN_MS = 2000;
+    private static final long DISMISS_COOLDOWN_MS = 800;
 
     private LazySodiumAndroid lazySodium;
 
@@ -170,7 +183,12 @@ public class AppBlockerModule extends AccessibilityService {
             // packages (e.g. com.android.systemui) mid-gesture while the blocked app
             // is still in the foreground. Skip dismissal for those to prevent the
             // back-gesture bypass: overlay would disappear but blocked app stays open.
-            if (overlayView != null && isSystemOverlayPackage(packageName)) {
+            // Exception: always dismiss when the Home screen launcher comes to the
+            // foreground — on some devices it is a system app with no launch intent,
+            // so isSystemOverlayPackage() would incorrectly skip it, leaving the
+            // overlay stuck over the Home screen (bug #57).
+            if (overlayView != null && isSystemOverlayPackage(packageName)
+                    && !isCurrentHomeLauncher(packageName)) {
                 return;
             }
             dismissOverlay();
@@ -190,6 +208,24 @@ public class AppBlockerModule extends AccessibilityService {
             boolean isSystem = (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             if (!isSystem) return false;
             return pm.getLaunchIntentForPackage(packageName) == null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Returns true if the given package is the currently active Home screen launcher.
+     * Used to ensure the overlay is always dismissed when the user navigates Home,
+     * even on devices where the launcher is a system app with no separate launch intent
+     * (which would otherwise make isSystemOverlayPackage() return true and skip dismissal).
+     */
+    private boolean isCurrentHomeLauncher(String packageName) {
+        try {
+            Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+            homeIntent.addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(
+                    homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
+            return ri != null && packageName.equals(ri.activityInfo.packageName);
         } catch (Exception e) {
             return false;
         }

@@ -351,6 +351,17 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         promise.resolve(null);
     }
 
+    /**
+     * Dismisses any active block overlay unconditionally.
+     * Called from app/index.tsx on child:reset (unpair) so the overlay is cleared
+     * before navigating back to setup and the policy is wiped from SharedPreferences.
+     */
+    @ReactMethod
+    public void dismissAllOverlays(Promise promise) {
+        AppBlockerModule.dismissAll();
+        promise.resolve(null);
+    }
+
     private static final String REQUEST_CHANNEL_ID = "pearguard_time_requests";
     private static int notificationId = 2000;
 

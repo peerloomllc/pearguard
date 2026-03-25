@@ -21,6 +21,26 @@ Currently, the child setup wizard only covers Accessibility Service and Usage St
 - If child is already paired (has at least one parent in `peers:`), skip this step
 - **Where**: `app/child-setup.tsx` — add a step 3 for pairing if no parent is paired yet
 
+### [ ] 60. Bug: Parent PIN not carried over to child after Remove + re-pair
+After the parent removes a child and the child re-pairs, entering the PIN on the child's overlay fails — the child's SharedPreferences policy doesn't have the `pinHash`.
+
+- **Investigate**: Whether the `policy:update` pushed to the child on re-pair includes `pinHash`
+- **Likely cause**: `handleHello` builds the policy snapshot from `policy:{childPublicKey}.apps` but may not include the parent-level `pinHash` from the parent's own `'policy'` key
+- **Fix**: Ensure `pinHash` is included in every `policy:update` sent to children
+
+### [ ] 58. Block overlay should show reason for block
+The overlay currently shows a generic title. Show a specific reason so the child understands why they're blocked.
+
+- **Cases**: "Not approved by parent", "Daily time limit reached", "Scheduled blackout (rule label)"
+- **Where**: `AppBlockerModule.java` `showOverlay()` — the `reason` string is already passed in; verify the `reasonView` TextView is surfacing it clearly, or improve the message strings in `getBlockReason()`
+
+### [ ] 59. New app install: auto-generate a request + notification opens Requests list
+When a child installs a new app it goes to `pending` status. Currently the parent gets an "app installed" notification that opens the Apps tab. The parent should be able to action it from the Requests list instead.
+
+- **Auto-generate request**: When a new app arrives as `pending` on the parent, create a `req:*` Hyperbee entry so it appears in the Requests tab alongside time requests
+- **Notification deep link**: Change `showAppInstalledNotification` to link to `pear://pearguard/alerts?childPublicKey=X&tab=requests` instead of `tab=apps`
+- **Where**: `src/bare-dispatch.js` `handleIncomingAppInstalled`, `android/.../UsageStatsModule.java` `showAppInstalledNotification`
+
 ### [ ] 53. Child "Home" tab is a placeholder
 The Home tab on the child device currently just shows "All good" with no real content.
 

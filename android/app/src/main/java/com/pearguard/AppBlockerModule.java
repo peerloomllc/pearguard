@@ -15,6 +15,8 @@ import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -36,6 +38,7 @@ import com.goterl.lazysodium.SodiumAndroid;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -346,6 +349,24 @@ public class AppBlockerModule extends AccessibilityService {
         }
     }
 
+    // --- Haptics ---
+
+    private static final long[] PATTERN_TAP     = { 0, 30 };  // digit key press
+    private static final long[] PATTERN_BUTTON  = { 0, 60 };  // main action buttons
+    private static final long[] PATTERN_ERROR   = { 0, 80, 60, 80 };
+    private static final long[] PATTERN_SUCCESS = { 0, 150 };
+
+    @SuppressWarnings("deprecation")
+    private void vibrate(long[] pattern) {
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v == null || !v.hasVibrator()) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            v.vibrate(VibrationEffect.createWaveform(pattern, -1));
+        } else {
+            v.vibrate(pattern, -1);
+        }
+    }
+
     // --- Overlay UI ---
 
     private void showOverlay(String packageName, String reason) {
@@ -403,13 +424,13 @@ public class AppBlockerModule extends AccessibilityService {
         Button requestButton = new Button(this);
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
         requestButton.setText(requestAlreadySent ? "Resend Request" : "Send Request");
-        requestButton.setOnClickListener(v -> onSendRequest(packageName));
+        requestButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName); });
         layout.addView(requestButton);
 
         Button pinButton = new Button(this);
         pinButton.setText("Enter PIN");
         pinButton.setPadding(0, 24, 0, 0);
-        pinButton.setOnClickListener(v -> onEnterPin(packageName));
+        pinButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onEnterPin(packageName); });
         layout.addView(pinButton);
 
         final View pendingOverlay = layout;
@@ -556,6 +577,7 @@ public class AppBlockerModule extends AccessibilityService {
                 btn.setOnClickListener(v -> {
                     if ("⌫".equals(digit)) {
                         if (!enteredPin[0].isEmpty()) {
+                            vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0].substring(0, enteredPin[0].length() - 1);
                             updateDisplay.run();
                         }
@@ -563,34 +585,19 @@ public class AppBlockerModule extends AccessibilityService {
                         // placeholder cell — no action
                     } else {
                         if (enteredPin[0].length() < 4) {
+                            vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0] + digit;
                             updateDisplay.run();
 
                             // Auto-submit when 4 digits entered
                             if (enteredPin[0].length() == 4) {
                                 if (verifyPin(enteredPin[0])) {
-                                    JSONObject policy = loadPolicy();
-                                    int durationSeconds = 3600;
-                                    if (policy != null) {
-                                        durationSeconds = policy.optInt("overrideDurationSeconds", 3600);
-                                    }
-                                    long expiryMs = System.currentTimeMillis() + (durationSeconds * 1000L);
-                                    overrides.put(packageName, expiryMs);
-
-                                    ReactContext rc = PearGuardReactHost.get();
-                                    if (rc != null && rc.hasActiveReactInstance()) {
-                                        WritableMap evt = Arguments.createMap();
-                                        evt.putString("packageName", packageName);
-                                        evt.putDouble("timestamp", System.currentTimeMillis());
-                                        evt.putInt("durationSeconds", durationSeconds);
-                                        rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                                                .emit("onPinSuccess", evt);
-                                    }
-
+                                    vibrate(PATTERN_SUCCESS);
                                     try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
                                     pinDialogView = null;
-                                    dismissOverlay();
+                                    showDurationPicker(packageName);
                                 } else {
+                                    vibrate(PATTERN_ERROR);
                                     enteredPin[0] = "";
                                     pinDisplay.setTextColor(Color.RED);
                                     pinDisplay.setText("Incorrect PIN");
@@ -639,8 +646,82 @@ public class AppBlockerModule extends AccessibilityService {
         pinDialogView = dialogLayout;
     }
 
+    private void showDurationPicker(String packageName) {
+        int[][] options = {
+            { 15,   15 * 60 },
+            { 30,   30 * 60 },
+            { 60,   60 * 60 },
+            { 120, 120 * 60 },
+        };
+        String[] labels = { "15 min", "30 min", "1 hour", "2 hours" };
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackgroundColor(Color.argb(255, 30, 30, 30));
+        layout.setPadding(48, 48, 48, 48);
+        layout.setGravity(Gravity.CENTER);
+
+        TextView title = new TextView(this);
+        title.setText("How long?");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, 0, 0, 32);
+        layout.addView(title);
+
+        for (int i = 0; i < labels.length; i++) {
+            final int durationSeconds = options[i][1];
+            Button btn = new Button(this);
+            btn.setText(labels[i]);
+            btn.setTextColor(Color.WHITE);
+            btn.setTextSize(16);
+            btn.setBackgroundColor(Color.argb(200, 26, 115, 232));
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            p.setMargins(0, 8, 0, 8);
+            btn.setLayoutParams(p);
+            btn.setOnClickListener(v -> {
+                vibrate(PATTERN_BUTTON);
+                try { windowManager.removeView(layout); } catch (Exception ignored) {}
+                pinDialogView = null;
+                grantOverride(packageName, durationSeconds);
+            });
+            layout.addView(btn);
+        }
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+        );
+        params.gravity = Gravity.CENTER;
+        windowManager.addView(layout, params);
+        pinDialogView = layout;
+    }
+
+    private void grantOverride(String packageName, int durationSeconds) {
+        long expiryMs = System.currentTimeMillis() + (durationSeconds * 1000L);
+        overrides.put(packageName, expiryMs);
+
+        ReactContext rc = PearGuardReactHost.get();
+        if (rc != null && rc.hasActiveReactInstance()) {
+            WritableMap evt = Arguments.createMap();
+            evt.putString("packageName", packageName);
+            evt.putDouble("timestamp", System.currentTimeMillis());
+            evt.putInt("durationSeconds", durationSeconds);
+            rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                    .emit("onPinSuccess", evt);
+        }
+        dismissOverlay();
+    }
+
     /**
-     * Verifies the entered PIN against the stored Argon2id hash using lazysodium.
+     * Verifies the entered PIN against the BLAKE2b hex hash stored by bare-dispatch.js pin:set.
+     * pin:set uses crypto_generichash (BLAKE2b) and stores the result as a lowercase hex string.
      */
     private boolean verifyPin(String enteredPin) {
         JSONObject policy = loadPolicy();
@@ -649,26 +730,29 @@ public class AppBlockerModule extends AccessibilityService {
         if (pinHash == null || pinHash.isEmpty()) return false;
 
         try {
-            // LazySodiumAndroid is constructed with HexMessageEncoder as its default
-            // messageEncoder. The String overload of cryptoPwHashStrVerify calls
-            // messageEncoder.decode(hash), which tries to interpret the argon2id string
-            // "$argon2id$v=19$..." as hex — producing garbage bytes and a wrong result.
-            //
-            // Use the byte[] overload directly to bypass the encoder, mirroring what the
-            // bare worklet does in pin:verify:
-            //   const storedHash = Buffer.alloc(crypto_pwhash_STRBYTES) // zero-filled
-            //   Buffer.from(policy.pinHash).copy(storedHash)
-            //   crypto_pwhash_str_verify(storedHash, pinBuffer)
-            final int STRBYTES = 128; // crypto_pwhash_STRBYTES
-            byte[] hashBytes = new byte[STRBYTES]; // zero-filled — null padding included
-            byte[] rawHash = pinHash.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            System.arraycopy(rawHash, 0, hashBytes, 0, Math.min(rawHash.length, STRBYTES));
-
+            byte[] storedHash = hexToBytes(pinHash);
             byte[] passwordBytes = enteredPin.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            return lazySodium.cryptoPwHashStrVerify(hashBytes, passwordBytes, passwordBytes.length);
+
+            final int HASH_BYTES = 32; // crypto_generichash_BYTES
+            byte[] computedHash = new byte[HASH_BYTES];
+            // Mirrors: sodium.crypto_generichash(out, in) with no key
+            lazySodium.getSodium().crypto_generichash(
+                    computedHash, HASH_BYTES, passwordBytes, passwordBytes.length, null, 0);
+
+            return Arrays.equals(computedHash, storedHash);
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        int len = hex.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
+        }
+        return data;
     }
 
     // --- Bypass detection notification ---

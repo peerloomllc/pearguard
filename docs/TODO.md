@@ -53,13 +53,8 @@ The parent's invite URL is derived from the Hyperswarm keypair stored in the Hyp
 - **Keep as-is**: Simpler for reconnecting existing children — same key means no re-pairing.
 - **Force fresh keypair**: On first-launch setup, always generate a new keypair and clear old peer records.
 
-### [ ] 13. PIN override: prompt for duration
-
-When a PIN override is granted, the duration is fixed at `policy.overrideDurationSeconds` (default 3600s = 1 hour). The child (and parent) should be able to choose a duration at the moment of granting.
-
-- **Where** (child overlay): After 4-digit PIN is verified, show a duration picker (e.g., "15 min / 30 min / 1 hour / Custom") before dismissing
-- **Where** (parent side): Parent approving a time request should similarly choose duration
-- **Edge case**: If parent updates policy while an override is active, the override should be respected until it expires
+### [x] 13. PIN override: prompt for duration — 2026-03-24
+After correct PIN, child now sees a "How long?" picker (15 min / 30 min / 1 hour / 2 hours) before the override is granted.
 
 ---
 
@@ -193,13 +188,21 @@ When the child sends a message while the parent app is backgrounded, Android dro
 - **Option B**: FCM push as a fallback wakeup — child sends an FCM ping to the parent when it has a queued message; parent wakes Hyperswarm to flush
 - **Where**: `app/index.tsx`, new foreground service, or FCM integration
 
+### [ ] 52. Maximize background delivery reliability for Requests and Alerts
+Requests and alerts (time requests, app installs, bypass alerts) must reach the parent as consistently as possible even when the app is backgrounded. Related to #37 but broader in scope — covers both parent and child sides and all alert types.
+
+- **Audit**: Confirm all alert types (time request, app install, bypass alert) are queued and flushed on reconnect
+- **Parent-side**: Keep Hyperswarm alive in background via a foreground service (preferred) or FCM wakeup
+- **Child-side**: Ensure queued messages are flushed immediately on reconnect, not just on `handleHello`
+- **Goal**: Parent should receive an Android notification within seconds of a child event, even if the app was not open
+
 ### [x] 40. Tapping "app installed" notification on parent should deep-link to Apps tab — 2026-03-23
 Currently the notification routes to the Activity tab. The more actionable destination is the Apps tab for the relevant child, where the parent can immediately approve or deny the new app.
 
 - **Where**: `android/.../UsageStatsModule.java` `showAppInstalledNotification` — build a `pear://pearguard/alerts?childPublicKey=X&tab=apps` PendingIntent (mirrors the existing alerts deep link pattern)
 - `app/index.tsx` and `src/ui/components/ChildDetail.jsx` already support the `tab` param, so no UI changes needed
 
-### [x] 38. Bug: Usage tab not populating any data — 2026-03-23
+### [x] 38. Bug: Usage tab not populating any data — 2026-03-24
 Two bugs: (1) `usage:flush` in `bare-dispatch.js` ignored `args.usage` (native data passed from `index.tsx` → `getDailyUsageAll()`) and always sent `usageStats: {}`; fixed to map native array into `report.apps`. (2) `usage:getLatest` didn't exist; added handler that reads latest `usageReport:{childPublicKey}:*` entry from Hyperbee via `createReadStream({ reverse: true, limit: 1 })`.
 - **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
 
@@ -210,11 +213,14 @@ Time-limit enforcement and scheduled block windows should interoperate correctly
 - **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
 - **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
 
-### [x] 42. Bug: Usage tab data disappears after leaving and returning to the app — 2026-03-23
+### [x] 42. Bug: Usage tab data disappears after leaving and returning to the app — 2026-03-24
 Usage stats were visible, but after backgrounding the app and returning the Usage tab showed empty again. The `usageReport:{childPublicKey}:{timestamp}` entries may be getting lost across app restarts, or `usage:getLatest` is not finding them on re-mount.
 
 - **Investigate**: Confirm `usageReport:*` keys are persisted in Hyperbee across app restarts (not just in-memory); check if the bare worklet re-initializes and clears state on foreground
 - **Also check**: `UsageTab` calls `usage:getLatest` on mount — verify the query range `gt/lt` matches the actual stored keys
+
+### [x] 47. Sync reliability: Hypercore lock retry + swarm.flush on disconnect — 2026-03-24
+Applied lessons from PearCal sync post-mortem. `init()` now retries up to 20× with 1s delay when Hypercore throws a lock error (Bare may restart before the previous instance releases the lock file). `conn.on('close')` now calls `swarm.flush()` so Hyperswarm expedites peer reconnection after a drop rather than waiting for its default retry schedule.
 
 ### [x] 41. System apps must be exempt from policies and filtered from Usage report — 2026-03-23
 `AppBlockerModule.java` `getBlockReason` now calls `isSystemOverlayPackage` at the top to exempt system services with no launcher icon. `UsageStatsModule.java` `getDailyUsageAll` now builds a launcher-package set and skips any app not in it.
@@ -229,15 +235,22 @@ Give the child advance notice before a schedule block kicks in so they can save 
 
 - **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
 
-### [ ] 45. Parent: ability to edit existing schedule rules
+### [ ] 48. Investigate slow app startup (5+ seconds)
+App takes over 5 seconds to load on device. Identify the bottleneck and reduce startup time.
 
-### [ ] 46. Bug: "Requesting app access" notification shows package name instead of app name
-The notification text uses the raw package name (e.g. `com.android.chrome`) instead of the human-readable app name.
+### [ ] 49. Grant specific apps permission to bypass schedule rules
+Some apps (e.g. phone, messaging) should be usable even during a schedule blackout window.
 
-- **Where**: `android/.../UsageStatsModule.java` `showTimeRequestNotification` (or whichever method builds the request notification) — ensure `appName` is passed and used as the label, falling back to `packageName` only if absent
-Schedule rules can currently be added and deleted but not edited in place.
+- **Where**: `src/ui/components/ScheduleTab.jsx` or per-rule form — add an "Exempt apps" picker per rule
+- **Enforcement**: `EnforcementService` / `AppBlockerModule` should skip the schedule check for exempt packages
 
-- **Where**: `src/ui/components/ScheduleTab.jsx` — add an Edit button per rule that populates the form fields with the rule's current values; saving replaces the existing rule
+### [ ] 50. Clarify schedule rule UI text — rules are blackout windows, not permitted times
+The current label/description language is ambiguous. Make it clear that a schedule rule defines when apps are **blocked** (a blackout/lockdown window), not when they are allowed.
+
+- **Where**: `src/ui/components/ScheduleTab.jsx` — update section heading, form labels, and placeholder text
+
+### [x] 51. Bug: Correct PIN not working on child device — 2026-03-24
+`verifyPin()` in `AppBlockerModule.java` was calling LazySodium's `cryptoPwHashStrVerify` (argon2id) while `bare-dispatch.js` `pin:set` had been switched to BLAKE2b hex in commit 129e929. Fixed by calling `crypto_generichash` via the native `SodiumAndroid` layer and comparing the resulting bytes directly.
 
 ## Known Limitations
 
@@ -247,6 +260,12 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 46. Bug: "Requesting app access" notification shows package name instead of app name — 2026-03-24
+Child now includes `appName` in the `time:request` P2P payload. Parent uses it directly, falling back to policy cache then `packageName`.
+
+### [x] 45. Parent: ability to edit existing schedule rules — 2026-03-24
+Each rule row now has an Edit button. Clicking it loads the rule into the form (heading changes to "Edit Rule", button changes to "Save Changes"). Saving replaces the rule in place. Cancel restores the Add Rule form.
 
 ### [x] 2. Share profile names between devices (Children tab) — 2026-03-24
 Children tab shows child's real name via `hello` message on reconnect. Child's Profile screen shows parent's real name in the Parents list.
@@ -273,6 +292,12 @@ Resolved as part of TODO #6. Step 2 of the child setup wizard guides the user th
 
 ### [x] 7. Remove "Pending Approval" badge from Apps list — 2026-03-21
 The yellow "Pending Approval" badge on each row was redundant — the Approve/Deny buttons immediately below it already convey pending state.
+
+### [x] 38. Bug: Usage tab not reliably populating data — 2026-03-24
+Four root causes fixed: (1) bare.js `setInterval` fired `usage:flush` with no native data every 5 minutes, sending empty `apps:[]` reports to the parent that overwrote valid data via `onBareEvent` — removed (EnforcementService owns this timer). (2) `EnforcementService` silently dropped the flush when the RN bridge was inactive (app backgrounded); now resets `lastUsageFlushTime = 0` to retry on next loop. (3) Added `usageFlushRequested` event on child reconnect so data arrives within seconds of pairing. (4) `usageReport:` keys were stored with `msg.from` (Hyperswarm noise key) but queried with `child.publicKey` (Ed25519 identity key) — now uses `msg.payload.childPublicKey` so both sides agree. Also added `lastSynced` to reports (fixing "Last synced: Never"), empty-report guard in `usage:flush`, and `ChildDetail` now keeps all tabs mounted (`display:none` when inactive) so UsageTab state survives tab navigation.
+
+### [x] 42. Bug: Usage tab data disappears after navigating to another tab and back — 2026-03-24
+`ChildDetail` rendered only the active tab component, so `UsageTab` unmounted on tab switch and remounted fresh. On remount, `usage:getLatest` returned null (key mismatch between stored noise key and queried identity key — see #38 fix). Fixed both the key consistency bug and the unmount issue: `ChildDetail` now renders all tab components simultaneously and uses `display:none` to hide inactive ones, preserving loaded state across tab navigation.
 
 ### [x] 9. Use app display name instead of package name — 2026-03-21
 Both the parent's Apps tab and child's My Requests list were showing raw package names (e.g. `com.android.chrome`). Now shows the human-readable app name as the primary label with the package name in smaller text below. `appName` is also stored in `req:*` records so My Requests shows it correctly for overlay-originated requests.

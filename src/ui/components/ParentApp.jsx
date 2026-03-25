@@ -130,7 +130,7 @@ export default function ParentApp() {
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => { navigator.vibrate(30); setActiveTab(tab.key); }}
             style={{
               ...styles.tabButton,
               ...(activeTab === tab.key ? styles.tabActive : styles.tabInactive),

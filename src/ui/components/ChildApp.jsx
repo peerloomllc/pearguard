@@ -39,7 +39,7 @@ export default function ChildApp() {
         {TABS.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { navigator.vibrate(30); setActiveTab(tab.id); }}
             style={{
               flex: 1,
               padding: '12px 0',

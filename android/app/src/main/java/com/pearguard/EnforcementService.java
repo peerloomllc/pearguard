@@ -66,6 +66,7 @@ public class EnforcementService extends Service {
         @Override
         public void run() {
             try {
+                writeEnforcementHeartbeat();
                 checkAccessibilityService();
                 maybeFlushUsageStats();
             } catch (Exception ignored) {
@@ -74,6 +75,18 @@ public class EnforcementService extends Service {
             }
         }
     };
+
+    /**
+     * Writes the current timestamp to SharedPreferences on every loop tick.
+     * When PearGuard is force-stopped, onDestroy() is never called so this
+     * timestamp goes stale, allowing startup detection of a force-stop event.
+     */
+    private void writeEnforcementHeartbeat() {
+        getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+            .edit()
+            .putLong("enforcement_heartbeat_ms", System.currentTimeMillis())
+            .apply();
+    }
 
     /**
      * Checks whether the PearGuard Accessibility Service is enabled.

@@ -95,14 +95,17 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Returns whether both child-required permissions are granted.
+     * Returns whether both child-required permissions are granted, plus the last
+     * EnforcementService heartbeat timestamp for force-stop detection.
      * Used by the child setup wizard to poll and auto-advance steps.
      */
     @ReactMethod
     public void checkChildPermissions(Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         WritableMap result = Arguments.createMap();
         result.putBoolean("accessibility", isAccessibilityEnabled());
         result.putBoolean("usageStats", hasUsageStatsPermission());
+        result.putDouble("enforcementHeartbeatMs", prefs.getLong("enforcement_heartbeat_ms", 0));
         promise.resolve(result);
     }
 
@@ -515,6 +518,66 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 .setContentIntent(pi);
 
         nm.notify(notificationId++, builder.build());
+    }
+
+    /**
+     * Called from index.tsx when a heartbeat:received event arrives from a child.
+     * Saves the child's last-seen timestamp and display name to SharedPreferences so
+     * ParentConnectionService can detect stale heartbeats (enforcement stopped).
+     * Also clears the stale-notification flag so we re-notify if the child goes offline again.
+     */
+    @ReactMethod
+    public void updateChildHeartbeat(String childPublicKey, String displayName, double timestamp) {
+        reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("heartbeat_last_" + childPublicKey, (long) timestamp)
+            .putString("heartbeat_name_" + childPublicKey, displayName)
+            .putBoolean("heartbeat_notified_" + childPublicKey, false)
+            .apply();
+    }
+
+    /**
+     * Shows a high-priority notification when a child's heartbeat goes stale,
+     * indicating PearGuard may have been force-closed on their device.
+     */
+    @ReactMethod
+    public void showEnforcementOfflineNotification(String childName, String childPublicKey) {
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                "pearguard_offline", "PearGuard Offline Alerts",
+                NotificationManager.IMPORTANCE_HIGH);
+            ch.setShowBadge(true);
+            nm.createNotificationChannel(ch);
+        }
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, 8000 + childPublicKey.hashCode());
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, "pearguard_offline")
+            .setContentTitle("PearGuard enforcement may be off")
+            .setContentText(childName + "'s device has not checked in. PearGuard may have been force-closed.")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH);
+
+        nm.notify(9000 + Math.abs(childPublicKey.hashCode() % 500), builder.build());
+    }
+
+    /**
+     * Clears the EnforcementService heartbeat timestamp after the child fires a
+     * force_stopped bypass:detected. Prevents the detection from re-triggering on
+     * subsequent Root remounts before EnforcementService writes a fresh heartbeat.
+     */
+    @ReactMethod
+    public void clearEnforcementHeartbeat() {
+        reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("enforcement_heartbeat_ms", 0)
+            .apply();
     }
 
     /**

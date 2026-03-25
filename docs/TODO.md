@@ -114,12 +114,14 @@ Requests accumulate in Hyperbee indefinitely. Add a way to archive or delete the
 ### [x] 22. Bug: Requests showing Pending even after approval — 2026-03-23
 Root cause: `handlePolicyUpdate` (child side) updated the policy but did not sync pending `req:*` entries. When the parent was offline during child's approval or reconnect pushed a `policy:update`, pending requests stayed Pending. Fix: `handlePolicyUpdate` now scans `req:*` entries and updates any pending ones where the app is now `allowed`/`blocked`, emitting `request:updated` so `ChildRequests` refreshes.
 
-### [ ] 23. Bug: PearGuard force-close stops enforcement
-If the child force-closes PearGuard, the Accessibility Service (which is hosted in the same process) also stops. Enforcement silently ceases.
+### [x] 23. Bug: PearGuard force-close stops enforcement — 2026-03-24
+Prevention is not possible with Device Admin alone (requires Device Owner). Two detection layers added:
 
-- **Investigate**: Can the Accessibility Service be declared in a separate process (`android:process`) so it survives PearGuard's main process being killed?
-- **Detect**: `EnforcementService` should detect when PearGuard's main process is not running and alert the parent.
-- **Mitigation**: Device admin (`DevicePolicyManager`) can prevent force-close of designated apps on some Android versions.
+**Child-side (restart detection)**: `EnforcementService` writes `enforcement_heartbeat_ms` to SharedPreferences every 5 s. On next app launch, `index.tsx` reads this via `checkChildPermissions()`. If accessibility is off and the heartbeat is <5 min old, a `bypass:detected` with reason `force_stopped` is sent to the parent — queued and delivered on reconnect.
+
+**Parent-side (staleness detection)**: `heartbeat:received` events now include `childDisplayName` (looked up from Hyperbee). `index.tsx` calls `updateChildHeartbeat` to save the timestamp per child in SharedPreferences. `ParentConnectionService` checks every 60 s for any child whose last heartbeat is >3 min old and fires an "enforcement may be off" notification.
+
+Also added `force_stopped` and `device_admin_disabled` to the `reasonLabels` map in `bare.js`.
 
 ### [x] 24. Bug: Profile name changes don't sync to paired devices — 2026-03-24
 After initial pairing, if the child or parent changes their display name in Profile, the other device still shows the old name.

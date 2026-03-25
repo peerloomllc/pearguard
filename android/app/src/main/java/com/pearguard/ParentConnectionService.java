@@ -6,6 +6,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -15,6 +17,8 @@ import androidx.core.app.NotificationCompat;
 
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
+
+import java.util.Map;
 
 /**
  * Foreground service for the parent device.
@@ -30,11 +34,14 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
  */
 public class ParentConnectionService extends Service {
 
-    private static final String CHANNEL_ID   = "pearguard_parent";
-    private static final int    NOTIF_ID     = 1001;
-    private static final long   RECONNECT_INTERVAL_MS = 30_000; // 30 seconds
+    private static final String CHANNEL_ID          = "pearguard_parent";
+    private static final String CHANNEL_OFFLINE_ID  = "pearguard_offline";
+    private static final int    NOTIF_ID             = 1001;
+    private static final long   RECONNECT_INTERVAL_MS  = 30_000; // 30 s
+    private static final long   HEARTBEAT_STALE_MS     = 3 * 60_000; // 3 min (3 missed heartbeats)
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private int loopTick = 0; // counts 30s ticks; heartbeat check runs every 2nd tick (60 s)
 
     // --- Lifecycle ---
 
@@ -69,6 +76,8 @@ public class ParentConnectionService extends Service {
         public void run() {
             try {
                 emitReconnectNeeded();
+                loopTick++;
+                if (loopTick % 2 == 0) checkStaleHeartbeats();
             } catch (Exception ignored) {
             } finally {
                 handler.postDelayed(this, RECONNECT_INTERVAL_MS);
@@ -81,6 +90,72 @@ public class ParentConnectionService extends Service {
         if (ctx == null || !ctx.hasActiveReactInstance()) return;
         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
            .emit("onParentReconnectNeeded", null);
+    }
+
+    /**
+     * Scans SharedPreferences for child heartbeat entries that are older than
+     * HEARTBEAT_STALE_MS. Fires an "enforcement offline" notification once per
+     * stale period; clears the flag when a fresh heartbeat arrives (via
+     * UsageStatsModule.updateChildHeartbeat which writes heartbeat_notified_=false).
+     */
+    private void checkStaleHeartbeats() {
+        SharedPreferences prefs = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        Map<String, ?> all = prefs.getAll();
+        SharedPreferences.Editor editor = null;
+
+        for (Map.Entry<String, ?> entry : all.entrySet()) {
+            String key = entry.getKey();
+            if (!key.startsWith("heartbeat_last_")) continue;
+            String childPublicKey = key.substring("heartbeat_last_".length());
+
+            Object val = entry.getValue();
+            if (!(val instanceof Long)) continue;
+            long lastHeartbeat = (Long) val;
+            if (lastHeartbeat <= 0) continue;
+
+            boolean alreadyNotified = prefs.getBoolean("heartbeat_notified_" + childPublicKey, false);
+            if (now - lastHeartbeat > HEARTBEAT_STALE_MS && !alreadyNotified) {
+                String childName = prefs.getString("heartbeat_name_" + childPublicKey, "Your child");
+                showOfflineNotification(childName, childPublicKey);
+                if (editor == null) editor = prefs.edit();
+                editor.putBoolean("heartbeat_notified_" + childPublicKey, true);
+            }
+        }
+
+        if (editor != null) editor.apply();
+    }
+
+    private void showOfflineNotification(String childName, String childPublicKey) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                CHANNEL_OFFLINE_ID, "PearGuard Offline Alerts",
+                NotificationManager.IMPORTANCE_HIGH);
+            ch.setShowBadge(true);
+            nm.createNotificationChannel(ch);
+        }
+
+        String url = "pear://pearguard/alerts?childPublicKey=" + Uri.encode(childPublicKey);
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        intent.setPackage(getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(
+            this, 8000 + Math.abs(childPublicKey.hashCode() % 500), intent,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+        Notification notif = new NotificationCompat.Builder(this, CHANNEL_OFFLINE_ID)
+            .setContentTitle("PearGuard enforcement may be off")
+            .setContentText(childName + "'s device has not checked in — PearGuard may have been force-closed.")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build();
+
+        nm.notify(9000 + Math.abs(childPublicKey.hashCode() % 500), notif);
     }
 
     // --- Notification ---

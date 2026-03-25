@@ -239,39 +239,46 @@ public class AppBlockerModule extends AccessibilityService {
     // --- Enforcement logic ---
 
     /**
-     * Returns a human-readable reason string if the app should be blocked,
-     * or null if the app is allowed.
+     * Returns a human-readable reason string if the app should be blocked, or null if allowed.
+     *
+     * Precedence (highest to lowest):
+     *   1. System / phone exemptions         — always allow, skip all checks
+     *   2. Active override (PIN / P2P grant) — always allow; beats schedule and daily limits
+     *   3. Scheduled blackout                — block
+     *   4. Policy status (blocked / pending) — block
+     *   5. Daily limit exceeded              — block
+     *   6. Default                           — allow
+     *
+     * Rationale: PIN entry and parent-approved time requests represent an explicit decision
+     * to grant access right now. Requiring the parent to also update their schedule rules
+     * to allow a one-off exception is worse UX than letting the override win.
      */
     private String getBlockReason(String packageName) {
-        // Check for active override (PIN was entered successfully — in-memory)
-        Long overrideExpiry = overrides.get(packageName);
-        if (overrideExpiry != null && System.currentTimeMillis() < overrideExpiry) {
-            return null; // override is active, allow
-        }
-
-        // Check SharedPreferences for P2P-granted overrides (from parent via bare worklet)
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        long sharedPrefOverride = prefs.getLong("pearguard_override_" + packageName, 0L);
-        if (sharedPrefOverride > System.currentTimeMillis()) {
-            return null; // P2P override is active, allow
-        }
-
-        // System services with no launcher icon (e.g. Google Play Services, SystemUI) must
-        // never be blocked — they are invisible to the user and required for device operation.
-        if (isSystemOverlayPackage(packageName)) {
-            return null;
-        }
-
-        // Phone/messaging apps with contact exceptions: skip all block checks
-        if (isPhoneOrMessagingApp(packageName)) {
-            return null;
-        }
+        // Exemptions: system services and phone/messaging are never blocked.
+        if (isSystemOverlayPackage(packageName)) return null;
+        if (isPhoneOrMessagingApp(packageName)) return null;
 
         JSONObject policy = loadPolicy();
-        if (policy == null) return null; // no policy yet, allow
+        if (policy == null) return null; // no policy yet, allow everything
 
         try {
-            // Step 1: Permanently blocked or pending?
+            // Step 1: Active override — PIN success (in-memory) or parent P2P grant (SharedPrefs).
+            // Overrides win over schedule, daily limits, and policy status.
+            Long overrideExpiry = overrides.get(packageName);
+            if (overrideExpiry != null && System.currentTimeMillis() < overrideExpiry) {
+                return null;
+            }
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            long sharedPrefOverride = prefs.getLong("pearguard_override_" + packageName, 0L);
+            if (sharedPrefOverride > System.currentTimeMillis()) {
+                return null;
+            }
+
+            // Step 2: Scheduled blackout.
+            String scheduleReason = getScheduleBlockReason(policy);
+            if (scheduleReason != null) return scheduleReason;
+
+            // Step 3: Permanently blocked or pending (parent's explicit policy decision).
             JSONObject apps = policy.optJSONObject("apps");
             if (apps != null && apps.has(packageName)) {
                 JSONObject appPolicy = apps.getJSONObject(packageName);
@@ -282,15 +289,8 @@ public class AppBlockerModule extends AccessibilityService {
                 if ("pending".equals(status)) {
                     return "This app is waiting for parent approval.";
                 }
-            }
 
-            // Step 2: Scheduled blackout?
-            String scheduleReason = getScheduleBlockReason(policy);
-            if (scheduleReason != null) return scheduleReason;
-
-            // Step 3: Daily limit exceeded?
-            if (apps != null && apps.has(packageName)) {
-                JSONObject appPolicy = apps.getJSONObject(packageName);
+                // Step 4: Daily limit exceeded.
                 int limitSeconds = appPolicy.optInt("dailyLimitSeconds", -1);
                 if (limitSeconds > 0) {
                     int usedSeconds = getDailyUsageSeconds(packageName);
@@ -305,7 +305,7 @@ public class AppBlockerModule extends AccessibilityService {
             // Parse error — fail open (allow)
         }
 
-        return null; // Step 5: allow
+        return null; // allow
     }
 
     private boolean isPhoneOrMessagingApp(String packageName) {

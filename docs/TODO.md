@@ -21,6 +21,41 @@ Currently, the child setup wizard only covers Accessibility Service and Usage St
 - If child is already paired (has at least one parent in `peers:`), skip this step
 - **Where**: `app/child-setup.tsx` — add a step 3 for pairing if no parent is paired yet
 
+### [ ] 61. Track and display active overrides in UI
+When a PIN or parent-approved override is active for an app, show it somewhere visible so the parent and child both know a time extension is in effect and when it expires.
+
+- **Child side**: Show active overrides on the Home tab (once #53 is built) or in My Requests — e.g. "YouTube: override active, expires in 23 min"
+- **Parent side**: Show in ChildDetail (Activity or Requests tab) — e.g. a badge or row showing the child has an active override for a specific app
+- **Where**: Requires surfacing override expiry via a bare method (e.g. `overrides:list`) so the UI can read it
+
+### [ ] 62. "Send Request" overlay should prompt for a requested duration
+Currently "Send Request" sends a generic access request with no duration. The PIN override picker already shows 15 min / 30 min / 1 hr / 2 hr options — the request flow should too, so the parent knows exactly how long the child wants.
+
+- **Child overlay** (`AppBlockerModule.java` `onSendRequest`): Show the same duration picker before sending the `onTimeRequest` event; include the selected `requestedSeconds` in the payload
+- **Bare / P2P** (`src/bare-dispatch.js` `time:request`): Pass `requestedSeconds` through the P2P message
+- **Parent Requests tab** (`src/ui/components/ChildDetail.jsx` Requests tab): Display the requested duration alongside the app name
+- **Parent approval** (`bare-dispatch.js` `request:approve`): Use the child's requested duration as the default override duration (parent can still change it)
+
+### [ ] 60. Bug: Parent PIN not carried over to child after Remove + re-pair
+After the parent removes a child and the child re-pairs, entering the PIN on the child's overlay fails — the child's SharedPreferences policy doesn't have the `pinHash`.
+
+- **Investigate**: Whether the `policy:update` pushed to the child on re-pair includes `pinHash`
+- **Likely cause**: `handleHello` builds the policy snapshot from `policy:{childPublicKey}.apps` but may not include the parent-level `pinHash` from the parent's own `'policy'` key
+- **Fix**: Ensure `pinHash` is included in every `policy:update` sent to children
+
+### [ ] 58. Block overlay should show reason for block
+The overlay currently shows a generic title. Show a specific reason so the child understands why they're blocked.
+
+- **Cases**: "Not approved by parent", "Daily time limit reached", "Scheduled blackout (rule label)"
+- **Where**: `AppBlockerModule.java` `showOverlay()` — the `reason` string is already passed in; verify the `reasonView` TextView is surfacing it clearly, or improve the message strings in `getBlockReason()`
+
+### [ ] 59. New app install: auto-generate a request + notification opens Requests list
+When a child installs a new app it goes to `pending` status. Currently the parent gets an "app installed" notification that opens the Apps tab. The parent should be able to action it from the Requests list instead.
+
+- **Auto-generate request**: When a new app arrives as `pending` on the parent, create a `req:*` Hyperbee entry so it appears in the Requests tab alongside time requests
+- **Notification deep link**: Change `showAppInstalledNotification` to link to `pear://pearguard/alerts?childPublicKey=X&tab=requests` instead of `tab=apps`
+- **Where**: `src/bare-dispatch.js` `handleIncomingAppInstalled`, `android/.../UsageStatsModule.java` `showAppInstalledNotification`
+
 ### [ ] 53. Child "Home" tab is a placeholder
 The Home tab on the child device currently just shows "All good" with no real content.
 
@@ -204,12 +239,13 @@ Currently the notification routes to the Activity tab. The more actionable desti
 Two bugs: (1) `usage:flush` in `bare-dispatch.js` ignored `args.usage` (native data passed from `index.tsx` → `getDailyUsageAll()`) and always sent `usageStats: {}`; fixed to map native array into `report.apps`. (2) `usage:getLatest` didn't exist; added handler that reads latest `usageReport:{childPublicKey}:*` entry from Hyperbee via `createReadStream({ reverse: true, limit: 1 })`.
 - **Where**: `android/.../UsageStatsModule.java`, `src/bare.js` (usage reporting timer), `src/ui/components/UsageTab.jsx`
 
-### [ ] 39. Schedules and Time Limits need to work together properly
-Time-limit enforcement and scheduled block windows should interoperate correctly — e.g. a scheduled block should override an active time-limit grant, and an approved time extension should not bypass a scheduled block window.
-
-- **Investigate**: How `EnforcementService` and `AppBlockerModule` currently prioritize policy fields (`schedule`, `dailyLimitSeconds`, active overrides)
-- **Design**: Define clear precedence rules: scheduled block > daily limit exhausted > active override > policy status
-- **Where**: `android/.../AppBlockerModule.java`, `android/.../EnforcementService.java`, `src/bare-dispatch.js` policy shape
+### [x] 39. Schedules and Time Limits need to work together properly — 2026-03-25
+Rewrote `getBlockReason` in `AppBlockerModule` with explicit precedence:
+1. System/phone exemptions (always allow)
+2. Active override (PIN/P2P grant) — wins over schedule, daily limit, and policy status
+3. Scheduled blackout
+4. Policy status (blocked/pending)
+5. Daily limit exceeded
 
 ### [x] 42. Bug: Usage tab data disappears after leaving and returning to the app — 2026-03-24
 Usage stats were visible, but after backgrounding the app and returning the Usage tab showed empty again. The `usageReport:{childPublicKey}:{timestamp}` entries may be getting lost across app restarts, or `usage:getLatest` is not finding them on re-mount.
@@ -228,8 +264,8 @@ Currently the form silently refuses to save without a label — there is no feed
 
 - **Where**: `src/ui/components/ScheduleTab.jsx` — show an inline error message (e.g. "Label is required") when the user tries to save without filling in the label field
 
-### [ ] 44. Child: warn at 10 and 5 minutes before a schedule restriction starts
-Give the child advance notice before a schedule block kicks in so they can save their work.
+### [ ] 44. Child: warn at 10, 5 and 1 minutes before a schedule restriction or time limit starts
+Give the child advance notice before a schedule block or time limit kicks in so they can save their work.
 
 - **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
 

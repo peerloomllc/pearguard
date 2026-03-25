@@ -250,6 +250,20 @@ The current label/description language is ambiguous. Make it clear that a schedu
 ### [x] 51. Bug: Correct PIN not working on child device — 2026-03-24
 `verifyPin()` in `AppBlockerModule.java` was calling LazySodium's `cryptoPwHashStrVerify` (argon2id) while `bare-dispatch.js` `pin:set` had been switched to BLAKE2b hex in commit 129e929. Fixed by calling `crypto_generichash` via the native `SodiumAndroid` layer and comparing the resulting bytes directly.
 
+### [ ] 56. Bug: Unpair from parent doesn't clear active restrictions on child
+When the parent removes a child while enforcement is active (e.g. a blocked app's overlay is showing), the child's DB is wiped by `unpair` but the native enforcement layer (AppBlockerModule) still has the old policy cached in SharedPreferences. The overlay stays visible and cannot be dismissed — tapping anywhere only triggers "Send Request" or PIN entry.
+
+- **Root cause**: `child:reset` navigates to `/setup` but never calls `native:setPolicy` with an empty/null policy to clear SharedPreferences
+- **Fix**: In `index.tsx`, handle `child:reset` by calling `NativeModules.UsageStatsModule?.setPolicy('')` (or a clear-policy method) before navigating to `/setup`, so AppBlockerModule stops blocking
+- **Also**: Call `dismissOverlayForPackage` for all packages, or add a `clearAllPolicies` native method
+
+### [ ] 57. Bug: Overlay persists over Home screen after dismissing blocked app
+After a blocked app's overlay is shown and the user navigates away (e.g. swipe to Home), the overlay sometimes stays visible over the Home screen. The only way to dismiss it is to tap "Send Request" or enter the PIN.
+
+- **Investigate**: Whether the `TYPE_WINDOW_STATE_CHANGED` event for the Home screen launcher is being filtered out (system package exemption added in #41 may be too broad)
+- **Also investigate**: Whether this is triggered by the same stale-policy condition as #56 (policy says app is blocked, overlay fires on any focus event even on Home)
+- **Likely related to #56** when tested while unpairing, but may be reproducible independently
+
 ## Known Limitations
 
 ### Overlay not triggered for already-open apps

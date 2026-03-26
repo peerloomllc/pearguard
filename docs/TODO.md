@@ -316,10 +316,8 @@ After the parent removes a child via the "Remove" button and then force-stops th
 - **Investigate**: Whether a reinstalled APK restores a cached Hypercore/Hyperbee state that includes the old peer record
 - **Fix**: Ensure `handleHello` on reconnect detects and ignores or re-unpairs stale `blocked:` peers; or add a dedup/cleanup pass at startup that removes ghost peer records with no active connection
 
-### [ ] 48. Investigate slow app startup (30-60 seconds)
-App takes 30-60 seconds to become interactive on device. Root cause identified: `init()` in `src/bare.js` rejoins all stored `topics:*` Hyperbee entries sequentially before emitting `ready`. Each `swarm.flush()` blocks ~5-6 seconds waiting for DHT acknowledgement. With 7 accumulated topic entries this produces ~38 seconds of startup delay before the UI becomes usable.
-
-- **Fix options**: parallelize topic rejoins (`Promise.all`), emit `ready` before rejoining topics and reconnect in the background, or cap/deduplicate stored topics to avoid unbounded growth
+### [x] 48. Investigate slow app startup (30-60 seconds) — 2026-03-25
+Root cause: `init()` in `src/bare.js` rejoined all `topics:*` Hyperbee entries sequentially, blocking on `swarm.flush()` (~5-6s DHT ack) per topic. Topics accumulated with each Remove/re-pair cycle and were never cleaned up, so 7 test cycles = ~38s startup. Fixed by parallelizing rejoins with `Promise.all` (N topics now cost ~1 flush), capturing `info.topics[0]` in `onPeerConnection` to persist `swarmTopic` in the peer record, and deleting the `topics:` entry + calling `swarm.leave()` in `child:unpair` to prevent future accumulation.
 
 ### [ ] 49. Grant specific apps permission to bypass schedule rules
 Some apps (e.g. phone, messaging) should be usable even during a schedule blackout window.

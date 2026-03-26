@@ -300,10 +300,10 @@ public class AppBlockerModule extends AccessibilityService {
                 JSONObject appPolicy = apps.getJSONObject(packageName);
                 String status = appPolicy.optString("status", "allowed");
                 if ("blocked".equals(status)) {
-                    return "This app is blocked by your parent.";
+                    return "Not approved by your parent.";
                 }
                 if ("pending".equals(status)) {
-                    return "This app is waiting for parent approval.";
+                    return "Needs parent approval.";
                 }
 
                 // Step 4: Daily limit exceeded.
@@ -312,7 +312,7 @@ public class AppBlockerModule extends AccessibilityService {
                     int usedSeconds = getDailyUsageSeconds(packageName);
                     if (usedSeconds >= limitSeconds) {
                         int minutes = limitSeconds / 60;
-                        return "You've reached your " + minutes + " minute daily limit for this app.";
+                        return "Daily limit reached (" + minutes + " min/day).";
                     }
                 }
             }
@@ -366,7 +366,7 @@ public class AppBlockerModule extends AccessibilityService {
                 }
 
                 if (inBlackout) {
-                    return "Apps are blocked during \"" + schedule.optString("label", "scheduled time") + "\".";
+                    return "Blocked during \"" + schedule.optString("label", "scheduled time") + "\".";
                 }
             }
         } catch (Exception ignored) {}
@@ -429,9 +429,9 @@ public class AppBlockerModule extends AccessibilityService {
      */
     private String getBlockCategory(String reason) {
         if (reason == null) return "blocked";
-        if (reason.contains("waiting for parent approval")) return "pending";
-        if (reason.contains("daily limit")) return "daily_limit";
-        if (reason.contains("blocked during")) return "schedule";
+        if (reason.contains("parent approval")) return "pending";
+        if (reason.contains("Daily limit")) return "daily_limit";
+        if (reason.contains("Blocked during")) return "schedule";
         return "blocked";
     }
 
@@ -472,8 +472,15 @@ public class AppBlockerModule extends AccessibilityService {
         layout.setGravity(Gravity.CENTER);
         layout.setPadding(64, 64, 64, 64);
 
+        String titleText;
+        switch (currentOverlayBlockCategory) {
+            case "pending":     titleText = appName + " needs approval"; break;
+            case "daily_limit": titleText = appName + ": daily limit reached"; break;
+            case "schedule":    titleText = appName + ": scheduled block"; break;
+            default:            titleText = appName + " is blocked"; break;
+        }
         TextView title = new TextView(this);
-        title.setText(appName + " is blocked");
+        title.setText(titleText);
         title.setTextColor(Color.WHITE);
         title.setTextSize(22);
         title.setGravity(Gravity.CENTER);

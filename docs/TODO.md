@@ -43,7 +43,7 @@ After the parent removes a child and the child re-pairs, entering the PIN on the
 - **Likely cause**: `handleHello` builds the policy snapshot from `policy:{childPublicKey}.apps` but may not include the parent-level `pinHash` from the parent's own `'policy'` key
 - **Fix**: Ensure `pinHash` is included in every `policy:update` sent to children
 
-### [ ] 58. Block overlay should show reason for block
+### [x] 58. Block overlay should show reason for block
 The overlay currently shows a generic title. Show a specific reason so the child understands why they're blocked.
 
 - **Cases**: "Not approved by parent", "Daily time limit reached", "Scheduled blackout (rule label)"
@@ -192,7 +192,7 @@ The Apps tab has no defined order, making it hard to find apps on a real device 
 ### [x] 60. Bug: Parent PIN not carried over to child after Remove + re-pair — 2026-03-25
 Root cause: `unpair` deletes `policy:{childPublicKey}`, so `handleIncomingAppsSync` recreates it from scratch as `{ apps: {}, childPublicKey, version: 0 }` — no `pinHash`. Fixed in both `handleIncomingAppsSync` and `handleIncomingAppInstalled`: if `policy.pinHash` is missing, fetch it from the parent's own `'policy'` key and inject it before storing/pushing the policy.
 
-### [ ] 58. Block overlay should show reason for block
+### [x] 58. Block overlay should show reason for block
 The overlay currently shows a generic title. Show a specific reason so the child understands why they're blocked.
 
 - **Cases**: "Not approved by parent", "Daily time limit reached", "Scheduled blackout (rule label)"
@@ -347,6 +347,9 @@ The Accessibility Service overlay fires on `TYPE_WINDOW_STATE_CHANGED`. If an ap
 ---
 
 ## Completed
+
+### [x] 58. Block overlay shows specific reason for block — 2026-03-26
+Updated `AppBlockerModule.java`: overlay title is now category-specific ("needs approval" / "daily limit reached" / "scheduled block" / "is blocked"), and reason strings are concise ("Not approved by your parent." / "Needs parent approval." / "Daily limit reached (X min/day)." / "Blocked during \"label\"."). Updated `getBlockCategory` substring matching to align with new strings.
 
 ### [x] 32. Parent-initiated unpair / remote deactivation of child — 2026-03-25
 Parent "Remove" button in ChildDetail sends `child:unpair` to the bare worklet. Parent side: writes `blocked:{childPublicKey}` first (prevents reconnect race), deletes peer/policy/alert/usageReport records, sends signed `unpair` P2P message, emits `child:unpaired` event to UI (removes child from list). Child side: on receiving `unpair`, collects all DB keys then deletes them all, emits `child:reset` → RN navigates to `/setup`. Offline case handled: if child was offline at unpair time, `handleHello` on parent now sends the signed `unpair` before returning when a blocked peer reconnects, so the child receives it on next connection.

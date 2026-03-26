@@ -300,9 +300,11 @@ export default function Root () {
           sendToWorklet({ method: 'bypass:detected', args: { reason } })
         }),
 
-        // Child tapped "Send Request" on block overlay — forward as time:request
-        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string }) => {
-          sendToWorklet({ method: 'time:request', args: { packageName: e.packageName, appName: e.appName } })
+        // Child tapped "Send Request" on block overlay — forward as time:request.
+        // Pass all fields through so requestType ('approval' | 'extra_time') and
+        // extraSeconds (for extra-time requests) reach the worklet.
+        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string; requestType?: string; extraSeconds?: number }) => {
+          sendToWorklet({ method: 'time:request', args: { ...e } })
         }),
 
         // PIN entered successfully — log the override event
@@ -457,7 +459,7 @@ export default function Root () {
               // Clear the native policy first so AppBlockerModule stops blocking and any
               // active overlay is dismissed before navigating away.
               if (msg.event === 'child:reset') {
-                NativeModules.UsageStatsModule?.setPolicy('')
+                NativeModules.UsageStatsModule?.clearChildState?.()
                 NativeModules.UsageStatsModule?.dismissAllOverlays?.()
                 router.replace('/setup')
                 return
@@ -493,6 +495,12 @@ export default function Root () {
               )
               // Auto-dismiss the overlay for this package — the parent just granted access
               NativeModules.UsageStatsModule?.dismissOverlayForPackage?.(msg.args.packageName)
+            } else if (msg.method === 'native:showDecisionNotification') {
+              // Parent denied an extra-time request — show a notification to the child
+              NativeModules.UsageStatsModule?.showDecisionNotification?.(
+                msg.args.appName,
+                msg.args.decision
+              )
             } else if (msg.type === 'response') {
               const resolve = _pending.get(msg.id)
               if (resolve) { _pending.delete(msg.id); resolve(msg) }

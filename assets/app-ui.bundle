@@ -15288,22 +15288,59 @@
   }
   function RequestRow({ req, childPublicKey, onResolved }) {
     const [acting, setActing] = (0, import_react7.useState)(false);
-    async function decide(decision) {
+    const isExtraTime = req.requestType === "extra_time";
+    async function handleApprove() {
       setActing(true);
       try {
-        await window.callBare("app:decide", { childPublicKey, packageName: req.packageName, decision });
+        if (isExtraTime) {
+          await window.callBare("time:grant", {
+            childPublicKey,
+            requestId: req.id,
+            packageName: req.packageName,
+            extraSeconds: req.extraSeconds || 1800
+          });
+        } else {
+          await window.callBare("app:decide", { childPublicKey, packageName: req.packageName, decision: "approve" });
+        }
         onResolved();
       } catch (e) {
-        console.error("app:decide failed:", e);
+        console.error("approve failed:", e);
+      } finally {
+        setActing(false);
+      }
+    }
+    async function handleDeny() {
+      setActing(true);
+      try {
+        if (isExtraTime) {
+          await window.callBare("time:deny", {
+            childPublicKey,
+            requestId: req.id,
+            packageName: req.packageName,
+            appName: req.appDisplayName || req.packageName
+          });
+        } else {
+          await window.callBare("app:decide", { childPublicKey, packageName: req.packageName, decision: "deny" });
+        }
+        onResolved();
+      } catch (e) {
+        console.error("deny failed:", e);
       } finally {
         setActing(false);
       }
     }
     const isPending = !req.resolved;
+    function approveLabel() {
+      if (!isExtraTime) return "Approve";
+      if (!req.extraSeconds) return "Grant Time";
+      const mins = req.extraSeconds / 60;
+      return mins >= 60 ? `Grant ${mins / 60}h` : `Grant ${mins}m`;
+    }
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.row, children: [
       /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.rowBody, children: [
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.appName, children: req.appDisplayName || req.packageName }),
         req.appDisplayName && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.pkgName, children: req.packageName }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.typeBadge, "data-type": req.requestType, children: isExtraTime ? "Extra time" : "App approval" }),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.time, children: formatTime2(req.timestamp) })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.rowRight, children: isPending ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.actions, children: [
@@ -15311,17 +15348,17 @@
           "button",
           {
             style: styles7.approveBtn,
-            onClick: () => decide("approve"),
+            onClick: handleApprove,
             disabled: acting,
             "aria-label": `Approve request for ${req.packageName}`,
-            children: "Approve"
+            children: approveLabel()
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           "button",
           {
             style: styles7.denyBtn,
-            onClick: () => decide("deny"),
+            onClick: handleDeny,
             disabled: acting,
             "aria-label": `Deny request for ${req.packageName}`,
             children: "Deny"
@@ -15376,6 +15413,7 @@
     rowRight: { flexShrink: 0, paddingTop: "2px" },
     appName: { fontSize: "14px", fontWeight: "600", color: "#333" },
     pkgName: { fontSize: "11px", color: "#888", fontFamily: "monospace", marginTop: "2px" },
+    typeBadge: { fontSize: "10px", color: "#666", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.5px" },
     time: { fontSize: "11px", color: "#888", marginTop: "4px" },
     actions: { display: "flex", gap: "8px" },
     approveBtn: {

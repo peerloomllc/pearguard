@@ -100,6 +100,13 @@ function createDispatch (ctx) {
         }
         console.log('[dispatch] child:unpair step8: usage keys collected:', usageKeys.length)
         for (const key of usageKeys) await ctx.db.del(key).catch(() => {})
+        // Remove parent-side request records for this child so a re-pair starts clean.
+        const requestKeys = []
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey === childPublicKey) requestKeys.push(key)
+        }
+        console.log('[dispatch] child:unpair step8b: request keys collected:', requestKeys.length)
+        for (const key of requestKeys) await ctx.db.del(key).catch(() => {})
 
         // Notify child and gracefully close the connection AFTER deleting records.
         // Don't call conn.destroy() — that's a hard close that drops buffered writes
@@ -274,7 +281,11 @@ function createDispatch (ctx) {
       }
 
       case 'time:request': {
-        const { packageName, appName } = args
+        const { packageName, appName, requestType, extraSeconds } = args
+        // requestType: 'approval' (blocked/pending — parent changes policy)
+        //              'extra_time' (approved but hit limit/schedule — parent grants timed override)
+        // Defaults to 'approval' for backward compatibility with older clients.
+        const resolvedType = requestType === 'extra_time' ? 'extra_time' : 'approval'
         const requestId = 'req:' + Date.now() + ':' + packageName
         const request = {
           id: requestId,
@@ -282,6 +293,8 @@ function createDispatch (ctx) {
           appName: appName || packageName,
           requestedAt: Date.now(),
           status: 'pending',
+          requestType: resolvedType,
+          ...(resolvedType === 'extra_time' && typeof extraSeconds === 'number' ? { extraSeconds } : {}),
         }
 
         await ctx.db.put(requestId, request)
@@ -293,10 +306,56 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'request:submitted', data: request })
 
         if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'time:request', payload: { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt } })
+          const p2pPayload = { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt, requestType: resolvedType }
+          if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') p2pPayload.extraSeconds = extraSeconds
+          await ctx.sendToParent({ type: 'time:request', payload: p2pPayload })
         }
 
         return { requestId, status: 'pending' }
+      }
+
+      case 'time:grant': {
+        // Parent approves an extra-time request — sends time:extend P2P to child.
+        const { childPublicKey, requestId, packageName, extraSeconds } = args
+        if (!childPublicKey || !requestId || !packageName || typeof extraSeconds !== 'number') {
+          throw new Error('invalid time:grant args')
+        }
+        const existing = await ctx.db.get('request:' + requestId).catch(() => null)
+        if (existing) {
+          await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
+        }
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'time:extend', payload: { requestId, packageName, extraSeconds } })
+          }
+        } catch (_e) {
+          // child offline — grant stored; child will receive on reconnect via handleHello
+        }
+        ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
+        return { ok: true }
+      }
+
+      case 'time:deny': {
+        // Parent denies an extra-time request — marks it denied and notifies child.
+        const { childPublicKey, requestId, packageName, appName } = args
+        if (!childPublicKey || !requestId || !packageName) {
+          throw new Error('invalid time:deny args')
+        }
+        const existing = await ctx.db.get('request:' + requestId).catch(() => null)
+        if (existing) {
+          await ctx.db.put('request:' + requestId, { ...existing.value, status: 'denied' })
+        }
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'request:denied', payload: { requestId, packageName, appName } })
+          }
+        } catch (_e) { /* child offline */ }
+        ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'denied' } })
+        return { ok: true }
       }
 
       case 'requests:list': {
@@ -618,7 +677,7 @@ function createDispatch (ctx) {
             await ctx.db.del(key)
             continue
           }
-          results.push({
+          const entry = {
             id: value.id,
             type: 'time_request',
             timestamp: value.requestedAt,
@@ -627,7 +686,12 @@ function createDispatch (ctx) {
             status: value.status,
             resolved: value.status !== 'pending',
             childPublicKey,
-          })
+            requestType: value.requestType || 'approval',
+          }
+          if (value.requestType === 'extra_time' && typeof value.extraSeconds === 'number') {
+            entry.extraSeconds = value.extraSeconds
+          }
+          results.push(entry)
         }
 
         results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
@@ -958,7 +1022,7 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
  * Runs on the PARENT device.
  */
 async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
-  const { requestId, packageName, appName: payloadAppName, requestedAt } = payload
+  const { requestId, packageName, appName: payloadAppName, requestedAt, requestType, extraSeconds } = payload
   if (!requestId || !packageName) {
     console.warn('[bare] time:request from child: missing fields')
     return
@@ -978,7 +1042,9 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
     : null
   const appName = payloadAppName || policyAppName || packageName
 
-  const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', childPublicKey, childDisplayName }
+  const resolvedType = requestType === 'extra_time' ? 'extra_time' : 'approval'
+  const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', childPublicKey, childDisplayName, requestType: resolvedType }
+  if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') request.extraSeconds = extraSeconds
   await db.put('request:' + requestId, request)
   send({ type: 'event', event: 'time:request:received', data: request })
 }

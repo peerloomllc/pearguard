@@ -220,21 +220,11 @@ Currently "Send Request" sends a generic access request with no duration. The PI
 - **Parent Requests tab** (`src/ui/components/ChildDetail.jsx` Requests tab): Display the requested duration alongside the app name
 - **Parent approval** (`bare-dispatch.js` `request:approve`): Use the child's requested duration as the default override duration (parent can still change it)
 
-### [ ] 63. Send Request logic: approval request vs. extra time request
-The overlay "Send Request" button should behave differently based on why the app is blocked.
+### [x] 63. Send Request logic: approval request vs. extra time request — 2026-03-25
+`AppBlockerModule.java` `getBlockCategory()` derives block reason into `pending`/`blocked`/`schedule`/`daily_limit`. For approval types the overlay fires `onTimeRequest` with `requestType: "approval"`. For schedule/daily_limit types it shows a native duration picker (15/30/60/120 min) then fires `onTimeRequest` with `requestType: "extra_time"` and `extraSeconds`. Parent Requests tab (`RequestsTab.jsx`) branches on `requestType`: extra-time requests show "Grant Xm"/"Grant Xh" approve button and call `time:grant`/`time:deny`; approval requests use the existing `app:decide` flow. `bare-dispatch.js` adds `time:grant` (marks approved, sends `time:extend` P2P to child) and `time:deny` (marks denied, sends `request:denied` P2P to child). Child `bare.js` handles `request:denied` to update request status and show a native notification.
 
-- **Blocked / pending (unapproved)**: send an approval request — "Can I use this app?" Parent sees it in Requests tab and can approve/deny the app policy
-- **Approved but hit daily limit or schedule**: send an extra-time request — "Can I have more time?" with a duration picker (see #62); parent grants a timed override without changing the policy
-- **Where**: `AppBlockerModule.java` `onSendRequest` — check the block reason before emitting `onTimeRequest`; pass a `requestType` field (`approval` vs `extra_time`) in the event payload
-- **Bare / P2P** (`src/bare-dispatch.js` `time:request`): route `approval` type differently from `extra_time` — approval requests update app status, time requests grant an override
-- **Parent Requests tab**: display the request type clearly so the parent knows what they're approving
-
-### [ ] 64. Investigate inconsistent policy enforcement after multiple Remove/Re-pair cycles
-After removing and re-pairing a child multiple times, enforcement behavior becomes unpredictable — some apps may not be blocked when they should be, or the PIN may stop working again.
-
-- **Investigate**: Whether `peers:`, `policy:`, `blocked:`, and `req:*` keys are fully cleaned up on each Remove cycle
-- **Investigate**: Whether stale `noiseKey` values survive across re-pairs and cause `sendToPeer` to deliver policy updates to the wrong connection
-- **Investigate**: Whether the `overrides` HashMap in `AppBlockerModule` accumulates stale entries across re-pairs (in-memory, never cleared)
+### [x] 64. Investigate inconsistent policy enforcement after multiple Remove/Re-pair cycles — 2026-03-25
+Three stale-state sources identified and fixed. (1) In-memory `overrides` HashMap and `pendingRequestPackages` set in `AppBlockerModule` were never cleared on re-pair — fixed via new `clearAllOverrides()` static method called from `UsageStatsModule`. (2) `pearguard_override_*` SharedPreferences keys survived `child:reset` — fixed by `clearChildState()` ReactMethod in `UsageStatsModule` which iterates all prefs and removes any `pearguard_override_` prefixed key plus `pearguard_policy`. (3) Stale `request:` Hyperbee entries for a removed child persisted on parent — fixed in `child:unpair` dispatch case to scan and delete all `request:` entries matching the removed child's public key before completing unpair.
 - **Fix**: Ensure a full reset on each Remove — clear overrides, clear SharedPreferences policy, ensure fresh policy is pushed on each new pairing
 
 ## Added 2026-03-22
@@ -319,8 +309,17 @@ Give the child advance notice before a schedule block or time limit kicks in so 
 
 - **Where**: `android/.../EnforcementService.java` or `AppBlockerModule.java` — poll upcoming schedule windows; when 10 min or 5 min remain before a block starts, show a heads-up notification or non-blocking overlay on the child device
 
-### [ ] 48. Investigate slow app startup (5+ seconds)
-App takes over 5 seconds to load on device. Identify the bottleneck and reduce startup time.
+### [ ] 65. Bug: Ghost child device reappears after Remove + force-stop or reinstall
+After the parent removes a child via the "Remove" button and then force-stops the app (or reinstalls the APK), the old removed/inactive child appears in the Children tab alongside the newly re-paired active child.
+
+- **Investigate**: Whether `peers:*` or `blocked:` Hyperbee entries for the removed child survive because the process was killed mid-cleanup, preventing the full `child:unpair` flow from completing
+- **Investigate**: Whether a reinstalled APK restores a cached Hypercore/Hyperbee state that includes the old peer record
+- **Fix**: Ensure `handleHello` on reconnect detects and ignores or re-unpairs stale `blocked:` peers; or add a dedup/cleanup pass at startup that removes ghost peer records with no active connection
+
+### [ ] 48. Investigate slow app startup (30-60 seconds)
+App takes 30-60 seconds to become interactive on device. Root cause identified: `init()` in `src/bare.js` rejoins all stored `topics:*` Hyperbee entries sequentially before emitting `ready`. Each `swarm.flush()` blocks ~5-6 seconds waiting for DHT acknowledgement. With 7 accumulated topic entries this produces ~38 seconds of startup delay before the UI becomes usable.
+
+- **Fix options**: parallelize topic rejoins (`Promise.all`), emit `ready` before rejoining topics and reconnect in the background, or cap/deduplicate stored topics to avoid unbounded growth
 
 ### [ ] 49. Grant specific apps permission to bypass schedule rules
 Some apps (e.g. phone, messaging) should be usable even during a schedule blackout window.

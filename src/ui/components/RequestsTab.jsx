@@ -7,19 +7,58 @@ function formatTime(ts) {
 function RequestRow({ req, childPublicKey, onResolved }) {
   const [acting, setActing] = useState(false);
 
-  async function decide(decision) {
+  const isExtraTime = req.requestType === 'extra_time';
+
+  async function handleApprove() {
     setActing(true);
     try {
-      await window.callBare('app:decide', { childPublicKey, packageName: req.packageName, decision });
+      if (isExtraTime) {
+        await window.callBare('time:grant', {
+          childPublicKey,
+          requestId: req.id,
+          packageName: req.packageName,
+          extraSeconds: req.extraSeconds || 1800,
+        });
+      } else {
+        await window.callBare('app:decide', { childPublicKey, packageName: req.packageName, decision: 'approve' });
+      }
       onResolved();
     } catch (e) {
-      console.error('app:decide failed:', e);
+      console.error('approve failed:', e);
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleDeny() {
+    setActing(true);
+    try {
+      if (isExtraTime) {
+        await window.callBare('time:deny', {
+          childPublicKey,
+          requestId: req.id,
+          packageName: req.packageName,
+          appName: req.appDisplayName || req.packageName,
+        });
+      } else {
+        await window.callBare('app:decide', { childPublicKey, packageName: req.packageName, decision: 'deny' });
+      }
+      onResolved();
+    } catch (e) {
+      console.error('deny failed:', e);
     } finally {
       setActing(false);
     }
   }
 
   const isPending = !req.resolved;
+
+  function approveLabel() {
+    if (!isExtraTime) return 'Approve';
+    if (!req.extraSeconds) return 'Grant Time';
+    const mins = req.extraSeconds / 60;
+    return mins >= 60 ? `Grant ${mins / 60}h` : `Grant ${mins}m`;
+  }
 
   return (
     <div style={styles.row}>
@@ -28,6 +67,9 @@ function RequestRow({ req, childPublicKey, onResolved }) {
         {req.appDisplayName && (
           <div style={styles.pkgName}>{req.packageName}</div>
         )}
+        <div style={styles.typeBadge} data-type={req.requestType}>
+          {isExtraTime ? 'Extra time' : 'App approval'}
+        </div>
         <div style={styles.time}>{formatTime(req.timestamp)}</div>
       </div>
       <div style={styles.rowRight}>
@@ -35,15 +77,15 @@ function RequestRow({ req, childPublicKey, onResolved }) {
           <div style={styles.actions}>
             <button
               style={styles.approveBtn}
-              onClick={() => decide('approve')}
+              onClick={handleApprove}
               disabled={acting}
               aria-label={`Approve request for ${req.packageName}`}
             >
-              Approve
+              {approveLabel()}
             </button>
             <button
               style={styles.denyBtn}
-              onClick={() => decide('deny')}
+              onClick={handleDeny}
               disabled={acting}
               aria-label={`Deny request for ${req.packageName}`}
             >
@@ -114,6 +156,7 @@ const styles = {
   rowRight: { flexShrink: 0, paddingTop: '2px' },
   appName: { fontSize: '14px', fontWeight: '600', color: '#333' },
   pkgName: { fontSize: '11px', color: '#888', fontFamily: 'monospace', marginTop: '2px' },
+  typeBadge: { fontSize: '10px', color: '#666', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' },
   time: { fontSize: '11px', color: '#888', marginTop: '4px' },
   actions: { display: 'flex', gap: '8px' },
   approveBtn: {

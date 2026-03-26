@@ -270,6 +270,20 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'time:extend':
       await handleTimeExtend(msg.payload, db, send)
       break
+    case 'request:denied': {
+      // Parent denied an extra-time request — update the child-side req: entry and notify.
+      const { requestId, packageName, appName } = msg.payload || {}
+      if (requestId) {
+        const existing = await db.get(requestId).catch(() => null)
+        if (existing) {
+          await db.put(requestId, { ...existing.value, status: 'denied' })
+        }
+      }
+      send({ type: 'event', event: 'request:updated', data: { requestId, packageName, status: 'denied' } })
+      // Trigger native notification (same channel as approval decisions)
+      send({ method: 'native:showDecisionNotification', args: { appName: appName || packageName || 'the app', decision: 'denied' } })
+      break
+    }
     case 'app:decision':
       await handleAppDecision(msg.payload, db, send)
       break

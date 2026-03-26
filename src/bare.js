@@ -123,14 +123,14 @@ async function init (dataDir, attempt = 0) {
     getMode: () => mode,
     resetParentConnection: () => { peerConnected = false; parentPeer = null } })
 
-  // Rejoin any persisted swarm topics so peers can reconnect after app restart
+  // Rejoin any persisted swarm topics so peers can reconnect after app restart.
+  // Run all joins in parallel — each swarm.flush() blocks ~5s waiting for DHT
+  // acknowledgement, so sequential joins multiply that delay by topic count.
   const topicHexes = []
   for await (const { value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
     if (value && value.topicHex) topicHexes.push(value.topicHex)
   }
-  for (const topicHex of topicHexes) {
-    await joinTopic(topicHex).catch(e => console.warn('[bare] rejoin topic failed:', e.message))
-  }
+  await Promise.all(topicHexes.map(t => joinTopic(t).catch(() => {})))
 
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
@@ -171,7 +171,9 @@ async function joinTopic (topicInput) {
  */
 async function onPeerConnection (conn, info) {
   const remoteKeyHex = b4a.toString(conn.remotePublicKey, 'hex')
-  console.log('[bare] peer connected:', remoteKeyHex.slice(0, 12))
+  const connTopicHex = info.topics && info.topics[0]
+    ? b4a.toString(info.topics[0], 'hex')
+    : null
 
   let peerBuf = ''
   conn.on('data', chunk => {
@@ -211,7 +213,7 @@ async function onPeerConnection (conn, info) {
   })
 
   // Store the connection for sending
-  peers.set(remoteKeyHex, { conn, remoteKeyHex, displayName: null })
+  peers.set(remoteKeyHex, { conn, remoteKeyHex, displayName: null, topicHex: connTopicHex })
   send({ type: 'event', event: 'peer:connected', data: { remoteKey: remoteKeyHex } })
 
   // Child sends hello proactively on new connection — include real profile name
@@ -270,6 +272,20 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'time:extend':
       await handleTimeExtend(msg.payload, db, send)
       break
+    case 'request:denied': {
+      // Parent denied an extra-time request — update the child-side req: entry and notify.
+      const { requestId, packageName, appName } = msg.payload || {}
+      if (requestId) {
+        const existing = await db.get(requestId).catch(() => null)
+        if (existing) {
+          await db.put(requestId, { ...existing.value, status: 'denied' })
+        }
+      }
+      send({ type: 'event', event: 'request:updated', data: { requestId, packageName, status: 'denied' } })
+      // Trigger native notification (same channel as approval decisions)
+      send({ method: 'native:showDecisionNotification', args: { appName: appName || packageName || 'the app', decision: 'denied' } })
+      break
+    }
     case 'app:decision':
       await handleAppDecision(msg.payload, db, send)
       break
@@ -438,6 +454,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
 
   // Store peer identity — preserve original pairedAt, update lastSeen
   const existingRecord = await db.get('peers:' + peerIdentityKeyHex).catch(() => null)
+  const inMemoryPeer = peers.get(remoteKeyHex)
   const peerRecord = {
     ...(existingRecord ? existingRecord.value : {}),
     publicKey:   peerIdentityKeyHex,
@@ -445,6 +462,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
     pairedAt:    existingRecord ? existingRecord.value.pairedAt : Date.now(),
     lastSeen:    Date.now(),
     noiseKey:    remoteKeyHex,
+    ...(inMemoryPeer && inMemoryPeer.topicHex ? { swarmTopic: inMemoryPeer.topicHex } : {}),
   }
   await db.put('peers:' + peerIdentityKeyHex, peerRecord)
 

@@ -362,6 +362,31 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         promise.resolve(null);
     }
 
+    /**
+     * Full child state reset for Remove + Re-pair cycles. Clears:
+     *   - pearguard_policy (stored policy JSON)
+     *   - all pearguard_override_* (P2P-granted override expiry timestamps)
+     *   - in-memory overrides HashMap and pendingRequestPackages in AppBlockerModule
+     *
+     * Called from app/index.tsx on child:reset in place of the old setPolicy('') call.
+     * Using remove() instead of putString("", "") stores a true null so getString()
+     * returns the default null and loadPolicy() cleanly returns null.
+     */
+    @ReactMethod
+    public void clearChildState(Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.remove("pearguard_policy");
+        for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+            if (entry.getKey().startsWith("pearguard_override_")) {
+                editor.remove(entry.getKey());
+            }
+        }
+        editor.apply();
+        AppBlockerModule.clearAllOverrides();
+        promise.resolve(null);
+    }
+
     private static final String REQUEST_CHANNEL_ID = "pearguard_time_requests";
     private static int notificationId = 2000;
 

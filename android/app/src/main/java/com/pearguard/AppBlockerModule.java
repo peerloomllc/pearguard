@@ -64,6 +64,7 @@ public class AppBlockerModule extends AccessibilityService {
     private View overlayView;
     private boolean overlayPending = false; // true between Handler.post() and addView() completing
     private String currentOverlayPackage;
+    private String currentOverlayBlockCategory; // 'blocked', 'pending', 'schedule', 'daily_limit'
     private View pinDialogView;
 
     // In-memory override: packageName -> expiry time in ms
@@ -106,6 +107,21 @@ public class AppBlockerModule extends AccessibilityService {
         AppBlockerModule inst = sInstance;
         if (inst == null) return;
         new Handler(Looper.getMainLooper()).post(inst::dismissOverlay);
+    }
+
+    /**
+     * Clears all in-memory override state and pending-request tracking.
+     * Called from UsageStatsModule.clearChildState() on child:reset (unpair) so that
+     * stale overrides and pending-request suppression from the previous pairing session
+     * do not bleed into a fresh pairing after Remove + Re-pair cycles.
+     */
+    public static void clearAllOverrides() {
+        AppBlockerModule inst = sInstance;
+        if (inst == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            inst.overrides.clear();
+            pendingRequestPackages.clear();
+        });
     }
 
     // Cooldown: after dismissing an overlay, ignore TYPE_WINDOW_STATE_CHANGED events for the
@@ -405,6 +421,20 @@ public class AppBlockerModule extends AccessibilityService {
 
     // --- Overlay UI ---
 
+    /**
+     * Derives a stable category token from the human-readable block reason string.
+     * Used to determine what kind of request to send when the child taps "Send Request".
+     *
+     * Returns one of: "blocked", "pending", "schedule", "daily_limit"
+     */
+    private String getBlockCategory(String reason) {
+        if (reason == null) return "blocked";
+        if (reason.contains("waiting for parent approval")) return "pending";
+        if (reason.contains("daily limit")) return "daily_limit";
+        if (reason.contains("blocked during")) return "schedule";
+        return "blocked";
+    }
+
     private void showOverlay(String packageName, String reason) {
         // Skip during cooldown window after the overlay was just dismissed for this package.
         // The blocked app fires a final TYPE_WINDOW_STATE_CHANGED as its activity destructs
@@ -422,6 +452,7 @@ public class AppBlockerModule extends AccessibilityService {
 
         dismissOverlay();
         currentOverlayPackage = packageName;
+        currentOverlayBlockCategory = getBlockCategory(reason);
         overlayPending = true;
 
         // Notify RN that a block occurred — WebView ChildRequests listens for this
@@ -459,8 +490,14 @@ public class AppBlockerModule extends AccessibilityService {
 
         Button requestButton = new Button(this);
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
-        requestButton.setText(requestAlreadySent ? "Resend Request" : "Send Request");
-        requestButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName); });
+        final String blockCategory = currentOverlayBlockCategory;
+        boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
+        if (requestAlreadySent) {
+            requestButton.setText(isExtraTime ? "Resend Time Request" : "Resend Approval Request");
+        } else {
+            requestButton.setText(isExtraTime ? "Request More Time" : "Request Approval");
+        }
+        requestButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory); });
         layout.addView(requestButton);
 
         Button pinButton = new Button(this);
@@ -514,6 +551,7 @@ public class AppBlockerModule extends AccessibilityService {
             } catch (Exception ignored) {}
             overlayView = null;
             currentOverlayPackage = null;
+            currentOverlayBlockCategory = null;
         }
     }
 
@@ -529,12 +567,23 @@ public class AppBlockerModule extends AccessibilityService {
 
     // --- Button handlers ---
 
-    private void onSendRequest(String packageName) {
+    private void onSendRequest(String packageName, String blockCategory) {
+        boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
+        if (isExtraTime) {
+            // Show duration picker; the picker fires onTimeRequest with requestType=extra_time
+            // after the child selects how much extra time they want.
+            dismissOverlay();
+            showExtraTimePicker(packageName);
+            return;
+        }
+
+        // Approval request — fire immediately
         ReactContext reactContext = PearGuardReactHost.get();
         if (reactContext != null && reactContext.hasActiveReactInstance()) {
             WritableMap params = Arguments.createMap();
             params.putString("packageName", packageName);
             params.putString("appName", getAppName(packageName));
+            params.putString("requestType", "approval");
             reactContext
                     .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                     .emit("onTimeRequest", params);
@@ -553,6 +602,101 @@ public class AppBlockerModule extends AccessibilityService {
         homeIntent.addCategory(Intent.CATEGORY_HOME);
         homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(homeIntent);
+    }
+
+    /**
+     * Shows a duration picker for extra-time requests (schedule/daily-limit blocks).
+     * On selection, fires onTimeRequest with requestType='extra_time' and extraSeconds.
+     */
+    private void showExtraTimePicker(String packageName) {
+        int[][] options = {
+            { 15,   15 * 60 },
+            { 30,   30 * 60 },
+            { 60,   60 * 60 },
+            { 120, 120 * 60 },
+        };
+        String[] labels = { "15 min", "30 min", "1 hour", "2 hours" };
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackgroundColor(Color.argb(255, 30, 30, 30));
+        layout.setPadding(48, 48, 48, 48);
+        layout.setGravity(Gravity.CENTER);
+
+        TextView title = new TextView(this);
+        title.setText("How much extra time?");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, 0, 0, 32);
+        layout.addView(title);
+
+        for (int i = 0; i < labels.length; i++) {
+            final int durationSeconds = options[i][1];
+            final String label = labels[i];
+            Button btn = new Button(this);
+            btn.setText(label);
+            btn.setTextColor(Color.WHITE);
+            btn.setTextSize(16);
+            btn.setBackgroundColor(Color.argb(200, 26, 115, 232));
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            p.setMargins(0, 8, 0, 8);
+            btn.setLayoutParams(p);
+            btn.setOnClickListener(v -> {
+                vibrate(PATTERN_BUTTON);
+                try { windowManager.removeView(layout); } catch (Exception ignored) {}
+                pinDialogView = null;
+
+                ReactContext rc = PearGuardReactHost.get();
+                if (rc != null && rc.hasActiveReactInstance()) {
+                    WritableMap params = Arguments.createMap();
+                    params.putString("packageName", packageName);
+                    params.putString("appName", getAppName(packageName));
+                    params.putString("requestType", "extra_time");
+                    params.putInt("extraSeconds", durationSeconds);
+                    rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                            .emit("onTimeRequest", params);
+                    Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
+                }
+                pendingRequestPackages.add(packageName);
+
+                Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+                homeIntent.addCategory(Intent.CATEGORY_HOME);
+                homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(homeIntent);
+            });
+            layout.addView(btn);
+        }
+
+        Button cancelBtn = new Button(this);
+        cancelBtn.setText("Cancel");
+        cancelBtn.setTextColor(Color.WHITE);
+        cancelBtn.setBackgroundColor(Color.argb(200, 100, 30, 30));
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelParams.setMargins(0, 24, 0, 0);
+        cancelBtn.setLayoutParams(cancelParams);
+        cancelBtn.setOnClickListener(v -> {
+            try { windowManager.removeView(layout); } catch (Exception ignored) {}
+            pinDialogView = null;
+        });
+        layout.addView(cancelBtn);
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+        );
+        params.gravity = Gravity.CENTER;
+        windowManager.addView(layout, params);
+        pinDialogView = layout;
     }
 
     private void onEnterPin(String packageName) {

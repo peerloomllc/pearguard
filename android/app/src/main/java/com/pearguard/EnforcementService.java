@@ -68,6 +68,7 @@ public class EnforcementService extends Service {
             try {
                 writeEnforcementHeartbeat();
                 checkAccessibilityService();
+                checkForegroundEnforcement();
                 maybeFlushUsageStats();
             } catch (Exception ignored) {
             } finally {
@@ -140,6 +141,15 @@ public class EnforcementService extends Service {
             // retry on the next loop iteration rather than waiting a full 5 minutes
             lastUsageFlushTime = 0;
         }
+    }
+
+    /**
+     * Checks whether the current foreground app is blocked and shows the overlay if so.
+     * AppBlockerModule tracks the last foreground package via onAccessibilityEvent, so
+     * this works regardless of how long the app has been open (#66).
+     */
+    private void checkForegroundEnforcement() {
+        AppBlockerModule.checkAndShowOverlayIfNeeded();
     }
 
     private boolean isAccessibilityServiceEnabled() {

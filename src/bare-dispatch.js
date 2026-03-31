@@ -630,6 +630,8 @@ function createDispatch (ctx) {
           }
         }
 
+        // Notify AppsTab to reload so the status change is reflected immediately (#70).
+        ctx.send({ type: 'event', event: 'apps:synced', data: { childPublicKey } })
         return { ok: true, decision: d }
       }
 
@@ -806,8 +808,10 @@ async function handleTimeExtend (payload, db, send) {
 
   // Update request status in Hyperbee
   const existing = await db.get(requestId)
+  let appName = null
   if (existing) {
     const req = existing.value
+    appName = req.appName || null
     req.status = 'approved'
     req.expiresAt = expiresAt
     await db.put(requestId, req)
@@ -816,9 +820,10 @@ async function handleTimeExtend (payload, db, send) {
   // Notify native to grant override
   send({ method: 'native:grantOverride', args: grant })
 
-  // Notify WebView
+  // Notify WebView — include appName/packageName so the decision notification (#67 fix)
+  // can show the real app name instead of "an app".
   send({ type: 'event', event: 'override:granted', data: grant })
-  send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved', expiresAt } })
+  send({ type: 'event', event: 'request:updated', data: { requestId, packageName, appName, status: 'approved', expiresAt } })
 }
 
 /**

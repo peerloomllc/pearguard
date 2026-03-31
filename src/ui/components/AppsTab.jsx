@@ -12,7 +12,7 @@ function getIconColor(str) {
   return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
 }
 
-function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
+function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
   const [limitInput, setLimitInput] = useState(
     appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ''
   );
@@ -30,12 +30,14 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
 
   function handleApprove() {
     window.callBare('app:decide', { childPublicKey, packageName, decision: 'approve' });
-    onUpdate(packageName, { ...appData, status: 'allowed' });
+    // Use onDecide (local state only) instead of onUpdate — onUpdate sends a redundant
+    // policy:update P2P alongside app:decide's app:decision, causing double notifications (#68).
+    onDecide(packageName, 'allowed');
   }
 
   function handleDeny() {
     window.callBare('app:decide', { childPublicKey, packageName, decision: 'deny' });
-    onUpdate(packageName, { ...appData, status: 'blocked' });
+    onDecide(packageName, 'blocked');
   }
 
   const isPending = appData.status === 'pending';
@@ -136,6 +138,16 @@ export default function AppsTab({ childPublicKey }) {
     window.callBare('policy:update', { childPublicKey, policy: newPolicy });
   }
 
+  // Updates local state only — used by approve/deny which already send app:decide.
+  // Avoids a redundant policy:update P2P alongside app:decision, preventing double
+  // notifications on the child device (#68).
+  function handleDecide(packageName, newStatus) {
+    setPolicy(prev => ({
+      ...prev,
+      apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } },
+    }));
+  }
+
   if (loading) return <div style={styles.msg}>Loading apps...</div>;
   if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
     return <div style={styles.msg}>No apps found. Apps appear here after they are installed on the child device.</div>;
@@ -170,6 +182,7 @@ export default function AppsTab({ childPublicKey }) {
           packageName={pkg}
           appData={data}
           onUpdate={handleUpdate}
+          onDecide={handleDecide}
         />
       ))}
     </div>

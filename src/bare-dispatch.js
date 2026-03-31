@@ -50,12 +50,19 @@ function createDispatch (ctx) {
 
       case 'children:list': {
         const children = []
+        const seenNoiseKeys = new Set()
         for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
           // Skip any peer that also has a blocked: entry — stale record from a race
           // between handleHello and child:unpair.
           const isBlocked = await ctx.db.get('blocked:' + value.publicKey).catch(() => null)
           if (isBlocked) continue
           const isOnline = value.noiseKey ? ctx.peers.has(value.noiseKey) : false
+          // Deduplicate: if two entries claim the same noise key, keep only the online one.
+          // This guards against stale Hyperbee entries that weren't pruned by handleHello.
+          if (isOnline && value.noiseKey) {
+            if (seenNoiseKeys.has(value.noiseKey)) continue
+            seenNoiseKeys.add(value.noiseKey)
+          }
           children.push({ ...value, isOnline })
         }
         return children
@@ -241,6 +248,13 @@ function createDispatch (ctx) {
         const profile = raw ? raw.value : {}
         profile.displayName = name.trim()
         await ctx.db.put('profile', profile)
+        // Broadcast updated name to all connected peers so their peer records
+        // stay current without requiring a reconnect (#73).
+        const myIdentityHex = ctx.b4a.toString(ctx.identity.publicKey, 'hex')
+        const helloMsg = { type: 'hello', payload: { publicKey: myIdentityHex, displayName: name.trim() } }
+        for (const [noiseKey] of ctx.peers) {
+          try { ctx.sendToPeer(noiseKey, helloMsg) } catch (_e) {}
+        }
         return { ok: true }
       }
 

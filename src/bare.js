@@ -126,9 +126,24 @@ async function init (dataDir, attempt = 0) {
   // Rejoin any persisted swarm topics so peers can reconnect after app restart.
   // Run all joins in parallel — each swarm.flush() blocks ~5s waiting for DHT
   // acknowledgement, so sequential joins multiply that delay by topic count.
+  //
+  // Prune orphaned topics first (#75): topics left behind after remove/unpair
+  // inflate startup time by ~5s each. A topic is orphaned if no paired peer
+  // references it. Only prune when there are paired peers — if there are none,
+  // we may be mid-invite and shouldn't touch the topic.
+  const activePeerTopics = new Set()
+  for await (const { value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+    if (value && value.swarmTopic) activePeerTopics.add(value.swarmTopic)
+  }
   const topicHexes = []
-  for await (const { value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
-    if (value && value.topicHex) topicHexes.push(value.topicHex)
+  for await (const { key, value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+    if (!value || !value.topicHex) continue
+    if (activePeerTopics.size > 0 && !activePeerTopics.has(value.topicHex)) {
+      console.log('[bare] pruning orphaned topic at startup:', value.topicHex.slice(0, 8))
+      await db.del(key).catch(() => {})
+    } else {
+      topicHexes.push(value.topicHex)
+    }
   }
   await Promise.all(topicHexes.map(t => joinTopic(t).catch(() => {})))
 
@@ -454,6 +469,20 @@ async function handleHello (msg, conn, remoteKeyHex) {
 
   // Store peer identity — preserve original pairedAt, update lastSeen
   const existingRecord = await db.get('peers:' + peerIdentityKeyHex).catch(() => null)
+
+  // If this is a new identity key (never seen before), clean up any stale Hyperbee
+  // entry that previously claimed this noise key. This handles the case where a child
+  // reinstalls / clears data and re-pairs with a fresh identity: the old peers:* entry
+  // would otherwise persist and show as a duplicate in the children list (#74).
+  if (!existingRecord) {
+    for await (const { key, value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+      if (value && value.noiseKey === remoteKeyHex && value.publicKey !== peerIdentityKeyHex) {
+        console.log('[bare] removing stale peer entry that claimed this noise key:', value.publicKey?.slice(0, 8))
+        await db.del(key).catch(() => {})
+      }
+    }
+  }
+
   const inMemoryPeer = peers.get(remoteKeyHex)
   const peerRecord = {
     ...(existingRecord ? existingRecord.value : {}),
@@ -478,6 +507,18 @@ async function handleHello (msg, conn, remoteKeyHex) {
       conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
     } catch (_e) { /* connection may already be closing */ }
     return
+  }
+
+  // Evict any stale in-memory entry that already maps to this identity key
+  // under a different noise key. This prevents duplicate "online" entries when
+  // the parent restarts and establishes a new connection while an old connection
+  // lingers in the peers map (#74).
+  for (const [existingNoiseKey, existingPeer] of peers) {
+    if (existingNoiseKey !== remoteKeyHex && existingPeer.identityKey === peerIdentityKeyHex) {
+      console.log('[bare] evicting stale peer entry for', peerIdentityKeyHex.slice(0, 8), 'noise:', existingNoiseKey.slice(0, 8))
+      peers.delete(existingNoiseKey)
+      try { existingPeer.conn.destroy() } catch (_e) {}
+    }
   }
 
   // Update the in-memory peers map with the identity key

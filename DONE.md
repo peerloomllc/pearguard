@@ -4,6 +4,32 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-03-31 (this session)
+
+### [x] 75. App slow to start (20+ seconds) after remove/unpair cycles — 2026-03-31
+`init()` in `bare.js` now cross-references `topics:*` entries against `peers:*` records at startup. Any topic not referenced by a live peer's `swarmTopic` is deleted from Hyperbee and skipped — no DHT join, no ~5s wait per orphaned topic. Pruning only runs when at least one paired peer exists, so a device mid-invite is unaffected. Startup now takes ~5-6s (one join per active peer).
+
+### [x] 60. Parent PIN not carried over to child after Remove + re-pair — 2026-03-31
+`handleIncomingAppsSync` and `handleIncomingAppInstalled` in `bare-dispatch.js` inject `pinHash` from the parent's local `'policy'` Hyperbee key into the policy pushed to the child, so the override PIN survives remove + re-pair cycles.
+
+### [x] 73. Profile name change does not propagate to paired devices — 2026-03-31
+`identity:setName` in `bare-dispatch.js` now broadcasts a signed `hello` to all currently connected peers after saving. `handleHello` on the receiving side updates the `peers:*` Hyperbee record and emits `child:reconnected`, refreshing the UI without a reconnect.
+
+### [x] 74. Duplicate child entry after profile name change + parent force-stop/restart — 2026-03-31
+`handleHello` in `bare.js` now scans the in-memory `peers` map for any existing entry with the same identity key under a different noise key, evicts it, and destroys the stale connection before associating the new one.
+
+### [x] 15. Apps list: categories, collapsible sections, search — 2026-03-31
+`AppsTab.jsx` rewritten to group apps into three collapsible sections (Pending Approval, Allowed, Blocked) each with a colored badge showing the count. Added a search bar that filters by app name or package name with a live match count. Empty sections hide automatically. Sort (A–Z / Date) applies within each section. `AppRow` behavior unchanged.
+
+---
+
+## Added 2026-03-31 (PR #21)
+
+### [x] 65. Ghost child device reappears after Remove + force-stop/reinstall — 2026-03-31
+`bare.js` `handleHello` detects stale `blocked:` peers and re-unpairs them before processing the hello, preventing ghost child entries from reappearing after a remove + reinstall cycle.
+
+---
+
 ## Added 2026-03-31
 
 ### [x] 66. Time limit not enforced while app is already open — 2026-03-31

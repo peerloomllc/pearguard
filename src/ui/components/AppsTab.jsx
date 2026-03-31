@@ -111,10 +111,44 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
   );
 }
 
+const CATEGORIES = [
+  { key: 'pending', label: 'Pending Approval', color: '#f59e0b' },
+  { key: 'allowed', label: 'Allowed',          color: '#34a853' },
+  { key: 'blocked', label: 'Blocked',           color: '#ea4335' },
+];
+
+function CategorySection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
+  return (
+    <div style={styles.section}>
+      <button
+        style={{ ...styles.sectionHeader, borderLeft: `4px solid ${category.color}` }}
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+      >
+        <span style={styles.sectionLabel}>{category.label}</span>
+        <span style={{ ...styles.sectionBadge, backgroundColor: category.color }}>{entries.length}</span>
+        <span style={styles.chevron}>{collapsed ? '›' : '⌄'}</span>
+      </button>
+      {!collapsed && entries.map(([pkg, data]) => (
+        <AppRow
+          key={pkg}
+          childPublicKey={childPublicKey}
+          packageName={pkg}
+          appData={data}
+          onUpdate={onUpdate}
+          onDecide={onDecide}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function AppsTab({ childPublicKey }) {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sortOrder, setSortOrder] = useState('alpha'); // 'alpha' | 'date'
+  const [search, setSearch] = useState('');
+  const [collapsed, setCollapsed] = useState({ pending: false, allowed: false, blocked: false });
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -126,9 +160,9 @@ export default function AppsTab({ childPublicKey }) {
 
   useEffect(() => {
     const unsub = window.onBareEvent('apps:synced', (data) => {
-      if (data.childPublicKey === childPublicKey) loadPolicy()
-    })
-    return unsub
+      if (data.childPublicKey === childPublicKey) loadPolicy();
+    });
+    return unsub;
   }, [childPublicKey, loadPolicy]);
 
   function handleUpdate(packageName, newAppData) {
@@ -148,25 +182,48 @@ export default function AppsTab({ childPublicKey }) {
     }));
   }
 
+  function toggleSection(key) {
+    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
   if (loading) return <div style={styles.msg}>Loading apps...</div>;
   if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
     return <div style={styles.msg}>No apps found. Apps appear here after they are installed on the child device.</div>;
   }
 
-  const sortedEntries = Object.entries(policy.apps).slice().sort((a, b) => {
+  const q = search.trim().toLowerCase();
+  const filtered = Object.entries(policy.apps).filter(([pkg, data]) => {
+    if (!q) return true;
+    return (data.appName || '').toLowerCase().includes(q) || pkg.toLowerCase().includes(q);
+  });
+
+  const sorted = filtered.slice().sort((a, b) => {
     if (sortOrder === 'alpha') {
-      const nameA = (a[1].appName || a[0]).toLowerCase();
-      const nameB = (b[1].appName || b[0]).toLowerCase();
-      return nameA.localeCompare(nameB);
+      return (a[1].appName || a[0]).toLowerCase().localeCompare((b[1].appName || b[0]).toLowerCase());
     }
-    // date: newest first — most useful for "what did my kid just install?"
     return (b[1].addedAt || 0) - (a[1].addedAt || 0);
   });
 
+  const grouped = {
+    pending: sorted.filter(([, d]) => d.status === 'pending'),
+    allowed: sorted.filter(([, d]) => d.status === 'allowed'),
+    blocked: sorted.filter(([, d]) => d.status !== 'pending' && d.status !== 'allowed'),
+  };
+
+  const totalCount = Object.keys(policy.apps).length;
+  const visibleCount = filtered.length;
+
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <span style={styles.appCount}>{sortedEntries.length} app{sortedEntries.length !== 1 ? 's' : ''}</span>
+      <div style={styles.toolbar}>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search apps..."
+          style={styles.searchInput}
+          aria-label="Search apps"
+        />
         <button
           style={styles.sortBtn}
           onClick={() => setSortOrder(s => s === 'alpha' ? 'date' : 'alpha')}
@@ -175,16 +232,32 @@ export default function AppsTab({ childPublicKey }) {
           {sortOrder === 'alpha' ? '🔤 A–Z' : '🕐 Date'}
         </button>
       </div>
-      {sortedEntries.map(([pkg, data]) => (
-        <AppRow
-          key={pkg}
-          childPublicKey={childPublicKey}
-          packageName={pkg}
-          appData={data}
-          onUpdate={handleUpdate}
-          onDecide={handleDecide}
-        />
-      ))}
+      <div style={styles.appCountRow}>
+        <span style={styles.appCount}>
+          {q ? `${visibleCount} of ${totalCount}` : totalCount} app{totalCount !== 1 ? 's' : ''}
+        </span>
+        {q && (
+          <button style={styles.clearSearch} onClick={() => setSearch('')}>
+            Clear
+          </button>
+        )}
+      </div>
+      {CATEGORIES.map(cat => {
+        const entries = grouped[cat.key];
+        if (entries.length === 0) return null;
+        return (
+          <CategorySection
+            key={cat.key}
+            category={cat}
+            entries={entries}
+            childPublicKey={childPublicKey}
+            onUpdate={handleUpdate}
+            onDecide={handleDecide}
+            collapsed={collapsed[cat.key]}
+            onToggle={() => toggleSection(cat.key)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -192,24 +265,70 @@ export default function AppsTab({ childPublicKey }) {
 const styles = {
   container: { padding: '16px' },
   msg: { padding: '16px', color: '#666', fontSize: '14px' },
-  header: {
+  toolbar: {
     display: 'flex',
-    justifyContent: 'space-between',
+    gap: '8px',
     alignItems: 'center',
     marginBottom: '8px',
-    paddingBottom: '8px',
-    borderBottom: '2px solid #eee',
   },
-  appCount: { fontSize: '13px', color: '#888' },
+  searchInput: {
+    flex: 1,
+    padding: '7px 10px',
+    fontSize: '13px',
+    border: '1px solid #ccc',
+    borderRadius: '8px',
+    outline: 'none',
+    color: '#111',
+  },
   sortBtn: {
-    padding: '4px 10px',
+    padding: '6px 10px',
     fontSize: '12px',
     border: '1px solid #ccc',
     borderRadius: '12px',
     background: '#f5f5f5',
     cursor: 'pointer',
     color: '#444',
+    whiteSpace: 'nowrap',
   },
+  appCountRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px',
+  },
+  appCount: { fontSize: '13px', color: '#888' },
+  clearSearch: {
+    fontSize: '12px',
+    padding: '2px 8px',
+    border: '1px solid #ccc',
+    borderRadius: '10px',
+    background: 'none',
+    cursor: 'pointer',
+    color: '#666',
+  },
+  section: { marginBottom: '8px' },
+  sectionHeader: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 12px',
+    background: '#f9f9f9',
+    border: '1px solid #eee',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    textAlign: 'left',
+    marginBottom: '4px',
+  },
+  sectionLabel: { flex: 1, fontSize: '13px', fontWeight: '600', color: '#333' },
+  sectionBadge: {
+    fontSize: '11px',
+    color: '#fff',
+    borderRadius: '10px',
+    padding: '1px 7px',
+    fontWeight: '700',
+  },
+  chevron: { fontSize: '16px', color: '#888', lineHeight: 1 },
   appRow: {
     padding: '12px 0',
     borderBottom: '1px solid #eee',

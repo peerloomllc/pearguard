@@ -14603,7 +14603,7 @@
     for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
     return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
   }
-  function AppRow({ childPublicKey, packageName, appData, onUpdate }) {
+  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
     const [limitInput, setLimitInput] = (0, import_react3.useState)(
       appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ""
     );
@@ -14618,11 +14618,11 @@
     }
     function handleApprove() {
       window.callBare("app:decide", { childPublicKey, packageName, decision: "approve" });
-      onUpdate(packageName, { ...appData, status: "allowed" });
+      onDecide(packageName, "allowed");
     }
     function handleDeny() {
       window.callBare("app:decide", { childPublicKey, packageName, decision: "deny" });
-      onUpdate(packageName, { ...appData, status: "blocked" });
+      onDecide(packageName, "blocked");
     }
     const isPending = appData.status === "pending";
     const addedDate = appData.addedAt ? new Date(appData.addedAt).toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }) : null;
@@ -14716,6 +14716,12 @@
       setPolicy(newPolicy);
       window.callBare("policy:update", { childPublicKey, policy: newPolicy });
     }
+    function handleDecide(packageName, newStatus) {
+      setPolicy((prev) => ({
+        ...prev,
+        apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } }
+      }));
+    }
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.msg, children: "Loading apps..." });
     if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
       return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.msg, children: "No apps found. Apps appear here after they are installed on the child device." });
@@ -14751,7 +14757,8 @@
           childPublicKey,
           packageName: pkg,
           appData: data,
-          onUpdate: handleUpdate
+          onUpdate: handleUpdate,
+          onDecide: handleDecide
         },
         pkg
       ))

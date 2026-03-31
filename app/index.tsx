@@ -415,8 +415,10 @@ export default function Root () {
                 const appLabel = appName || packageName || 'an app'
                 NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
               }
-              // Show a notification on the child device when parent approves/denies a time request
-              if (msg.event === 'request:updated') {
+              // Show a notification on the child device when parent approves/denies a request.
+              // Guard on _mode === 'child': the parent also emits request:updated (e.g. from
+              // time:grant) and must not show the child-targeted notification on itself (#67).
+              if (msg.event === 'request:updated' && _mode === 'child') {
                 const { appName, packageName, status } = msg.data ?? {}
                 if (status === 'approved' || status === 'denied') {
                   const label = appName || packageName || 'an app'

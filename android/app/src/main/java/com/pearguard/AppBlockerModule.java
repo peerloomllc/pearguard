@@ -5,6 +5,8 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.usage.UsageEvents;
+import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -66,6 +68,14 @@ public class AppBlockerModule extends AccessibilityService {
     private String currentOverlayPackage;
     private String currentOverlayBlockCategory; // 'blocked', 'pending', 'schedule', 'daily_limit'
     private View pinDialogView;
+    // Last non-system-overlay package seen in onAccessibilityEvent. Used by the
+    // EnforcementService polling loop to enforce time limits / schedule blocks on
+    // apps that are already in the foreground when a block condition activates (#66).
+    private String lastForegroundPackage = null;
+    // Suppresses the polling-loop overlay until this timestamp. Set when the user
+    // taps "Request More Time" so the extra-time picker dialog is not overwritten
+    // by the next polling tick showing the overlay again (#66).
+    private long enforcementSuppressedUntil = 0;
 
     // In-memory override: packageName -> expiry time in ms
     private final HashMap<String, Long> overrides = new HashMap<>();
@@ -121,6 +131,30 @@ public class AppBlockerModule extends AccessibilityService {
         new Handler(Looper.getMainLooper()).post(() -> {
             inst.overrides.clear();
             pendingRequestPackages.clear();
+        });
+    }
+
+    /**
+     * Called from EnforcementService polling loop to catch the case where a time limit or
+     * schedule block kicks in while the app is already in the foreground (#66). Since
+     * TYPE_WINDOW_STATE_CHANGED only fires on app transitions, blocks on already-open apps
+     * are not detected by onAccessibilityEvent alone.
+     *
+     * Uses lastForegroundPackage (set in onAccessibilityEvent) rather than querying
+     * UsageStatsManager — this is reliable regardless of how long the app has been open.
+     * No-ops if the overlay is already showing for the current foreground package.
+     */
+    public static void checkAndShowOverlayIfNeeded() {
+        AppBlockerModule inst = sInstance;
+        if (inst == null || inst.lastForegroundPackage == null) return;
+        final String pkg = inst.lastForegroundPackage;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if ((inst.overlayView != null || inst.overlayPending)
+                    && pkg.equals(inst.currentOverlayPackage)) return;
+            // Suppressed while an interaction dialog (e.g. extra-time picker) is showing.
+            if (System.currentTimeMillis() < inst.enforcementSuppressedUntil) return;
+            String reason = inst.getBlockReason(pkg);
+            if (reason != null) inst.showOverlay(pkg, reason);
         });
     }
 
@@ -188,6 +222,15 @@ public class AppBlockerModule extends AccessibilityService {
         // takes the foreground.
         if (packageName.equals(getPackageName())) {
             return;
+        }
+
+        // Track the last real foreground package for the EnforcementService polling loop (#66).
+        // Always update for the home launcher (even though it is a system app with no launch
+        // intent on some devices) so that lastForegroundPackage is cleared when the user
+        // navigates home, preventing the polling loop from re-showing the overlay over the
+        // Home screen (#72). Skip pure system overlay packages (e.g. com.android.systemui).
+        if (!isSystemOverlayPackage(packageName) || isCurrentHomeLauncher(packageName)) {
+            lastForegroundPackage = packageName;
         }
 
         String blockReason = getBlockReason(packageName);
@@ -373,21 +416,57 @@ public class AppBlockerModule extends AccessibilityService {
         return null;
     }
 
+    /**
+     * Returns the total foreground usage in seconds for packageName today.
+     *
+     * Uses queryEvents rather than queryAndAggregateUsageStats because
+     * getTotalTimeInForeground() does not include the current live session —
+     * stats only commit when the app transitions to background. Computing from
+     * raw MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND events lets us add the
+     * elapsed time of the ongoing session, which is required to detect a time
+     * limit being hit while the app is still open (#66).
+     */
     private int getDailyUsageSeconds(String packageName) {
-        android.app.usage.UsageStatsManager usm = (android.app.usage.UsageStatsManager)
-                getSystemService(Context.USAGE_STATS_SERVICE);
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, 0);
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
         long startOfDay = cal.getTimeInMillis();
-        Map<String, android.app.usage.UsageStats> stats =
-                usm.queryAndAggregateUsageStats(startOfDay, System.currentTimeMillis());
-        if (stats != null && stats.containsKey(packageName)) {
-            return (int)(stats.get(packageName).getTotalTimeInForeground() / 1000);
+        long now = System.currentTimeMillis();
+        try {
+            UsageEvents events = usm.queryEvents(startOfDay, now);
+            if (events == null) return 0;
+            UsageEvents.Event event = new UsageEvents.Event();
+            long totalMs = 0;
+            long sessionStart = -1;
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event);
+                if (!packageName.equals(event.getPackageName())) continue;
+                if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    sessionStart = event.getTimeStamp();
+                } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND
+                        && sessionStart >= 0) {
+                    totalMs += event.getTimeStamp() - sessionStart;
+                    sessionStart = -1;
+                }
+            }
+            // App is still in the foreground — add elapsed time since session start.
+            if (sessionStart >= 0) {
+                totalMs += now - sessionStart;
+            }
+            return (int)(totalMs / 1000);
+        } catch (Exception e) {
+            // Fall back to aggregate stats if event query fails.
+            Map<String, android.app.usage.UsageStats> stats =
+                    usm.queryAndAggregateUsageStats(startOfDay, now);
+            if (stats != null && stats.containsKey(packageName)) {
+                return (int)(stats.get(packageName).getTotalTimeInForeground() / 1000);
+            }
+            return 0;
         }
-        return 0;
     }
 
     private JSONObject loadPolicy() {
@@ -577,6 +656,9 @@ public class AppBlockerModule extends AccessibilityService {
     private void onSendRequest(String packageName, String blockCategory) {
         boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
         if (isExtraTime) {
+            // Suppress the polling-loop overlay for 2 minutes so the duration picker
+            // dialog is not immediately overwritten by the next EnforcementService tick (#66).
+            enforcementSuppressedUntil = System.currentTimeMillis() + 120_000;
             // Show duration picker; the picker fires onTimeRequest with requestType=extra_time
             // after the child selects how much extra time they want.
             dismissOverlay();

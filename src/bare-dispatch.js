@@ -51,6 +51,10 @@ function createDispatch (ctx) {
       case 'children:list': {
         const children = []
         for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          // Skip any peer that also has a blocked: entry — stale record from a race
+          // between handleHello and child:unpair.
+          const isBlocked = await ctx.db.get('blocked:' + value.publicKey).catch(() => null)
+          if (isBlocked) continue
           const isOnline = value.noiseKey ? ctx.peers.has(value.noiseKey) : false
           children.push({ ...value, isOnline })
         }
@@ -107,6 +111,26 @@ function createDispatch (ctx) {
           if (ctx.swarm) {
             try { ctx.swarm.leave(ctx.b4a.from(swarmTopic, 'hex')) } catch (_e) {}
           }
+        } else {
+          // swarmTopic was not stored in the peer record (can happen if info.topics was
+          // empty on the Hyperswarm connection). Fall back: remove any topic not associated
+          // with a remaining paired peer so the parent stops advertising on stale topics.
+          const remainingTopics = new Set()
+          for await (const { key, value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+            if (key !== 'peers:' + childPublicKey && value.swarmTopic) {
+              remainingTopics.add(value.swarmTopic)
+            }
+          }
+          const orphanedTopics = []
+          for await (const { key, value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+            if (!remainingTopics.has(value.topicHex)) orphanedTopics.push({ key, topicHex: value.topicHex })
+          }
+          for (const { key, topicHex } of orphanedTopics) {
+            await ctx.db.del(key).catch(() => {})
+            if (ctx.swarm) {
+              try { ctx.swarm.leave(ctx.b4a.from(topicHex, 'hex')) } catch (_e) {}
+            }
+          }
         }
 
         // Notify child and gracefully close the connection AFTER deleting records.
@@ -132,6 +156,24 @@ function createDispatch (ctx) {
         }
         const topicHex = topicBuf.toString('hex')
         const parentPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
+
+        // Leave and delete any topics not associated with a currently paired peer — BEFORE
+        // joining the new topic. Running this after joinTopic would sweep the new topic too
+        // (no peer is paired on it yet), causing the parent to immediately leave its own invite.
+        const activePeerTopics = new Set()
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (value.swarmTopic) activePeerTopics.add(value.swarmTopic)
+        }
+        const staleTopicEntries = []
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+          if (!activePeerTopics.has(value.topicHex)) staleTopicEntries.push({ key, topicHex: value.topicHex })
+        }
+        for (const { key, topicHex: staleTopicHex } of staleTopicEntries) {
+          await ctx.db.del(key).catch(() => {})
+          if (ctx.swarm) {
+            try { ctx.swarm.leave(ctx.b4a.from(staleTopicHex, 'hex')) } catch (_e) {}
+          }
+        }
 
         // Join the swarm topic (parent listens for child connections)
         await ctx.joinTopic(topicHex)
@@ -164,6 +206,21 @@ function createDispatch (ctx) {
 
         // Store the parent's public key as a "pending" entry — will be confirmed on hello
         await ctx.db.put('pendingParent', { publicKey: parentPublicKey, ts: Date.now() })
+
+        // Leave and delete all existing topics before joining the new one.
+        // A child should only be connected to one parent at a time. Any old topics
+        // (from a previous pairing that wasn't fully cleaned up) would let the child
+        // stay joined to a stale topic, which can cause ghost connections on the parent.
+        const oldTopics = []
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+          if (value.topicHex !== swarmTopic) oldTopics.push({ key, topicHex: value.topicHex })
+        }
+        for (const { key, topicHex } of oldTopics) {
+          await ctx.db.del(key).catch(() => {})
+          if (ctx.swarm) {
+            try { ctx.swarm.leave(ctx.b4a.from(topicHex, 'hex')) } catch (_e) {}
+          }
+        }
 
         // Join the swarm topic (child connects to parent)
         await ctx.joinTopic(swarmTopic)

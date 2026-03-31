@@ -466,6 +466,20 @@ async function handleHello (msg, conn, remoteKeyHex) {
   }
   await db.put('peers:' + peerIdentityKeyHex, peerRecord)
 
+  // Re-check blocked status after writing — a concurrent child:unpair could have written
+  // blocked: after our initial check above but before we stored the peer. If so, undo
+  // the write and re-deliver unpair so the child resets even if it missed the original.
+  const laterBlock = await db.get('blocked:' + peerIdentityKeyHex).catch(() => null)
+  if (laterBlock) {
+    console.warn('[bare] peer blocked during hello handshake, re-unpairing:', peerIdentityKeyHex.slice(0, 8))
+    await db.del('peers:' + peerIdentityKeyHex).catch(() => {})
+    try {
+      const signed = signMessage({ type: 'unpair', payload: {} }, identity)
+      conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+    } catch (_e) { /* connection may already be closing */ }
+    return
+  }
+
   // Update the in-memory peers map with the identity key
   const peer = peers.get(remoteKeyHex)
   if (peer) {

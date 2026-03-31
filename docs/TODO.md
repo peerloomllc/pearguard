@@ -8,6 +8,7 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 60 | Parent PIN not carried over to child after Remove + re-pair | `bare-dispatch.js` `handleHello` — inject `pinHash` from parent `'policy'` key |
 | 65 | Ghost child device reappears after Remove + force-stop/reinstall | `bare.js` `handleHello` — detect/re-unpair stale `blocked:` peers |
+| 73 | Profile name change does not propagate to paired devices | `bare.js` / `bare-dispatch.js` — broadcast updated `hello` or new `profile:update` message on name change |
 | 69 | App opens to "Connecting..." screen after tapping a notification | `app/index.tsx` — `dbReady` / deep-link sequencing race |
 | 71 | Some notifications show package name instead of app name | `UsageStatsModule.java`, `ParentConnectionService.java` — resolve label via `pm.getApplicationLabel` |
 

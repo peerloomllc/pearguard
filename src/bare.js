@@ -566,6 +566,30 @@ async function handleHello (msg, conn, remoteKeyHex) {
         console.warn('[bare] could not send stored policy:', e.message)
       }
     }
+
+    // Backfill notifications missed while the parent was force-stopped.
+    // Scan for pending requests from this child that never had their notification
+    // shown (notified: false). Re-emitting time:request:received causes index.tsx
+    // to show the native notification and then call request:markNotified.
+    if (!isFirstPairing) {
+      try {
+        const missed = []
+        for await (const { value } of db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value && value.childPublicKey === peerIdentityKeyHex &&
+              value.status === 'pending' && value.notified === false) {
+            missed.push(value)
+          }
+        }
+        if (missed.length > 0) {
+          console.log('[bare] backfilling', missed.length, 'unnotified request(s) for child:', peerIdentityKeyHex.slice(0, 12))
+          for (const req of missed) {
+            send({ type: 'event', event: 'time:request:received', data: req })
+          }
+        }
+      } catch (e) {
+        console.warn('[bare] reconnect backfill scan failed:', e.message)
+      }
+    }
   }
 
   // Send our own hello back (if we haven't already) — include real profile name
@@ -593,6 +617,37 @@ async function handleHello (msg, conn, remoteKeyHex) {
     peerConnected = true
     parentPeer = peers.get(remoteKeyHex)
     await flushPendingMessages(conn)
+
+    // Re-send any pending time requests from the child's own Hyperbee.
+    // If the parent was force-stopped while the TCP socket appeared alive, the
+    // write succeeded locally but was never received — the message was NOT queued
+    // in pendingMessages. Re-sending from req:* covers that gap.
+    // The parent's handleIncomingTimeRequest deduplicates via request:requestId,
+    // so re-sending a request the parent already has is safe (it becomes a no-op).
+    try {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000 // ignore requests older than 24 h
+      let resent = 0
+      for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+        if (!value || value.status !== 'pending' || value.requestedAt < cutoff) continue
+        const p2pPayload = {
+          requestId: value.id,
+          packageName: value.packageName,
+          appName: value.appName,
+          requestedAt: value.requestedAt,
+          requestType: value.requestType,
+        }
+        if (value.requestType === 'extra_time' && typeof value.extraSeconds === 'number') {
+          p2pPayload.extraSeconds = value.extraSeconds
+        }
+        const signed = signMessage({ type: 'time:request', payload: p2pPayload }, identity)
+        conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+        resent++
+      }
+      if (resent > 0) console.log('[bare] re-sent', resent, 'pending request(s) to parent on reconnect')
+    } catch (e) {
+      console.warn('[bare] pending request resend failed:', e.message)
+    }
+
     // Ask RN shell to scan installed apps and relay each as app:installed
     send({ type: 'event', event: 'apps:syncRequested', data: {} })
     // Ask RN shell to gather usage stats and send a fresh report to the parent

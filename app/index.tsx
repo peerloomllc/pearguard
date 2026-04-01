@@ -447,10 +447,12 @@ export default function Root () {
               }
               // Show a notification on the parent device when a child sends a time request
               if (msg.event === 'time:request:received') {
-                const { childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
+                const { id: requestId, childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
                 const childLabel = childDisplayName || 'Your child'
                 const appLabel = appName || packageName || 'an app'
                 NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
+                // Mark notified so reconnect backfill doesn't re-fire this notification
+                if (requestId) sendToWorklet({ method: 'request:markNotified', args: { requestId } })
               }
               // Show a notification on the child device when parent approves/denies a request.
               // Guard on _mode === 'child': the parent also emits request:updated (e.g. from

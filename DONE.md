@@ -4,6 +4,15 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-01
+
+### [x] Force-stopped parent doesn't receive child notifications (#76) — 2026-04-01
+Root cause: `sendToParentOrQueue` on the child wrote to the TCP socket just as the parent process was dying. The write appeared to succeed (OS buffered it), so the message was not queued in `pendingMessages`. When the parent restarted and reconnected, the child's queue flush sent nothing, and the parent's Hyperbee had no record to backfill.
+
+Fix (soft): on child reconnect (`handleHello`, mode=child), after flushing `pendingMessages`, scan `req:*` in the child's own Hyperbee for entries still `status: 'pending'` within the last 24 h and re-send each as a signed `time:request` P2P message. The parent's `handleIncomingTimeRequest` deduplicates via `request:requestId` — re-delivering a request the parent already has is a no-op. Added `notified` flag to parent-side request entries and a `request:markNotified` dispatch so requests that already had their notification shown are not re-fired on subsequent reconnects. FCM-based real-time push added as future enhancement #78.
+
+---
+
 ## Added 2026-03-31 (unpair/re-pair session)
 
 ### [x] Duplicate children on Dashboard after remove + re-pair — 2026-03-31

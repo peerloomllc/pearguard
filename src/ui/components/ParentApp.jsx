@@ -83,6 +83,7 @@ export default function ParentApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [pairedName, setPairedName] = useState(null);
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
+  const [navTrigger, setNavTrigger] = useState(null);
 
   useEffect(() => {
     function checkPin() {
@@ -94,6 +95,24 @@ export default function ParentApp() {
     // Re-check when worklet re-initializes (e.g. returning from setup) so a PIN
     // set during the setup flow is picked up without requiring a full remount.
     return window.onBareEvent('ready', checkPin);
+  }, []);
+
+  // Listen for notification-tap navigation at this level (always mounted).
+  // Switches to Dashboard tab and passes the payload down so Dashboard can
+  // navigate to the correct child + tab — fixes #69 and #77.
+  useEffect(() => {
+    const pending = window.__pendingAlertsNav;
+    if (pending) {
+      window.__pendingAlertsNav = null;
+      setActiveTab('dashboard');
+      setNavTrigger({ ...pending, _ts: Date.now() });
+    }
+    const unsub = window.onBareEvent('navigate:child:alerts', (data) => {
+      window.__pendingAlertsNav = null;
+      setActiveTab('dashboard');
+      setNavTrigger({ ...data, _ts: Date.now() });
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
@@ -124,7 +143,9 @@ export default function ParentApp() {
         <div style={styles.banner}>Successfully paired with {pairedName}!</div>
       )}
       <div style={styles.content}>
-        <ActiveComponent />
+        {activeTab === 'dashboard'
+          ? <Dashboard navTrigger={navTrigger} onNavConsumed={() => setNavTrigger(null)} />
+          : <ActiveComponent />}
       </div>
       <nav style={styles.tabBar}>
         {TABS.map((tab) => (

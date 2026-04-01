@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 
-export default function Dashboard() {
+export default function Dashboard({ navTrigger, onNavConsumed }) {
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
   const [initialTab, setInitialTab] = useState(null);
@@ -25,6 +25,31 @@ export default function Dashboard() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  // Navigate to a specific child's tab. Retries up to 2× at 500 ms intervals
+  // in case children:list races with worklet initialization on cold/warm start.
+  const navigateToChild = useCallback((childPublicKey, tab, attempt) => {
+    if (attempt === undefined) attempt = 0;
+    window.callBare('children:list').then((list) => {
+      const child = list.find((c) => c.publicKey === childPublicKey);
+      if (child) {
+        setInitialTab(tab || 'alerts');
+        setSelectedChild(child);
+      } else if (attempt < 2) {
+        setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
+      }
+    }).catch(() => {
+      if (attempt < 2) setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
+    });
+  }, []);
+
+  // Consume navTrigger from ParentApp (notification tap navigation)
+  useEffect(() => {
+    if (navTrigger && navTrigger.childPublicKey) {
+      navigateToChild(navTrigger.childPublicKey, navTrigger.tab);
+      onNavConsumed?.();
+    }
+  }, [navTrigger, navigateToChild, onNavConsumed]);
 
   useEffect(() => {
     loadChildren();
@@ -62,12 +87,11 @@ export default function Dashboard() {
       );
     });
 
-    // Notification tap: navigate directly to a child's tab (tab defaults to 'alerts')
+    // Notification tap: navigate directly to a child's tab (tab defaults to 'alerts').
+    // Also clears the persistent __pendingAlertsNav marker set by index.tsx.
     const unsubNav = window.onBareEvent('navigate:child:alerts', ({ childPublicKey, tab }) => {
-      window.callBare('children:list').then((list) => {
-        const child = list.find((c) => c.publicKey === childPublicKey);
-        if (child) { setInitialTab(tab || 'alerts'); setSelectedChild(child); }
-      }).catch(() => {});
+      window.__pendingAlertsNav = null;
+      navigateToChild(childPublicKey, tab);
     });
 
     const unsubUnpaired = window.onBareEvent('child:unpaired', ({ childPublicKey }) => {

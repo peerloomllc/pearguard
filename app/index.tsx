@@ -57,9 +57,27 @@ Linking.addEventListener('url', ({ url }) => {
     const qs = url.split('?')[1] ?? ''
     const keyMatch = qs.match(/childPublicKey=([^&]+)/)
     const tabMatch = qs.match(/tab=([^&]+)/)
-    if (keyMatch) _pendingAlertsNav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+    if (keyMatch) {
+      const nav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+      if (_dbReady && _webViewLoaded) {
+        // App already running — inject navigation directly; no need to buffer
+        setTimeout(() => {
+          _injectToWebView?.(
+            'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
+          )
+        }, 100)
+      } else {
+        _pendingAlertsNav = nav
+      }
+    }
   } else if (url && url.startsWith('pear://pearguard/child-requests')) {
-    _pendingChildRequestsNav = true
+    if (_dbReady && _webViewLoaded) {
+      setTimeout(() => {
+        _injectToWebView?.('window.__pearEvent("navigate:child:requests",{});true;')
+      }, 100)
+    } else {
+      _pendingChildRequestsNav = true
+    }
   }
 })
 
@@ -250,6 +268,25 @@ export default function Root () {
     const nativeSubs: ReturnType<typeof DeviceEventEmitter.addListener>[] = []
 
     async function start () {
+      // Resolve the initial deep-link URL first — before loading any bundles —
+      // so _pendingAlertsNav / _pendingChildRequestsNav are set before onLoad fires.
+      // If called later (after worklet.start()), the ready event may have already
+      // fired, the WebView may have already rendered, and onLoad may have already
+      // checked these flags (finding them null) before this promise resolves.
+      const initialUrl = await Linking.getInitialURL().catch(() => null)
+      if (initialUrl) {
+        if (initialUrl.startsWith('pear://pearguard/join')) {
+          _pendingInviteUrl = _pendingInviteUrl ?? initialUrl
+        } else if (initialUrl.startsWith('pear://pearguard/alerts')) {
+          const qs = initialUrl.split('?')[1] ?? ''
+          const keyMatch = qs.match(/childPublicKey=([^&]+)/)
+          const tabMatch = qs.match(/tab=([^&]+)/)
+          if (keyMatch) _pendingAlertsNav = _pendingAlertsNav ?? { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+        } else if (initialUrl.startsWith('pear://pearguard/child-requests')) {
+          _pendingChildRequestsNav = _pendingChildRequestsNav || true
+        }
+      }
+
       // Request POST_NOTIFICATIONS permission (Android 13+, API 33)
       if (Platform.OS === 'android' && Platform.Version >= 33) {
         PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS').catch(() => {})
@@ -559,50 +596,15 @@ export default function Root () {
       })
 
       await _worklet.start('bare.bundle', source)
-
-      // Cold start: app launched by a deep link — buffer the URL so the ready
-      // handler sends it after dispatch is initialized (no racy setTimeout).
-      Linking.getInitialURL().then(url => {
-        if (url && url.startsWith('pear://pearguard/join')) {
-          _pendingInviteUrl = _pendingInviteUrl ?? url
-        } else if (url && url.startsWith('pear://pearguard/alerts')) {
-          const qs = url.split('?')[1] ?? ''
-          const keyMatch = qs.match(/childPublicKey=([^&]+)/)
-          const tabMatch = qs.match(/tab=([^&]+)/)
-          if (keyMatch) _pendingAlertsNav = _pendingAlertsNav ?? { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
-        } else if (url && url.startsWith('pear://pearguard/child-requests')) {
-          _pendingChildRequestsNav = _pendingChildRequestsNav || true
-        }
-      }).catch(() => {})
     }
 
     start().catch(e => console.error('[RN] start error:', e))
     return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
 
-  // When db is ready and a notification-tap deep link is pending, navigate to that child's tab
-  useEffect(() => {
-    if (!dbReady || !_pendingAlertsNav) return
-    const { childPublicKey, tab } = _pendingAlertsNav
-    _pendingAlertsNav = null
-    // Give the WebView React app 600ms to fully render before injecting navigation
-    setTimeout(() => {
-      webViewRef.current?.injectJavaScript(
-        'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey, tab }) + ');true;'
-      )
-    }, 600)
-  }, [dbReady])
-
-  // When db is ready and a child-requests deep link is pending, navigate child app to Requests tab
-  useEffect(() => {
-    if (!dbReady || !_pendingChildRequestsNav) return
-    _pendingChildRequestsNav = false
-    setTimeout(() => {
-      webViewRef.current?.injectJavaScript(
-        'window.__pearEvent("navigate:child:requests",{});true;'
-      )
-    }, 600)
-  }, [dbReady])
+  // Pending notification navigation is now consumed in the onLoad handler below,
+  // not here, so the 600ms timer starts after the WebView has actually loaded
+  // (not from dbReady, which fires before the WebView even begins loading).
 
   if (!html || !dbReady) {
     return <View style={styles.loading} />
@@ -625,6 +627,27 @@ export default function Root () {
             webViewRef.current?.injectJavaScript(
               'window.__pearEvent(' + JSON.stringify(event) + ',' + JSON.stringify(data) + ');true;'
             )
+          }
+          // Cold-start notification navigation: start the 600ms timer from here (after
+          // WebView has loaded) rather than from dbReady (before WebView starts loading).
+          // This gives the React app inside the WebView time to mount Dashboard and register
+          // its navigate:child:alerts / navigate:child:requests event handler.
+          if (_pendingAlertsNav) {
+            const nav = _pendingAlertsNav
+            _pendingAlertsNav = null
+            setTimeout(() => {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey: nav.childPublicKey, tab: nav.tab }) + ');true;'
+              )
+            }, 600)
+          }
+          if (_pendingChildRequestsNav) {
+            _pendingChildRequestsNav = false
+            setTimeout(() => {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearEvent("navigate:child:requests",{});true;'
+              )
+            }, 600)
           }
         }}
         javaScriptEnabled

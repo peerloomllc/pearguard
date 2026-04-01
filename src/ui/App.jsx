@@ -27,7 +27,7 @@ export default function App() {
   }, []);
 
   if (mode === undefined) {
-    return <div style={styles.center}><p>Loading...</p></div>;
+    return null;
   }
   if (mode === 'parent') return <ParentApp />;
   if (mode === 'child') return <ChildApp />;

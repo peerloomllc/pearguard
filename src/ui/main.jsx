@@ -18,17 +18,33 @@ window.__pearResponse = function (id, result, error) {
 // Event listeners registered by components
 const eventListeners = {};
 
+// Navigation events that may fire before Dashboard has mounted. Buffer the last
+// occurrence so it can be replayed the moment a handler registers.
+const BUFFERED_EVENTS = new Set(['navigate:child:alerts', 'navigate:child:requests']);
+const bufferedEvents = {};
+
 // Called by RN shell to push bare→UI events
 window.__pearEvent = function (eventName, data) {
   const handlers = eventListeners[eventName];
-  if (!handlers) return;
-  handlers.forEach((fn) => fn(data));
+  if (handlers && handlers.length > 0) {
+    handlers.forEach((fn) => fn(data));
+  } else if (BUFFERED_EVENTS.has(eventName)) {
+    // No handler registered yet — buffer so the next subscriber gets it
+    bufferedEvents[eventName] = data;
+  }
 };
 
 // Subscribe to a bare event; returns an unsubscribe function
 window.onBareEvent = function (eventName, handler) {
   if (!eventListeners[eventName]) eventListeners[eventName] = [];
   eventListeners[eventName].push(handler);
+  // Replay any buffered navigation event immediately (via microtask so the
+  // component finishes mounting before the handler runs)
+  if (BUFFERED_EVENTS.has(eventName) && bufferedEvents[eventName] !== undefined) {
+    const data = bufferedEvents[eventName];
+    delete bufferedEvents[eventName];
+    Promise.resolve().then(() => handler(data));
+  }
   return function () {
     eventListeners[eventName] = eventListeners[eventName].filter((h) => h !== handler);
   };

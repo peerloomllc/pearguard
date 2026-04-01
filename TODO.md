@@ -8,8 +8,8 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 69 | Notification tap (warm start) doesn't navigate to child's Requests tab — lands on Dashboard | `app/index.tsx` — `navigate:child:alerts` event still not reaching Dashboard handler; buffering may need revisit |
 | 71 | Some notifications show package name instead of app name | `UsageStatsModule.java`, `ParentConnectionService.java` — resolve label via `pm.getApplicationLabel` |
-| 76 | Force-stopped parent doesn't receive child notifications | `ParentConnectionService.java` — service killed on force-stop; need foreground service or FCM push |
-| 77 | Cold-start notification tap still shows "Connecting..." and lands on Dashboard instead of Requests tab | `app/index.tsx` — `_pendingAlertsNav` set correctly but WebView still shows brief connecting state; navigation doesn't reach ChildDetail |
+| 78 | FCM push for force-stopped parent (enhancement to #76 soft fix) | Add Firebase Messaging SDK; child stores parent FCM token (exchanged at pairing); child POSTs to FCM HTTP v1 API when parent is unreachable; parent `FirebaseMessagingService` shows native notification — survives force-stop on Android ≤12 |
+| 77 | Notification tap shows "Connecting..." and lands on Dashboard instead of Requests tab | `app/index.tsx` — `_pendingAlertsNav` set correctly but navigation doesn't reach ChildDetail on warm or cold start |
 
 ## Features
 

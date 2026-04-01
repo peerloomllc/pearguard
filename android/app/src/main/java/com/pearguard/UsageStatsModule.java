@@ -658,6 +658,23 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Returns and clears the pending notification navigation URL stored by
+     * MainActivity.interceptNotificationDeepLink().  Called by index.tsx when
+     * the app comes to the foreground so it can navigate the WebView.
+     */
+    @ReactMethod
+    public void consumePendingNavigation(Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("pearguard_nav", Context.MODE_PRIVATE);
+        String url = prefs.getString("pendingNavUrl", null);
+        if (url != null) {
+            prefs.edit().remove("pendingNavUrl").apply();
+            promise.resolve(url);
+        } else {
+            promise.resolve(null);
+        }
+    }
+
+    /**
      * Builds a PendingIntent that deep-links to the child's Activity tab in PearGuard.
      * URL: pear://pearguard/alerts?childPublicKey=<key>
      */

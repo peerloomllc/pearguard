@@ -1,5 +1,6 @@
 package com.pearguard
 
+import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +21,12 @@ class MainActivity : ReactActivity() {
         // coloring the background, status bar, and navigation bar.
         // This is required for expo-splash-screen.
         setTheme(R.style.AppTheme);
+
+        // Intercept notification deep links on cold start — store the nav data
+        // in SharedPreferences so index.tsx can read it, then strip the URI from
+        // the intent so Expo Router doesn't navigate to +not-found.
+        interceptNotificationDeepLink(intent)
+
         super.onCreate(null)
 
         // ACTION_PACKAGE_ADDED and ACTION_PACKAGE_REMOVED cannot be received via
@@ -40,6 +47,34 @@ class MainActivity : ReactActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { unregisterReceiver(packageMonitor) } catch (_: Exception) {}
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        // Intercept notification deep links on warm start — store the nav data
+        // and strip the URI so Expo Router doesn't navigate away from index.tsx.
+        if (intent != null) interceptNotificationDeepLink(intent)
+        super.onNewIntent(intent)
+    }
+
+    /**
+     * If the intent carries a pear://pearguard/alerts or /child-requests deep link,
+     * persist the URL in SharedPreferences (read by index.tsx on foreground) and
+     * clear the intent data so Expo Router never sees it.
+     */
+    private fun interceptNotificationDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "pear" || uri.host != "pearguard") return
+        val path = uri.path ?: ""
+        if (!path.startsWith("/alerts") && !path.startsWith("/child-requests")) return
+
+        // Store the full URL for index.tsx to consume
+        getSharedPreferences("pearguard_nav", MODE_PRIVATE)
+            .edit()
+            .putString("pendingNavUrl", uri.toString())
+            .apply()
+
+        // Strip the URI so Expo Router doesn't try to route it
+        intent?.data = null
     }
 
     /**

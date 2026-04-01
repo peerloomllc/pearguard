@@ -423,6 +423,17 @@ function createDispatch (ctx) {
         return { ok: true }
       }
 
+      case 'request:markNotified': {
+        // Mark a pending request as having had its notification shown, so it isn't
+        // re-fired during the reconnect backfill scan (see handleHello in bare.js).
+        const { requestId } = args || {}
+        if (requestId) {
+          const existing = await ctx.db.get('request:' + requestId).catch(() => null)
+          if (existing) await ctx.db.put('request:' + requestId, { ...existing.value, notified: true })
+        }
+        return { ok: true }
+      }
+
       case 'requests:list': {
         // Scan Hyperbee for all keys matching 'req:*'; auto-expire entries older than 7 days
         const requests = []
@@ -1113,7 +1124,7 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
   const appName = payloadAppName || policyAppName || packageName
 
   const resolvedType = requestType === 'extra_time' ? 'extra_time' : 'approval'
-  const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', childPublicKey, childDisplayName, requestType: resolvedType }
+  const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', notified: false, childPublicKey, childDisplayName, requestType: resolvedType }
   if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') request.extraSeconds = extraSeconds
   await db.put('request:' + requestId, request)
   send({ type: 'event', event: 'time:request:received', data: request })

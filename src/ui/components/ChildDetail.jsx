@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import UsageTab from './UsageTab.jsx';
 import AppsTab from './AppsTab.jsx';
 import ScheduleTab from './ScheduleTab.jsx';
@@ -18,6 +18,13 @@ const TABS = [
 export default function ChildDetail({ child, onBack, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'usage');
   const [confirming, setConfirming] = useState(false);
+
+  // Respond to initialTab prop changes (e.g. notification tap while already viewing a child)
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const active = TABS.find((t) => t.key === activeTab);
   const ActiveComponent = active.Component;
 

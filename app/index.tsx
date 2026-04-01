@@ -49,35 +49,13 @@ let _injectToWebView: ((js: string) => void) | null = null
 // index.tsx — any listener registered in useEffect would be torn down. These
 // listeners survive for the lifetime of the JS bundle.
 
+// Notification deep links (alerts, child-requests) are now intercepted by
+// MainActivity.interceptNotificationDeepLink() and stored in SharedPreferences.
+// Only invite join links still arrive via Linking (they use a separate Expo Router route).
 Linking.addEventListener('url', ({ url }) => {
   if (url && url.startsWith('pear://pearguard/join')) {
     console.log('[RN] invite URL (module-level Linking):', url)
     sendToWorklet({ method: 'acceptInvite', args: [url] })
-  } else if (url && url.startsWith('pear://pearguard/alerts')) {
-    const qs = url.split('?')[1] ?? ''
-    const keyMatch = qs.match(/childPublicKey=([^&]+)/)
-    const tabMatch = qs.match(/tab=([^&]+)/)
-    if (keyMatch) {
-      const nav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
-      if (_dbReady && _webViewLoaded) {
-        // App already running — inject navigation directly; no need to buffer
-        setTimeout(() => {
-          _injectToWebView?.(
-            'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
-          )
-        }, 100)
-      } else {
-        _pendingAlertsNav = nav
-      }
-    }
-  } else if (url && url.startsWith('pear://pearguard/child-requests')) {
-    if (_dbReady && _webViewLoaded) {
-      setTimeout(() => {
-        _injectToWebView?.('window.__pearEvent("navigate:child:requests",{});true;')
-      }, 100)
-    } else {
-      _pendingChildRequestsNav = true
-    }
   }
 })
 
@@ -107,6 +85,46 @@ function sendToWorklet (msg: object, pendingId?: number) {
       if (resolve) { _pending.delete(pendingId); resolve({ error: 'IPC write failed' }) }
     }
   }
+}
+
+// ── Notification navigation via SharedPreferences ─────────────────────────────
+// MainActivity stores notification deep link URLs in SharedPreferences and strips
+// them from the intent so Expo Router never sees them. This function reads and
+// clears that stored URL, then injects the appropriate navigation event into the
+// WebView (or buffers it for cold start).
+
+function consumePendingNavigation () {
+  NativeModules.UsageStatsModule?.consumePendingNavigation?.()
+    .then((url: string | null) => {
+      if (!url) return
+      if (url.includes('/alerts')) {
+        const qs = url.split('?')[1] ?? ''
+        const keyMatch = qs.match(/childPublicKey=([^&]+)/)
+        const tabMatch = qs.match(/tab=([^&]+)/)
+        if (keyMatch) {
+          const nav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+          if (_dbReady && _webViewLoaded) {
+            _injectToWebView?.(`window.__pendingAlertsNav=${JSON.stringify(nav)};true;`)
+            setTimeout(() => {
+              _injectToWebView?.(
+                'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
+              )
+            }, 300)
+          } else {
+            _pendingAlertsNav = nav
+          }
+        }
+      } else if (url.includes('/child-requests')) {
+        if (_dbReady && _webViewLoaded) {
+          setTimeout(() => {
+            _injectToWebView?.('window.__pearEvent("navigate:child:requests",{});true;')
+          }, 100)
+        } else {
+          _pendingChildRequestsNav = true
+        }
+      }
+    })
+    .catch(() => {})
 }
 
 // ── HTML builder ──────────────────────────────────────────────────────────────
@@ -273,19 +291,14 @@ export default function Root () {
       // If called later (after worklet.start()), the ready event may have already
       // fired, the WebView may have already rendered, and onLoad may have already
       // checked these flags (finding them null) before this promise resolves.
+      // Check for invite join links via Linking (still uses Expo Router for /join).
       const initialUrl = await Linking.getInitialURL().catch(() => null)
-      if (initialUrl) {
-        if (initialUrl.startsWith('pear://pearguard/join')) {
-          _pendingInviteUrl = _pendingInviteUrl ?? initialUrl
-        } else if (initialUrl.startsWith('pear://pearguard/alerts')) {
-          const qs = initialUrl.split('?')[1] ?? ''
-          const keyMatch = qs.match(/childPublicKey=([^&]+)/)
-          const tabMatch = qs.match(/tab=([^&]+)/)
-          if (keyMatch) _pendingAlertsNav = _pendingAlertsNav ?? { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
-        } else if (initialUrl.startsWith('pear://pearguard/child-requests')) {
-          _pendingChildRequestsNav = _pendingChildRequestsNav || true
-        }
+      if (initialUrl && initialUrl.startsWith('pear://pearguard/join')) {
+        _pendingInviteUrl = _pendingInviteUrl ?? initialUrl
       }
+      // Notification deep links (alerts, child-requests) are stored in
+      // SharedPreferences by MainActivity — check on cold start too.
+      consumePendingNavigation()
 
       // Request POST_NOTIFICATIONS permission (Android 13+, API 33)
       if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -353,6 +366,8 @@ export default function Root () {
         AppState.addEventListener('change', (state) => {
           if (state !== 'active') return
           sendToWorklet({ method: 'swarm:reconnect' })
+          // Check for pending notification navigation stored by MainActivity
+          consumePendingNavigation()
           // Re-appear check: only after DB is ready and mode is known
           if (_dbReady && _mode === 'child') {
             NativeModules.UsageStatsModule?.checkChildPermissions?.()
@@ -436,21 +451,25 @@ export default function Root () {
               }
               // Track child heartbeat timestamps so ParentConnectionService can detect force-stop
               if (msg.event === 'heartbeat:received') {
-                const { childPublicKey, childDisplayName, timestamp } = msg.data ?? {}
+                const { childPublicKey, childDisplayName } = msg.data ?? {}
                 if (childPublicKey) {
+                  // Always use parent's clock — child's timestamp may have clock skew
+                  // which would make the heartbeat appear stale to ParentConnectionService.
                   NativeModules.UsageStatsModule?.updateChildHeartbeat?.(
                     childPublicKey,
                     childDisplayName || 'Child',
-                    timestamp || Date.now()
+                    Date.now()
                   )
                 }
               }
               // Show a notification on the parent device when a child sends a time request
               if (msg.event === 'time:request:received') {
-                const { childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
+                const { id: requestId, childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
                 const childLabel = childDisplayName || 'Your child'
                 const appLabel = appName || packageName || 'an app'
                 NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
+                // Mark notified so reconnect backfill doesn't re-fire this notification
+                if (requestId) sendToWorklet({ method: 'request:markNotified', args: { requestId } })
               }
               // Show a notification on the child device when parent approves/denies a request.
               // Guard on _mode === 'child': the parent also emits request:updated (e.g. from
@@ -635,11 +654,14 @@ export default function Root () {
           if (_pendingAlertsNav) {
             const nav = _pendingAlertsNav
             _pendingAlertsNav = null
+            // Set a persistent JS-level marker immediately — Dashboard reads this on mount,
+            // so timing of __pearEvent vs. component lifecycle doesn't matter.
+            webViewRef.current?.injectJavaScript(`window.__pendingAlertsNav=${JSON.stringify(nav)};true;`)
             setTimeout(() => {
               webViewRef.current?.injectJavaScript(
                 'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey: nav.childPublicKey, tab: nav.tab }) + ');true;'
               )
-            }, 600)
+            }, 200)
           }
           if (_pendingChildRequestsNav) {
             _pendingChildRequestsNav = false
@@ -647,7 +669,7 @@ export default function Root () {
               webViewRef.current?.injectJavaScript(
                 'window.__pearEvent("navigate:child:requests",{});true;'
               )
-            }, 600)
+            }, 200)
           }
         }}
         javaScriptEnabled

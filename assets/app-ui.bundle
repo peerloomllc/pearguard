@@ -15571,6 +15571,11 @@
   function ChildDetail({ child, onBack, initialTab }) {
     const [activeTab, setActiveTab] = (0, import_react8.useState)(initialTab || "usage");
     const [confirming, setConfirming] = (0, import_react8.useState)(false);
+    (0, import_react8.useEffect)(() => {
+      if (initialTab && initialTab !== activeTab) {
+        setActiveTab(initialTab);
+      }
+    }, [initialTab]);
     const active = TABS.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
     const handleRemove = (0, import_react8.useCallback)(() => {
@@ -15682,7 +15687,7 @@
 
   // src/ui/components/Dashboard.jsx
   var import_jsx_runtime9 = __toESM(require_jsx_runtime());
-  function Dashboard() {
+  function Dashboard({ navTrigger, onNavConsumed }) {
     const [children, setChildren] = (0, import_react9.useState)([]);
     const [loading, setLoading] = (0, import_react9.useState)(true);
     const [initialTab, setInitialTab] = (0, import_react9.useState)(null);
@@ -15702,6 +15707,26 @@
         setLoading(false);
       }).catch(() => setLoading(false));
     }, []);
+    const navigateToChild = (0, import_react9.useCallback)((childPublicKey, tab, attempt) => {
+      if (attempt === void 0) attempt = 0;
+      window.callBare("children:list").then((list) => {
+        const child = list.find((c) => c.publicKey === childPublicKey);
+        if (child) {
+          setInitialTab(tab || "alerts");
+          setSelectedChild(child);
+        } else if (attempt < 2) {
+          setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
+        }
+      }).catch(() => {
+        if (attempt < 2) setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
+      });
+    }, []);
+    (0, import_react9.useEffect)(() => {
+      if (navTrigger && navTrigger.childPublicKey) {
+        navigateToChild(navTrigger.childPublicKey, navTrigger.tab);
+        onNavConsumed?.();
+      }
+    }, [navTrigger, navigateToChild, onNavConsumed]);
     (0, import_react9.useEffect)(() => {
       loadChildren();
       const unsubUsage = window.onBareEvent("child:usageReport", ({ childPublicKey, todayScreenTimeSeconds, currentApp }) => {
@@ -15726,14 +15751,8 @@
         );
       });
       const unsubNav = window.onBareEvent("navigate:child:alerts", ({ childPublicKey, tab }) => {
-        window.callBare("children:list").then((list) => {
-          const child = list.find((c) => c.publicKey === childPublicKey);
-          if (child) {
-            setInitialTab(tab || "alerts");
-            setSelectedChild(child);
-          }
-        }).catch(() => {
-        });
+        window.__pendingAlertsNav = null;
+        navigateToChild(childPublicKey, tab);
       });
       const unsubUnpaired = window.onBareEvent("child:unpaired", ({ childPublicKey }) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
@@ -16347,12 +16366,27 @@
     const [activeTab, setActiveTab] = (0, import_react14.useState)("dashboard");
     const [pairedName, setPairedName] = (0, import_react14.useState)(null);
     const [pinCheckState, setPinCheckState] = (0, import_react14.useState)("loading");
+    const [navTrigger, setNavTrigger] = (0, import_react14.useState)(null);
     (0, import_react14.useEffect)(() => {
       function checkPin() {
         window.callBare("pin:isSet", {}).then(({ isSet }) => setPinCheckState(isSet ? "done" : "needed")).catch(() => setPinCheckState("needed"));
       }
       checkPin();
       return window.onBareEvent("ready", checkPin);
+    }, []);
+    (0, import_react14.useEffect)(() => {
+      const pending2 = window.__pendingAlertsNav;
+      if (pending2) {
+        window.__pendingAlertsNav = null;
+        setActiveTab("dashboard");
+        setNavTrigger({ ...pending2, _ts: Date.now() });
+      }
+      const unsub = window.onBareEvent("navigate:child:alerts", (data) => {
+        window.__pendingAlertsNav = null;
+        setActiveTab("dashboard");
+        setNavTrigger({ ...data, _ts: Date.now() });
+      });
+      return unsub;
     }, []);
     (0, import_react14.useEffect)(() => {
       const unsub = window.onBareEvent("child:connected", (data) => {
@@ -16378,7 +16412,7 @@
         pairedName,
         "!"
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.content, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActiveComponent, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.content, children: activeTab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Dashboard, { navTrigger, onNavConsumed: () => setNavTrigger(null) }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActiveComponent, {}) }),
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("nav", { style: styles14.tabBar, children: TABS2.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
         "button",
         {

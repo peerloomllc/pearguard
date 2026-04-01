@@ -365,10 +365,28 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       }
       for (const key of allKeys) await db.del(key).catch(() => {})
 
+      // Rotate to a fresh identity keypair immediately in memory and DB.
+      // The old keypair may be listed as blocked on the parent (blocked:{oldPK}).
+      // If we keep the old keypair in memory, the next connection attempt after
+      // scanning a new invite will send hello with the old blocked PK — the parent
+      // rejects it, sends unpair again, and the child is stuck in a reset loop.
+      // A fresh keypair is not blocked, so re-pairing succeeds in one scan.
+      //
+      // IMPORTANT: mutate the existing identity object in place rather than
+      // reassigning the variable. The dispatch context (createDispatch) holds a
+      // reference to the same object via ctx.identity. Reassigning would leave
+      // ctx.identity pointing to the old keypair, so identity:setName would
+      // broadcast hello with the stale public key — causing signature mismatches
+      // on the parent and silently dropping the name update.
+      const newKeypair = generateKeypair()
+      identity.publicKey = newKeypair.publicKey
+      identity.secretKey = newKeypair.secretKey
+      await db.put('identity', {
+        publicKey:  b4a.toString(identity.publicKey, 'hex'),
+        secretKey:  b4a.toString(identity.secretKey, 'hex'),
+      })
+
       // Destroy the in-memory Hyperswarm so it stops auto-reconnecting on old topics.
-      // Without this, Hyperswarm would immediately reconnect on the same swarm topic
-      // before the parent generates a new invite. The parent still has blocked:{childPK}
-      // at that point and would send another unpair — creating an infinite reset loop.
       // joinTopic() recreates the swarm lazily when the child scans a new invite.
       if (swarm) {
         try { await swarm.destroy() } catch (_e) {}

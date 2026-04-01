@@ -16365,7 +16365,7 @@
       return unsub;
     }, []);
     if (pinCheckState === "loading") {
-      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.checking, children: "Checking..." });
+      return null;
     }
     if (pinCheckState === "needed") {
       return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PinSetupOverlay, { onDone: () => setPinCheckState("done") });
@@ -16717,7 +16717,7 @@
       return window.onBareEvent("ready", fetchMode);
     }, []);
     if (mode === void 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles15.center, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { children: "Loading..." }) });
+      return null;
     }
     if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ParentApp, {});
     if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ChildApp, {});
@@ -16747,14 +16747,24 @@
     else p.resolve(result);
   };
   var eventListeners = {};
+  var BUFFERED_EVENTS = /* @__PURE__ */ new Set(["navigate:child:alerts", "navigate:child:requests"]);
+  var bufferedEvents = {};
   window.__pearEvent = function(eventName, data) {
     const handlers = eventListeners[eventName];
-    if (!handlers) return;
-    handlers.forEach((fn) => fn(data));
+    if (handlers && handlers.length > 0) {
+      handlers.forEach((fn) => fn(data));
+    } else if (BUFFERED_EVENTS.has(eventName)) {
+      bufferedEvents[eventName] = data;
+    }
   };
   window.onBareEvent = function(eventName, handler) {
     if (!eventListeners[eventName]) eventListeners[eventName] = [];
     eventListeners[eventName].push(handler);
+    if (BUFFERED_EVENTS.has(eventName) && bufferedEvents[eventName] !== void 0) {
+      const data = bufferedEvents[eventName];
+      delete bufferedEvents[eventName];
+      Promise.resolve().then(() => handler(data));
+    }
     return function() {
       eventListeners[eventName] = eventListeners[eventName].filter((h) => h !== handler);
     };

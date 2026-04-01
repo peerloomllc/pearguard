@@ -4,6 +4,22 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-03-31 (unpair/re-pair session)
+
+### [x] Duplicate children on Dashboard after remove + re-pair — 2026-03-31
+`invite:generate` was clearing all `blocked:` entries before sweeping stale topics. A lingering Hyperswarm connection from the removed child could reconnect in that window, pass `handleHello` (no longer blocked), and resurrect its `peers:` entry alongside the new child's. Fix: removed the block-clearing from `invite:generate` entirely. The child always gets a new keypair when processing `unpair` (see below), so `blocked:old_PK` never matches them again and accumulates harmlessly.
+
+### [x] Re-pairing after remove requires clearing child app data — 2026-03-31
+`unpair` wiped the child's DB but left the old keypair alive in the module-level `identity` variable. The child's next connection (after scanning a new invite) sent hello with the blocked PK — the parent rejected it, sent another unpair, and the child looped back to setup. Fix: `unpair` now calls `generateKeypair()` and mutates the identity object's `.publicKey`/`.secretKey` in place (not reassignment), so re-pairing succeeds in one scan.
+
+### [x] Child profile name doesn't sync to parent after re-pairing — 2026-03-31
+`identity:setName` broadcast used `ctx.identity.publicKey` for the hello payload, but `ctx.identity` is a reference captured at `createDispatch` time. After `unpair` reassigned the module-level `identity` variable, `ctx.identity` still pointed to the old object — so the broadcast declared the old (blocked) public key but signed with the new keypair, failing signature verification on the parent. Fixed by mutating the identity object in place (same fix as re-pairing above), keeping `ctx.identity` in sync automatically.
+
+### [x] "Loading..." / "Checking..." flash on cold-start notification tap — 2026-03-31
+Removed the text content from App.jsx's `mode === undefined` loading state and ParentApp's `pinCheckState === 'loading'` state. Both now return `null`, so the dark RN shell background is visible until the app is ready rather than briefly flashing loading text.
+
+---
+
 ## Added 2026-03-31 (this session)
 
 ### [x] 75. App slow to start (20+ seconds) after remove/unpair cycles — 2026-03-31

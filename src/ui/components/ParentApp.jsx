@@ -108,7 +108,7 @@ export default function ParentApp() {
   }, []);
 
   if (pinCheckState === 'loading') {
-    return <div style={styles.checking}>Checking...</div>;
+    return null;
   }
 
   if (pinCheckState === 'needed') {

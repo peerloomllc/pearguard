@@ -185,16 +185,12 @@ function createDispatch (ctx) {
         // Join the swarm topic (parent listens for child connections)
         await ctx.joinTopic(topicHex)
 
-        // Clear any blocked-peer entries so previously-removed devices can be re-paired
-        // via a new invite. The block served its purpose (offline unpair delivery); once
-        // the parent deliberately generates a new invite, old blocks must not prevent re-pairing.
-        const blockedKeys = []
-        for await (const { key } of ctx.db.createReadStream({ gt: 'blocked:', lt: 'blocked:~' })) {
-          blockedKeys.push(key)
-        }
-        for (const key of blockedKeys) {
-          await ctx.db.del(key).catch(() => {})
-        }
+        // NOTE: we intentionally do NOT clear blocked: entries here. Clearing them while
+        // Hyperswarm DHT propagation is still settling creates a race: the old child can
+        // reconnect on a lingering connection before the old topic fully departs, pass the
+        // handleHello blocked check, and re-write their peers: entry — causing duplicate
+        // children on the dashboard. The block is harmless once the child processes unpair
+        // (they wipe their DB and get a new identity keypair), so it never matches them again.
 
         // Build and return the invite link
         const { buildInviteLink } = require('./invite')

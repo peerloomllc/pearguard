@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AddChildFlow from './AddChildFlow.jsx';
+import Avatar from './Avatar.jsx';
 
 export default function ChildrenList() {
   const [children, setChildren] = useState([]);
@@ -45,6 +46,7 @@ export default function ChildrenList() {
       )}
       {children.map((child) => (
         <div key={child.publicKey} style={styles.row}>
+          <Avatar avatar={child.avatarThumb} name={child.displayName} size={32} />
           <span style={{
             ...styles.dot,
             backgroundColor: child.isOnline ? '#34a853' : '#bbb',

@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
-
-function getInitials(name) {
-  return name.trim()
-    ? name.trim().split(/\s+/).map((w) => w[0].toUpperCase()).slice(0, 2).join('')
-    : '?'
-}
+import Avatar from './Avatar.jsx'
+import AvatarPicker from './AvatarPicker.jsx'
 
 export default function Profile({ mode }) {
   const [name, setName] = useState('')
   const [savedName, setSavedName] = useState('')
+  const [avatar, setAvatar] = useState(null)
+  const [showPicker, setShowPicker] = useState(false)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
@@ -19,10 +17,11 @@ export default function Profile({ mode }) {
 
   useEffect(() => {
     window.callBare('identity:getName')
-      .then(({ displayName }) => {
+      .then(({ displayName, avatar: av }) => {
         const n = displayName || ''
         setName(n)
         setSavedName(n)
+        if (av) setAvatar(av)
       })
       .catch(() => {})
   }, [])
@@ -57,6 +56,16 @@ export default function Profile({ mode }) {
     }
   }
 
+  async function handleAvatarSave(newAvatar) {
+    setShowPicker(false)
+    try {
+      await window.callBare('identity:setAvatar', { avatar: newAvatar })
+      setAvatar(newAvatar)
+    } catch {
+      // silently fail
+    }
+  }
+
   async function handlePair() {
     pairDoneRef.current = false
     setPairError(null)
@@ -64,9 +73,6 @@ export default function Profile({ mode }) {
       const url = await window.callBare('qr:scan')  // camera opens natively; wait for scan
       setPairState('connecting')                      // show connecting only after scan
       await window.callBare('acceptInvite', [url])
-      // Only show "Pairing in progress" if peer:paired hasn't already fired and
-      // reset the state (race condition on fast LAN: hello exchange completes before
-      // swarm.flush() resolves and acceptInvite returns).
       if (!pairDoneRef.current) {
         setPairState('success')
       }
@@ -89,10 +95,22 @@ export default function Profile({ mode }) {
       <h2 style={styles.heading}>Profile</h2>
 
       <div style={styles.avatarWrap}>
-        <div style={styles.avatar}>
-          <span style={styles.initials}>{getInitials(savedName)}</span>
+        <div style={styles.avatarContainer}>
+          <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
+          <div style={styles.editBadge} onClick={() => setShowPicker(true)}>
+            <span style={styles.editIcon}>&#9998;</span>
+          </div>
         </div>
       </div>
+
+      {showPicker && (
+        <AvatarPicker
+          currentAvatar={avatar}
+          name={savedName}
+          onSave={handleAvatarSave}
+          onCancel={() => setShowPicker(false)}
+        />
+      )}
 
       <div style={styles.field}>
         <label style={styles.label}>
@@ -114,7 +132,7 @@ export default function Profile({ mode }) {
           disabled={saving || unchanged}
           style={{ ...styles.btn, ...(saving || unchanged ? styles.btnDisabled : {}) }}
         >
-          {saving ? 'Saving…' : 'Save Name'}
+          {saving ? 'Saving\u2026' : 'Save Name'}
         </button>
       </div>
 
@@ -130,6 +148,7 @@ export default function Profile({ mode }) {
             <div style={styles.parentsList}>
               {parents.map((p) => (
                 <div key={p.publicKey} style={styles.parentRow}>
+                  <Avatar avatar={p.avatarThumb} name={p.displayName || 'Parent'} size={32} />
                   <span style={{ ...styles.onlineDot, backgroundColor: p.isOnline ? '#34a853' : '#bbb' }} />
                   <span style={styles.parentName}>{p.displayName || 'Parent Device'}</span>
                   <span style={styles.parentStatus}>{p.isOnline ? 'Connected' : 'Offline'}</span>
@@ -145,11 +164,11 @@ export default function Profile({ mode }) {
           )}
 
           {pairState === 'connecting' && (
-            <p style={styles.hint}>Connecting to parent…</p>
+            <p style={styles.hint}>Connecting to parent\u2026</p>
           )}
 
           {pairState === 'success' && (
-            <p style={styles.success}>Pairing in progress…</p>
+            <p style={styles.success}>Pairing in progress\u2026</p>
           )}
 
           {pairState === 'error' && (
@@ -170,12 +189,15 @@ const styles = {
   container: { padding: '16px', fontFamily: 'sans-serif' },
   heading: { fontSize: '20px', fontWeight: '700', marginBottom: '24px' },
   avatarWrap: { display: 'flex', justifyContent: 'center', marginBottom: '24px' },
-  avatar: {
-    width: '80px', height: '80px', borderRadius: '50%',
-    backgroundColor: '#1a73e8',
+  avatarContainer: { position: 'relative', display: 'inline-block' },
+  editBadge: {
+    position: 'absolute', bottom: '0', right: '0',
+    width: '26px', height: '26px', borderRadius: '50%',
+    backgroundColor: '#1a73e8', border: '2px solid #FFF',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer',
   },
-  initials: { color: '#fff', fontSize: '28px', fontWeight: '700' },
+  editIcon: { color: '#FFF', fontSize: '13px' },
   field: { display: 'flex', flexDirection: 'column', gap: '8px' },
   label: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '14px', color: '#444' },
   input: {

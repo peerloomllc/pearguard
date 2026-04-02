@@ -231,14 +231,18 @@ async function onPeerConnection (conn, info) {
   peers.set(remoteKeyHex, { conn, remoteKeyHex, displayName: null, topicHex: connTopicHex })
   send({ type: 'event', event: 'peer:connected', data: { remoteKey: remoteKeyHex } })
 
-  // Child sends hello proactively on new connection — include real profile name
+  // Child sends hello proactively on new connection — include real profile name + avatar
   if (mode === 'child') {
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
     const profileRaw = await db.get('profile').catch(() => null)
-    const displayName = profileRaw ? (profileRaw.value.displayName || 'Child Device') : 'Child Device'
+    const profile = profileRaw ? profileRaw.value : {}
+    const displayName = profile.displayName || 'Child Device'
+    const avatarThumb = profile.avatar
+      ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id : profile.avatar.thumb64 || null)
+      : null
     const hello = signMessage({
       type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName },
+      payload: { publicKey: myIdentityHex, displayName, avatarThumb },
     }, identity)
     peers.get(remoteKeyHex).sentHello = true
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
@@ -483,7 +487,7 @@ async function flushPendingMessages (conn) {
 }
 
 async function handleHello (msg, conn, remoteKeyHex) {
-  const { publicKey: peerIdentityKeyHex, displayName } = msg.payload ?? {}
+  const { publicKey: peerIdentityKeyHex, displayName, avatarThumb } = msg.payload ?? {}
   if (!peerIdentityKeyHex || typeof peerIdentityKeyHex !== 'string') {
     console.warn('[bare] invalid hello: missing publicKey')
     return
@@ -532,6 +536,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
     ...(existingRecord ? existingRecord.value : {}),
     publicKey:   peerIdentityKeyHex,
     displayName: displayName ?? 'Unknown',
+    avatarThumb: avatarThumb || (existingRecord ? existingRecord.value.avatarThumb : null) || null,
     pairedAt:    existingRecord ? existingRecord.value.pairedAt : Date.now(),
     lastSeen:    Date.now(),
     noiseKey:    remoteKeyHex,
@@ -618,16 +623,20 @@ async function handleHello (msg, conn, remoteKeyHex) {
     }
   }
 
-  // Send our own hello back (if we haven't already) — include real profile name
+  // Send our own hello back (if we haven't already) — include real profile name + avatar
   const alreadySentHello = peer?.sentHello
   if (!alreadySentHello) {
     if (peer) peer.sentHello = true
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
     const profileRaw = await db.get('profile').catch(() => null)
-    const myDisplayName = profileRaw ? (profileRaw.value.displayName || 'PearGuard Device') : 'PearGuard Device'
+    const myProfile = profileRaw ? profileRaw.value : {}
+    const myDisplayName = myProfile.displayName || 'PearGuard Device'
+    const myAvatarThumb = myProfile.avatar
+      ? (myProfile.avatar.type === 'preset' ? 'preset:' + myProfile.avatar.id : myProfile.avatar.thumb64 || null)
+      : null
     const hello = signMessage({
       type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName: myDisplayName },
+      payload: { publicKey: myIdentityHex, displayName: myDisplayName, avatarThumb: myAvatarThumb },
     }, identity)
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
   }

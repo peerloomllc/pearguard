@@ -244,10 +244,12 @@ function createDispatch (ctx) {
         const profile = raw ? raw.value : {}
         profile.displayName = name.trim()
         await ctx.db.put('profile', profile)
-        // Broadcast updated name to all connected peers so their peer records
-        // stay current without requiring a reconnect (#73).
+        // Broadcast updated hello to all connected peers (#73).
         const myIdentityHex = ctx.b4a.toString(ctx.identity.publicKey, 'hex')
-        const helloMsg = { type: 'hello', payload: { publicKey: myIdentityHex, displayName: name.trim() } }
+        const avatarThumb = profile.avatar
+          ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id : profile.avatar.thumb64 || null)
+          : null
+        const helloMsg = { type: 'hello', payload: { publicKey: myIdentityHex, displayName: name.trim(), avatarThumb } }
         for (const [noiseKey] of ctx.peers) {
           try { ctx.sendToPeer(noiseKey, helloMsg) } catch (_e) {}
         }
@@ -256,8 +258,28 @@ function createDispatch (ctx) {
 
       case 'identity:getName': {
         const raw = await ctx.db.get('profile')
-        const displayName = raw ? (raw.value.displayName || null) : null
-        return { displayName }
+        const profile = raw ? raw.value : {}
+        return { displayName: profile.displayName || null, avatar: profile.avatar || null }
+      }
+
+      case 'identity:setAvatar': {
+        const { avatar } = args
+        // avatar: { type: 'preset', id } | { type: 'custom', base64, thumb64 } | null
+        const raw = await ctx.db.get('profile')
+        const profile = raw ? raw.value : {}
+        profile.avatar = avatar || null
+        await ctx.db.put('profile', profile)
+        // Broadcast updated hello to all connected peers
+        const myIdHex = ctx.b4a.toString(ctx.identity.publicKey, 'hex')
+        const thumb = avatar
+          ? (avatar.type === 'preset' ? 'preset:' + avatar.id : avatar.thumb64 || null)
+          : null
+        const helloPayload = { publicKey: myIdHex, displayName: profile.displayName || '', avatarThumb: thumb }
+        const helloUpdate = { type: 'hello', payload: helloPayload }
+        for (const [noiseKey] of ctx.peers) {
+          try { ctx.sendToPeer(noiseKey, helloUpdate) } catch (_e) {}
+        }
+        return { ok: true }
       }
 
       case 'pin:set': {

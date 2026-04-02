@@ -49,10 +49,10 @@ class MainActivity : ReactActivity() {
         try { unregisterReceiver(packageMonitor) } catch (_: Exception) {}
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         // Intercept notification deep links on warm start — store the nav data
         // and strip the URI so Expo Router doesn't navigate away from index.tsx.
-        if (intent != null) interceptNotificationDeepLink(intent)
+        interceptNotificationDeepLink(intent)
         super.onNewIntent(intent)
     }
 

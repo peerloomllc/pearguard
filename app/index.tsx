@@ -487,6 +487,13 @@ export default function Root () {
                 const childName = childDisplayName || 'Your child'
                 NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
               }
+              // Show a notification on the parent device when a child uses the PIN override
+              if (msg.event === 'alert:pin_override') {
+                const { childPublicKey, childDisplayName, appDisplayName } = msg.data ?? {}
+                const childName = childDisplayName || 'Your child'
+                const appLabel = appDisplayName || 'an app'
+                NativeModules.UsageStatsModule?.showPinOverrideNotification?.(childName, appLabel, childPublicKey || '')
+              }
               // Notify about app installs — behaviour differs by mode:
               // Parent: show "X installed a new app" notification (childDisplayName present = came via P2P)
               // Child: show "You installed a new app" notification (no childDisplayName = local event)

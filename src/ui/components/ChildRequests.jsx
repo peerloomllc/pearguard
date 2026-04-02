@@ -30,9 +30,7 @@ export default function ChildRequests() {
   useEffect(() => {
     let isMounted = true
 
-    loadRequests().then(() => {
-      if (!isMounted) return
-    })
+    loadRequests().then(() => { if (!isMounted) return })
 
     const unsubSubmit = window.onBareEvent('request:submitted', () => { if (isMounted) loadRequests() })
     const unsubUpdated = window.onBareEvent('request:updated', () => { if (isMounted) loadRequests() })
@@ -82,11 +80,6 @@ export default function ChildRequests() {
           >
             <div>
               <div style={{ fontWeight: 'bold' }}>{req.appName || req.packageName}</div>
-              {req.appName && (
-                <div style={{ color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
-                  {req.packageName}
-                </div>
-              )}
               <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
                 {new Date(req.requestedAt).toLocaleTimeString()}
               </div>

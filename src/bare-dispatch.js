@@ -322,9 +322,12 @@ function createDispatch (ctx) {
 
         const now = Date.now()
         const expiresAt = now + (policy.overrideDurationSeconds || 3600) * 1000
-        const grant = { packageName, grantedAt: now, expiresAt }
+        // Resolve appName from policy so override displays show the label
+        const appEntry = policy.apps && policy.apps[packageName]
+        const appName = (appEntry && appEntry.appName) || packageName
+        const grant = { packageName, appName, grantedAt: now, expiresAt, source: 'pin-verified' }
 
-        // Store grant to Hyperbee for audit log
+        // Store grant to Hyperbee for audit log and overrides:list
         await ctx.db.put('override:' + packageName + ':' + now, grant)
 
         // Log to usage report
@@ -386,9 +389,18 @@ function createDispatch (ctx) {
           throw new Error('invalid time:grant args')
         }
         const existing = await ctx.db.get('request:' + requestId).catch(() => null)
+        const appName = (existing && existing.value && (existing.value.appDisplayName || existing.value.appName)) || packageName
         if (existing) {
           await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
         }
+
+        // Store override grant on parent side so parent UI can display active overrides (#61)
+        const grantedAt = Date.now()
+        const expiresAt = grantedAt + extraSeconds * 1000
+        await ctx.db.put('override:' + childPublicKey + ':' + grantedAt, {
+          packageName, appName, childPublicKey, grantedAt, expiresAt, source: 'parent-approved',
+        })
+
         try {
           const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
           const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
@@ -458,6 +470,65 @@ function createDispatch (ctx) {
           }
         }
         return { ok: true }
+      }
+
+      case 'overrides:list': {
+        // Scan Hyperbee for active override grants (PIN or parent-approved).
+        // Returns only non-expired entries so the UI shows what's currently active.
+        // Optional childPublicKey filter for parent-side queries.
+        const filterChild = args && args.childPublicKey
+        const overrides = []
+        const now = Date.now()
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
+          if (value.expiresAt <= now) continue
+          if (filterChild && value.childPublicKey !== filterChild) continue
+          // Resolve appName from policy if not already on the record
+          if (!value.appName) {
+            const policyKey = filterChild ? ('policy:' + filterChild) : 'policy'
+            const raw = await ctx.db.get(policyKey)
+            const apps = raw && raw.value && raw.value.apps
+            value.appName = (apps && apps[value.packageName] && apps[value.packageName].appName) || value.packageName
+          }
+          overrides.push(value)
+        }
+        overrides.sort((a, b) => a.expiresAt - b.expiresAt)
+        return { overrides }
+      }
+
+      case 'child:homeData': {
+        // Aggregated data for the child Home tab: status summary, usage, blocks, requests
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : null
+        const apps = (policy && policy.apps) || {}
+
+        // Count blocked and pending apps
+        let blockedCount = 0
+        let pendingCount = 0
+        for (const pkg of Object.keys(apps)) {
+          if (apps[pkg].status === 'blocked') blockedCount++
+          if (apps[pkg].status === 'pending') pendingCount++
+        }
+
+        // Count pending requests
+        let pendingRequests = 0
+        for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+          if (value.status === 'pending') pendingRequests++
+        }
+
+        // Count active overrides
+        const now = Date.now()
+        const activeOverrides = []
+        for await (const { value } of ctx.db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
+          if (value.expiresAt > now) {
+            const appEntry = apps[value.packageName]
+            activeOverrides.push({
+              ...value,
+              appName: value.appName || (appEntry && appEntry.appName) || value.packageName,
+            })
+          }
+        }
+
+        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy }
       }
 
       case 'app:installed': {
@@ -589,12 +660,30 @@ function createDispatch (ctx) {
       }
 
       case 'pin:used': {
+        // Native overlay verified PIN and granted override — store to Hyperbee
+        // so overrides:list can find it, and relay to parent as an alert (#61).
         const { packageName, timestamp, durationSeconds } = args
-        await appendPinUseLog({
-          packageName,
-          grantedAt: timestamp,
-          expiresAt: timestamp + durationSeconds * 1000,
-        }, ctx.db)
+        const grantedAt = timestamp || Date.now()
+        const expiresAt = grantedAt + (durationSeconds || 3600) * 1000
+
+        // Resolve appName from policy
+        const policyRaw = await ctx.db.get('policy')
+        const policyApps = policyRaw && policyRaw.value && policyRaw.value.apps
+        const appName = (policyApps && policyApps[packageName] && policyApps[packageName].appName) || packageName
+
+        const grant = { packageName, appName, grantedAt, expiresAt, source: 'pin-verified' }
+
+        await ctx.db.put('override:' + packageName + ':' + grantedAt, grant)
+        await appendPinUseLog({ packageName, grantedAt, expiresAt }, ctx.db)
+
+        // Emit event so child UI updates immediately
+        ctx.send({ type: 'event', event: 'override:granted', data: grant })
+
+        // Relay to parent so they see PIN usage in alerts
+        if (ctx.sendToParent) {
+          await ctx.sendToParent({ type: 'pin:override', payload: { packageName, appName, grantedAt, expiresAt } })
+        }
+
         return { logged: true }
       }
 
@@ -900,6 +989,10 @@ async function handleTimeExtend (payload, db, send) {
     req.expiresAt = expiresAt
     await db.put(requestId, req)
   }
+
+  // Store grant to Hyperbee so overrides:list can find it (#61)
+  grant.appName = appName || packageName
+  await db.put('override:' + packageName + ':' + grant.grantedAt, grant)
 
   // Notify native to grant override
   send({ method: 'native:grantOverride', args: grant })

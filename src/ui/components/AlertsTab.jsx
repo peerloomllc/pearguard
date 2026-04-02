@@ -6,6 +6,7 @@ const TYPE_META = {
   time_request:    { label: 'Time Request',     color: '#1a73e8', icon: '⏱' },
   app_installed:   { label: 'App Installed',    color: '#34a853', icon: '📲' },
   app_uninstalled: { label: 'App Uninstalled',  color: '#ff6d00', icon: '🗑' },
+  pin_override:    { label: 'PIN Override',     color: '#fbbc04', icon: '🔑' },
 };
 
 function formatTime(iso) {

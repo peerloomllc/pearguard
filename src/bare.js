@@ -355,6 +355,32 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       send({ type: 'event', event: 'alert:bypass', data: alertEntry })
       break
     }
+    case 'pin:override': {
+      // Child used PIN to bypass a blocked app — store alert on parent so it shows
+      // in the Alerts tab and the parent can monitor PIN usage.
+      const childPublicKey = msg.from
+      const { packageName, appName, grantedAt, expiresAt } = msg.payload
+      const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+      const childDisplayName = peerRecord?.value?.displayName || 'Your child'
+      const alertEntry = {
+        id: 'pin_override:' + grantedAt,
+        type: 'pin_override',
+        timestamp: grantedAt,
+        packageName,
+        appDisplayName: appName || packageName,
+        childPublicKey,
+        childDisplayName,
+        expiresAt,
+      }
+      await db.put('alert:' + childPublicKey + ':' + grantedAt, alertEntry)
+      // Store as override so parent's overrides:list shows it as active
+      await db.put('override:' + childPublicKey + ':' + grantedAt, {
+        packageName, appName: appName || packageName, childPublicKey,
+        grantedAt, expiresAt, source: 'pin-verified',
+      })
+      send({ type: 'event', event: 'alert:pin_override', data: alertEntry })
+      break
+    }
     case 'unpair': {
       // Parent has removed this child — wipe all local state and return to setup.
       // Collect keys first, then delete: avoids Hyperbee deadlock from writing

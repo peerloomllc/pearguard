@@ -499,15 +499,21 @@ function createDispatch (ctx) {
         const policy = raw ? raw.value : { apps: {} }
         if (!policy.apps || !policy.apps[packageName]) return { ok: true } // already absent
 
+        // Grab the display name before deleting so notifications show a readable label (#71)
+        const appName = policy.apps[packageName].appName || packageName
+
         delete policy.apps[packageName]
         await ctx.db.put('policy', policy)
 
         // Keep native enforcement in sync
         ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
 
+        // Emit local event so the child's own notification shows the app name
+        ctx.send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName } })
+
         // Relay to parent so they can prune their Apps list
         if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'app:uninstalled', payload: { packageName } })
+          await ctx.sendToParent({ type: 'app:uninstalled', payload: { packageName, appName } })
         }
 
         return { ok: true }
@@ -1137,7 +1143,7 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
  * Runs on the PARENT device.
  */
 async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) {
-  const { packageName } = payload
+  const { packageName, appName: payloadAppName } = payload
   if (!packageName) {
     console.warn('[bare] app:uninstalled from child: missing packageName')
     return
@@ -1149,8 +1155,8 @@ async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) 
   const policy = raw.value
   if (!policy.apps || !policy.apps[packageName]) return
 
-  // Grab the display name before deleting so the alert has a readable label
-  const appName = policy.apps[packageName].appName || packageName
+  // Prefer the label the child sent; fall back to parent's cached policy (#71)
+  const appName = payloadAppName || policy.apps[packageName].appName || packageName
 
   delete policy.apps[packageName]
   await db.put('policy:' + childPublicKey, policy)

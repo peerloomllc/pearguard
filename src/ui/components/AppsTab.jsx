@@ -148,7 +148,7 @@ export default function AppsTab({ childPublicKey }) {
   const [loading, setLoading] = useState(true);
   const [sortOrder, setSortOrder] = useState('alpha'); // 'alpha' | 'date'
   const [search, setSearch] = useState('');
-  const [collapsed, setCollapsed] = useState({ pending: false, allowed: false, blocked: false });
+  const [collapsed, setCollapsed] = useState({ pending: true, allowed: true, blocked: true });
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })

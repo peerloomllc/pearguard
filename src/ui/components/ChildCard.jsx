@@ -1,4 +1,5 @@
 import React from 'react';
+import Avatar from './Avatar.jsx';
 
 function formatSeconds(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -32,6 +33,7 @@ export default function ChildCard({ child, onPress }) {
   return (
     <button style={styles.card} onClick={onPress} aria-label={`Open ${displayName}`}>
       <div style={styles.header}>
+        <Avatar avatar={child.avatarThumb} name={displayName} size={32} />
         <span style={{ ...styles.statusDot, backgroundColor: isOnline ? '#34a853' : '#bbb' }} />
         <span style={styles.name}>{displayName}</span>
         {hasAlerts && (

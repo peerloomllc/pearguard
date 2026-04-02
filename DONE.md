@@ -4,7 +4,39 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-02
+
+### [x] Remove package names from Requests detail (#80) — 2026-04-02
+Removed monospace package name line from `RequestsTab.jsx`; app display name still shown as primary label.
+
+### [x] Apps list collapsed by default (#81) — 2026-04-02
+Changed `AppsTab.jsx` initial collapsed state to `true` for all three groups.
+
+### [x] Usage list excludes PearGuard (#82) — 2026-04-02
+Added `reactContext.getPackageName()` filter in `UsageStatsModule.java` `getDailyUsageAll`.
+
+### [x] Child Home tab with status, counts, and overrides (#53) — 2026-04-02
+Replaced placeholder with enforcement status card (good/bedtime/offline), summary row (blocked/pending/request counts), and active overrides section with countdown timers. New `child:homeData` bare method aggregates all data in one call. Auto-refreshes on events and every 30s.
+
+### [x] Track and display active overrides in UI (#61) — 2026-04-02
+New `overrides:list` bare method scans Hyperbee for non-expired `override:*` entries. PIN overrides now stored in Hyperbee via `pin:used` handler (previously only logged to pinLog). PIN usage relayed to parent as `pin:override` P2P message — creates alert ("PIN Override" label) and native notification. Parent Requests tab shows active overrides (both time grants and PIN overrides) with countdown. Active overrides on child shown only on Home tab.
+
+### [x] Clarify schedule rule UI text (#50) — 2026-04-02
+Schedule tab now explains rules are blackout windows with "Blocked from" / "Blocked until" labels. Added explainer text and updated empty state.
+
+### [x] Grant specific apps permission to bypass schedule rules (#49) — 2026-04-02
+Each schedule rule supports an `exemptApps` checkbox list in ScheduleTab.jsx. `AppBlockerModule.java` `getScheduleBlockReason()` checks per-rule `exemptApps` array — exempt apps skip that rule's blackout but remain subject to daily limits and policy status. Backward compatible with existing rules.
+
+### [x] Some notifications show package name instead of app name (#71) — 2026-04-02
+Root cause: child-side `app:uninstalled` handler in `bare-dispatch.js` deleted the app from the policy cache before grabbing its `appName`, so the P2P payload and local event only contained `packageName`. Fix: grab `appName` from policy before deleting, include it in both the local event emission and the P2P payload. Parent-side handler now prefers the child-sent label over its own cache.
+
+---
+
 ## Added 2026-04-01
+
+### [x] Notification tap doesn't navigate to child's tab (#69, #77) — 2026-04-01
+Root cause: Deep link `pear://pearguard/alerts?...` triggered Expo Router, which navigated to `+not-found.tsx` (showing "Connecting..." for 1.5s), unmounting the WebView and losing navigation state. Fix: MainActivity now intercepts notification deep links in `onNewIntent` (warm start) and `onCreate` (cold start), stores the URL in SharedPreferences, and strips it from the intent so Expo Router never sees it. index.tsx reads the pending navigation via `consumePendingNavigation()` on AppState 'active' and during startup. Also lifted `navigate:child:alerts` listener to ParentApp (always mounted) so it works from any tab, and made ChildDetail respond to `initialTab` prop changes. Fixed false "enforcement may be off" notifications caused by clock skew — `updateChildHeartbeat` now uses parent's `Date.now()` instead of child's timestamp.
+
 
 ### [x] Force-stopped parent doesn't receive child notifications (#76) — 2026-04-01
 Root cause: `sendToParentOrQueue` on the child wrote to the TCP socket just as the parent process was dying. The write appeared to succeed (OS buffered it), so the message was not queued in `pendingMessages`. When the parent restarted and reconnected, the child's queue flush sent nothing, and the parent's Hyperbee had no record to backfill.

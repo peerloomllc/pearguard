@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Avatar from './Avatar.jsx';
 import UsageTab from './UsageTab.jsx';
 import AppsTab from './AppsTab.jsx';
 import ScheduleTab from './ScheduleTab.jsx';
@@ -40,6 +41,7 @@ export default function ChildDetail({ child, onBack, initialTab }) {
         <button style={styles.backBtn} onClick={onBack} aria-label="Back to Dashboard">
           ← Back
         </button>
+        <Avatar avatar={child.avatarThumb} name={child.displayName} size={28} />
         <span style={styles.childName}>{child.displayName}</span>
         {!confirming ? (
           <button style={styles.removeBtn} onClick={() => setConfirming(true)}>Remove</button>

@@ -13,6 +13,7 @@ import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
 import { Asset } from 'expo-asset'
+import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
@@ -265,6 +266,38 @@ export default function Root () {
           )
         }
         setShowScanner(true)
+        return
+      }
+
+      if (msg.method === 'avatar:pickCamera' || msg.method === 'avatar:pickGallery') {
+        const msgId = msg.id
+        ;(async () => {
+          try {
+            const launch = msg.method === 'avatar:pickCamera'
+              ? ImagePicker.launchCameraAsync
+              : ImagePicker.launchImageLibraryAsync
+            const result = await launch({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              aspect: [1, 1] as [number, number],
+              quality: 0.8,
+              base64: true,
+            })
+            if (result.canceled || !result.assets?.[0]?.base64) {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msgId + ', null, "cancelled");true;'
+              )
+            } else {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64: result.assets[0].base64 }) + ', null);true;'
+              )
+            }
+          } catch (err: any) {
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msgId + ', null, ' + JSON.stringify(err.message || 'picker error') + ');true;'
+            )
+          }
+        })()
         return
       }
 

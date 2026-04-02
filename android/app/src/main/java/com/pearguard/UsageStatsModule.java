@@ -195,6 +195,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 // Skip system services and non-launcher apps
                 if (!launcherPackages.contains(entry.getKey())) continue;
 
+                // Skip PearGuard itself
+                if (entry.getKey().equals(reactContext.getPackageName())) continue;
+
                 String label = entry.getKey();
                 try {
                     ApplicationInfo info = pm.getApplicationInfo(entry.getKey(), 0);

@@ -64,9 +64,6 @@ function RequestRow({ req, childPublicKey, onResolved }) {
     <div style={styles.row}>
       <div style={styles.rowBody}>
         <div style={styles.appName}>{req.appDisplayName || req.packageName}</div>
-        {req.appDisplayName && (
-          <div style={styles.pkgName}>{req.packageName}</div>
-        )}
         <div style={styles.typeBadge} data-type={req.requestType}>
           {isExtraTime ? 'Extra time' : 'App approval'}
         </div>
@@ -189,7 +186,6 @@ const styles = {
   rowBody: { flex: 1 },
   rowRight: { flexShrink: 0, paddingTop: '2px' },
   appName: { fontSize: '14px', fontWeight: '600', color: '#333' },
-  pkgName: { fontSize: '11px', color: '#888', fontFamily: 'monospace', marginTop: '2px' },
   typeBadge: { fontSize: '10px', color: '#666', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' },
   time: { fontSize: '11px', color: '#888', marginTop: '4px' },
   actions: { display: 'flex', gap: '8px' },

@@ -333,8 +333,8 @@ public class AppBlockerModule extends AccessibilityService {
                 return null;
             }
 
-            // Step 2: Scheduled blackout.
-            String scheduleReason = getScheduleBlockReason(policy);
+            // Step 2: Scheduled blackout (respects per-rule exempt apps).
+            String scheduleReason = getScheduleBlockReason(policy, packageName);
             if (scheduleReason != null) return scheduleReason;
 
             // Step 3: Permanently blocked or pending (parent's explicit policy decision).
@@ -374,7 +374,7 @@ public class AppBlockerModule extends AccessibilityService {
                 || packageName.contains("messaging");
     }
 
-    private String getScheduleBlockReason(JSONObject policy) {
+    private String getScheduleBlockReason(JSONObject policy, String packageName) {
         try {
             JSONArray schedules = policy.optJSONArray("schedules");
             if (schedules == null) return null;
@@ -393,6 +393,16 @@ public class AppBlockerModule extends AccessibilityService {
                     if (days.getInt(d) == dayOfWeek) { dayMatches = true; break; }
                 }
                 if (!dayMatches) continue;
+
+                // Skip if this app is exempt from this rule (#49)
+                JSONArray exemptApps = schedule.optJSONArray("exemptApps");
+                if (exemptApps != null) {
+                    boolean exempt = false;
+                    for (int e = 0; e < exemptApps.length(); e++) {
+                        if (packageName.equals(exemptApps.optString(e))) { exempt = true; break; }
+                    }
+                    if (exempt) continue;
+                }
 
                 String[] startParts = schedule.getString("start").split(":");
                 String[] endParts = schedule.getString("end").split(":");

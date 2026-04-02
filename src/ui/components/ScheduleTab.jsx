@@ -2,10 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const BLANK_RULE = { label: '', days: [], start: '21:00', end: '07:00' };
+const BLANK_RULE = { label: '', days: [], start: '21:00', end: '07:00', exemptApps: [] };
 
-function RuleRow({ rule, onEdit, onDelete }) {
+function RuleRow({ rule, appNames, onEdit, onDelete }) {
   const activeDays = DAY_LABELS.filter((_, i) => rule.days.includes(i)).join(', ');
+  const exemptCount = (rule.exemptApps || []).length;
+  const exemptLabel = exemptCount > 0
+    ? (rule.exemptApps || []).map(pkg => appNames[pkg] || pkg).join(', ')
+    : null;
   return (
     <div style={styles.ruleRow}>
       <div style={styles.ruleInfo}>
@@ -13,6 +17,9 @@ function RuleRow({ rule, onEdit, onDelete }) {
         <span style={styles.ruleDetails}>
           {activeDays || 'No days'} • {rule.start}–{rule.end}
         </span>
+        {exemptLabel && (
+          <span style={styles.exemptBadge}>Exempt: {exemptLabel}</span>
+        )}
       </div>
       <button style={styles.editBtn} onClick={onEdit} aria-label={`Edit rule ${rule.label}`}>
         Edit
@@ -39,6 +46,17 @@ export default function ScheduleTab({ childPublicKey }) {
 
   useEffect(() => { loadPolicy(); }, [loadPolicy]);
 
+  // Build packageName→appName map from policy.apps
+  const appNames = {};
+  const appList = [];
+  if (policy && policy.apps) {
+    for (const [pkg, data] of Object.entries(policy.apps)) {
+      appNames[pkg] = data.appName || pkg;
+      appList.push({ packageName: pkg, appName: data.appName || pkg });
+    }
+    appList.sort((a, b) => a.appName.localeCompare(b.appName));
+  }
+
   function saveSchedules(schedules) {
     const updated = { ...policy, schedules };
     setPolicy(updated);
@@ -52,7 +70,7 @@ export default function ScheduleTab({ childPublicKey }) {
 
   function handleEditRule(index) {
     setEditingIndex(index);
-    setNewRule({ ...policy.schedules[index] });
+    setNewRule({ ...policy.schedules[index], exemptApps: policy.schedules[index].exemptApps || [] });
     setSubmitAttempted(false);
   }
 
@@ -84,16 +102,29 @@ export default function ScheduleTab({ childPublicKey }) {
     setNewRule({ ...newRule, days });
   }
 
+  function toggleExemptApp(packageName) {
+    const exempt = newRule.exemptApps || [];
+    const updated = exempt.includes(packageName)
+      ? exempt.filter((p) => p !== packageName)
+      : [...exempt, packageName];
+    setNewRule({ ...newRule, exemptApps: updated });
+  }
+
   if (loading) return <div style={styles.msg}>Loading schedule...</div>;
 
   const schedules = (policy && policy.schedules) || [];
 
   return (
     <div style={styles.container}>
+      <p style={styles.hint}>
+        Schedule rules define <strong>blackout windows</strong> — times when apps are blocked.
+        Apps are allowed outside these windows.
+      </p>
+
       <h3 style={styles.sectionHead}>Active Rules</h3>
-      {schedules.length === 0 && <p style={styles.empty}>No schedule rules yet.</p>}
+      {schedules.length === 0 && <p style={styles.empty}>No blackout rules yet.</p>}
       {schedules.map((rule, i) => (
-        <RuleRow key={i} rule={rule} onEdit={() => handleEditRule(i)} onDelete={() => handleDeleteRule(i)} />
+        <RuleRow key={i} rule={rule} appNames={appNames} onEdit={() => handleEditRule(i)} onDelete={() => handleDeleteRule(i)} />
       ))}
 
       <h3 style={{ ...styles.sectionHead, marginTop: '24px' }}>{editingIndex !== null ? 'Edit Rule' : 'Add Rule'}</h3>
@@ -132,26 +163,46 @@ export default function ScheduleTab({ childPublicKey }) {
 
         <div style={styles.timeRow}>
           <label style={styles.formLabel}>
-            Start
+            Blocked from
             <input
               type="time"
               value={newRule.start}
               onChange={(e) => setNewRule({ ...newRule, start: e.target.value })}
               style={styles.timeInput}
-              aria-label="Start time"
+              aria-label="Blocked from time"
             />
           </label>
           <label style={styles.formLabel}>
-            End
+            Blocked until
             <input
               type="time"
               value={newRule.end}
               onChange={(e) => setNewRule({ ...newRule, end: e.target.value })}
               style={styles.timeInput}
-              aria-label="End time"
+              aria-label="Blocked until time"
             />
           </label>
         </div>
+
+        {appList.length > 0 && (
+          <div>
+            <label style={styles.formLabel}>Exempt apps</label>
+            <p style={styles.exemptHint}>These apps will not be blocked during this window.</p>
+            <div style={styles.exemptList}>
+              {appList.map(({ packageName, appName }) => (
+                <label key={packageName} style={styles.exemptCheck}>
+                  <input
+                    type="checkbox"
+                    checked={(newRule.exemptApps || []).includes(packageName)}
+                    onChange={() => toggleExemptApp(packageName)}
+                    aria-label={`Exempt ${appName}`}
+                  />
+                  {appName}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
@@ -175,6 +226,7 @@ export default function ScheduleTab({ childPublicKey }) {
 const styles = {
   container: { padding: '16px' },
   msg: { padding: '16px', color: '#666', fontSize: '14px' },
+  hint: { color: '#666', fontSize: '13px', marginBottom: '16px', lineHeight: '1.4' },
   sectionHead: { fontSize: '15px', fontWeight: '700', marginBottom: '10px' },
   empty: { color: '#888', fontSize: '14px' },
   ruleRow: {
@@ -184,6 +236,7 @@ const styles = {
   ruleInfo: { flex: 1 },
   ruleLabel: { fontSize: '14px', fontWeight: '600', display: 'block' },
   ruleDetails: { fontSize: '12px', color: '#666' },
+  exemptBadge: { fontSize: '11px', color: '#1a73e8', display: 'block', marginTop: '2px' },
   editBtn: {
     padding: '5px 12px', border: '1px solid #1a73e8', borderRadius: '6px',
     color: '#1a73e8', background: '#fff', cursor: 'pointer', fontSize: '12px',
@@ -213,6 +266,13 @@ const styles = {
     padding: '10px', border: 'none', borderRadius: '6px',
     backgroundColor: '#1a73e8', color: '#fff', cursor: 'pointer', fontSize: '14px',
   },
+  exemptHint: { color: '#888', fontSize: '12px', margin: '2px 0 6px' },
+  exemptList: {
+    display: 'flex', flexDirection: 'column', gap: '6px',
+    maxHeight: '160px', overflowY: 'auto',
+    border: '1px solid #eee', borderRadius: '6px', padding: '8px',
+  },
+  exemptCheck: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' },
   inputError: { borderColor: '#ea4335' },
   errorMsg: { color: '#ea4335', fontSize: '12px', marginTop: '2px' },
 };

@@ -14959,9 +14959,11 @@
   var import_react4 = __toESM(require_react());
   var import_jsx_runtime4 = __toESM(require_jsx_runtime());
   var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  var BLANK_RULE = { label: "", days: [], start: "21:00", end: "07:00" };
-  function RuleRow({ rule, onEdit, onDelete }) {
+  var BLANK_RULE = { label: "", days: [], start: "21:00", end: "07:00", exemptApps: [] };
+  function RuleRow({ rule, appNames, onEdit, onDelete }) {
     const activeDays = DAY_LABELS.filter((_, i) => rule.days.includes(i)).join(", ");
+    const exemptCount = (rule.exemptApps || []).length;
+    const exemptLabel = exemptCount > 0 ? (rule.exemptApps || []).map((pkg) => appNames[pkg] || pkg).join(", ") : null;
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.ruleRow, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.ruleInfo, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.ruleLabel, children: rule.label || "(no label)" }),
@@ -14971,6 +14973,10 @@
           rule.start,
           "\u2013",
           rule.end
+        ] }),
+        exemptLabel && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: styles4.exemptBadge, children: [
+          "Exempt: ",
+          exemptLabel
         ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.editBtn, onClick: onEdit, "aria-label": `Edit rule ${rule.label}`, children: "Edit" }),
@@ -14992,6 +14998,15 @@
     (0, import_react4.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
+    const appNames = {};
+    const appList = [];
+    if (policy && policy.apps) {
+      for (const [pkg, data] of Object.entries(policy.apps)) {
+        appNames[pkg] = data.appName || pkg;
+        appList.push({ packageName: pkg, appName: data.appName || pkg });
+      }
+      appList.sort((a, b) => a.appName.localeCompare(b.appName));
+    }
     function saveSchedules(schedules2) {
       const updated = { ...policy, schedules: schedules2 };
       setPolicy(updated);
@@ -15003,7 +15018,7 @@
     }
     function handleEditRule(index) {
       setEditingIndex(index);
-      setNewRule({ ...policy.schedules[index] });
+      setNewRule({ ...policy.schedules[index], exemptApps: policy.schedules[index].exemptApps || [] });
       setSubmitAttempted(false);
     }
     function handleCancelEdit() {
@@ -15029,12 +15044,22 @@
       const days = newRule.days.includes(dayIndex) ? newRule.days.filter((d) => d !== dayIndex) : [...newRule.days, dayIndex].sort((a, b) => a - b);
       setNewRule({ ...newRule, days });
     }
+    function toggleExemptApp(packageName) {
+      const exempt = newRule.exemptApps || [];
+      const updated = exempt.includes(packageName) ? exempt.filter((p) => p !== packageName) : [...exempt, packageName];
+      setNewRule({ ...newRule, exemptApps: updated });
+    }
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles4.msg, children: "Loading schedule..." });
     const schedules = policy && policy.schedules || [];
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { style: styles4.hint, children: [
+        "Schedule rules define ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: "blackout windows" }),
+        " \u2014 times when apps are blocked. Apps are allowed outside these windows."
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: styles4.sectionHead, children: "Active Rules" }),
-      schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: styles4.empty, children: "No schedule rules yet." }),
-      schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RuleRow, { rule, onEdit: () => handleEditRule(i), onDelete: () => handleDeleteRule(i) }, i)),
+      schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: styles4.empty, children: "No blackout rules yet." }),
+      schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RuleRow, { rule, appNames, onEdit: () => handleEditRule(i), onDelete: () => handleDeleteRule(i) }, i)),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: { ...styles4.sectionHead, marginTop: "24px" }, children: editingIndex !== null ? "Edit Rule" : "Add Rule" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.form, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
@@ -15067,7 +15092,7 @@
         submitAttempted && newRule.days.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.errorMsg, children: "Select at least one day" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.timeRow, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
-            "Start",
+            "Blocked from",
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "input",
               {
@@ -15075,12 +15100,12 @@
                 value: newRule.start,
                 onChange: (e) => setNewRule({ ...newRule, start: e.target.value }),
                 style: styles4.timeInput,
-                "aria-label": "Start time"
+                "aria-label": "Blocked from time"
               }
             )
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
-            "End",
+            "Blocked until",
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "input",
               {
@@ -15088,10 +15113,26 @@
                 value: newRule.end,
                 onChange: (e) => setNewRule({ ...newRule, end: e.target.value }),
                 style: styles4.timeInput,
-                "aria-label": "End time"
+                "aria-label": "Blocked until time"
               }
             )
           ] })
+        ] }),
+        appList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: styles4.formLabel, children: "Exempt apps" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: styles4.exemptHint, children: "These apps will not be blocked during this window." }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles4.exemptList, children: appList.map(({ packageName, appName }) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.exemptCheck, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "input",
+              {
+                type: "checkbox",
+                checked: (newRule.exemptApps || []).includes(packageName),
+                onChange: () => toggleExemptApp(packageName),
+                "aria-label": `Exempt ${appName}`
+              }
+            ),
+            appName
+          ] }, packageName)) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: "8px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
@@ -15111,6 +15152,7 @@
   var styles4 = {
     container: { padding: "16px" },
     msg: { padding: "16px", color: "#666", fontSize: "14px" },
+    hint: { color: "#666", fontSize: "13px", marginBottom: "16px", lineHeight: "1.4" },
     sectionHead: { fontSize: "15px", fontWeight: "700", marginBottom: "10px" },
     empty: { color: "#888", fontSize: "14px" },
     ruleRow: {
@@ -15123,6 +15165,7 @@
     ruleInfo: { flex: 1 },
     ruleLabel: { fontSize: "14px", fontWeight: "600", display: "block" },
     ruleDetails: { fontSize: "12px", color: "#666" },
+    exemptBadge: { fontSize: "11px", color: "#1a73e8", display: "block", marginTop: "2px" },
     editBtn: {
       padding: "5px 12px",
       border: "1px solid #1a73e8",
@@ -15178,6 +15221,18 @@
       cursor: "pointer",
       fontSize: "14px"
     },
+    exemptHint: { color: "#888", fontSize: "12px", margin: "2px 0 6px" },
+    exemptList: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+      maxHeight: "160px",
+      overflowY: "auto",
+      border: "1px solid #eee",
+      borderRadius: "6px",
+      padding: "8px"
+    },
+    exemptCheck: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" },
     inputError: { borderColor: "#ea4335" },
     errorMsg: { color: "#ea4335", fontSize: "12px", marginTop: "2px" }
   };

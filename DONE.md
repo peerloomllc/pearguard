@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-03
 
+### [x] About page on Parent device (#79) — 2026-04-03
+Added About tab with P2P explainer, Support Development (Donate BTC + Buy Me a Coffee), Learn About Bitcoin, Share the App, and Contact sections. Merged parent Profile into Settings (avatar + name on top, PIN below). Added openURL IPC handler.
+
 ### [x] More reliable/accurate usage metrics (#92) — 2026-04-03
 Switched daily usage collection from aggregate stats to raw queryEvents() for real-time accuracy (includes current live session). Added batch weekly usage. Usage reports now include weekSeconds and dailyLimitSeconds. Bars scale against daily limit when set, 24h/168h otherwise.
 

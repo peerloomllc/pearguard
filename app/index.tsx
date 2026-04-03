@@ -257,6 +257,14 @@ export default function Root () {
         return
       }
 
+      if (msg.method === 'openURL') {
+        Linking.openURL(msg.args.url).catch(() => {})
+        webViewRef.current?.injectJavaScript(
+          'window.__pearResponse(' + msg.id + ', null);true;'
+        )
+        return
+      }
+
       if (msg.method === 'qr:scan') {
         // Reject any in-flight scan before starting a new one
         scanReject.current?.('cancelled')

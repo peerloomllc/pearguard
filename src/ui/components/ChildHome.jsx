@@ -1,21 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
 
-const STATUS = {
-  GOOD: 'good',
-  BEDTIME: 'bedtime',
-  OFFLINE: 'offline',
-  LOADING: 'loading',
-}
-
-function statusLabel(status) {
-  switch (status) {
-    case STATUS.GOOD: return 'All good'
-    case STATUS.BEDTIME: return 'Bedtime mode'
-    case STATUS.OFFLINE: return 'Enforcement offline'
-    default: return 'Loading...'
-  }
-}
-
 function timeRemaining(expiresAt) {
   const diff = Math.max(0, expiresAt - Date.now())
   const mins = Math.ceil(diff / 60000)
@@ -24,8 +8,6 @@ function timeRemaining(expiresAt) {
 }
 
 export default function ChildHome() {
-  const [status, setStatus] = useState(STATUS.LOADING)
-  const [scheduleLabel, setScheduleLabel] = useState(null)
   const [homeData, setHomeData] = useState(null)
 
   const loadHomeData = useCallback(() => {
@@ -35,27 +17,12 @@ export default function ChildHome() {
   useEffect(() => {
     let isMounted = true
 
-    window.callBare('policy:getCurrent').then(({ policy }) => {
-      if (!isMounted) return
-      setStatus(policy ? STATUS.GOOD : STATUS.GOOD)
-    })
-
     loadHomeData()
 
     function onPearEvent(event) {
       if (!isMounted) return
-      const { name, data } = event.detail
-      if (name === 'enforcement:offline') setStatus(STATUS.OFFLINE)
-      if (name === 'policy:updated') { setStatus(STATUS.GOOD); loadHomeData() }
-      if (name === 'enforcement:status') {
-        if (data.scheduleActive) {
-          setStatus(STATUS.BEDTIME)
-          setScheduleLabel(data.scheduleLabel || 'Bedtime mode')
-        } else {
-          setStatus(STATUS.GOOD)
-        }
-      }
-      if (name === 'override:granted' || name === 'request:updated' || name === 'request:submitted') {
+      const { name } = event.detail
+      if (name === 'policy:updated' || name === 'override:granted' || name === 'request:updated' || name === 'request:submitted') {
         loadHomeData()
       }
     }
@@ -72,61 +39,42 @@ export default function ChildHome() {
     }
   }, [loadHomeData])
 
-  const isOffline = status === STATUS.OFFLINE
+  if (!homeData) return <div style={{ padding: 24 }}>Loading...</div>
 
   return (
     <div style={styles.container}>
-      {/* Status card */}
-      <div style={{ ...styles.statusCard, backgroundColor: isOffline ? '#FFEDED' : status === STATUS.BEDTIME ? '#FFF8E1' : '#EDFFF2', borderColor: isOffline ? '#FF4444' : status === STATUS.BEDTIME ? '#FFB300' : '#44CC66' }}>
-        <h2 style={{ color: isOffline ? '#CC0000' : status === STATUS.BEDTIME ? '#E65100' : '#007733', margin: 0 }}>
-          {statusLabel(status)}
-        </h2>
-        {status === STATUS.BEDTIME && scheduleLabel && (
-          <p style={{ marginTop: 8, color: '#555' }}>{scheduleLabel}</p>
-        )}
-        {isOffline && (
-          <p style={{ marginTop: 8, color: '#CC0000' }}>
-            Parental controls are not active. Ask a parent to re-enable accessibility access.
-          </p>
-        )}
+      {/* Summary row */}
+      <div style={styles.summaryRow}>
+        <div style={styles.statBox}>
+          <div style={styles.statNum}>{homeData.blockedCount}</div>
+          <div style={styles.statLabel}>Blocked</div>
+        </div>
+        <div style={styles.statBox}>
+          <div style={styles.statNum}>{homeData.pendingCount}</div>
+          <div style={styles.statLabel}>Awaiting approval</div>
+        </div>
+        <div style={styles.statBox}>
+          <div style={styles.statNum}>{homeData.pendingRequests}</div>
+          <div style={styles.statLabel}>Pending requests</div>
+        </div>
       </div>
 
-      {homeData && (
-        <>
-          {/* Summary row */}
-          <div style={styles.summaryRow}>
-            <div style={styles.statBox}>
-              <div style={styles.statNum}>{homeData.blockedCount}</div>
-              <div style={styles.statLabel}>Blocked</div>
-            </div>
-            <div style={styles.statBox}>
-              <div style={styles.statNum}>{homeData.pendingCount}</div>
-              <div style={styles.statLabel}>Awaiting approval</div>
-            </div>
-            <div style={styles.statBox}>
-              <div style={styles.statNum}>{homeData.pendingRequests}</div>
-              <div style={styles.statLabel}>Pending requests</div>
-            </div>
-          </div>
-
-          {/* Active overrides */}
-          {homeData.activeOverrides.length > 0 && (
-            <div style={styles.section}>
-              <h3 style={styles.sectionHead}>Active overrides</h3>
-              {homeData.activeOverrides.map((o, i) => (
-                <div key={i} style={styles.overrideRow}>
-                  <div>
-                    <div style={styles.overrideName}>{o.appName}</div>
-                    <div style={styles.overrideSource}>
-                      {o.source === 'parent-approved' ? 'Granted by parent' : 'PIN override'}
-                    </div>
-                  </div>
-                  <div style={styles.overrideTime}>{timeRemaining(o.expiresAt)} left</div>
+      {/* Active overrides */}
+      {homeData.activeOverrides.length > 0 && (
+        <div style={styles.section}>
+          <h3 style={styles.sectionHead}>Active overrides</h3>
+          {homeData.activeOverrides.map((o, i) => (
+            <div key={i} style={styles.overrideRow}>
+              <div>
+                <div style={styles.overrideName}>{o.appName}</div>
+                <div style={styles.overrideSource}>
+                  {o.source === 'parent-approved' ? 'Granted by parent' : 'PIN override'}
                 </div>
-              ))}
+              </div>
+              <div style={styles.overrideTime}>{timeRemaining(o.expiresAt)} left</div>
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -134,16 +82,9 @@ export default function ChildHome() {
 
 const styles = {
   container: { padding: 24 },
-  statusCard: {
-    padding: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: 'solid',
-  },
   summaryRow: {
     display: 'flex',
     gap: 12,
-    marginTop: 20,
   },
   statBox: {
     flex: 1,

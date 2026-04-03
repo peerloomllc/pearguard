@@ -6,6 +6,15 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-02
 
+### [x] Remove Child Home status card (#89) — 2026-04-02
+Removed the "All Good" / "Bedtime mode" / "Enforcement offline" status card from ChildHome. It always showed "All Good" on initial load regardless of actual state. Summary stats and active overrides remain.
+
+### [x] Haptic feedback (#17) — 2026-04-02
+Replaced WebView navigator.vibrate() with native Android Vibrator via UsageStatsModule.hapticTap(), routed through RN IPC. Adapts to hardware: amplitude-capable devices (Pixel) get 20ms at low amplitude; basic ERM motors (TCL) get 50ms at full amplitude. Added haptics to all button taps across parent and child UIs.
+
+### [x] App categories with Approve All / Deny All (#16) — 2026-04-02
+Native AppCategoryHelper detects category via ApplicationInfo.category + package-name heuristics. AppsTab supports By Category / By Status view toggle with batch Approve/Deny All per category. Child notifications only fire for pending requests, not proactive decisions.
+
 ### [x] Avatar customization (#3) — 2026-04-02
 Presets and camera/gallery support in Profile.jsx and app/setup.tsx; base64 in Hyperbee profile, thumbnail in hello message.
 

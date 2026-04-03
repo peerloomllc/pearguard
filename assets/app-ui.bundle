@@ -17063,24 +17063,6 @@
   // src/ui/components/ChildHome.jsx
   var import_react16 = __toESM(require_react());
   var import_jsx_runtime16 = __toESM(require_jsx_runtime());
-  var STATUS = {
-    GOOD: "good",
-    BEDTIME: "bedtime",
-    OFFLINE: "offline",
-    LOADING: "loading"
-  };
-  function statusLabel(status) {
-    switch (status) {
-      case STATUS.GOOD:
-        return "All good";
-      case STATUS.BEDTIME:
-        return "Bedtime mode";
-      case STATUS.OFFLINE:
-        return "Enforcement offline";
-      default:
-        return "Loading...";
-    }
-  }
   function timeRemaining2(expiresAt) {
     const diff = Math.max(0, expiresAt - Date.now());
     const mins = Math.ceil(diff / 6e4);
@@ -17088,8 +17070,6 @@
     return mins + "m";
   }
   function ChildHome() {
-    const [status, setStatus] = (0, import_react16.useState)(STATUS.LOADING);
-    const [scheduleLabel, setScheduleLabel] = (0, import_react16.useState)(null);
     const [homeData, setHomeData] = (0, import_react16.useState)(null);
     const loadHomeData = (0, import_react16.useCallback)(() => {
       window.callBare("child:homeData").then(setHomeData).catch(() => {
@@ -17097,28 +17077,11 @@
     }, []);
     (0, import_react16.useEffect)(() => {
       let isMounted = true;
-      window.callBare("policy:getCurrent").then(({ policy }) => {
-        if (!isMounted) return;
-        setStatus(policy ? STATUS.GOOD : STATUS.GOOD);
-      });
       loadHomeData();
       function onPearEvent(event) {
         if (!isMounted) return;
-        const { name, data } = event.detail;
-        if (name === "enforcement:offline") setStatus(STATUS.OFFLINE);
-        if (name === "policy:updated") {
-          setStatus(STATUS.GOOD);
-          loadHomeData();
-        }
-        if (name === "enforcement:status") {
-          if (data.scheduleActive) {
-            setStatus(STATUS.BEDTIME);
-            setScheduleLabel(data.scheduleLabel || "Bedtime mode");
-          } else {
-            setStatus(STATUS.GOOD);
-          }
-        }
-        if (name === "override:granted" || name === "request:updated" || name === "request:submitted") {
+        const { name } = event.detail;
+        if (name === "policy:updated" || name === "override:granted" || name === "request:updated" || name === "request:submitted") {
           loadHomeData();
         }
       }
@@ -17130,56 +17093,42 @@
         clearInterval(timer);
       };
     }, [loadHomeData]);
-    const isOffline = status === STATUS.OFFLINE;
+    if (!homeData) return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
     return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { ...styles15.statusCard, backgroundColor: isOffline ? "#FFEDED" : status === STATUS.BEDTIME ? "#FFF8E1" : "#EDFFF2", borderColor: isOffline ? "#FF4444" : status === STATUS.BEDTIME ? "#FFB300" : "#44CC66" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h2", { style: { color: isOffline ? "#CC0000" : status === STATUS.BEDTIME ? "#E65100" : "#007733", margin: 0 }, children: statusLabel(status) }),
-        status === STATUS.BEDTIME && scheduleLabel && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { style: { marginTop: 8, color: "#555" }, children: scheduleLabel }),
-        isOffline && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { style: { marginTop: 8, color: "#CC0000" }, children: "Parental controls are not active. Ask a parent to re-enable accessibility access." })
-      ] }),
-      homeData && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.summaryRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.blockedCount }),
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Blocked" })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.pendingCount }),
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Awaiting approval" })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.pendingRequests }),
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Pending requests" })
-          ] })
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.summaryRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.blockedCount }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Blocked" })
         ] }),
-        homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.section, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h3", { style: styles15.sectionHead, children: "Active overrides" }),
-          homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.overrideRow, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.overrideName, children: o.appName }),
-              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.overrideSource, children: o.source === "parent-approved" ? "Granted by parent" : "PIN override" })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.overrideTime, children: [
-              timeRemaining2(o.expiresAt),
-              " left"
-            ] })
-          ] }, i))
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.pendingCount }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Awaiting approval" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.pendingRequests }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Pending requests" })
         ] })
+      ] }),
+      homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h3", { style: styles15.sectionHead, children: "Active overrides" }),
+        homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.overrideRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.overrideName, children: o.appName }),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.overrideSource, children: o.source === "parent-approved" ? "Granted by parent" : "PIN override" })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.overrideTime, children: [
+            timeRemaining2(o.expiresAt),
+            " left"
+          ] })
+        ] }, i))
       ] })
     ] });
   }
   var styles15 = {
     container: { padding: 24 },
-    statusCard: {
-      padding: 20,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderStyle: "solid"
-    },
     summaryRow: {
       display: "flex",
-      gap: 12,
-      marginTop: 20
+      gap: 12
     },
     statBox: {
       flex: 1,

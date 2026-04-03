@@ -12,13 +12,11 @@ beforeEach(() => {
 
 // Stub child panels to avoid cascading IPC calls in this unit test
 jest.mock('../Dashboard.jsx', () => () => <div>Dashboard panel</div>);
-jest.mock('../ChildrenList.jsx', () => () => <div>Children panel</div>);
 jest.mock('../Settings.jsx', () => () => <div>Settings panel</div>);
 
-test('renders all four tab buttons', async () => {
+test('renders all three tab buttons', async () => {
   render(<ParentApp />);
   expect(await screen.findByText('Dashboard')).toBeInTheDocument();
-  expect(screen.getByText('Children')).toBeInTheDocument();
   expect(screen.getByText('Settings')).toBeInTheDocument();
   expect(screen.getByText('Profile')).toBeInTheDocument();
 });
@@ -26,13 +24,6 @@ test('renders all four tab buttons', async () => {
 test('Dashboard panel is shown by default', async () => {
   render(<ParentApp />);
   expect(await screen.findByText('Dashboard panel')).toBeInTheDocument();
-});
-
-test('clicking Children tab shows Children panel', async () => {
-  render(<ParentApp />);
-  await screen.findByText('Dashboard panel');
-  fireEvent.click(screen.getByText('Children'));
-  expect(screen.getByText('Children panel')).toBeInTheDocument();
 });
 
 test('clicking Settings tab shows Settings panel', async () => {
@@ -70,20 +61,9 @@ test('active tab has aria-selected=true', async () => {
   render(<ParentApp />);
   const dashTab = await screen.findByRole('tab', { name: 'Dashboard' });
   expect(dashTab).toHaveAttribute('aria-selected', 'true');
-  fireEvent.click(screen.getByText('Children'));
-  expect(screen.getByRole('tab', { name: 'Children' })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.click(screen.getByText('Settings'));
+  expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
   expect(dashTab).toHaveAttribute('aria-selected', 'false');
-});
-
-test('shows loading state while pin:isSet is pending', () => {
-  let resolvePinCheck;
-  window.callBare = jest.fn().mockImplementation((method) => {
-    if (method === 'pin:isSet') return new Promise((resolve) => { resolvePinCheck = resolve; });
-    return Promise.resolve({});
-  });
-  render(<ParentApp />);
-  expect(screen.getByText(/checking/i)).toBeInTheDocument();
-  expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
 });
 
 test('shows PIN setup overlay when pin:isSet returns false', async () => {

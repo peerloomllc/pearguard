@@ -773,7 +773,7 @@
   var require_react_dom_production = __commonJS({
     "node_modules/react-dom/cjs/react-dom.production.js"(exports) {
       "use strict";
-      var React20 = require_react();
+      var React21 = require_react();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
         if (1 < arguments.length) {
@@ -813,7 +813,7 @@
           implementation
         };
       }
-      var ReactSharedInternals = React20.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React21.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       function getCrossOriginStringAs(as, input) {
         if ("font" === as) return "";
         if ("string" === typeof input)
@@ -949,7 +949,7 @@
     "node_modules/react-dom/cjs/react-dom-client.production.js"(exports) {
       "use strict";
       var Scheduler = require_scheduler();
-      var React20 = require_react();
+      var React21 = require_react();
       var ReactDOM = require_react_dom();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
@@ -1133,7 +1133,7 @@
         return null;
       }
       var isArrayImpl = Array.isArray;
-      var ReactSharedInternals = React20.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React21.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var sharedNotPendingObject = {
         pending: false,
@@ -12125,7 +12125,7 @@
           0 === i && attemptExplicitHydrationTarget(target);
         }
       };
-      var isomorphicReactPackageVersion$jscomp$inline_1785 = React20.version;
+      var isomorphicReactPackageVersion$jscomp$inline_1785 = React21.version;
       if ("19.1.4" !== isomorphicReactPackageVersion$jscomp$inline_1785)
         throw Error(
           formatProdErrorMessage(
@@ -14371,21 +14371,113 @@
   });
 
   // src/ui/main.jsx
-  var import_react19 = __toESM(require_react());
+  var import_react20 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/ui/App.jsx
-  var import_react18 = __toESM(require_react());
+  var import_react19 = __toESM(require_react());
 
   // src/ui/components/ParentApp.jsx
-  var import_react14 = __toESM(require_react());
+  var import_react15 = __toESM(require_react());
 
   // src/ui/components/Dashboard.jsx
-  var import_react9 = __toESM(require_react());
+  var import_react11 = __toESM(require_react());
 
   // src/ui/components/ChildCard.jsx
+  var import_react2 = __toESM(require_react());
+
+  // src/ui/components/Avatar.jsx
   var import_react = __toESM(require_react());
+
+  // src/ui/components/presetAvatars.js
+  var PRESETS = {
+    bear: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#8B5E3C"/><circle cx="16" cy="14" r="10" fill="#8B5E3C"/><circle cx="16" cy="14" r="6" fill="#D4A574"/><circle cx="48" cy="14" r="10" fill="#8B5E3C"/><circle cx="48" cy="14" r="6" fill="#D4A574"/><ellipse cx="32" cy="42" rx="12" ry="10" fill="#D4A574"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="38" rx="4" ry="3" fill="#2D2D2D"/></svg>`,
+    cat: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#F4A460"/><polygon points="12,20 8,2 24,16" fill="#F4A460"/><polygon points="52,20 56,2 40,16" fill="#F4A460"/><polygon points="12,20 8,2 24,16" fill="#FFD39B" opacity="0.5"/><polygon points="52,20 56,2 40,16" fill="#FFD39B" opacity="0.5"/><circle cx="24" cy="32" r="4" fill="#4CAF50"/><circle cx="40" cy="32" r="4" fill="#4CAF50"/><circle cx="24" cy="33" r="2" fill="#2D2D2D"/><circle cx="40" cy="33" r="2" fill="#2D2D2D"/><ellipse cx="32" cy="40" rx="3" ry="2" fill="#FF6B8A"/><line x1="8" y1="36" x2="20" y2="38" stroke="#2D2D2D" stroke-width="1.5"/><line x1="8" y1="42" x2="20" y2="40" stroke="#2D2D2D" stroke-width="1.5"/><line x1="56" y1="36" x2="44" y2="38" stroke="#2D2D2D" stroke-width="1.5"/><line x1="56" y1="42" x2="44" y2="40" stroke="#2D2D2D" stroke-width="1.5"/></svg>`,
+    dog: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#C4956A"/><ellipse cx="14" cy="24" rx="8" ry="14" fill="#A0704E" transform="rotate(-15 14 24)"/><ellipse cx="50" cy="24" rx="8" ry="14" fill="#A0704E" transform="rotate(15 50 24)"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="42" rx="10" ry="8" fill="#F5DEB3"/><ellipse cx="32" cy="40" rx="5" ry="3" fill="#2D2D2D"/><ellipse cx="32" cy="46" rx="3" ry="2" fill="#FF6B8A"/></svg>`,
+    fox: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#E85D26"/><polygon points="12,22 6,2 26,18" fill="#E85D26"/><polygon points="52,22 58,2 38,18" fill="#E85D26"/><polygon points="12,22 10,8 22,18" fill="#FFF" opacity="0.6"/><polygon points="52,22 54,8 42,18" fill="#FFF" opacity="0.6"/><ellipse cx="32" cy="44" rx="14" ry="10" fill="#FFF"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="40" rx="3" ry="2" fill="#2D2D2D"/></svg>`,
+    owl: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#8B6914"/><circle cx="22" cy="30" r="10" fill="#FFF"/><circle cx="42" cy="30" r="10" fill="#FFF"/><circle cx="22" cy="30" r="5" fill="#FF8C00"/><circle cx="42" cy="30" r="5" fill="#FF8C00"/><circle cx="22" cy="30" r="3" fill="#2D2D2D"/><circle cx="42" cy="30" r="3" fill="#2D2D2D"/><polygon points="32,34 28,40 36,40" fill="#FF8C00"/><polygon points="10,16 18,24 12,26" fill="#8B6914"/><polygon points="54,16 46,24 52,26" fill="#8B6914"/></svg>`,
+    penguin: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#2D2D2D"/><ellipse cx="32" cy="42" rx="14" ry="16" fill="#FFF"/><circle cx="24" cy="28" r="3" fill="#FFF"/><circle cx="40" cy="28" r="3" fill="#FFF"/><circle cx="24" cy="28" r="2" fill="#2D2D2D"/><circle cx="40" cy="28" r="2" fill="#2D2D2D"/><polygon points="32,32 28,38 36,38" fill="#FF8C00"/></svg>`,
+    rabbit: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><ellipse cx="22" cy="12" rx="6" ry="16" fill="#E8D5D5"/><ellipse cx="42" cy="12" rx="6" ry="16" fill="#E8D5D5"/><ellipse cx="22" cy="12" rx="3" ry="12" fill="#FFB6C1"/><ellipse cx="42" cy="12" rx="3" ry="12" fill="#FFB6C1"/><circle cx="32" cy="38" r="22" fill="#E8D5D5"/><circle cx="24" cy="34" r="3" fill="#2D2D2D"/><circle cx="40" cy="34" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="42" rx="3" ry="2" fill="#FFB6C1"/><line x1="10" y1="38" x2="22" y2="40" stroke="#CCC" stroke-width="1"/><line x1="10" y1="44" x2="22" y2="42" stroke="#CCC" stroke-width="1"/><line x1="54" y1="38" x2="42" y2="40" stroke="#CCC" stroke-width="1"/><line x1="54" y1="44" x2="42" y2="42" stroke="#CCC" stroke-width="1"/></svg>`,
+    panda: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#FFF"/><circle cx="16" cy="18" r="10" fill="#2D2D2D"/><circle cx="48" cy="18" r="10" fill="#2D2D2D"/><ellipse cx="22" cy="30" rx="8" ry="7" fill="#2D2D2D"/><ellipse cx="42" cy="30" rx="8" ry="7" fill="#2D2D2D"/><circle cx="22" cy="30" r="3" fill="#FFF"/><circle cx="42" cy="30" r="3" fill="#FFF"/><ellipse cx="32" cy="40" rx="4" ry="3" fill="#2D2D2D"/></svg>`,
+    lion: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="30" fill="#DAA520"/><circle cx="32" cy="36" r="20" fill="#F4A460"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="40" rx="4" ry="3" fill="#2D2D2D"/><ellipse cx="32" cy="46" rx="6" ry="4" fill="#F5DEB3"/></svg>`,
+    frog: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="38" r="22" fill="#4CAF50"/><circle cx="20" cy="18" r="10" fill="#4CAF50"/><circle cx="44" cy="18" r="10" fill="#4CAF50"/><circle cx="20" cy="16" r="6" fill="#FFF"/><circle cx="44" cy="16" r="6" fill="#FFF"/><circle cx="20" cy="16" r="3" fill="#2D2D2D"/><circle cx="44" cy="16" r="3" fill="#2D2D2D"/><path d="M 20 42 Q 32 52 44 42" fill="none" stroke="#2D2D2D" stroke-width="2"/></svg>`,
+    elephant: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="34" r="24" fill="#9E9E9E"/><ellipse cx="12" cy="32" rx="10" ry="14" fill="#9E9E9E"/><ellipse cx="52" cy="32" rx="10" ry="14" fill="#9E9E9E"/><ellipse cx="12" cy="32" rx="6" ry="10" fill="#BDBDBD"/><ellipse cx="52" cy="32" rx="6" ry="10" fill="#BDBDBD"/><circle cx="24" cy="28" r="3" fill="#2D2D2D"/><circle cx="40" cy="28" r="3" fill="#2D2D2D"/><path d="M 28 38 Q 32 50 32 56 Q 32 50 36 38" fill="#BDBDBD" stroke="#9E9E9E" stroke-width="1"/></svg>`,
+    monkey: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="22" fill="#8B5A2B"/><circle cx="10" cy="34" r="8" fill="#DEB887"/><circle cx="54" cy="34" r="8" fill="#DEB887"/><ellipse cx="32" cy="40" rx="14" ry="12" fill="#DEB887"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="42" rx="5" ry="3" fill="#8B5A2B"/></svg>`,
+    koala: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="22" fill="#808080"/><circle cx="14" cy="22" r="12" fill="#808080"/><circle cx="50" cy="22" r="12" fill="#808080"/><circle cx="14" cy="22" r="7" fill="#C0C0C0"/><circle cx="50" cy="22" r="7" fill="#C0C0C0"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="40" rx="6" ry="4" fill="#2D2D2D"/></svg>`,
+    tiger: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#FF8C00"/><circle cx="16" cy="16" r="8" fill="#FF8C00"/><circle cx="48" cy="16" r="8" fill="#FF8C00"/><circle cx="16" cy="16" r="4" fill="#FFF"/><circle cx="48" cy="16" r="4" fill="#FFF"/><ellipse cx="32" cy="44" rx="12" ry="8" fill="#FFF"/><circle cx="24" cy="32" r="3" fill="#2D2D2D"/><circle cx="40" cy="32" r="3" fill="#2D2D2D"/><ellipse cx="32" cy="40" rx="3" ry="2" fill="#FF6B8A"/><line x1="20" y1="24" x2="26" y2="28" stroke="#2D2D2D" stroke-width="2"/><line x1="44" y1="24" x2="38" y2="28" stroke="#2D2D2D" stroke-width="2"/><line x1="28" y1="22" x2="30" y2="28" stroke="#2D2D2D" stroke-width="2"/><line x1="36" y1="22" x2="34" y2="28" stroke="#2D2D2D" stroke-width="2"/></svg>`,
+    whale: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><ellipse cx="32" cy="38" rx="28" ry="20" fill="#4A90D9"/><ellipse cx="32" cy="44" rx="18" ry="10" fill="#B3D4FC"/><circle cx="18" cy="32" r="3" fill="#FFF"/><circle cx="18" cy="32" r="2" fill="#2D2D2D"/><path d="M 32 18 Q 28 8 24 12 Q 28 10 32 18" fill="#4A90D9"/><path d="M 54 38 Q 60 34 58 30" fill="none" stroke="#4A90D9" stroke-width="3" stroke-linecap="round"/></svg>`,
+    unicorn: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="38" r="22" fill="#FFF"/><polygon points="32,2 28,22 36,22" fill="#FFD700"/><ellipse cx="18" cy="20" rx="4" ry="8" fill="#FFB6C1"/><ellipse cx="46" cy="20" rx="4" ry="8" fill="#FFB6C1"/><circle cx="24" cy="34" r="3" fill="#9C27B0"/><circle cx="40" cy="34" r="3" fill="#9C27B0"/><path d="M 26 44 Q 32 48 38 44" fill="none" stroke="#FF6B8A" stroke-width="2"/><circle cx="18" cy="42" r="4" fill="#FFB6C1" opacity="0.5"/><circle cx="46" cy="42" r="4" fill="#FFB6C1" opacity="0.5"/></svg>`,
+    octopus: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="28" r="22" fill="#9C27B0"/><circle cx="24" cy="24" r="4" fill="#FFF"/><circle cx="40" cy="24" r="4" fill="#FFF"/><circle cx="24" cy="24" r="2" fill="#2D2D2D"/><circle cx="40" cy="24" r="2" fill="#2D2D2D"/><path d="M 26 34 Q 32 38 38 34" fill="none" stroke="#FFF" stroke-width="2"/><path d="M 12 44 Q 8 56 14 56" fill="none" stroke="#9C27B0" stroke-width="4" stroke-linecap="round"/><path d="M 20 48 Q 18 58 24 58" fill="none" stroke="#9C27B0" stroke-width="4" stroke-linecap="round"/><path d="M 44 48 Q 46 58 40 58" fill="none" stroke="#9C27B0" stroke-width="4" stroke-linecap="round"/><path d="M 52 44 Q 56 56 50 56" fill="none" stroke="#9C27B0" stroke-width="4" stroke-linecap="round"/></svg>`,
+    bee: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><ellipse cx="32" cy="36" rx="20" ry="18" fill="#FFD700"/><rect x="16" y="30" width="32" height="4" fill="#2D2D2D"/><rect x="18" y="38" width="28" height="4" fill="#2D2D2D"/><circle cx="24" cy="28" r="3" fill="#2D2D2D"/><circle cx="40" cy="28" r="3" fill="#2D2D2D"/><path d="M 28 46 Q 32 50 36 46" fill="none" stroke="#2D2D2D" stroke-width="1.5"/><ellipse cx="20" cy="18" rx="10" ry="6" fill="#FFF" opacity="0.6" transform="rotate(-20 20 18)"/><ellipse cx="44" cy="18" rx="10" ry="6" fill="#FFF" opacity="0.6" transform="rotate(20 44 18)"/></svg>`,
+    turtle: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="36" r="24" fill="#4CAF50"/><circle cx="32" cy="36" r="18" fill="#8BC34A"/><circle cx="32" cy="36" r="18" fill="none" stroke="#4CAF50" stroke-width="2"/><line x1="32" y1="18" x2="32" y2="54" stroke="#4CAF50" stroke-width="1.5"/><line x1="14" y1="36" x2="50" y2="36" stroke="#4CAF50" stroke-width="1.5"/><circle cx="26" cy="26" r="3" fill="#2D2D2D"/><circle cx="38" cy="26" r="3" fill="#2D2D2D"/><path d="M 28 42 Q 32 46 36 42" fill="none" stroke="#2D2D2D" stroke-width="1.5"/></svg>`,
+    star: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><polygon points="32,4 40,24 62,24 44,38 50,58 32,46 14,58 20,38 2,24 24,24" fill="#FFD700"/><circle cx="26" cy="30" r="3" fill="#2D2D2D"/><circle cx="38" cy="30" r="3" fill="#2D2D2D"/><path d="M 28 38 Q 32 42 36 38" fill="none" stroke="#2D2D2D" stroke-width="2"/></svg>`
+  };
+  var PRESET_IDS = Object.keys(PRESETS);
+
+  // src/ui/components/Avatar.jsx
   var import_jsx_runtime = __toESM(require_jsx_runtime());
+  function getInitials(name) {
+    return name && name.trim() ? name.trim().split(/\s+/).map((w) => w[0].toUpperCase()).slice(0, 2).join("") : "?";
+  }
+  function getColor(name) {
+    let hash = 0;
+    const str = name || "?";
+    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    const colors = ["#1a73e8", "#e8461a", "#34a853", "#f59e0b", "#9c27b0", "#00bcd4", "#e91e63", "#607d8b"];
+    return colors[Math.abs(hash) % colors.length];
+  }
+  function resolveThumb(thumb) {
+    if (!thumb) return null;
+    if (thumb.startsWith("preset:")) return { type: "preset", id: thumb.slice(7) };
+    return { type: "custom", thumb64: thumb };
+  }
+  function Avatar({ avatar, name, size = 48, onClick }) {
+    const resolved = typeof avatar === "string" ? resolveThumb(avatar) : avatar;
+    const circleStyle = {
+      width: size + "px",
+      height: size + "px",
+      borderRadius: "50%",
+      overflow: "hidden",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+      cursor: onClick ? "pointer" : "default"
+    };
+    if (resolved && resolved.type === "preset" && PRESETS[resolved.id]) {
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: circleStyle, onClick, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "div",
+        {
+          style: { width: "100%", height: "100%" },
+          dangerouslySetInnerHTML: { __html: PRESETS[resolved.id] }
+        }
+      ) });
+    }
+    if (resolved && resolved.type === "custom") {
+      const src = resolved.base64 || resolved.thumb64;
+      if (src) {
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: circleStyle, onClick, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "img",
+          {
+            src: `data:image/jpeg;base64,${src}`,
+            alt: "avatar",
+            style: { width: "100%", height: "100%", objectFit: "cover" }
+          }
+        ) });
+      }
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      "div",
+      {
+        style: { ...circleStyle, backgroundColor: getColor(name) },
+        onClick,
+        children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { color: "#FFF", fontSize: Math.round(size * 0.35) + "px", fontWeight: "700" }, children: getInitials(name) })
+      }
+    );
+  }
+
+  // src/ui/components/ChildCard.jsx
+  var import_jsx_runtime2 = __toESM(require_jsx_runtime());
   function formatSeconds(seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor(seconds % 3600 / 60);
@@ -14394,7 +14486,7 @@
   }
   function Badge({ count, color }) {
     if (!count || count === 0) return null;
-    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { ...styles.badge, backgroundColor: color }, children: count });
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { ...styles.badge, backgroundColor: color }, children: count });
   }
   function ChildCard({ child, onPress }) {
     const {
@@ -14407,23 +14499,24 @@
       pendingTimeRequests
     } = child;
     const hasAlerts = bypassAlerts > 0 || pendingApprovals > 0 || pendingTimeRequests > 0;
-    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", { style: styles.card, onClick: onPress, "aria-label": `Open ${displayName}`, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: styles.header, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { ...styles.statusDot, backgroundColor: isOnline ? "#34a853" : "#bbb" } }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: styles.name, children: displayName }),
-        hasAlerts && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: styles.badges, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Badge, { count: bypassAlerts, color: "#ea4335" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Badge, { count: pendingApprovals, color: "#fbbc04" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Badge, { count: pendingTimeRequests, color: "#1a73e8" })
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { style: styles.card, onClick: onPress, "aria-label": `Open ${displayName}`, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Avatar, { avatar: child.avatarThumb, name: displayName, size: 32 }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { ...styles.statusDot, backgroundColor: isOnline ? "#34a853" : "#bbb" } }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: styles.name, children: displayName }),
+        hasAlerts && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles.badges, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Badge, { count: bypassAlerts, color: "#ea4335" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Badge, { count: pendingApprovals, color: "#fbbc04" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Badge, { count: pendingTimeRequests, color: "#1a73e8" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: styles.row, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: styles.label, children: "Active:" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: styles.value, children: currentApp || "None" })
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles.row, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: styles.label, children: "Active:" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: styles.value, children: currentApp || "None" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: styles.row, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: styles.label, children: "Today:" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: styles.value, children: formatSeconds(todayScreenTimeSeconds || 0) })
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles.row, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: styles.label, children: "Today:" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: styles.value, children: formatSeconds(todayScreenTimeSeconds || 0) })
       ] })
     ] });
   }
@@ -14482,11 +14575,11 @@
   };
 
   // src/ui/components/ChildDetail.jsx
-  var import_react8 = __toESM(require_react());
+  var import_react9 = __toESM(require_react());
 
   // src/ui/components/UsageTab.jsx
-  var import_react2 = __toESM(require_react());
-  var import_jsx_runtime2 = __toESM(require_jsx_runtime());
+  var import_react3 = __toESM(require_react());
+  var import_jsx_runtime3 = __toESM(require_jsx_runtime());
   function timeAgo(timestamp) {
     if (!timestamp) return "Never";
     const diffMs = Date.now() - new Date(timestamp).getTime();
@@ -14508,14 +14601,14 @@
     const todayPct = Math.min(100, todaySeconds / maxSeconds * 100);
     const weekPct = Math.min(100, weekSeconds / (maxSeconds * 7) * 100);
     const overLimit = dailyLimitSeconds && todaySeconds > dailyLimitSeconds;
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles2.usageRow, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: styles2.appName, children: appName }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles2.bars, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles2.barLabel, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles2.usageRow, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles2.appName, children: appName }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles2.bars, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles2.barLabel, children: [
           "Today: ",
           formatSeconds2(todaySeconds)
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: styles2.barTrack, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles2.barTrack, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           "div",
           {
             style: {
@@ -14525,18 +14618,18 @@
             }
           }
         ) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles2.barLabel, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles2.barLabel, children: [
           "This week: ",
           formatSeconds2(weekSeconds)
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: styles2.barTrack, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { ...styles2.barFill, width: `${weekPct}%`, backgroundColor: "#34a853" } }) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles2.barTrack, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { ...styles2.barFill, width: `${weekPct}%`, backgroundColor: "#34a853" } }) })
       ] })
     ] });
   }
   function UsageTab({ childPublicKey }) {
-    const [report, setReport] = (0, import_react2.useState)(null);
-    const [loading, setLoading] = (0, import_react2.useState)(true);
-    (0, import_react2.useEffect)(() => {
+    const [report, setReport] = (0, import_react3.useState)(null);
+    const [loading, setLoading] = (0, import_react3.useState)(true);
+    (0, import_react3.useEffect)(() => {
       window.callBare("usage:getLatest", { childPublicKey }).then((data) => {
         setReport(data);
         setLoading(false);
@@ -14549,16 +14642,16 @@
       });
       return unsub;
     }, [childPublicKey]);
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: styles2.msg, children: "Loading usage data..." });
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles2.msg, children: "Loading usage data..." });
     if (!report || !report.apps || report.apps.length === 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: styles2.msg, children: "No usage data yet. Data syncs every 5 minutes." });
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles2.msg, children: "No usage data yet. Data syncs every 5 minutes." });
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: styles2.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { style: styles2.syncLabel, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles2.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: styles2.syncLabel, children: [
         "Last synced: ",
         timeAgo(report.lastSynced || report.timestamp)
       ] }),
-      report.apps.map((app) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      report.apps.map((app) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         UsageBar,
         {
           appName: app.displayName || app.packageName,
@@ -14592,10 +14685,10 @@
   };
 
   // src/ui/components/AppsTab.jsx
-  var import_react3 = __toESM(require_react());
-  var import_jsx_runtime3 = __toESM(require_jsx_runtime());
+  var import_react4 = __toESM(require_react());
+  var import_jsx_runtime4 = __toESM(require_jsx_runtime());
   var ICON_COLORS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853", "#ff6d00", "#46bdc6", "#7b1fa2", "#c62828"];
-  function getInitials(name) {
+  function getInitials2(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
   }
   function getIconColor(str) {
@@ -14604,7 +14697,7 @@
     return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
   }
   function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
-    const [limitInput, setLimitInput] = (0, import_react3.useState)(
+    const [limitInput, setLimitInput] = (0, import_react4.useState)(
       appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ""
     );
     function setStatus(newStatus) {
@@ -14626,16 +14719,16 @@
     }
     const isPending = appData.status === "pending";
     const addedDate = appData.addedAt ? new Date(appData.addedAt).toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }) : null;
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appRow, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appInfo, children: [
-        appData.iconBase64 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.appRow, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.appInfo, children: [
+        appData.iconBase64 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "img",
           {
             src: `data:image/png;base64,${appData.iconBase64}`,
             alt: `${appData.appName || packageName} icon`,
             style: styles3.appIcon
           }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "div",
           {
             style: {
@@ -14643,24 +14736,24 @@
               backgroundColor: getIconColor(appData.appName || packageName)
             },
             "aria-hidden": "true",
-            children: getInitials(appData.appName || packageName)
+            children: getInitials2(appData.appName || packageName)
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appNameBlock, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.appName, children: appData.appName || packageName }),
-          appData.appName && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.pkgName, children: packageName }),
-          addedDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: styles3.addedDate, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.appNameBlock, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles3.appName, children: appData.appName || packageName }),
+          appData.appName && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles3.pkgName, children: packageName }),
+          addedDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: styles3.addedDate, children: [
             "Added ",
             addedDate
           ] })
         ] })
       ] }),
-      isPending ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.actions, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.approveBtn, onClick: handleApprove, "aria-label": `Approve ${appData.appName || packageName}`, children: "Approve" }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.denyBtn, onClick: handleDeny, "aria-label": `Deny ${appData.appName || packageName}`, children: "Deny" })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.controls, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("label", { style: styles3.toggle, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      isPending ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.actions, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.approveBtn, onClick: handleApprove, "aria-label": `Approve ${appData.appName || packageName}`, children: "Approve" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.denyBtn, onClick: handleDeny, "aria-label": `Deny ${appData.appName || packageName}`, children: "Deny" })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.controls, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles3.toggle, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               type: "checkbox",
@@ -14669,11 +14762,11 @@
               "aria-label": `Toggle ${appData.appName || packageName}`
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { marginLeft: "4px" }, children: appData.status === "allowed" ? "Allowed" : "Blocked" })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { marginLeft: "4px" }, children: appData.status === "allowed" ? "Allowed" : "Blocked" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("label", { style: styles3.limitLabel, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles3.limitLabel, children: [
           "Limit:",
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               type: "number",
@@ -14697,21 +14790,21 @@
     { key: "blocked", label: "Blocked", color: "#ea4335" }
   ];
   function CategorySection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.section, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.section, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
         "button",
         {
           style: { ...styles3.sectionHeader, borderLeft: `4px solid ${category.color}` },
           onClick: onToggle,
           "aria-expanded": !collapsed,
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.sectionLabel, children: category.label }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { ...styles3.sectionBadge, backgroundColor: category.color }, children: entries.length }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: styles3.chevron, children: collapsed ? "\u203A" : "\u2304" })
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles3.sectionLabel, children: category.label }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { ...styles3.sectionBadge, backgroundColor: category.color }, children: entries.length }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles3.chevron, children: collapsed ? "\u203A" : "\u2304" })
           ]
         }
       ),
-      !collapsed && entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      !collapsed && entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         AppRow,
         {
           childPublicKey,
@@ -14725,21 +14818,21 @@
     ] });
   }
   function AppsTab({ childPublicKey }) {
-    const [policy, setPolicy] = (0, import_react3.useState)(null);
-    const [loading, setLoading] = (0, import_react3.useState)(true);
-    const [sortOrder, setSortOrder] = (0, import_react3.useState)("alpha");
-    const [search, setSearch] = (0, import_react3.useState)("");
-    const [collapsed, setCollapsed] = (0, import_react3.useState)({ pending: false, allowed: false, blocked: false });
-    const loadPolicy = (0, import_react3.useCallback)(() => {
+    const [policy, setPolicy] = (0, import_react4.useState)(null);
+    const [loading, setLoading] = (0, import_react4.useState)(true);
+    const [sortOrder, setSortOrder] = (0, import_react4.useState)("alpha");
+    const [search, setSearch] = (0, import_react4.useState)("");
+    const [collapsed, setCollapsed] = (0, import_react4.useState)({ pending: true, allowed: true, blocked: true });
+    const loadPolicy = (0, import_react4.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [childPublicKey]);
-    (0, import_react3.useEffect)(() => {
+    (0, import_react4.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
-    (0, import_react3.useEffect)(() => {
+    (0, import_react4.useEffect)(() => {
       const unsub = window.onBareEvent("apps:synced", (data) => {
         if (data.childPublicKey === childPublicKey) loadPolicy();
       });
@@ -14760,9 +14853,9 @@
     function toggleSection(key) {
       setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
     }
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.msg, children: "Loading apps..." });
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles3.msg, children: "Loading apps..." });
     if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles3.msg, children: "No apps found. Apps appear here after they are installed on the child device." });
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles3.msg, children: "No apps found. Apps appear here after they are installed on the child device." });
     }
     const q = search.trim().toLowerCase();
     const filtered = Object.entries(policy.apps).filter(([pkg, data]) => {
@@ -14782,9 +14875,9 @@
     };
     const totalCount = Object.keys(policy.apps).length;
     const visibleCount = filtered.length;
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.toolbar, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.toolbar, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "input",
           {
             type: "text",
@@ -14795,7 +14888,7 @@
             "aria-label": "Search apps"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "button",
           {
             style: styles3.sortBtn,
@@ -14805,18 +14898,18 @@
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles3.appCountRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { style: styles3.appCount, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.appCountRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: styles3.appCount, children: [
           q ? `${visibleCount} of ${totalCount}` : totalCount,
           " app",
           totalCount !== 1 ? "s" : ""
         ] }),
-        q && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { style: styles3.clearSearch, onClick: () => setSearch(""), children: "Clear" })
+        q && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.clearSearch, onClick: () => setSearch(""), children: "Clear" })
       ] }),
       CATEGORIES.map((cat) => {
         const entries = grouped[cat.key];
         if (entries.length === 0) return null;
-        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           CategorySection,
           {
             category: cat,
@@ -14956,46 +15049,46 @@
   };
 
   // src/ui/components/ScheduleTab.jsx
-  var import_react4 = __toESM(require_react());
-  var import_jsx_runtime4 = __toESM(require_jsx_runtime());
+  var import_react5 = __toESM(require_react());
+  var import_jsx_runtime5 = __toESM(require_jsx_runtime());
   var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var BLANK_RULE = { label: "", days: [], start: "21:00", end: "07:00", exemptApps: [] };
   function RuleRow({ rule, appNames, onEdit, onDelete }) {
     const activeDays = DAY_LABELS.filter((_, i) => rule.days.includes(i)).join(", ");
     const exemptCount = (rule.exemptApps || []).length;
     const exemptLabel = exemptCount > 0 ? (rule.exemptApps || []).map((pkg) => appNames[pkg] || pkg).join(", ") : null;
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.ruleRow, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.ruleInfo, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.ruleLabel, children: rule.label || "(no label)" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: styles4.ruleDetails, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles4.ruleRow, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles4.ruleInfo, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: styles4.ruleLabel, children: rule.label || "(no label)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: styles4.ruleDetails, children: [
           activeDays || "No days",
           " \u2022 ",
           rule.start,
           "\u2013",
           rule.end
         ] }),
-        exemptLabel && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: styles4.exemptBadge, children: [
+        exemptLabel && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: styles4.exemptBadge, children: [
           "Exempt: ",
           exemptLabel
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.editBtn, onClick: onEdit, "aria-label": `Edit rule ${rule.label}`, children: "Edit" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.deleteBtn, onClick: onDelete, "aria-label": `Delete rule ${rule.label}`, children: "Delete" })
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { style: styles4.editBtn, onClick: onEdit, "aria-label": `Edit rule ${rule.label}`, children: "Edit" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { style: styles4.deleteBtn, onClick: onDelete, "aria-label": `Delete rule ${rule.label}`, children: "Delete" })
     ] });
   }
   function ScheduleTab({ childPublicKey }) {
-    const [policy, setPolicy] = (0, import_react4.useState)(null);
-    const [loading, setLoading] = (0, import_react4.useState)(true);
-    const [newRule, setNewRule] = (0, import_react4.useState)(BLANK_RULE);
-    const [editingIndex, setEditingIndex] = (0, import_react4.useState)(null);
-    const [submitAttempted, setSubmitAttempted] = (0, import_react4.useState)(false);
-    const loadPolicy = (0, import_react4.useCallback)(() => {
+    const [policy, setPolicy] = (0, import_react5.useState)(null);
+    const [loading, setLoading] = (0, import_react5.useState)(true);
+    const [newRule, setNewRule] = (0, import_react5.useState)(BLANK_RULE);
+    const [editingIndex, setEditingIndex] = (0, import_react5.useState)(null);
+    const [submitAttempted, setSubmitAttempted] = (0, import_react5.useState)(false);
+    const loadPolicy = (0, import_react5.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [childPublicKey]);
-    (0, import_react4.useEffect)(() => {
+    (0, import_react5.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
     const appNames = {};
@@ -15049,22 +15142,22 @@
       const updated = exempt.includes(packageName) ? exempt.filter((p) => p !== packageName) : [...exempt, packageName];
       setNewRule({ ...newRule, exemptApps: updated });
     }
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles4.msg, children: "Loading schedule..." });
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: styles4.msg, children: "Loading schedule..." });
     const schedules = policy && policy.schedules || [];
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { style: styles4.hint, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles4.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { style: styles4.hint, children: [
         "Schedule rules define ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: "blackout windows" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "blackout windows" }),
         " \u2014 times when apps are blocked. Apps are allowed outside these windows."
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: styles4.sectionHead, children: "Active Rules" }),
-      schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: styles4.empty, children: "No blackout rules yet." }),
-      schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RuleRow, { rule, appNames, onEdit: () => handleEditRule(i), onDelete: () => handleDeleteRule(i) }, i)),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { style: { ...styles4.sectionHead, marginTop: "24px" }, children: editingIndex !== null ? "Edit Rule" : "Add Rule" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.form, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { style: styles4.sectionHead, children: "Active Rules" }),
+      schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { style: styles4.empty, children: "No blackout rules yet." }),
+      schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(RuleRow, { rule, appNames, onEdit: () => handleEditRule(i), onDelete: () => handleDeleteRule(i) }, i)),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { style: { ...styles4.sectionHead, marginTop: "24px" }, children: editingIndex !== null ? "Edit Rule" : "Add Rule" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles4.form, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { style: styles4.formLabel, children: [
           "Label",
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "input",
             {
               type: "text",
@@ -15075,10 +15168,10 @@
               "aria-label": "Rule label"
             }
           ),
-          submitAttempted && !newRule.label.trim() && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.errorMsg, children: "Label is required" })
+          submitAttempted && !newRule.label.trim() && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: styles4.errorMsg, children: "Label is required" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles4.daysRow, children: DAY_LABELS.map((day, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.dayCheck, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: styles4.daysRow, children: DAY_LABELS.map((day, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { style: styles4.dayCheck, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "input",
             {
               type: "checkbox",
@@ -15089,11 +15182,11 @@
           ),
           day
         ] }, i)) }),
-        submitAttempted && newRule.days.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles4.errorMsg, children: "Select at least one day" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles4.timeRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
+        submitAttempted && newRule.days.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: styles4.errorMsg, children: "Select at least one day" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles4.timeRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { style: styles4.formLabel, children: [
             "Blocked from",
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               "input",
               {
                 type: "time",
@@ -15104,9 +15197,9 @@
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.formLabel, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { style: styles4.formLabel, children: [
             "Blocked until",
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               "input",
               {
                 type: "time",
@@ -15118,11 +15211,11 @@
             )
           ] })
         ] }),
-        appList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: styles4.formLabel, children: "Exempt apps" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: styles4.exemptHint, children: "These apps will not be blocked during this window." }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles4.exemptList, children: appList.map(({ packageName, appName }) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: styles4.exemptCheck, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        appList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("label", { style: styles4.formLabel, children: "Exempt apps" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { style: styles4.exemptHint, children: "These apps will not be blocked during this window." }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: styles4.exemptList, children: appList.map(({ packageName, appName }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { style: styles4.exemptCheck, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               "input",
               {
                 type: "checkbox",
@@ -15134,8 +15227,8 @@
             appName
           ] }, packageName)) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: "8px" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", gap: "8px" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "button",
             {
               style: styles4.addBtn,
@@ -15144,7 +15237,7 @@
               children: editingIndex !== null ? "Save Changes" : "Add Rule"
             }
           ),
-          editingIndex !== null && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles4.cancelBtn, onClick: handleCancelEdit, "aria-label": "Cancel edit", children: "Cancel" })
+          editingIndex !== null && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { style: styles4.cancelBtn, onClick: handleCancelEdit, "aria-label": "Cancel edit", children: "Cancel" })
         ] })
       ] })
     ] });
@@ -15238,19 +15331,19 @@
   };
 
   // src/ui/components/ContactsTab.jsx
-  var import_react5 = __toESM(require_react());
-  var import_jsx_runtime5 = __toESM(require_jsx_runtime());
+  var import_react6 = __toESM(require_react());
+  var import_jsx_runtime6 = __toESM(require_jsx_runtime());
   function ContactsTab({ childPublicKey }) {
-    const [policy, setPolicy] = (0, import_react5.useState)(null);
-    const [loading, setLoading] = (0, import_react5.useState)(true);
-    const [picking, setPicking] = (0, import_react5.useState)(false);
-    const loadPolicy = (0, import_react5.useCallback)(() => {
+    const [policy, setPolicy] = (0, import_react6.useState)(null);
+    const [loading, setLoading] = (0, import_react6.useState)(true);
+    const [picking, setPicking] = (0, import_react6.useState)(false);
+    const loadPolicy = (0, import_react6.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [childPublicKey]);
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
     function saveContacts(contacts2) {
@@ -15275,12 +15368,12 @@
         setPicking(false);
       }
     }
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: styles5.msg, children: "Loading contacts..." });
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles5.msg, children: "Loading contacts..." });
     const contacts = policy && policy.allowedContacts || [];
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles5.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles5.header, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { style: styles5.heading, children: "Allowed Contacts" }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles5.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles5.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { style: styles5.heading, children: "Allowed Contacts" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             style: styles5.addBtn,
@@ -15291,14 +15384,14 @@
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { style: styles5.hint, children: "These contacts can call and message the child even when the phone app is blocked." }),
-      contacts.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { style: styles5.empty, children: "No contacts added yet." }),
-      contacts.map((contact, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles5.contactRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: styles5.contactInfo, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: styles5.contactName, children: contact.name }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: styles5.contactPhone, children: contact.phone })
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { style: styles5.hint, children: "These contacts can call and message the child even when the phone app is blocked." }),
+      contacts.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { style: styles5.empty, children: "No contacts added yet." }),
+      contacts.map((contact, i) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles5.contactRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles5.contactInfo, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: styles5.contactName, children: contact.name }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: styles5.contactPhone, children: contact.phone })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             style: styles5.removeBtn,
@@ -15348,8 +15441,8 @@
   };
 
   // src/ui/components/AlertsTab.jsx
-  var import_react6 = __toESM(require_react());
-  var import_jsx_runtime6 = __toESM(require_jsx_runtime());
+  var import_react7 = __toESM(require_react());
+  var import_jsx_runtime7 = __toESM(require_jsx_runtime());
   var TYPE_META = {
     bypass: { label: "Bypass Attempt", color: "#ea4335", icon: "\u26A0" },
     pin_use: { label: "PIN Used", color: "#fbbc04", icon: "\u{1F511}" },
@@ -15373,27 +15466,27 @@
   }
   function AlertRow({ alert }) {
     const meta = TYPE_META[alert.type] || { label: alert.type, color: "#888", icon: "\u2022" };
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertRow, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...styles6.typeBadge, backgroundColor: meta.color }, children: meta.label }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertBody, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: styles6.alertDesc, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles6.alertRow, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { ...styles6.typeBadge, backgroundColor: meta.color }, children: meta.label }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles6.alertBody, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles6.alertDesc, children: [
           alert.appDisplayName || alert.packageName || "Unknown app",
           alert.type === "time_request" && alert.requestedSeconds ? ` \u2014 requesting ${formatSeconds3(alert.requestedSeconds)}` : ""
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.alertTime, children: formatTime(alert.timestamp) })
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles6.alertTime, children: formatTime(alert.timestamp) })
       ] })
     ] });
   }
   function AlertsTab({ childPublicKey }) {
-    const [alerts, setAlerts] = (0, import_react6.useState)([]);
-    const [loading, setLoading] = (0, import_react6.useState)(true);
+    const [alerts, setAlerts] = (0, import_react7.useState)([]);
+    const [loading, setLoading] = (0, import_react7.useState)(true);
     function reload() {
       window.callBare("alerts:list", { childPublicKey }).then((list) => {
         setAlerts(list || []);
         setLoading(false);
       }).catch(() => setLoading(false));
     }
-    (0, import_react6.useEffect)(() => {
+    (0, import_react7.useEffect)(() => {
       reload();
       const unsubBypass = window.onBareEvent("alert:bypass", reload);
       const unsubRequest = window.onBareEvent("time:request:received", reload);
@@ -15406,9 +15499,9 @@
         unsubUninstalled();
       };
     }, [childPublicKey]);
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.msg, children: "Loading activity..." });
-    if (alerts.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.msg, children: "No activity yet." });
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: styles6.container, children: alerts.map((alert) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AlertRow, { alert }, alert.id)) });
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles6.msg, children: "Loading activity..." });
+    if (alerts.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles6.msg, children: "No activity yet." });
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles6.container, children: alerts.map((alert) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(AlertRow, { alert }, alert.id)) });
   }
   var styles6 = {
     container: { padding: "16px" },
@@ -15454,8 +15547,8 @@
   };
 
   // src/ui/components/RequestsTab.jsx
-  var import_react7 = __toESM(require_react());
-  var import_jsx_runtime7 = __toESM(require_jsx_runtime());
+  var import_react8 = __toESM(require_react());
+  var import_jsx_runtime8 = __toESM(require_jsx_runtime());
   function formatTime2(ts) {
     try {
       return new Date(ts).toLocaleString();
@@ -15464,7 +15557,7 @@
     }
   }
   function RequestRow({ req, childPublicKey, onResolved }) {
-    const [acting, setActing] = (0, import_react7.useState)(false);
+    const [acting, setActing] = (0, import_react8.useState)(false);
     const isExtraTime = req.requestType === "extra_time";
     async function handleApprove() {
       setActing(true);
@@ -15513,15 +15606,14 @@
       const mins = req.extraSeconds / 60;
       return mins >= 60 ? `Grant ${mins / 60}h` : `Grant ${mins}m`;
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.row, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.rowBody, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.appName, children: req.appDisplayName || req.packageName }),
-        req.appDisplayName && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.pkgName, children: req.packageName }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.typeBadge, "data-type": req.requestType, children: isExtraTime ? "Extra time" : "App approval" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.time, children: formatTime2(req.timestamp) })
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.row, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.rowBody, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.appName, children: req.appDisplayName || req.packageName }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.typeBadge, "data-type": req.requestType, children: isExtraTime ? "Extra time" : "App approval" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.time, children: formatTime2(req.timestamp) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.rowRight, children: isPending ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.actions, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.rowRight, children: isPending ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.actions, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           "button",
           {
             style: styles7.approveBtn,
@@ -15531,7 +15623,7 @@
             children: approveLabel()
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           "button",
           {
             style: styles7.denyBtn,
@@ -15541,7 +15633,7 @@
             children: "Deny"
           }
         )
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { ...styles7.statusLabel, color: req.status === "approved" ? "#34a853" : "#ea4335" }, children: req.status === "approved" ? "Approved" : req.status === "denied" ? "Denied" : "Resolved" }) })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...styles7.statusLabel, color: req.status === "approved" ? "#34a853" : "#ea4335" }, children: req.status === "approved" ? "Approved" : req.status === "denied" ? "Denied" : "Resolved" }) })
     ] });
   }
   function timeRemaining(expiresAt) {
@@ -15551,9 +15643,9 @@
     return mins + "m";
   }
   function RequestsTab({ childPublicKey }) {
-    const [requests, setRequests] = (0, import_react7.useState)([]);
-    const [overrides, setOverrides] = (0, import_react7.useState)([]);
-    const [loading, setLoading] = (0, import_react7.useState)(true);
+    const [requests, setRequests] = (0, import_react8.useState)([]);
+    const [overrides, setOverrides] = (0, import_react8.useState)([]);
+    const [loading, setLoading] = (0, import_react8.useState)(true);
     function reload() {
       window.callBare("alerts:list", { childPublicKey }).then((list) => {
         const reqs = (list || []).filter((a) => a.type === "time_request");
@@ -15570,7 +15662,7 @@
       window.callBare("overrides:list", { childPublicKey }).then(({ overrides: overrides2 }) => setOverrides(overrides2 || [])).catch(() => {
       });
     }
-    (0, import_react7.useEffect)(() => {
+    (0, import_react8.useEffect)(() => {
       reload();
       loadOverrides();
       const unsub = window.onBareEvent("time:request:received", () => {
@@ -15588,20 +15680,20 @@
         clearInterval(timer);
       };
     }, [childPublicKey]);
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.msg, children: "Loading..." });
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.container, children: [
-      overrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { marginBottom: "16px" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h4", { style: { margin: "0 0 8px", fontSize: "13px", color: "#555" }, children: "Active Overrides" }),
-        overrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: styles7.overrideRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { fontWeight: "600", fontSize: "13px" }, children: o.appName }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { color: "#1a73e8", fontSize: "12px", fontWeight: "600" }, children: [
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.msg, children: "Loading..." });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.container, children: [
+      overrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginBottom: "16px" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h4", { style: { margin: "0 0 8px", fontSize: "13px", color: "#555" }, children: "Active Overrides" }),
+        overrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.overrideRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontWeight: "600", fontSize: "13px" }, children: o.appName }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: { color: "#1a73e8", fontSize: "12px", fontWeight: "600" }, children: [
             timeRemaining(o.expiresAt),
             " left"
           ] })
         ] }, i))
       ] }),
-      requests.length === 0 && overrides.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: styles7.msg, children: "No requests yet." }),
-      requests.map((req) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      requests.length === 0 && overrides.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.msg, children: "No requests yet." }),
+      requests.map((req) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         RequestRow,
         {
           req,
@@ -15628,7 +15720,6 @@
     rowBody: { flex: 1 },
     rowRight: { flexShrink: 0, paddingTop: "2px" },
     appName: { fontSize: "14px", fontWeight: "600", color: "#333" },
-    pkgName: { fontSize: "11px", color: "#888", fontFamily: "monospace", marginTop: "2px" },
     typeBadge: { fontSize: "10px", color: "#666", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.5px" },
     time: { fontSize: "11px", color: "#888", marginTop: "4px" },
     actions: { display: "flex", gap: "8px" },
@@ -15664,7 +15755,7 @@
   };
 
   // src/ui/components/ChildDetail.jsx
-  var import_jsx_runtime8 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime9 = __toESM(require_jsx_runtime());
   var TABS = [
     { key: "usage", label: "Usage", Component: UsageTab },
     { key: "apps", label: "Apps", Component: AppsTab },
@@ -15674,33 +15765,34 @@
     { key: "alerts", label: "Activity", Component: AlertsTab }
   ];
   function ChildDetail({ child, onBack, initialTab }) {
-    const [activeTab, setActiveTab] = (0, import_react8.useState)(initialTab || "usage");
-    const [confirming, setConfirming] = (0, import_react8.useState)(false);
-    (0, import_react8.useEffect)(() => {
+    const [activeTab, setActiveTab] = (0, import_react9.useState)(initialTab || "usage");
+    const [confirming, setConfirming] = (0, import_react9.useState)(false);
+    (0, import_react9.useEffect)(() => {
       if (initialTab && initialTab !== activeTab) {
         setActiveTab(initialTab);
       }
     }, [initialTab]);
     const active = TABS.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
-    const handleRemove = (0, import_react8.useCallback)(() => {
+    const handleRemove = (0, import_react9.useCallback)(() => {
       window.callBare("child:unpair", { childPublicKey: child.publicKey }).catch((e) => console.warn("[ChildDetail] child:unpair failed:", e)).finally(() => onBack());
     }, [child.publicKey, onBack]);
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles8.topBar, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.backBtn, onClick: onBack, "aria-label": "Back to Dashboard", children: "\u2190 Back" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: styles8.childName, children: child.displayName }),
-        !confirming ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.removeBtn, onClick: () => setConfirming(true), children: "Remove" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: styles8.confirmRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: styles8.confirmText, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles8.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles8.topBar, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles8.backBtn, onClick: onBack, "aria-label": "Back to Dashboard", children: "\u2190 Back" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Avatar, { avatar: child.avatarThumb, name: child.displayName, size: 28 }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: styles8.childName, children: child.displayName }),
+        !confirming ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles8.removeBtn, onClick: () => setConfirming(true), children: "Remove" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: styles8.confirmRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: styles8.confirmText, children: [
             "Remove ",
             child.displayName,
             "?"
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.confirmYes, onClick: handleRemove, children: "Yes, remove" }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { style: styles8.confirmNo, onClick: () => setConfirming(false), children: "Cancel" })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles8.confirmYes, onClick: handleRemove, children: "Yes, remove" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { style: styles8.confirmNo, onClick: () => setConfirming(false), children: "Cancel" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.tabBar, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: styles8.tabBar, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
         "button",
         {
           onClick: () => {
@@ -15717,7 +15809,7 @@
         },
         tab.key
       )) }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles8.content, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { display: activeTab === tab.key ? "block" : "none" }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(tab.Component, { childPublicKey: child.publicKey }) }, tab.key)) })
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: styles8.content, children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { display: activeTab === tab.key ? "block" : "none" }, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(tab.Component, { childPublicKey: child.publicKey }) }, tab.key)) })
     ] });
   }
   var styles8 = {
@@ -15790,125 +15882,6 @@
     content: { flex: 1, overflowY: "auto" }
   };
 
-  // src/ui/components/Dashboard.jsx
-  var import_jsx_runtime9 = __toESM(require_jsx_runtime());
-  function Dashboard({ navTrigger, onNavConsumed }) {
-    const [children, setChildren] = (0, import_react9.useState)([]);
-    const [loading, setLoading] = (0, import_react9.useState)(true);
-    const [initialTab, setInitialTab] = (0, import_react9.useState)(null);
-    const [selectedChild, setSelectedChild] = (0, import_react9.useState)(null);
-    const loadChildren = (0, import_react9.useCallback)(() => {
-      window.callBare("children:list").then((list) => {
-        setChildren(
-          list.map((c) => ({
-            ...c,
-            bypassAlerts: c.bypassAlerts || 0,
-            pendingApprovals: c.pendingApprovals || 0,
-            pendingTimeRequests: c.pendingTimeRequests || 0,
-            todayScreenTimeSeconds: c.todayScreenTimeSeconds || 0,
-            currentApp: c.currentApp || null
-          }))
-        );
-        setLoading(false);
-      }).catch(() => setLoading(false));
-    }, []);
-    const navigateToChild = (0, import_react9.useCallback)((childPublicKey, tab, attempt) => {
-      if (attempt === void 0) attempt = 0;
-      window.callBare("children:list").then((list) => {
-        const child = list.find((c) => c.publicKey === childPublicKey);
-        if (child) {
-          setInitialTab(tab || "alerts");
-          setSelectedChild(child);
-        } else if (attempt < 2) {
-          setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
-        }
-      }).catch(() => {
-        if (attempt < 2) setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
-      });
-    }, []);
-    (0, import_react9.useEffect)(() => {
-      if (navTrigger && navTrigger.childPublicKey) {
-        navigateToChild(navTrigger.childPublicKey, navTrigger.tab);
-        onNavConsumed?.();
-      }
-    }, [navTrigger, navigateToChild, onNavConsumed]);
-    (0, import_react9.useEffect)(() => {
-      loadChildren();
-      const unsubUsage = window.onBareEvent("child:usageReport", ({ childPublicKey, todayScreenTimeSeconds, currentApp }) => {
-        setChildren(
-          (prev) => prev.map(
-            (c) => c.publicKey === childPublicKey ? { ...c, todayScreenTimeSeconds, currentApp } : c
-          )
-        );
-      });
-      const unsubTime = window.onBareEvent("child:timeRequest", ({ childPublicKey }) => {
-        setChildren(
-          (prev) => prev.map(
-            (c) => c.publicKey === childPublicKey ? { ...c, pendingTimeRequests: (c.pendingTimeRequests || 0) + 1 } : c
-          )
-        );
-      });
-      const unsubBypass = window.onBareEvent("alert:bypass", ({ childPublicKey }) => {
-        setChildren(
-          (prev) => prev.map(
-            (c) => c.publicKey === childPublicKey ? { ...c, bypassAlerts: (c.bypassAlerts || 0) + 1 } : c
-          )
-        );
-      });
-      const unsubNav = window.onBareEvent("navigate:child:alerts", ({ childPublicKey, tab }) => {
-        window.__pendingAlertsNav = null;
-        navigateToChild(childPublicKey, tab);
-      });
-      const unsubUnpaired = window.onBareEvent("child:unpaired", ({ childPublicKey }) => {
-        setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
-        setSelectedChild((prev) => prev?.publicKey === childPublicKey ? null : prev);
-        setInitialTab(null);
-      });
-      return () => {
-        unsubUsage();
-        unsubTime();
-        unsubBypass();
-        unsubNav();
-        unsubUnpaired();
-      };
-    }, [loadChildren]);
-    if (selectedChild) {
-      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
-        ChildDetail,
-        {
-          child: selectedChild,
-          initialTab,
-          onBack: () => {
-            setSelectedChild(null);
-            setInitialTab(null);
-            loadChildren();
-          }
-        }
-      );
-    }
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: styles9.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h2", { style: styles9.heading, children: "Dashboard" }),
-      loading && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.msg, children: "Loading..." }),
-      !loading && children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: styles9.msg, children: "No children paired yet. Go to the Children tab to add one." }),
-      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
-        ChildCard,
-        {
-          child,
-          onPress: () => setSelectedChild(child)
-        },
-        child.publicKey
-      ))
-    ] });
-  }
-  var styles9 = {
-    container: { padding: "16px" },
-    heading: { fontSize: "20px", fontWeight: "700", marginBottom: "16px" },
-    msg: { color: "#666", fontSize: "14px" }
-  };
-
-  // src/ui/components/ChildrenList.jsx
-  var import_react11 = __toESM(require_react());
-
   // src/ui/components/AddChildFlow.jsx
   var import_react10 = __toESM(require_react());
   var import_qrcode = __toESM(require_browser());
@@ -15940,28 +15913,28 @@
       window.callBare("share:text", { text: invite.inviteLink }).finally(() => setSharing(false));
     }
     if (error) {
-      return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.container, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.error, children: error }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.cancelBtn, onClick: onCancel, children: "Go Back" })
+      return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles9.container, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles9.error, children: error }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles9.cancelBtn, onClick: onCancel, children: "Go Back" })
       ] });
     }
     if (!invite) {
-      return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: styles10.container, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.hint, children: "Generating invite\u2026" }) });
+      return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: styles9.container, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles9.hint, children: "Generating invite\u2026" }) });
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h3", { style: styles10.heading, children: "Add a Child Device" }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.hint, children: "Ask the child to scan this QR code, or share the link below via SMS or a messaging app." }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: styles10.qrWrap, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("canvas", { ref: canvasRef }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.linkLabel, children: "Or share this link:" }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles10.linkRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: styles10.link, children: invite.inviteLink }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.copyBtn, onClick: handleShare, disabled: sharing, children: "Share" })
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles9.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h3", { style: styles9.heading, children: "Add a Child Device" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles9.hint, children: "Ask the child to scan this QR code, or share the link below via SMS or a messaging app." }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: styles9.qrWrap, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("canvas", { ref: canvasRef }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles9.linkLabel, children: "Or share this link:" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: styles9.linkRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: styles9.link, children: invite.inviteLink }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles9.copyBtn, onClick: handleShare, disabled: sharing, children: "Share" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles10.waiting, children: "Waiting for child to connect\u2026" }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles10.cancelBtn, onClick: onCancel, children: "Cancel" })
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: styles9.waiting, children: "Waiting for child to connect\u2026" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { style: styles9.cancelBtn, onClick: onCancel, children: "Cancel" })
     ] });
   }
-  var styles10 = {
+  var styles9 = {
     container: { padding: "16px" },
     heading: { fontSize: "18px", fontWeight: "700", marginBottom: "8px" },
     hint: { color: "#555", fontSize: "13px", marginBottom: "16px" },
@@ -16013,59 +15986,138 @@
     error: { color: "#ea4335", marginBottom: "12px" }
   };
 
-  // src/ui/components/ChildrenList.jsx
+  // src/ui/components/Dashboard.jsx
   var import_jsx_runtime11 = __toESM(require_jsx_runtime());
-  function ChildrenList() {
+  function Dashboard({ navTrigger, onNavConsumed }) {
     const [children, setChildren] = (0, import_react11.useState)([]);
-    const [showAdd, setShowAdd] = (0, import_react11.useState)(false);
+    const [loading, setLoading] = (0, import_react11.useState)(true);
+    const [initialTab, setInitialTab] = (0, import_react11.useState)(null);
+    const [selectedChild, setSelectedChild] = (0, import_react11.useState)(null);
+    const [showAddChild, setShowAddChild] = (0, import_react11.useState)(false);
+    const loadChildren = (0, import_react11.useCallback)(() => {
+      window.callBare("children:list").then((list) => {
+        setChildren(
+          list.map((c) => ({
+            ...c,
+            bypassAlerts: c.bypassAlerts || 0,
+            pendingApprovals: c.pendingApprovals || 0,
+            pendingTimeRequests: c.pendingTimeRequests || 0,
+            todayScreenTimeSeconds: c.todayScreenTimeSeconds || 0,
+            currentApp: c.currentApp || null
+          }))
+        );
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    }, []);
+    const navigateToChild = (0, import_react11.useCallback)((childPublicKey, tab, attempt) => {
+      if (attempt === void 0) attempt = 0;
+      window.callBare("children:list").then((list) => {
+        const child = list.find((c) => c.publicKey === childPublicKey);
+        if (child) {
+          setInitialTab(tab || "alerts");
+          setSelectedChild(child);
+        } else if (attempt < 2) {
+          setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
+        }
+      }).catch(() => {
+        if (attempt < 2) setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
+      });
+    }, []);
     (0, import_react11.useEffect)(() => {
-      window.callBare("children:list").then(setChildren).catch(() => {
+      if (navTrigger && navTrigger.childPublicKey) {
+        navigateToChild(navTrigger.childPublicKey, navTrigger.tab);
+        onNavConsumed?.();
+      }
+    }, [navTrigger, navigateToChild, onNavConsumed]);
+    (0, import_react11.useEffect)(() => {
+      loadChildren();
+      const unsubUsage = window.onBareEvent("child:usageReport", ({ childPublicKey, todayScreenTimeSeconds, currentApp }) => {
+        setChildren(
+          (prev) => prev.map(
+            (c) => c.publicKey === childPublicKey ? { ...c, todayScreenTimeSeconds, currentApp } : c
+          )
+        );
       });
-      const unsubConnected = window.onBareEvent("child:connected", () => {
-        setShowAdd(false);
-        window.callBare("children:list").then(setChildren).catch(() => {
-        });
+      const unsubTime = window.onBareEvent("child:timeRequest", ({ childPublicKey }) => {
+        setChildren(
+          (prev) => prev.map(
+            (c) => c.publicKey === childPublicKey ? { ...c, pendingTimeRequests: (c.pendingTimeRequests || 0) + 1 } : c
+          )
+        );
       });
-      const unsubReconnected = window.onBareEvent("child:reconnected", () => {
-        window.callBare("children:list").then(setChildren).catch(() => {
-        });
+      const unsubBypass = window.onBareEvent("alert:bypass", ({ childPublicKey }) => {
+        setChildren(
+          (prev) => prev.map(
+            (c) => c.publicKey === childPublicKey ? { ...c, bypassAlerts: (c.bypassAlerts || 0) + 1 } : c
+          )
+        );
+      });
+      const unsubNav = window.onBareEvent("navigate:child:alerts", ({ childPublicKey, tab }) => {
+        window.__pendingAlertsNav = null;
+        navigateToChild(childPublicKey, tab);
+      });
+      const unsubChildConnected = window.onBareEvent("child:connected", () => {
+        setShowAddChild(false);
+        loadChildren();
+      });
+      const unsubUnpaired = window.onBareEvent("child:unpaired", ({ childPublicKey }) => {
+        setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
+        setSelectedChild((prev) => prev?.publicKey === childPublicKey ? null : prev);
+        setInitialTab(null);
       });
       return () => {
-        unsubConnected();
-        unsubReconnected();
+        unsubUsage();
+        unsubTime();
+        unsubBypass();
+        unsubNav();
+        unsubChildConnected();
+        unsubUnpaired();
       };
-    }, []);
-    function handleChildConnected() {
-      setShowAdd(false);
-      window.callBare("children:list").then(setChildren).catch(() => {
-      });
-    }
-    if (showAdd) {
+    }, [loadChildren]);
+    if (showAddChild) {
       return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
         AddChildFlow,
         {
-          onConnected: handleChildConnected,
-          onCancel: () => setShowAdd(false)
+          onConnected: () => {
+            setShowAddChild(false);
+            loadChildren();
+          },
+          onCancel: () => setShowAddChild(false)
         }
       );
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.header, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { style: styles11.heading, children: "Children" }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { style: styles11.addBtn, onClick: () => setShowAdd(true), children: "+ Add Child" })
+    if (selectedChild) {
+      return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+        ChildDetail,
+        {
+          child: selectedChild,
+          initialTab,
+          onBack: () => {
+            setSelectedChild(null);
+            setInitialTab(null);
+            loadChildren();
+          }
+        }
+      );
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles10.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles10.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { style: styles10.heading, children: "Dashboard" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { style: styles10.addBtn, onClick: () => setShowAddChild(true), children: "+ Add Child" })
       ] }),
-      children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles11.empty, children: "No children paired yet." }),
-      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: styles11.row, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: {
-          ...styles11.dot,
-          backgroundColor: child.isOnline ? "#34a853" : "#bbb"
-        } }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: styles11.name, children: child.displayName }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: styles11.lastSeen, children: child.isOnline ? "Online" : child.lastSeen ? `Last seen: ${new Date(child.lastSeen).toLocaleString()}` : "Never connected" })
-      ] }, child.publicKey))
+      loading && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles10.msg, children: "Loading..." }),
+      !loading && children.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: styles10.msg, children: 'No children paired yet. Tap "+ Add Child" to get started.' }),
+      children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+        ChildCard,
+        {
+          child,
+          onPress: () => setSelectedChild(child)
+        },
+        child.publicKey
+      ))
     ] });
   }
-  var styles11 = {
+  var styles10 = {
     container: { padding: "16px" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" },
     heading: { fontSize: "20px", fontWeight: "700", margin: 0 },
@@ -16078,17 +16130,7 @@
       cursor: "pointer",
       fontSize: "14px"
     },
-    empty: { color: "#888", fontSize: "14px" },
-    row: {
-      display: "flex",
-      alignItems: "center",
-      gap: "10px",
-      padding: "12px 0",
-      borderBottom: "1px solid #eee"
-    },
-    dot: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0 },
-    name: { fontSize: "15px", fontWeight: "500", flex: 1 },
-    lastSeen: { fontSize: "12px", color: "#888" }
+    msg: { color: "#666", fontSize: "14px" }
   };
 
   // src/ui/components/Settings.jsx
@@ -16122,13 +16164,13 @@
         setPinStatus(err.message || "Failed to set PIN. Please try again.");
       });
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles12.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { style: styles12.pageHead, children: "Settings" }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("section", { style: styles12.section, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: styles12.sectionHead, children: "Override PIN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.hint, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("form", { onSubmit: handlePinSubmit, style: styles12.form, "aria-label": "Change PIN form", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles12.label, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles11.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { style: styles11.pageHead, children: "Settings" }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("section", { style: styles11.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: styles11.sectionHead, children: "Override PIN" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles11.hint, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("form", { onSubmit: handlePinSubmit, style: styles11.form, "aria-label": "Change PIN form", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles11.label, children: [
             "New PIN",
             /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
               "input",
@@ -16141,14 +16183,14 @@
                   if (e.target.value.length === 4) confirmPinRef.current?.focus();
                 },
                 placeholder: "e.g. 1234",
-                style: styles12.input,
+                style: styles11.input,
                 "aria-label": "New PIN",
                 inputMode: "numeric",
                 maxLength: 4
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles12.label, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles11.label, children: [
             "Confirm PIN",
             /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
               "input",
@@ -16161,21 +16203,21 @@
                   setPinStatus(null);
                 },
                 placeholder: "Repeat PIN",
-                style: styles12.input,
+                style: styles11.input,
                 "aria-label": "Confirm PIN",
                 inputMode: "numeric",
                 maxLength: 4
               }
             )
           ] }),
-          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.errorText, role: "alert", children: pinStatus }),
-          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles12.successText, role: "status", children: "PIN updated successfully." }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { type: "submit", style: styles12.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
+          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles11.errorText, role: "alert", children: pinStatus }),
+          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles11.successText, role: "status", children: "PIN updated successfully." }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { type: "submit", style: styles11.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
         ] })
       ] })
     ] });
   }
-  var styles12 = {
+  var styles11 = {
     container: { padding: "16px", fontFamily: "sans-serif" },
     pageHead: { fontSize: "20px", fontWeight: "700", marginBottom: "20px" },
     section: { marginBottom: "32px" },
@@ -16205,30 +16247,262 @@
   };
 
   // src/ui/components/Profile.jsx
+  var import_react14 = __toESM(require_react());
+
+  // src/ui/components/AvatarPicker.jsx
   var import_react13 = __toESM(require_react());
   var import_jsx_runtime13 = __toESM(require_jsx_runtime());
-  function getInitials2(name) {
-    return name.trim() ? name.trim().split(/\s+/).map((w) => w[0].toUpperCase()).slice(0, 2).join("") : "?";
+  function compressImage(base64, size, quality) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl.split(",")[1]);
+      };
+      img.src = "data:image/jpeg;base64," + base64;
+    });
   }
+  function AvatarPicker({ currentAvatar, name, onSave, onCancel }) {
+    const [selected, setSelected] = (0, import_react13.useState)(currentAvatar);
+    const [customPreview, setCustomPreview] = (0, import_react13.useState)(
+      currentAvatar && currentAvatar.type === "custom" ? currentAvatar : null
+    );
+    const [loading, setLoading] = (0, import_react13.useState)(false);
+    async function pickImage(method) {
+      setLoading(true);
+      try {
+        const result = await window.callBare(method);
+        if (!result || !result.base64) {
+          setLoading(false);
+          return;
+        }
+        const base64 = await compressImage(result.base64, 256, 0.8);
+        const thumb64 = await compressImage(result.base64, 48, 0.6);
+        const avatar = { type: "custom", base64, thumb64 };
+        setCustomPreview(avatar);
+        setSelected(avatar);
+      } catch (e) {
+      }
+      setLoading(false);
+    }
+    function selectPreset(id) {
+      setSelected({ type: "preset", id });
+    }
+    const isPresetSelected = selected && selected.type === "preset";
+    const selectedPresetId = isPresetSelected ? selected.id : null;
+    return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.overlay, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.modal, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles12.title, children: "Choose Avatar" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles12.closeBtn, onClick: onCancel, children: "\xD7" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.currentWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar: selected, name, size: 80 }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.section, children: "Presets" }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.grid, children: PRESET_IDS.map((id) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        "div",
+        {
+          style: {
+            ...styles12.gridItem,
+            border: selectedPresetId === id ? "3px solid #1a73e8" : "3px solid transparent",
+            borderRadius: "50%"
+          },
+          onClick: () => selectPreset(id),
+          children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar: { type: "preset", id }, name: "", size: 48 })
+        },
+        id
+      )) }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.section, children: "Custom Photo" }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.photoRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          "button",
+          {
+            style: styles12.photoBtn,
+            onClick: () => pickImage("avatar:pickCamera"),
+            disabled: loading,
+            children: loading ? "Loading..." : "Take Photo"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          "button",
+          {
+            style: styles12.photoBtn,
+            onClick: () => pickImage("avatar:pickGallery"),
+            disabled: loading,
+            children: loading ? "Loading..." : "Choose from Gallery"
+          }
+        )
+      ] }),
+      customPreview && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        "div",
+        {
+          style: {
+            ...styles12.gridItem,
+            border: selected === customPreview ? "3px solid #1a73e8" : "3px solid transparent",
+            borderRadius: "50%",
+            marginTop: "8px",
+            alignSelf: "center"
+          },
+          onClick: () => setSelected(customPreview),
+          children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar: customPreview, name: "", size: 64 })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.actions, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles12.cancelBtn, onClick: onCancel, children: "Cancel" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          "button",
+          {
+            style: styles12.saveBtn,
+            onClick: () => onSave(selected),
+            disabled: !selected,
+            children: "Save"
+          }
+        )
+      ] })
+    ] }) });
+  }
+  var styles12 = {
+    overlay: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      zIndex: 1e3,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "16px"
+    },
+    modal: {
+      backgroundColor: "#FFF",
+      borderRadius: "16px",
+      padding: "20px",
+      width: "100%",
+      maxWidth: "400px",
+      maxHeight: "90vh",
+      overflowY: "auto",
+      display: "flex",
+      flexDirection: "column"
+    },
+    header: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "16px"
+    },
+    title: { fontSize: "18px", fontWeight: "700", color: "#333" },
+    closeBtn: {
+      background: "none",
+      border: "none",
+      fontSize: "24px",
+      color: "#666",
+      cursor: "pointer",
+      padding: "0 4px"
+    },
+    currentWrap: {
+      display: "flex",
+      justifyContent: "center",
+      marginBottom: "16px"
+    },
+    section: {
+      fontSize: "13px",
+      fontWeight: "600",
+      color: "#666",
+      textTransform: "uppercase",
+      letterSpacing: "0.5px",
+      marginBottom: "8px"
+    },
+    grid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(5, 1fr)",
+      gap: "8px",
+      marginBottom: "16px",
+      justifyItems: "center"
+    },
+    gridItem: {
+      cursor: "pointer",
+      padding: "2px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    photoRow: {
+      display: "flex",
+      gap: "8px",
+      marginBottom: "8px"
+    },
+    photoBtn: {
+      flex: 1,
+      padding: "10px",
+      border: "1px solid #DDD",
+      borderRadius: "8px",
+      backgroundColor: "#F5F5F5",
+      fontSize: "13px",
+      fontWeight: "600",
+      color: "#333",
+      cursor: "pointer"
+    },
+    actions: {
+      display: "flex",
+      gap: "8px",
+      marginTop: "16px"
+    },
+    cancelBtn: {
+      flex: 1,
+      padding: "12px",
+      border: "1px solid #DDD",
+      borderRadius: "8px",
+      backgroundColor: "#FFF",
+      fontSize: "14px",
+      fontWeight: "600",
+      color: "#666",
+      cursor: "pointer"
+    },
+    saveBtn: {
+      flex: 1,
+      padding: "12px",
+      border: "none",
+      borderRadius: "8px",
+      backgroundColor: "#1a73e8",
+      fontSize: "14px",
+      fontWeight: "600",
+      color: "#FFF",
+      cursor: "pointer"
+    }
+  };
+
+  // src/ui/components/Profile.jsx
+  var import_jsx_runtime14 = __toESM(require_jsx_runtime());
   function Profile({ mode }) {
-    const [name, setName] = (0, import_react13.useState)("");
-    const [savedName, setSavedName] = (0, import_react13.useState)("");
-    const [saving, setSaving] = (0, import_react13.useState)(false);
-    const [status, setStatus] = (0, import_react13.useState)(null);
-    const [pairState, setPairState] = (0, import_react13.useState)("idle");
-    const [pairError, setPairError] = (0, import_react13.useState)(null);
-    const [parents, setParents] = (0, import_react13.useState)([]);
-    const [pairedBanner, setPairedBanner] = (0, import_react13.useState)(false);
-    const pairDoneRef = (0, import_react13.useRef)(false);
-    (0, import_react13.useEffect)(() => {
-      window.callBare("identity:getName").then(({ displayName }) => {
+    const [name, setName] = (0, import_react14.useState)("");
+    const [savedName, setSavedName] = (0, import_react14.useState)("");
+    const [avatar, setAvatar] = (0, import_react14.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react14.useState)(false);
+    const [saving, setSaving] = (0, import_react14.useState)(false);
+    const [status, setStatus] = (0, import_react14.useState)(null);
+    const [pairState, setPairState] = (0, import_react14.useState)("idle");
+    const [pairError, setPairError] = (0, import_react14.useState)(null);
+    const [parents, setParents] = (0, import_react14.useState)([]);
+    const [pairedBanner, setPairedBanner] = (0, import_react14.useState)(false);
+    const pairDoneRef = (0, import_react14.useRef)(false);
+    (0, import_react14.useEffect)(() => {
+      window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
         setName(n);
         setSavedName(n);
+        if (av) setAvatar(av);
       }).catch(() => {
       });
     }, []);
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
       if (mode !== "child") return;
       window.callBare("children:list").then(setParents).catch(() => {
       });
@@ -16257,6 +16531,14 @@
         setSaving(false);
       }
     }
+    async function handleAvatarSave(newAvatar) {
+      setShowPicker(false);
+      try {
+        await window.callBare("identity:setAvatar", { avatar: newAvatar });
+        setAvatar(newAvatar);
+      } catch {
+      }
+    }
     async function handlePair() {
       pairDoneRef.current = false;
       setPairError(null);
@@ -16279,13 +16561,25 @@
     const label = mode === "parent" ? "Parent Name" : "Your Name";
     const placeholder = mode === "parent" ? "e.g. Mom" : "e.g. Alex";
     const unchanged = name.trim() === savedName || !name.trim();
-    return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: styles13.heading, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.avatar, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.initials, children: getInitials2(savedName) }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.field, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { style: styles13.label, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { style: styles13.heading, children: "Profile" }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.avatarContainer, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.editBadge, onClick: () => setShowPicker(true), children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.editIcon, children: "\u270E" }) })
+      ] }) }),
+      showPicker && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+        AvatarPicker,
+        {
+          currentAvatar: avatar,
+          name: savedName,
+          onSave: handleAvatarSave,
+          onCancel: () => setShowPicker(false)
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.field, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { style: styles13.label, children: [
           label,
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
             "input",
             {
               type: "text",
@@ -16299,9 +16593,9 @@
             }
           )
         ] }),
-        status === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.success, children: "Name saved." }),
-        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.error, children: "Failed to save name." }),
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        status === "success" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.success, children: "Name saved." }),
+        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.error, children: "Failed to save name." }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
           "button",
           {
             onClick: handleSave,
@@ -16311,20 +16605,21 @@
           }
         )
       ] }),
-      mode === "child" && pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.banner, children: "Successfully paired with parent!" }),
-      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.section, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: styles13.sectionHeading, children: "Parents" }),
-        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles13.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles13.parentRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: { ...styles13.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.parentName, children: p.displayName || "Parent Device" }),
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles13.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
+      mode === "child" && pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.banner, children: "Successfully paired with parent!" }),
+      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h3", { style: styles13.sectionHeading, children: "Parents" }),
+        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.parentRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: { ...styles13.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.parentName, children: p.displayName || "Parent Device" }),
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
         ] }, p.publicKey)) }),
-        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles13.btn, onClick: handlePair, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
-        pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.hint, children: "Connecting to parent\u2026" }),
-        pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.success, children: "Pairing in progress\u2026" }),
-        pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles13.error, children: pairError }),
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles13.btn, onClick: () => setPairState("idle"), children: "Try Again" })
+        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: handlePair, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
+        pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.hint, children: "Connecting to parent\\u2026" }),
+        pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.success, children: "Pairing in progress\\u2026" }),
+        pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.error, children: pairError }),
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: () => setPairState("idle"), children: "Try Again" })
         ] })
       ] })
     ] });
@@ -16333,16 +16628,22 @@
     container: { padding: "16px", fontFamily: "sans-serif" },
     heading: { fontSize: "20px", fontWeight: "700", marginBottom: "24px" },
     avatarWrap: { display: "flex", justifyContent: "center", marginBottom: "24px" },
-    avatar: {
-      width: "80px",
-      height: "80px",
+    avatarContainer: { position: "relative", display: "inline-block" },
+    editBadge: {
+      position: "absolute",
+      bottom: "0",
+      right: "0",
+      width: "26px",
+      height: "26px",
       borderRadius: "50%",
       backgroundColor: "#1a73e8",
+      border: "2px solid #FFF",
       display: "flex",
       alignItems: "center",
-      justifyContent: "center"
+      justifyContent: "center",
+      cursor: "pointer"
     },
-    initials: { color: "#fff", fontSize: "28px", fontWeight: "700" },
+    editIcon: { color: "#FFF", fontSize: "13px" },
     field: { display: "flex", flexDirection: "column", gap: "8px" },
     label: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "14px", color: "#444" },
     input: {
@@ -16387,19 +16688,18 @@
   };
 
   // src/ui/components/ParentApp.jsx
-  var import_jsx_runtime14 = __toESM(require_jsx_runtime());
-  var ParentProfile = () => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Profile, { mode: "parent" });
+  var import_jsx_runtime15 = __toESM(require_jsx_runtime());
+  var ParentProfile = () => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Profile, { mode: "parent" });
   var TABS2 = [
     { key: "dashboard", label: "Dashboard", Component: Dashboard },
-    { key: "children", label: "Children", Component: ChildrenList },
     { key: "settings", label: "Settings", Component: Settings },
     { key: "profile", label: "Profile", Component: ParentProfile }
   ];
   function PinSetupOverlay({ onDone }) {
-    const [pin, setPin] = (0, import_react14.useState)("");
-    const [confirmPin, setConfirmPin] = (0, import_react14.useState)("");
-    const [error, setError] = (0, import_react14.useState)(null);
-    const confirmRef = (0, import_react14.useRef)(null);
+    const [pin, setPin] = (0, import_react15.useState)("");
+    const [confirmPin, setConfirmPin] = (0, import_react15.useState)("");
+    const [error, setError] = (0, import_react15.useState)(null);
+    const confirmRef = (0, import_react15.useRef)(null);
     function handleSubmit(e) {
       e.preventDefault();
       if (pin.length !== 4) {
@@ -16418,13 +16718,13 @@
       setError(null);
       window.callBare("pin:set", { pin }).then(onDone).catch((err) => setError(err.message || "Failed to set PIN. Please try again."));
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.overlay, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.overlayCard, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { style: styles14.overlayTitle, children: "Set Override PIN" }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles14.overlayHint, children: "Children enter this PIN on the block screen to request temporary access." }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("form", { onSubmit: handleSubmit, style: styles14.form, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { style: styles14.label, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles14.overlay, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles14.overlayCard, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { style: styles14.overlayTitle, children: "Set Override PIN" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: styles14.overlayHint, children: "Children enter this PIN on the block screen to request temporary access." }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("form", { onSubmit: handleSubmit, style: styles14.form, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { style: styles14.label, children: [
           "Set PIN",
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
             "input",
             {
               type: "text",
@@ -16442,9 +16742,9 @@
             }
           )
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { style: styles14.label, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { style: styles14.label, children: [
           "Confirm PIN",
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
             "input",
             {
               type: "text",
@@ -16462,24 +16762,24 @@
             }
           )
         ] }),
-        error && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles14.errorText, role: "alert", children: error }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "submit", style: styles14.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
+        error && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: styles14.errorText, role: "alert", children: error }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { type: "submit", style: styles14.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
       ] })
     ] }) });
   }
   function ParentApp() {
-    const [activeTab, setActiveTab] = (0, import_react14.useState)("dashboard");
-    const [pairedName, setPairedName] = (0, import_react14.useState)(null);
-    const [pinCheckState, setPinCheckState] = (0, import_react14.useState)("loading");
-    const [navTrigger, setNavTrigger] = (0, import_react14.useState)(null);
-    (0, import_react14.useEffect)(() => {
+    const [activeTab, setActiveTab] = (0, import_react15.useState)("dashboard");
+    const [pairedName, setPairedName] = (0, import_react15.useState)(null);
+    const [pinCheckState, setPinCheckState] = (0, import_react15.useState)("loading");
+    const [navTrigger, setNavTrigger] = (0, import_react15.useState)(null);
+    (0, import_react15.useEffect)(() => {
       function checkPin() {
         window.callBare("pin:isSet", {}).then(({ isSet }) => setPinCheckState(isSet ? "done" : "needed")).catch(() => setPinCheckState("needed"));
       }
       checkPin();
       return window.onBareEvent("ready", checkPin);
     }, []);
-    (0, import_react14.useEffect)(() => {
+    (0, import_react15.useEffect)(() => {
       const pending2 = window.__pendingAlertsNav;
       if (pending2) {
         window.__pendingAlertsNav = null;
@@ -16493,7 +16793,7 @@
       });
       return unsub;
     }, []);
-    (0, import_react14.useEffect)(() => {
+    (0, import_react15.useEffect)(() => {
       const unsub = window.onBareEvent("child:connected", (data) => {
         setPairedName(data?.displayName || "Child");
         setTimeout(() => {
@@ -16507,18 +16807,18 @@
       return null;
     }
     if (pinCheckState === "needed") {
-      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PinSetupOverlay, { onDone: () => setPinCheckState("done") });
+      return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(PinSetupOverlay, { onDone: () => setPinCheckState("done") });
     }
     const active = TABS2.find((t) => t.key === activeTab);
     const ActiveComponent = active.Component;
-    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.container, children: [
-      pairedName && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles14.banner, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles14.container, children: [
+      pairedName && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles14.banner, children: [
         "Successfully paired with ",
         pairedName,
         "!"
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles14.content, children: activeTab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Dashboard, { navTrigger, onNavConsumed: () => setNavTrigger(null) }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActiveComponent, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("nav", { style: styles14.tabBar, children: TABS2.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles14.content, children: activeTab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Dashboard, { navTrigger, onNavConsumed: () => setNavTrigger(null) }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(ActiveComponent, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("nav", { style: styles14.tabBar, children: TABS2.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
         "button",
         {
           onClick: () => {
@@ -16616,11 +16916,11 @@
   };
 
   // src/ui/components/ChildApp.jsx
-  var import_react17 = __toESM(require_react());
+  var import_react18 = __toESM(require_react());
 
   // src/ui/components/ChildHome.jsx
-  var import_react15 = __toESM(require_react());
-  var import_jsx_runtime15 = __toESM(require_jsx_runtime());
+  var import_react16 = __toESM(require_react());
+  var import_jsx_runtime16 = __toESM(require_jsx_runtime());
   var STATUS = {
     GOOD: "good",
     BEDTIME: "bedtime",
@@ -16646,14 +16946,14 @@
     return mins + "m";
   }
   function ChildHome() {
-    const [status, setStatus] = (0, import_react15.useState)(STATUS.LOADING);
-    const [scheduleLabel, setScheduleLabel] = (0, import_react15.useState)(null);
-    const [homeData, setHomeData] = (0, import_react15.useState)(null);
-    const loadHomeData = (0, import_react15.useCallback)(() => {
+    const [status, setStatus] = (0, import_react16.useState)(STATUS.LOADING);
+    const [scheduleLabel, setScheduleLabel] = (0, import_react16.useState)(null);
+    const [homeData, setHomeData] = (0, import_react16.useState)(null);
+    const loadHomeData = (0, import_react16.useCallback)(() => {
       window.callBare("child:homeData").then(setHomeData).catch(() => {
       });
     }, []);
-    (0, import_react15.useEffect)(() => {
+    (0, import_react16.useEffect)(() => {
       let isMounted = true;
       window.callBare("policy:getCurrent").then(({ policy }) => {
         if (!isMounted) return;
@@ -16689,35 +16989,35 @@
       };
     }, [loadHomeData]);
     const isOffline = status === STATUS.OFFLINE;
-    return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { ...styles15.statusCard, backgroundColor: isOffline ? "#FFEDED" : status === STATUS.BEDTIME ? "#FFF8E1" : "#EDFFF2", borderColor: isOffline ? "#FF4444" : status === STATUS.BEDTIME ? "#FFB300" : "#44CC66" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { style: { color: isOffline ? "#CC0000" : status === STATUS.BEDTIME ? "#E65100" : "#007733", margin: 0 }, children: statusLabel(status) }),
-        status === STATUS.BEDTIME && scheduleLabel && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { marginTop: 8, color: "#555" }, children: scheduleLabel }),
-        isOffline && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { style: { marginTop: 8, color: "#CC0000" }, children: "Parental controls are not active. Ask a parent to re-enable accessibility access." })
+    return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { ...styles15.statusCard, backgroundColor: isOffline ? "#FFEDED" : status === STATUS.BEDTIME ? "#FFF8E1" : "#EDFFF2", borderColor: isOffline ? "#FF4444" : status === STATUS.BEDTIME ? "#FFB300" : "#44CC66" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h2", { style: { color: isOffline ? "#CC0000" : status === STATUS.BEDTIME ? "#E65100" : "#007733", margin: 0 }, children: statusLabel(status) }),
+        status === STATUS.BEDTIME && scheduleLabel && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { style: { marginTop: 8, color: "#555" }, children: scheduleLabel }),
+        isOffline && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { style: { marginTop: 8, color: "#CC0000" }, children: "Parental controls are not active. Ask a parent to re-enable accessibility access." })
       ] }),
-      homeData && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.summaryRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.statBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.statNum, children: homeData.blockedCount }),
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.statLabel, children: "Blocked" })
+      homeData && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.summaryRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.blockedCount }),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Blocked" })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.statBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.statNum, children: homeData.pendingCount }),
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.statLabel, children: "Awaiting approval" })
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.pendingCount }),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Awaiting approval" })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.statBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.statNum, children: homeData.pendingRequests }),
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.statLabel, children: "Pending requests" })
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.statBox, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statNum, children: homeData.pendingRequests }),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.statLabel, children: "Pending requests" })
           ] })
         ] }),
-        homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.section, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { style: styles15.sectionHead, children: "Active overrides" }),
-          homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.overrideRow, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.overrideName, children: o.appName }),
-              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: styles15.overrideSource, children: o.source === "parent-approved" ? "Granted by parent" : "PIN override" })
+        homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.section, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h3", { style: styles15.sectionHead, children: "Active overrides" }),
+          homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.overrideRow, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.overrideName, children: o.appName }),
+              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: styles15.overrideSource, children: o.source === "parent-approved" ? "Granted by parent" : "PIN override" })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: styles15.overrideTime, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: styles15.overrideTime, children: [
               timeRemaining2(o.expiresAt),
               " left"
             ] })
@@ -16766,8 +17066,8 @@
   };
 
   // src/ui/components/ChildRequests.jsx
-  var import_react16 = __toESM(require_react());
-  var import_jsx_runtime16 = __toESM(require_jsx_runtime());
+  var import_react17 = __toESM(require_react());
+  var import_jsx_runtime17 = __toESM(require_jsx_runtime());
   function statusBadge(status) {
     switch (status) {
       case "approved":
@@ -16779,9 +17079,9 @@
     }
   }
   function ChildRequests() {
-    const [requests, setRequests] = (0, import_react16.useState)([]);
-    const [loading, setLoading] = (0, import_react16.useState)(true);
-    const [clearing, setClearing] = (0, import_react16.useState)(false);
+    const [requests, setRequests] = (0, import_react17.useState)([]);
+    const [loading, setLoading] = (0, import_react17.useState)(true);
+    const [clearing, setClearing] = (0, import_react17.useState)(false);
     async function loadRequests() {
       setLoading(true);
       const { requests: requests2 } = await window.callBare("requests:list");
@@ -16794,7 +17094,7 @@
       await loadRequests();
       setClearing(false);
     }
-    (0, import_react16.useEffect)(() => {
+    (0, import_react17.useEffect)(() => {
       let isMounted = true;
       loadRequests().then(() => {
         if (!isMounted) return;
@@ -16811,11 +17111,11 @@
         unsubUpdated();
       };
     }, []);
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
-    return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { padding: 24 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }),
-        requests.some((r) => r.status === "approved" || r.status === "denied") && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
+    return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { padding: 24 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }),
+        requests.some((r) => r.status === "approved" || r.status === "denied") && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
           "button",
           {
             onClick: handleClearResolved,
@@ -16825,10 +17125,10 @@
           }
         )
       ] }),
-      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
+      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
       requests.map((req) => {
         const badge = statusBadge(req.status);
-        return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+        return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
           "div",
           {
             style: {
@@ -16841,11 +17141,11 @@
               alignItems: "center"
             },
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { fontWeight: "bold" }, children: req.appName || req.packageName }),
-                /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { color: "#888", fontSize: 12, marginTop: 4 }, children: new Date(req.requestedAt).toLocaleTimeString() })
+              /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { fontWeight: "bold" }, children: req.appName || req.packageName }),
+                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { color: "#888", fontSize: 12, marginTop: 4 }, children: new Date(req.requestedAt).toLocaleTimeString() })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { color: badge.color, fontWeight: "bold" }, children: badge.label })
+              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { color: badge.color, fontWeight: "bold" }, children: badge.label })
             ]
           },
           req.id
@@ -16855,25 +17155,25 @@
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_jsx_runtime17 = __toESM(require_jsx_runtime());
-  var ChildProfile = () => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Profile, { mode: "child" });
+  var import_jsx_runtime18 = __toESM(require_jsx_runtime());
+  var ChildProfile = () => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Profile, { mode: "child" });
   var TABS3 = [
     { id: "home", label: "Home", Component: ChildHome },
     { id: "requests", label: "Requests", Component: ChildRequests },
     { id: "profile", label: "Profile", Component: ChildProfile }
   ];
   function ChildApp() {
-    const [activeTab, setActiveTab] = (0, import_react17.useState)("home");
+    const [activeTab, setActiveTab] = (0, import_react18.useState)("home");
     const ActiveComponent = TABS3.find((t) => t.id === activeTab).Component;
-    (0, import_react17.useEffect)(() => {
+    (0, import_react18.useEffect)(() => {
       const unsub = window.onBareEvent("navigate:child:requests", () => {
         setActiveTab("requests");
       });
       return unsub;
     }, []);
-    return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ActiveComponent, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ActiveComponent, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
         "div",
         {
           style: {
@@ -16881,7 +17181,7 @@
             borderTop: "1px solid #DDD",
             backgroundColor: "#FFF"
           },
-          children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+          children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
             "button",
             {
               onClick: () => {
@@ -16906,16 +17206,16 @@
   }
 
   // src/ui/App.jsx
-  var import_jsx_runtime18 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime19 = __toESM(require_jsx_runtime());
   function ModeSetup() {
-    return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles16.center, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { children: "Welcome to PearGuard" }),
-      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { children: "Please complete setup in the PearGuard app to choose your mode." })
+    return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { style: styles16.center, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h2", { children: "Welcome to PearGuard" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { children: "Please complete setup in the PearGuard app to choose your mode." })
     ] });
   }
   function App() {
-    const [mode, setMode] = (0, import_react18.useState)(void 0);
-    (0, import_react18.useEffect)(() => {
+    const [mode, setMode] = (0, import_react19.useState)(void 0);
+    (0, import_react19.useEffect)(() => {
       function fetchMode() {
         window.callBare("identity:getMode").then(({ mode: mode2 }) => setMode(mode2)).catch(() => setMode(null));
       }
@@ -16925,9 +17225,9 @@
     if (mode === void 0) {
       return null;
     }
-    if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ParentApp, {});
-    if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ChildApp, {});
-    return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ModeSetup, {});
+    if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ParentApp, {});
+    if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ChildApp, {});
+    return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ModeSetup, {});
   }
   var styles16 = {
     center: {
@@ -16942,7 +17242,7 @@
   };
 
   // src/ui/main.jsx
-  var import_jsx_runtime19 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime20 = __toESM(require_jsx_runtime());
   var pending = {};
   var nextId = 1;
   window.__pearResponse = function(id, result, error) {
@@ -16983,7 +17283,7 @@
     });
   };
   var root = (0, import_client.createRoot)(document.getElementById("root"));
-  root.render(/* @__PURE__ */ (0, import_jsx_runtime19.jsx)(App, {}));
+  root.render(/* @__PURE__ */ (0, import_jsx_runtime20.jsx)(App, {}));
 })();
 /*! Bundled license information:
 

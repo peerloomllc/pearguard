@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import Dashboard from '../Dashboard.jsx';
 
 jest.mock('../ChildCard.jsx', () => ({ child, onPress }) => (
@@ -9,6 +9,9 @@ jest.mock('../ChildCard.jsx', () => ({ child, onPress }) => (
 ));
 jest.mock('../ChildDetail.jsx', () => ({ child, onBack }) => (
   <div>Detail: {child.displayName} <button onClick={onBack}>Back</button></div>
+));
+jest.mock('../AddChildFlow.jsx', () => ({ onCancel }) => (
+  <div>Add Child Flow <button onClick={onCancel}>Cancel</button></div>
 ));
 
 const MOCK_CHILDREN = [
@@ -30,12 +33,21 @@ test('shows loading state then renders child cards', async () => {
   });
 });
 
-test('shows empty message when no children returned', async () => {
+test('shows empty message and add child button when no children returned', async () => {
   window.callBare.mockResolvedValue([]);
   render(<Dashboard />);
   await waitFor(() => {
     expect(screen.getByText(/no children paired/i)).toBeInTheDocument();
   });
+  expect(screen.getByText('+ Add Child')).toBeInTheDocument();
+});
+
+test('clicking Add Child shows AddChildFlow', async () => {
+  window.callBare.mockResolvedValue([]);
+  render(<Dashboard />);
+  await waitFor(() => screen.getByText('+ Add Child'));
+  fireEvent.click(screen.getByText('+ Add Child'));
+  expect(screen.getByText('Add Child Flow')).toBeInTheDocument();
 });
 
 test('subscribes to child:usageReport, child:timeRequest, alert:bypass events', async () => {

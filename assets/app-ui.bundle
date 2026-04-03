@@ -773,7 +773,7 @@
   var require_react_dom_production = __commonJS({
     "node_modules/react-dom/cjs/react-dom.production.js"(exports) {
       "use strict";
-      var React21 = require_react();
+      var React22 = require_react();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
         if (1 < arguments.length) {
@@ -813,7 +813,7 @@
           implementation
         };
       }
-      var ReactSharedInternals = React21.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React22.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       function getCrossOriginStringAs(as, input) {
         if ("font" === as) return "";
         if ("string" === typeof input)
@@ -949,7 +949,7 @@
     "node_modules/react-dom/cjs/react-dom-client.production.js"(exports) {
       "use strict";
       var Scheduler = require_scheduler();
-      var React21 = require_react();
+      var React22 = require_react();
       var ReactDOM = require_react_dom();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
@@ -1133,7 +1133,7 @@
         return null;
       }
       var isArrayImpl = Array.isArray;
-      var ReactSharedInternals = React21.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React22.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var sharedNotPendingObject = {
         pending: false,
@@ -1910,18 +1910,18 @@
         var isCustomProperty = 0 === styleName.indexOf("--");
         null == value || "boolean" === typeof value || "" === value ? isCustomProperty ? style2.setProperty(styleName, "") : "float" === styleName ? style2.cssFloat = "" : style2[styleName] = "" : isCustomProperty ? style2.setProperty(styleName, value) : "number" !== typeof value || 0 === value || unitlessNumbers.has(styleName) ? "float" === styleName ? style2.cssFloat = value : style2[styleName] = ("" + value).trim() : style2[styleName] = value + "px";
       }
-      function setValueForStyles(node, styles17, prevStyles) {
-        if (null != styles17 && "object" !== typeof styles17)
+      function setValueForStyles(node, styles18, prevStyles) {
+        if (null != styles18 && "object" !== typeof styles18)
           throw Error(formatProdErrorMessage(62));
         node = node.style;
         if (null != prevStyles) {
           for (var styleName in prevStyles)
-            !prevStyles.hasOwnProperty(styleName) || null != styles17 && styles17.hasOwnProperty(styleName) || (0 === styleName.indexOf("--") ? node.setProperty(styleName, "") : "float" === styleName ? node.cssFloat = "" : node[styleName] = "");
-          for (var styleName$16 in styles17)
-            styleName = styles17[styleName$16], styles17.hasOwnProperty(styleName$16) && prevStyles[styleName$16] !== styleName && setValueForStyle(node, styleName$16, styleName);
+            !prevStyles.hasOwnProperty(styleName) || null != styles18 && styles18.hasOwnProperty(styleName) || (0 === styleName.indexOf("--") ? node.setProperty(styleName, "") : "float" === styleName ? node.cssFloat = "" : node[styleName] = "");
+          for (var styleName$16 in styles18)
+            styleName = styles18[styleName$16], styles18.hasOwnProperty(styleName$16) && prevStyles[styleName$16] !== styleName && setValueForStyle(node, styleName$16, styleName);
         } else
-          for (var styleName$17 in styles17)
-            styles17.hasOwnProperty(styleName$17) && setValueForStyle(node, styleName$17, styles17[styleName$17]);
+          for (var styleName$17 in styles18)
+            styles18.hasOwnProperty(styleName$17) && setValueForStyle(node, styleName$17, styles18[styleName$17]);
       }
       function isCustomElement(tagName) {
         if (-1 === tagName.indexOf("-")) return false;
@@ -11165,9 +11165,9 @@
         previousDispatcher.S(href, precedence, options2);
         var ownerDocument = globalDocument;
         if (ownerDocument && href) {
-          var styles17 = getResourcesFromRoot(ownerDocument).hoistableStyles, key = getStyleKey(href);
+          var styles18 = getResourcesFromRoot(ownerDocument).hoistableStyles, key = getStyleKey(href);
           precedence = precedence || "default";
-          var resource = styles17.get(key);
+          var resource = styles18.get(key);
           if (!resource) {
             var state = { loading: 0, preload: null };
             if (resource = ownerDocument.querySelector(
@@ -11202,7 +11202,7 @@
               count: 1,
               state
             };
-            styles17.set(key, resource);
+            styles18.set(key, resource);
           }
         }
       }
@@ -12125,7 +12125,7 @@
           0 === i && attemptExplicitHydrationTarget(target);
         }
       };
-      var isomorphicReactPackageVersion$jscomp$inline_1785 = React21.version;
+      var isomorphicReactPackageVersion$jscomp$inline_1785 = React22.version;
       if ("19.1.4" !== isomorphicReactPackageVersion$jscomp$inline_1785)
         throw Error(
           formatProdErrorMessage(
@@ -14371,11 +14371,11 @@
   });
 
   // src/ui/main.jsx
-  var import_react20 = __toESM(require_react());
+  var import_react21 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/ui/App.jsx
-  var import_react19 = __toESM(require_react());
+  var import_react20 = __toESM(require_react());
 
   // src/ui/components/ParentApp.jsx
   var import_react15 = __toESM(require_react());
@@ -16282,124 +16282,11 @@
   };
 
   // src/ui/components/Settings.jsx
-  var import_react12 = __toESM(require_react());
-  var import_jsx_runtime12 = __toESM(require_jsx_runtime());
-  function Settings() {
-    const [newPin, setNewPin] = (0, import_react12.useState)("");
-    const [confirmPin, setConfirmPin] = (0, import_react12.useState)("");
-    const [pinStatus, setPinStatus] = (0, import_react12.useState)(null);
-    const confirmPinRef = (0, import_react12.useRef)(null);
-    function handlePinSubmit(e) {
-      e.preventDefault();
-      if (newPin.length !== 4) {
-        setPinStatus("PIN must be exactly 4 digits.");
-        return;
-      }
-      if (!/^\d+$/.test(newPin)) {
-        setPinStatus("PIN must contain only digits.");
-        return;
-      }
-      if (newPin !== confirmPin) {
-        setPinStatus("PINs do not match.");
-        return;
-      }
-      setPinStatus(null);
-      window.callBare("pin:set", { pin: newPin }).then(() => {
-        setPinStatus("success");
-        setNewPin("");
-        setConfirmPin("");
-      }).catch((err) => {
-        setPinStatus(err.message || "Failed to set PIN. Please try again.");
-      });
-    }
-    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles11.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { style: styles11.pageHead, children: "Settings" }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("section", { style: styles11.section, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: styles11.sectionHead, children: "Override PIN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles11.hint, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("form", { onSubmit: handlePinSubmit, style: styles11.form, "aria-label": "Change PIN form", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles11.label, children: [
-            "New PIN",
-            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-              "input",
-              {
-                type: "text",
-                value: newPin,
-                onChange: (e) => {
-                  setNewPin(e.target.value);
-                  setPinStatus(null);
-                  if (e.target.value.length === 4) confirmPinRef.current?.focus();
-                },
-                placeholder: "e.g. 1234",
-                style: styles11.input,
-                "aria-label": "New PIN",
-                inputMode: "numeric",
-                maxLength: 4
-              }
-            )
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { style: styles11.label, children: [
-            "Confirm PIN",
-            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-              "input",
-              {
-                ref: confirmPinRef,
-                type: "text",
-                value: confirmPin,
-                onChange: (e) => {
-                  setConfirmPin(e.target.value);
-                  setPinStatus(null);
-                },
-                placeholder: "Repeat PIN",
-                style: styles11.input,
-                "aria-label": "Confirm PIN",
-                inputMode: "numeric",
-                maxLength: 4
-              }
-            )
-          ] }),
-          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles11.errorText, role: "alert", children: pinStatus }),
-          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: styles11.successText, role: "status", children: "PIN updated successfully." }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { type: "submit", style: styles11.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
-        ] })
-      ] })
-    ] });
-  }
-  var styles11 = {
-    container: { padding: "16px", fontFamily: "sans-serif" },
-    pageHead: { fontSize: "20px", fontWeight: "700", marginBottom: "20px" },
-    section: { marginBottom: "32px" },
-    sectionHead: { fontSize: "16px", fontWeight: "700", marginBottom: "8px" },
-    hint: { fontSize: "12px", color: "#888", marginBottom: "12px" },
-    form: { display: "flex", flexDirection: "column", gap: "12px" },
-    label: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "14px", color: "#444" },
-    input: {
-      padding: "10px",
-      border: "1px solid #ccc",
-      borderRadius: "6px",
-      fontSize: "15px",
-      marginTop: "4px"
-    },
-    submitBtn: {
-      padding: "12px",
-      border: "none",
-      borderRadius: "6px",
-      backgroundColor: "#1a73e8",
-      color: "#fff",
-      cursor: "pointer",
-      fontSize: "15px",
-      fontWeight: "600"
-    },
-    errorText: { color: "#ea4335", fontSize: "13px", margin: 0 },
-    successText: { color: "#34a853", fontSize: "13px", margin: 0 }
-  };
-
-  // src/ui/components/Profile.jsx
-  var import_react14 = __toESM(require_react());
+  var import_react13 = __toESM(require_react());
 
   // src/ui/components/AvatarPicker.jsx
-  var import_react13 = __toESM(require_react());
-  var import_jsx_runtime13 = __toESM(require_jsx_runtime());
+  var import_react12 = __toESM(require_react());
+  var import_jsx_runtime12 = __toESM(require_jsx_runtime());
   function compressImage(base64, size, quality) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -16419,11 +16306,11 @@
     });
   }
   function AvatarPicker({ currentAvatar, name, onSave, onCancel }) {
-    const [selected, setSelected] = (0, import_react13.useState)(currentAvatar);
-    const [customPreview, setCustomPreview] = (0, import_react13.useState)(
+    const [selected, setSelected] = (0, import_react12.useState)(currentAvatar);
+    const [customPreview, setCustomPreview] = (0, import_react12.useState)(
       currentAvatar && currentAvatar.type === "custom" ? currentAvatar : null
     );
-    const [loading, setLoading] = (0, import_react13.useState)(false);
+    const [loading, setLoading] = (0, import_react12.useState)(false);
     async function pickImage(method) {
       setLoading(true);
       try {
@@ -16446,67 +16333,67 @@
     }
     const isPresetSelected = selected && selected.type === "preset";
     const selectedPresetId = isPresetSelected ? selected.id : null;
-    return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.overlay, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.modal, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.header, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles12.title, children: "Choose Avatar" }),
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles12.closeBtn, onClick: onCancel, children: "\xD7" })
+    return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles11.overlay, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles11.modal, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles11.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: styles11.title, children: "Choose Avatar" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { style: styles11.closeBtn, onClick: onCancel, children: "\xD7" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.currentWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar: selected, name, size: 80 }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.section, children: "Presets" }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.grid, children: PRESET_IDS.map((id) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles11.currentWrap, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Avatar, { avatar: selected, name, size: 80 }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles11.section, children: "Presets" }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles11.grid, children: PRESET_IDS.map((id) => /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
         "div",
         {
           style: {
-            ...styles12.gridItem,
+            ...styles11.gridItem,
             border: selectedPresetId === id ? "3px solid #1a73e8" : "3px solid transparent",
             borderRadius: "50%"
           },
           onClick: () => selectPreset(id),
-          children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar: { type: "preset", id }, name: "", size: 48 })
+          children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Avatar, { avatar: { type: "preset", id }, name: "", size: 48 })
         },
         id
       )) }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.section, children: "Custom Photo" }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.photoRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: styles11.section, children: "Custom Photo" }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles11.photoRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
           {
-            style: styles12.photoBtn,
+            style: styles11.photoBtn,
             onClick: () => pickImage("avatar:pickCamera"),
             disabled: loading,
             children: loading ? "Loading..." : "Take Photo"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
           {
-            style: styles12.photoBtn,
+            style: styles11.photoBtn,
             onClick: () => pickImage("avatar:pickGallery"),
             disabled: loading,
             children: loading ? "Loading..." : "Choose from Gallery"
           }
         )
       ] }),
-      customPreview && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+      customPreview && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
         "div",
         {
           style: {
-            ...styles12.gridItem,
+            ...styles11.gridItem,
             border: selected === customPreview ? "3px solid #1a73e8" : "3px solid transparent",
             borderRadius: "50%",
             marginTop: "8px",
             alignSelf: "center"
           },
           onClick: () => setSelected(customPreview),
-          children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar: customPreview, name: "", size: 64 })
+          children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Avatar, { avatar: customPreview, name: "", size: 64 })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.actions, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { style: styles12.cancelBtn, onClick: onCancel, children: "Cancel" }),
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: styles11.actions, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { style: styles11.cancelBtn, onClick: onCancel, children: "Cancel" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
           {
-            style: styles12.saveBtn,
+            style: styles11.saveBtn,
             onClick: () => onSave(selected),
             disabled: !selected,
             children: "Save"
@@ -16515,7 +16402,7 @@
       ] })
     ] }) });
   }
-  var styles12 = {
+  var styles11 = {
     overlay: {
       position: "fixed",
       top: 0,
@@ -16627,21 +16514,20 @@
     }
   };
 
-  // src/ui/components/Profile.jsx
-  var import_jsx_runtime14 = __toESM(require_jsx_runtime());
-  function Profile({ mode }) {
-    const [name, setName] = (0, import_react14.useState)("");
-    const [savedName, setSavedName] = (0, import_react14.useState)("");
-    const [avatar, setAvatar] = (0, import_react14.useState)(null);
-    const [showPicker, setShowPicker] = (0, import_react14.useState)(false);
-    const [saving, setSaving] = (0, import_react14.useState)(false);
-    const [status, setStatus] = (0, import_react14.useState)(null);
-    const [pairState, setPairState] = (0, import_react14.useState)("idle");
-    const [pairError, setPairError] = (0, import_react14.useState)(null);
-    const [parents, setParents] = (0, import_react14.useState)([]);
-    const [pairedBanner, setPairedBanner] = (0, import_react14.useState)(false);
-    const pairDoneRef = (0, import_react14.useRef)(false);
-    (0, import_react14.useEffect)(() => {
+  // src/ui/components/Settings.jsx
+  var import_jsx_runtime13 = __toESM(require_jsx_runtime());
+  function Settings() {
+    const [name, setName] = (0, import_react13.useState)("");
+    const [savedName, setSavedName] = (0, import_react13.useState)("");
+    const [avatar, setAvatar] = (0, import_react13.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react13.useState)(false);
+    const [savingName, setSavingName] = (0, import_react13.useState)(false);
+    const [nameStatus, setNameStatus] = (0, import_react13.useState)(null);
+    const [newPin, setNewPin] = (0, import_react13.useState)("");
+    const [confirmPin, setConfirmPin] = (0, import_react13.useState)("");
+    const [pinStatus, setPinStatus] = (0, import_react13.useState)(null);
+    const confirmPinRef = (0, import_react13.useRef)(null);
+    (0, import_react13.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
         setName(n);
@@ -16650,33 +16536,19 @@
       }).catch(() => {
       });
     }, []);
-    (0, import_react14.useEffect)(() => {
-      if (mode !== "child") return;
-      window.callBare("children:list").then(setParents).catch(() => {
-      });
-      const unsub = window.onBareEvent("peer:paired", () => {
-        pairDoneRef.current = true;
-        window.callBare("children:list").then(setParents).catch(() => {
-        });
-        setPairState("idle");
-        setPairedBanner(true);
-        setTimeout(() => setPairedBanner(false), 3e3);
-      });
-      return unsub;
-    }, [mode]);
-    async function handleSave() {
+    async function handleNameSave() {
       const trimmed = name.trim();
       if (!trimmed) return;
-      setSaving(true);
-      setStatus(null);
+      setSavingName(true);
+      setNameStatus(null);
       try {
         await window.callBare("identity:setName", { name: trimmed });
         setSavedName(trimmed);
-        setStatus("success");
+        setNameStatus("success");
       } catch {
-        setStatus("error");
+        setNameStatus("error");
       } finally {
-        setSaving(false);
+        setSavingName(false);
       }
     }
     async function handleAvatarSave(newAvatar) {
@@ -16687,107 +16559,151 @@
       } catch {
       }
     }
-    async function handlePair() {
-      pairDoneRef.current = false;
-      setPairError(null);
-      try {
-        const url = await window.callBare("qr:scan");
-        setPairState("connecting");
-        await window.callBare("acceptInvite", [url]);
-        if (!pairDoneRef.current) {
-          setPairState("success");
-        }
-      } catch (e) {
-        if (e.message === "cancelled") {
-          setPairState("idle");
-        } else {
-          setPairState("error");
-          setPairError(e.message);
-        }
+    function handlePinSubmit(e) {
+      e.preventDefault();
+      if (newPin.length !== 4) {
+        setPinStatus("PIN must be exactly 4 digits.");
+        return;
       }
+      if (!/^\d+$/.test(newPin)) {
+        setPinStatus("PIN must contain only digits.");
+        return;
+      }
+      if (newPin !== confirmPin) {
+        setPinStatus("PINs do not match.");
+        return;
+      }
+      setPinStatus(null);
+      window.callBare("pin:set", { pin: newPin }).then(() => {
+        setPinStatus("success");
+        setNewPin("");
+        setConfirmPin("");
+      }).catch((err) => {
+        setPinStatus(err.message || "Failed to set PIN. Please try again.");
+      });
     }
-    const label = mode === "parent" ? "Parent Name" : "Your Name";
-    const placeholder = mode === "parent" ? "e.g. Mom" : "e.g. Alex";
-    const unchanged = name.trim() === savedName || !name.trim();
-    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.container, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { style: styles13.heading, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.avatarContainer, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.editBadge, onClick: () => {
-          window.callBare("haptic:tap");
-          setShowPicker(true);
-        }, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.editIcon, children: "\u270E" }) })
-      ] }) }),
-      showPicker && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-        AvatarPicker,
-        {
-          currentAvatar: avatar,
-          name: savedName,
-          onSave: handleAvatarSave,
-          onCancel: () => setShowPicker(false)
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.field, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { style: styles13.label, children: [
-          label,
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-            "input",
+    const nameUnchanged = name.trim() === savedName || !name.trim();
+    return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: styles12.pageHead, children: "Settings" }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { style: styles12.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: styles12.sectionHead, children: "Profile" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.avatarContainer, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.editBadge, onClick: () => {
+            window.callBare("haptic:tap");
+            setShowPicker(true);
+          }, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: styles12.editIcon, children: "\u270E" }) })
+        ] }) }),
+        showPicker && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          AvatarPicker,
+          {
+            currentAvatar: avatar,
+            name: savedName,
+            onSave: handleAvatarSave,
+            onCancel: () => setShowPicker(false)
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.field, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { style: styles12.label, children: [
+            "Parent Name",
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+              "input",
+              {
+                type: "text",
+                value: name,
+                onChange: (e) => {
+                  setName(e.target.value);
+                  setNameStatus(null);
+                },
+                placeholder: "e.g. Mom",
+                style: styles12.input
+              }
+            )
+          ] }),
+          nameStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.successText, children: "Name saved." }),
+          nameStatus === "error" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.errorText, children: "Failed to save name." }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+            "button",
             {
-              type: "text",
-              value: name,
-              onChange: (e) => {
-                setName(e.target.value);
-                setStatus(null);
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handleNameSave();
               },
-              placeholder,
-              style: styles13.input
+              disabled: savingName || nameUnchanged,
+              style: { ...styles12.submitBtn, ...savingName || nameUnchanged ? styles12.btnDisabled : {} },
+              children: savingName ? "Saving..." : "Save Name"
             }
           )
-        ] }),
-        status === "success" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.success, children: "Name saved." }),
-        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.error, children: "Failed to save name." }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-          "button",
-          {
-            onClick: () => {
-              window.callBare("haptic:tap");
-              handleSave();
-            },
-            disabled: saving || unchanged,
-            style: { ...styles13.btn, ...saving || unchanged ? styles13.btnDisabled : {} },
-            children: saving ? "Saving\u2026" : "Save Name"
-          }
-        )
+        ] })
       ] }),
-      mode === "child" && pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.banner, children: "Successfully paired with parent!" }),
-      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.section, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h3", { style: styles13.sectionHeading, children: "Parents" }),
-        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.parentRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: { ...styles13.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.parentName, children: p.displayName || "Parent Device" }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
-        ] }, p.publicKey)) }),
-        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: () => {
-          window.callBare("haptic:tap");
-          handlePair();
-        }, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
-        pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.hint, children: "Connecting to parent\\u2026" }),
-        pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.success, children: "Pairing in progress\\u2026" }),
-        pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.error, children: pairError }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: () => {
-            window.callBare("haptic:tap");
-            setPairState("idle");
-          }, children: "Try Again" })
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { style: styles12.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: styles12.sectionHead, children: "Override PIN" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.hint, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("form", { onSubmit: handlePinSubmit, style: styles12.form, "aria-label": "Change PIN form", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { style: styles12.label, children: [
+            "New PIN",
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+              "input",
+              {
+                type: "text",
+                value: newPin,
+                onChange: (e) => {
+                  setNewPin(e.target.value);
+                  setPinStatus(null);
+                  if (e.target.value.length === 4) confirmPinRef.current?.focus();
+                },
+                placeholder: "e.g. 1234",
+                style: styles12.input,
+                "aria-label": "New PIN",
+                inputMode: "numeric",
+                maxLength: 4
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { style: styles12.label, children: [
+            "Confirm PIN",
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+              "input",
+              {
+                ref: confirmPinRef,
+                type: "text",
+                value: confirmPin,
+                onChange: (e) => {
+                  setConfirmPin(e.target.value);
+                  setPinStatus(null);
+                },
+                placeholder: "Repeat PIN",
+                style: styles12.input,
+                "aria-label": "Confirm PIN",
+                inputMode: "numeric",
+                maxLength: 4
+              }
+            )
+          ] }),
+          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.errorText, role: "alert", children: pinStatus }),
+          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.successText, role: "status", children: "PIN updated successfully." }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { type: "submit", style: styles12.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
         ] })
       ] })
     ] });
   }
-  var styles13 = {
+  var styles12 = {
     container: { padding: "16px", fontFamily: "sans-serif" },
-    heading: { fontSize: "20px", fontWeight: "700", marginBottom: "24px" },
-    avatarWrap: { display: "flex", justifyContent: "center", marginBottom: "24px" },
+    pageHead: { fontSize: "20px", fontWeight: "700", marginBottom: "20px" },
+    section: { marginBottom: "32px" },
+    sectionHead: { fontSize: "16px", fontWeight: "700", marginBottom: "8px" },
+    hint: { fontSize: "12px", color: "#888", marginBottom: "12px" },
+    form: { display: "flex", flexDirection: "column", gap: "12px" },
+    field: { display: "flex", flexDirection: "column", gap: "8px" },
+    label: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "14px", color: "#444" },
+    input: {
+      padding: "10px",
+      border: "1px solid #ccc",
+      borderRadius: "6px",
+      fontSize: "15px",
+      marginTop: "4px"
+    },
+    avatarWrap: { display: "flex", justifyContent: "center", marginBottom: "20px" },
     avatarContainer: { position: "relative", display: "inline-block" },
     editBadge: {
       position: "absolute",
@@ -16804,16 +16720,7 @@
       cursor: "pointer"
     },
     editIcon: { color: "#FFF", fontSize: "13px" },
-    field: { display: "flex", flexDirection: "column", gap: "8px" },
-    label: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "14px", color: "#444" },
-    input: {
-      padding: "10px",
-      border: "1px solid #ccc",
-      borderRadius: "6px",
-      fontSize: "15px",
-      marginTop: "4px"
-    },
-    btn: {
+    submitBtn: {
       padding: "12px",
       border: "none",
       borderRadius: "6px",
@@ -16821,39 +16728,144 @@
       color: "#fff",
       cursor: "pointer",
       fontSize: "15px",
-      fontWeight: "600",
-      marginTop: "4px"
+      fontWeight: "600"
     },
     btnDisabled: { backgroundColor: "#ccc", cursor: "not-allowed" },
-    success: { color: "#34a853", fontSize: "13px", margin: 0 },
-    error: { color: "#ea4335", fontSize: "13px", margin: 0 },
-    banner: {
-      backgroundColor: "#e6f4ea",
-      color: "#1e7e34",
-      border: "1px solid #a8d5b5",
-      borderRadius: "6px",
-      padding: "10px 14px",
-      marginTop: "16px",
-      fontSize: "14px",
-      fontWeight: "500"
+    errorText: { color: "#ea4335", fontSize: "13px", margin: 0 },
+    successText: { color: "#34a853", fontSize: "13px", margin: 0 }
+  };
+
+  // src/ui/components/AboutTab.jsx
+  var import_react14 = __toESM(require_react());
+  var import_jsx_runtime14 = __toESM(require_jsx_runtime());
+  function openURL(url) {
+    window.callBare("openURL", { url });
+  }
+  function shareApp() {
+    window.callBare("share:text", {
+      text: "Check out PearGuard - a private, peer-to-peer parental control app with no servers or accounts.\n\nhttps://peerloomllc.com/pearguard/"
+    });
+  }
+  function AboutTab() {
+    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.header, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.appName, children: "PearGuard" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.tagline, children: "Private. Peer-to-Peer. No Servers." })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.card, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.cardTitle, children: "HOW IT WORKS" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.cardText, children: "PearGuard connects parent and child devices directly using peer-to-peer technology. Your data never touches a server - policies, usage reports, and requests stay between your devices. No accounts. No subscriptions. No data collection." }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { onClick: () => openURL("https://pears.com/"), style: styles13.btn, children: "Learn about P2P \u2197" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.card, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.cardTitle, children: "SUPPORT DEVELOPMENT" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.cardText, children: "PearGuard is free and open source. If you find it valuable, please consider supporting its development." }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.btnRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { onClick: () => openURL("lightning:peerloomllc@strike.me"), style: { ...styles13.btn, flex: 1 }, children: "Donate BTC" }),
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { onClick: () => openURL("https://buymeacoffee.com/peerloomllc"), style: { ...styles13.btn, flex: 1 }, children: "Buy Me a Coffee" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.card, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.cardTitle, children: "LEARN ABOUT BITCOIN" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.cardText, children: "New to Bitcoin? The Satoshi Nakamoto Institute has a free, concise crash course explaining how Bitcoin works and why it matters." }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { onClick: () => openURL("https://nakamotoinstitute.org/crash-course/"), style: styles13.btn, children: "Bitcoin Crash Course \u2197" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.card, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.cardTitle, children: "SHARE THE APP" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.cardText, children: "Know someone who could use private, serverless parental controls? Share PearGuard with them." }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { onClick: shareApp, style: styles13.btn, children: "Share PearGuard" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.card, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.cardTitle, children: "CONTACT" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.btnRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+            "button",
+            {
+              onClick: () => openURL("mailto:peerloomllc@proton.me?subject=%5BPearGuard%5D%20Feedback"),
+              style: styles13.btn,
+              children: "Send Email \u2197"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+            "button",
+            {
+              onClick: () => openURL("https://github.com/peerloomllc/pearguard/issues"),
+              style: styles13.btn,
+              children: "Report Issue \u2197"
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.version, children: "v0.1.0" })
+    ] });
+  }
+  var styles13 = {
+    container: {
+      padding: "16px",
+      fontFamily: "sans-serif",
+      overflowY: "auto",
+      flex: 1
     },
-    section: { marginTop: "32px" },
-    sectionHeading: { fontSize: "16px", fontWeight: "600", marginBottom: "12px", color: "#333" },
-    hint: { color: "#888", fontSize: "14px" },
-    parentsList: { marginBottom: "16px" },
-    parentRow: { display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderBottom: "1px solid #eee" },
-    onlineDot: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0 },
-    parentName: { fontSize: "15px", fontWeight: "500", flex: 1 },
-    parentStatus: { fontSize: "12px", color: "#888" }
+    header: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "4px",
+      marginBottom: "20px"
+    },
+    appName: { fontSize: "20px", fontWeight: "600" },
+    tagline: { fontSize: "12px", color: "#888" },
+    card: {
+      backgroundColor: "#f8f8f8",
+      borderRadius: "12px",
+      padding: "14px 16px",
+      marginBottom: "12px"
+    },
+    cardTitle: {
+      fontSize: "11px",
+      fontWeight: "600",
+      color: "#555",
+      letterSpacing: "0.04em",
+      textAlign: "center",
+      marginBottom: "8px"
+    },
+    cardText: {
+      fontSize: "13px",
+      color: "#666",
+      lineHeight: "1.6",
+      marginBottom: "12px",
+      marginTop: 0
+    },
+    btn: {
+      width: "100%",
+      padding: "10px",
+      border: "1px solid #ddd",
+      borderRadius: "8px",
+      backgroundColor: "#fff",
+      color: "#333",
+      fontSize: "14px",
+      cursor: "pointer",
+      textAlign: "center"
+    },
+    btnRow: {
+      display: "flex",
+      gap: "8px"
+    },
+    version: {
+      textAlign: "center",
+      fontSize: "11px",
+      color: "#aaa",
+      paddingTop: "12px",
+      paddingBottom: "8px"
+    }
   };
 
   // src/ui/components/ParentApp.jsx
   var import_jsx_runtime15 = __toESM(require_jsx_runtime());
-  var ParentProfile = () => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Profile, { mode: "parent" });
   var TABS2 = [
     { key: "dashboard", label: "Dashboard", Component: Dashboard },
     { key: "settings", label: "Settings", Component: Settings },
-    { key: "profile", label: "Profile", Component: ParentProfile }
+    { key: "about", label: "About", Component: AboutTab }
   ];
   function PinSetupOverlay({ onDone }) {
     const [pin, setPin] = (0, import_react15.useState)("");
@@ -17076,7 +17088,7 @@
   };
 
   // src/ui/components/ChildApp.jsx
-  var import_react18 = __toESM(require_react());
+  var import_react19 = __toESM(require_react());
 
   // src/ui/components/ChildHome.jsx
   var import_react16 = __toESM(require_react());
@@ -17266,26 +17278,247 @@
     ] });
   }
 
-  // src/ui/components/ChildApp.jsx
+  // src/ui/components/Profile.jsx
+  var import_react18 = __toESM(require_react());
   var import_jsx_runtime18 = __toESM(require_jsx_runtime());
-  var ChildProfile = () => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Profile, { mode: "child" });
+  function Profile({ mode }) {
+    const [name, setName] = (0, import_react18.useState)("");
+    const [savedName, setSavedName] = (0, import_react18.useState)("");
+    const [avatar, setAvatar] = (0, import_react18.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react18.useState)(false);
+    const [saving, setSaving] = (0, import_react18.useState)(false);
+    const [status, setStatus] = (0, import_react18.useState)(null);
+    const [pairState, setPairState] = (0, import_react18.useState)("idle");
+    const [pairError, setPairError] = (0, import_react18.useState)(null);
+    const [parents, setParents] = (0, import_react18.useState)([]);
+    const [pairedBanner, setPairedBanner] = (0, import_react18.useState)(false);
+    const pairDoneRef = (0, import_react18.useRef)(false);
+    (0, import_react18.useEffect)(() => {
+      window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
+        const n = displayName || "";
+        setName(n);
+        setSavedName(n);
+        if (av) setAvatar(av);
+      }).catch(() => {
+      });
+    }, []);
+    (0, import_react18.useEffect)(() => {
+      if (mode !== "child") return;
+      window.callBare("children:list").then(setParents).catch(() => {
+      });
+      const unsub = window.onBareEvent("peer:paired", () => {
+        pairDoneRef.current = true;
+        window.callBare("children:list").then(setParents).catch(() => {
+        });
+        setPairState("idle");
+        setPairedBanner(true);
+        setTimeout(() => setPairedBanner(false), 3e3);
+      });
+      return unsub;
+    }, [mode]);
+    async function handleSave() {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setSaving(true);
+      setStatus(null);
+      try {
+        await window.callBare("identity:setName", { name: trimmed });
+        setSavedName(trimmed);
+        setStatus("success");
+      } catch {
+        setStatus("error");
+      } finally {
+        setSaving(false);
+      }
+    }
+    async function handleAvatarSave(newAvatar) {
+      setShowPicker(false);
+      try {
+        await window.callBare("identity:setAvatar", { avatar: newAvatar });
+        setAvatar(newAvatar);
+      } catch {
+      }
+    }
+    async function handlePair() {
+      pairDoneRef.current = false;
+      setPairError(null);
+      try {
+        const url = await window.callBare("qr:scan");
+        setPairState("connecting");
+        await window.callBare("acceptInvite", [url]);
+        if (!pairDoneRef.current) {
+          setPairState("success");
+        }
+      } catch (e) {
+        if (e.message === "cancelled") {
+          setPairState("idle");
+        } else {
+          setPairState("error");
+          setPairError(e.message);
+        }
+      }
+    }
+    const label = mode === "parent" ? "Parent Name" : "Your Name";
+    const placeholder = mode === "parent" ? "e.g. Mom" : "e.g. Alex";
+    const unchanged = name.trim() === savedName || !name.trim();
+    return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles16.container, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { style: styles16.heading, children: "Profile" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles16.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles16.avatarContainer, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles16.editBadge, onClick: () => {
+          window.callBare("haptic:tap");
+          setShowPicker(true);
+        }, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { style: styles16.editIcon, children: "\u270E" }) })
+      ] }) }),
+      showPicker && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+        AvatarPicker,
+        {
+          currentAvatar: avatar,
+          name: savedName,
+          onSave: handleAvatarSave,
+          onCancel: () => setShowPicker(false)
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles16.field, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { style: styles16.label, children: [
+          label,
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+            "input",
+            {
+              type: "text",
+              value: name,
+              onChange: (e) => {
+                setName(e.target.value);
+                setStatus(null);
+              },
+              placeholder,
+              style: styles16.input
+            }
+          )
+        ] }),
+        status === "success" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { style: styles16.success, children: "Name saved." }),
+        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { style: styles16.error, children: "Failed to save name." }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+          "button",
+          {
+            onClick: () => {
+              window.callBare("haptic:tap");
+              handleSave();
+            },
+            disabled: saving || unchanged,
+            style: { ...styles16.btn, ...saving || unchanged ? styles16.btnDisabled : {} },
+            children: saving ? "Saving\u2026" : "Save Name"
+          }
+        )
+      ] }),
+      mode === "child" && pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles16.banner, children: "Successfully paired with parent!" }),
+      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles16.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { style: styles16.sectionHeading, children: "Parents" }),
+        parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: styles16.parentsList, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: styles16.parentRow, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { style: { ...styles16.onlineDot, backgroundColor: p.isOnline ? "#34a853" : "#bbb" } }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { style: styles16.parentName, children: p.displayName || "Parent Device" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { style: styles16.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
+        ] }, p.publicKey)) }),
+        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { style: styles16.btn, onClick: () => {
+          window.callBare("haptic:tap");
+          handlePair();
+        }, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
+        pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { style: styles16.hint, children: "Connecting to parent\\u2026" }),
+        pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { style: styles16.success, children: "Pairing in progress\\u2026" }),
+        pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { style: styles16.error, children: pairError }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { style: styles16.btn, onClick: () => {
+            window.callBare("haptic:tap");
+            setPairState("idle");
+          }, children: "Try Again" })
+        ] })
+      ] })
+    ] });
+  }
+  var styles16 = {
+    container: { padding: "16px", fontFamily: "sans-serif" },
+    heading: { fontSize: "20px", fontWeight: "700", marginBottom: "24px" },
+    avatarWrap: { display: "flex", justifyContent: "center", marginBottom: "24px" },
+    avatarContainer: { position: "relative", display: "inline-block" },
+    editBadge: {
+      position: "absolute",
+      bottom: "0",
+      right: "0",
+      width: "26px",
+      height: "26px",
+      borderRadius: "50%",
+      backgroundColor: "#1a73e8",
+      border: "2px solid #FFF",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer"
+    },
+    editIcon: { color: "#FFF", fontSize: "13px" },
+    field: { display: "flex", flexDirection: "column", gap: "8px" },
+    label: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "14px", color: "#444" },
+    input: {
+      padding: "10px",
+      border: "1px solid #ccc",
+      borderRadius: "6px",
+      fontSize: "15px",
+      marginTop: "4px"
+    },
+    btn: {
+      padding: "12px",
+      border: "none",
+      borderRadius: "6px",
+      backgroundColor: "#1a73e8",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "15px",
+      fontWeight: "600",
+      marginTop: "4px"
+    },
+    btnDisabled: { backgroundColor: "#ccc", cursor: "not-allowed" },
+    success: { color: "#34a853", fontSize: "13px", margin: 0 },
+    error: { color: "#ea4335", fontSize: "13px", margin: 0 },
+    banner: {
+      backgroundColor: "#e6f4ea",
+      color: "#1e7e34",
+      border: "1px solid #a8d5b5",
+      borderRadius: "6px",
+      padding: "10px 14px",
+      marginTop: "16px",
+      fontSize: "14px",
+      fontWeight: "500"
+    },
+    section: { marginTop: "32px" },
+    sectionHeading: { fontSize: "16px", fontWeight: "600", marginBottom: "12px", color: "#333" },
+    hint: { color: "#888", fontSize: "14px" },
+    parentsList: { marginBottom: "16px" },
+    parentRow: { display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderBottom: "1px solid #eee" },
+    onlineDot: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0 },
+    parentName: { fontSize: "15px", fontWeight: "500", flex: 1 },
+    parentStatus: { fontSize: "12px", color: "#888" }
+  };
+
+  // src/ui/components/ChildApp.jsx
+  var import_jsx_runtime19 = __toESM(require_jsx_runtime());
+  var ChildProfile = () => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Profile, { mode: "child" });
   var TABS3 = [
     { id: "home", label: "Home", Component: ChildHome },
     { id: "requests", label: "Requests", Component: ChildRequests },
     { id: "profile", label: "Profile", Component: ChildProfile }
   ];
   function ChildApp() {
-    const [activeTab, setActiveTab] = (0, import_react18.useState)("home");
+    const [activeTab, setActiveTab] = (0, import_react19.useState)("home");
     const ActiveComponent = TABS3.find((t) => t.id === activeTab).Component;
-    (0, import_react18.useEffect)(() => {
+    (0, import_react19.useEffect)(() => {
       const unsub = window.onBareEvent("navigate:child:requests", () => {
         setActiveTab("requests");
       });
       return unsub;
     }, []);
-    return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ActiveComponent, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#fff" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ActiveComponent, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
         "div",
         {
           style: {
@@ -17293,7 +17526,7 @@
             borderTop: "1px solid #DDD",
             backgroundColor: "#FFF"
           },
-          children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+          children: TABS3.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
             "button",
             {
               onClick: () => {
@@ -17318,16 +17551,16 @@
   }
 
   // src/ui/App.jsx
-  var import_jsx_runtime19 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime20 = __toESM(require_jsx_runtime());
   function ModeSetup() {
-    return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { style: styles16.center, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h2", { children: "Welcome to PearGuard" }),
-      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { children: "Please complete setup in the PearGuard app to choose your mode." })
+    return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { style: styles17.center, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("h2", { children: "Welcome to PearGuard" }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { children: "Please complete setup in the PearGuard app to choose your mode." })
     ] });
   }
   function App() {
-    const [mode, setMode] = (0, import_react19.useState)(void 0);
-    (0, import_react19.useEffect)(() => {
+    const [mode, setMode] = (0, import_react20.useState)(void 0);
+    (0, import_react20.useEffect)(() => {
       function fetchMode() {
         window.callBare("identity:getMode").then(({ mode: mode2 }) => setMode(mode2)).catch(() => setMode(null));
       }
@@ -17337,11 +17570,11 @@
     if (mode === void 0) {
       return null;
     }
-    if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ParentApp, {});
-    if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ChildApp, {});
-    return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ModeSetup, {});
+    if (mode === "parent") return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(ParentApp, {});
+    if (mode === "child") return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(ChildApp, {});
+    return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(ModeSetup, {});
   }
-  var styles16 = {
+  var styles17 = {
     center: {
       display: "flex",
       flexDirection: "column",
@@ -17354,7 +17587,7 @@
   };
 
   // src/ui/main.jsx
-  var import_jsx_runtime20 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime21 = __toESM(require_jsx_runtime());
   var pending = {};
   var nextId = 1;
   window.__pearResponse = function(id, result, error) {
@@ -17395,7 +17628,7 @@
     });
   };
   var root = (0, import_client.createRoot)(document.getElementById("root"));
-  root.render(/* @__PURE__ */ (0, import_jsx_runtime20.jsx)(App, {}));
+  root.render(/* @__PURE__ */ (0, import_jsx_runtime21.jsx)(App, {}));
 })();
 /*! Bundled license information:
 

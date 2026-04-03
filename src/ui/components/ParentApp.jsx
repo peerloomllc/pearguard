@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Dashboard from './Dashboard.jsx';
 import Settings from './Settings.jsx';
-import Profile from './Profile.jsx';
-
-const ParentProfile = () => <Profile mode="parent" />;
+import AboutTab from './AboutTab.jsx';
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', Component: Dashboard },
   { key: 'settings', label: 'Settings', Component: Settings },
-  { key: 'profile', label: 'Profile', Component: ParentProfile },
+  { key: 'about', label: 'About', Component: AboutTab },
 ];
 
 function PinSetupOverlay({ onDone }) {

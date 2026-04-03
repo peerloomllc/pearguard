@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
+import AddChildFlow from './AddChildFlow.jsx';
 
 export default function Dashboard({ navTrigger, onNavConsumed }) {
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
   const [initialTab, setInitialTab] = useState(null);
   const [selectedChild, setSelectedChild] = useState(null);
+  const [showAddChild, setShowAddChild] = useState(false);
 
   const loadChildren = useCallback(() => {
     window.callBare('children:list')
@@ -94,6 +96,11 @@ export default function Dashboard({ navTrigger, onNavConsumed }) {
       navigateToChild(childPublicKey, tab);
     });
 
+    const unsubChildConnected = window.onBareEvent('child:connected', () => {
+      setShowAddChild(false);
+      loadChildren();
+    });
+
     const unsubUnpaired = window.onBareEvent('child:unpaired', ({ childPublicKey }) => {
       setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
       setSelectedChild((prev) => (prev?.publicKey === childPublicKey ? null : prev));
@@ -105,9 +112,19 @@ export default function Dashboard({ navTrigger, onNavConsumed }) {
       unsubTime();
       unsubBypass();
       unsubNav();
+      unsubChildConnected();
       unsubUnpaired();
     };
   }, [loadChildren]);
+
+  if (showAddChild) {
+    return (
+      <AddChildFlow
+        onConnected={() => { setShowAddChild(false); loadChildren(); }}
+        onCancel={() => setShowAddChild(false)}
+      />
+    );
+  }
 
   if (selectedChild) {
     return (
@@ -125,10 +142,15 @@ export default function Dashboard({ navTrigger, onNavConsumed }) {
 
   return (
     <div style={styles.container}>
-      <h2 style={styles.heading}>Dashboard</h2>
+      <div style={styles.header}>
+        <h2 style={styles.heading}>Dashboard</h2>
+        <button style={styles.addBtn} onClick={() => setShowAddChild(true)}>
+          + Add Child
+        </button>
+      </div>
       {loading && <p style={styles.msg}>Loading...</p>}
       {!loading && children.length === 0 && (
-        <p style={styles.msg}>No children paired yet. Go to the Children tab to add one.</p>
+        <p style={styles.msg}>No children paired yet. Tap "+ Add Child" to get started.</p>
       )}
       {children.map((child) => (
         <ChildCard
@@ -143,6 +165,16 @@ export default function Dashboard({ navTrigger, onNavConsumed }) {
 
 const styles = {
   container: { padding: '16px' },
-  heading: { fontSize: '20px', fontWeight: '700', marginBottom: '16px' },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' },
+  heading: { fontSize: '20px', fontWeight: '700', margin: 0 },
+  addBtn: {
+    padding: '8px 16px',
+    backgroundColor: '#1a73e8',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+  },
   msg: { color: '#666', fontSize: '14px' },
 };

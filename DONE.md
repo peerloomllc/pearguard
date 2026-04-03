@@ -6,6 +6,12 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-02
 
+### [x] Avatar customization (#3) — 2026-04-02
+Presets and camera/gallery support in Profile.jsx and app/setup.tsx; base64 in Hyperbee profile, thumbnail in hello message.
+
+### [x] Remove Children tab on Parent device (#86) — 2026-04-02
+Removed redundant Children tab; moved "+ Add Child" button into Dashboard header. Deleted ChildrenList.jsx. Parent now has 3 tabs: Dashboard, Settings, Profile.
+
 ### [x] Remove package names from Requests detail (#80) — 2026-04-02
 Removed monospace package name line from `RequestsTab.jsx`; app display name still shown as primary label.
 

@@ -715,18 +715,46 @@ public class AppBlockerModule extends AccessibilityService {
         startActivity(homeIntent);
     }
 
+    private int[] getTimeRequestOptions() {
+        int[] defaults = { 15, 30, 60, 120 };
+        try {
+            JSONObject policy = loadPolicy();
+            if (policy != null) {
+                JSONObject settings = policy.optJSONObject("settings");
+                if (settings != null) {
+                    org.json.JSONArray arr = settings.optJSONArray("timeRequestMinutes");
+                    if (arr != null && arr.length() > 0) {
+                        int[] result = new int[arr.length()];
+                        for (int i = 0; i < arr.length(); i++) result[i] = arr.getInt(i);
+                        return result;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return defaults;
+    }
+
+    private static String formatMinutes(int min) {
+        if (min < 60) return min + " min";
+        int h = min / 60;
+        int m = min % 60;
+        if (m == 0) return h + (h == 1 ? " hour" : " hours");
+        return h + "h " + m + "m";
+    }
+
     /**
      * Shows a duration picker for extra-time requests (schedule/daily-limit blocks).
      * On selection, fires onTimeRequest with requestType='extra_time' and extraSeconds.
      */
     private void showExtraTimePicker(String packageName) {
-        int[][] options = {
-            { 15,   15 * 60 },
-            { 30,   30 * 60 },
-            { 60,   60 * 60 },
-            { 120, 120 * 60 },
-        };
-        String[] labels = { "15 min", "30 min", "1 hour", "2 hours" };
+        int[] optionMinutes = getTimeRequestOptions();
+        int[][] options = new int[optionMinutes.length][2];
+        String[] labels = new String[optionMinutes.length];
+        for (int i = 0; i < optionMinutes.length; i++) {
+            options[i][0] = optionMinutes[i];
+            options[i][1] = optionMinutes[i] * 60;
+            labels[i] = formatMinutes(optionMinutes[i]);
+        }
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);

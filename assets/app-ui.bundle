@@ -14708,17 +14708,27 @@
     for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
     return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
   }
-  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
-    const [limitInput, setLimitInput] = (0, import_react4.useState)(
-      appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ""
-    );
+  function timeRemaining(expiresAt) {
+    const diff = Math.max(0, expiresAt - Date.now());
+    const mins = Math.ceil(diff / 6e4);
+    if (mins >= 60) return Math.floor(mins / 60) + "h " + mins % 60 + "m";
+    return mins + "m";
+  }
+  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override }) {
+    const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : "";
+    const [limitInput, setLimitInput] = (0, import_react4.useState)(savedMinutes);
+    const limitDirty = limitInput !== savedMinutes;
     function setStatus(newStatus) {
       onUpdate(packageName, { ...appData, status: newStatus });
     }
-    function handleLimitBlur() {
+    function saveLimit() {
       const mins = parseInt(limitInput, 10);
-      if (!isNaN(mins) && mins >= 0) {
+      if (!isNaN(mins) && mins > 0) {
         onUpdate(packageName, { ...appData, dailyLimitSeconds: mins * 60 });
+      } else {
+        const { dailyLimitSeconds, ...rest } = appData;
+        setLimitInput("");
+        onUpdate(packageName, rest);
       }
     }
     function handleApprove() {
@@ -14758,6 +14768,10 @@
             "Added ",
             addedDate
           ] })
+        ] }),
+        override && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: styles3.overrideBadge, children: [
+          timeRemaining(override.expiresAt),
+          " left"
         ] })
       ] }),
       isPending ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.actions, children: [
@@ -14785,13 +14799,16 @@
               min: "0",
               value: limitInput,
               onChange: (e) => setLimitInput(e.target.value),
-              onBlur: handleLimitBlur,
+              onKeyDown: (e) => {
+                if (e.key === "Enter") saveLimit();
+              },
               style: styles3.limitInput,
               "aria-label": `Daily limit for ${appData.appName || packageName} in minutes`,
               placeholder: "\u221E"
             }
           ),
-          "min/day"
+          "min/day",
+          limitDirty && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.saveBtn, onClick: saveLimit, children: "Save" })
         ] })
       ] })
     ] });
@@ -14801,7 +14818,7 @@
     { key: "allowed", label: "Allowed", color: "#34a853" },
     { key: "blocked", label: "Blocked", color: "#ea4335" }
   ];
-  function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
+  function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, overrideMap, collapsed, onToggle }) {
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.section, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
         "button",
@@ -14823,13 +14840,14 @@
           packageName: pkg,
           appData: data,
           onUpdate,
-          onDecide
+          onDecide,
+          override: overrideMap[pkg]
         },
         pkg
       ))
     ] });
   }
-  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, collapsed, onToggle }) {
+  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle }) {
     const color = CATEGORY_COLORS[categoryName] || "#aaa";
     const pendingCount = entries.filter(([, d]) => d.status === "pending").length;
     const allowedCount = entries.filter(([, d]) => d.status === "allowed").length;
@@ -14873,7 +14891,8 @@
             packageName: pkg,
             appData: data,
             onUpdate,
-            onDecide
+            onDecide,
+            override: overrideMap[pkg]
           },
           pkg
         ))
@@ -14887,21 +14906,36 @@
     const [search, setSearch] = (0, import_react4.useState)("");
     const [viewMode, setViewMode] = (0, import_react4.useState)("category");
     const [collapsed, setCollapsed] = (0, import_react4.useState)({});
+    const [overrides, setOverrides] = (0, import_react4.useState)([]);
     const loadPolicy = (0, import_react4.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [childPublicKey]);
+    const loadOverrides = (0, import_react4.useCallback)(() => {
+      window.callBare("overrides:list", { childPublicKey }).then(({ overrides: overrides2 }) => setOverrides(overrides2 || [])).catch(() => {
+      });
+    }, [childPublicKey]);
     (0, import_react4.useEffect)(() => {
       loadPolicy();
-    }, [loadPolicy]);
+      loadOverrides();
+    }, [loadPolicy, loadOverrides]);
     (0, import_react4.useEffect)(() => {
       const unsub = window.onBareEvent("apps:synced", (data) => {
-        if (data.childPublicKey === childPublicKey) loadPolicy();
+        if (data.childPublicKey === childPublicKey) {
+          loadPolicy();
+          loadOverrides();
+        }
       });
-      return unsub;
-    }, [childPublicKey, loadPolicy]);
+      const unsub2 = window.onBareEvent("request:updated", loadOverrides);
+      const timer = setInterval(loadOverrides, 3e4);
+      return () => {
+        unsub();
+        unsub2();
+        clearInterval(timer);
+      };
+    }, [childPublicKey, loadPolicy, loadOverrides]);
     function handleUpdate(packageName, newAppData) {
       const newApps = { ...policy.apps, [packageName]: newAppData };
       const newPolicy = { ...policy, apps: newApps };
@@ -14945,6 +14979,10 @@
     });
     const totalCount = Object.keys(policy.apps).length;
     const visibleCount = filtered.length;
+    const overrideMap = {};
+    for (const o of overrides) {
+      if (o.packageName) overrideMap[o.packageName] = o;
+    }
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.container, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.toolbar, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
@@ -14996,6 +15034,7 @@
             childPublicKey,
             onUpdate: handleUpdate,
             onDecide: handleDecide,
+            overrideMap,
             collapsed: collapsed[cat.key] ?? true,
             onToggle: () => toggleSection(cat.key)
           },
@@ -15013,6 +15052,7 @@
             onUpdate: handleUpdate,
             onDecide: handleDecide,
             onBatchDecide: handleBatchDecide,
+            overrideMap,
             collapsed: collapsed[catName] ?? true,
             onToggle: () => toggleSection(catName)
           },
@@ -15175,7 +15215,27 @@
     controls: { display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" },
     toggle: { display: "flex", alignItems: "center", fontSize: "13px", cursor: "pointer" },
     limitLabel: { fontSize: "13px", color: "#555", display: "flex", alignItems: "center", gap: "6px" },
-    limitInput: { width: "60px", padding: "4px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }
+    limitInput: { width: "60px", padding: "4px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" },
+    saveBtn: {
+      padding: "3px 10px",
+      border: "none",
+      borderRadius: "4px",
+      backgroundColor: "#1a73e8",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "12px",
+      fontWeight: "600"
+    },
+    overrideBadge: {
+      fontSize: "11px",
+      fontWeight: "600",
+      color: "#1a73e8",
+      backgroundColor: "#E8F0FE",
+      padding: "2px 8px",
+      borderRadius: "10px",
+      whiteSpace: "nowrap",
+      flexShrink: 0
+    }
   };
 
   // src/ui/components/ScheduleTab.jsx
@@ -15766,15 +15826,8 @@
       ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...styles7.statusLabel, color: req.status === "approved" ? "#34a853" : "#ea4335" }, children: req.status === "approved" ? "Approved" : req.status === "denied" ? "Denied" : "Resolved" }) })
     ] });
   }
-  function timeRemaining(expiresAt) {
-    const diff = Math.max(0, expiresAt - Date.now());
-    const mins = Math.ceil(diff / 6e4);
-    if (mins >= 60) return Math.floor(mins / 60) + "h " + mins % 60 + "m";
-    return mins + "m";
-  }
   function RequestsTab({ childPublicKey }) {
     const [requests, setRequests] = (0, import_react8.useState)([]);
-    const [overrides, setOverrides] = (0, import_react8.useState)([]);
     const [loading, setLoading] = (0, import_react8.useState)(true);
     function reload() {
       window.callBare("alerts:list", { childPublicKey }).then((list) => {
@@ -15788,50 +15841,24 @@
         setLoading(false);
       }).catch(() => setLoading(false));
     }
-    function loadOverrides() {
-      window.callBare("overrides:list", { childPublicKey }).then(({ overrides: overrides2 }) => setOverrides(overrides2 || [])).catch(() => {
-      });
-    }
     (0, import_react8.useEffect)(() => {
       reload();
-      loadOverrides();
-      const unsub = window.onBareEvent("time:request:received", () => {
-        reload();
-        loadOverrides();
-      });
-      const unsub2 = window.onBareEvent("request:updated", () => {
-        reload();
-        loadOverrides();
-      });
-      const timer = setInterval(loadOverrides, 3e4);
+      const unsub = window.onBareEvent("time:request:received", reload);
+      const unsub2 = window.onBareEvent("request:updated", reload);
       return () => {
         unsub();
         unsub2();
-        clearInterval(timer);
       };
     }, [childPublicKey]);
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.msg, children: "Loading..." });
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.container, children: [
-      overrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginBottom: "16px" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h4", { style: { margin: "0 0 8px", fontSize: "13px", color: "#555" }, children: "Active Overrides" }),
-        overrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: styles7.overrideRow, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontWeight: "600", fontSize: "13px" }, children: o.appName }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: { color: "#1a73e8", fontSize: "12px", fontWeight: "600" }, children: [
-            timeRemaining(o.expiresAt),
-            " left"
-          ] })
-        ] }, i))
-      ] }),
-      requests.length === 0 && overrides.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.msg, children: "No requests yet." }),
+      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: styles7.msg, children: "No requests yet." }),
       requests.map((req) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         RequestRow,
         {
           req,
           childPublicKey,
-          onResolved: () => {
-            reload();
-            loadOverrides();
-          }
+          onResolved: reload
         },
         req.id
       ))
@@ -15871,17 +15898,7 @@
       cursor: "pointer",
       fontSize: "13px"
     },
-    statusLabel: { fontSize: "13px", fontWeight: "600" },
-    overrideRow: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "8px 12px",
-      marginBottom: "6px",
-      borderRadius: "6px",
-      backgroundColor: "#F0F7FF",
-      border: "1px solid #D0E3FF"
-    }
+    statusLabel: { fontSize: "13px", fontWeight: "600" }
   };
 
   // src/ui/components/ChildDetail.jsx

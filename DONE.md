@@ -6,6 +6,21 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-03
 
+### [x] Move overrides from Requests tab to Apps list (#84) — 2026-04-03
+Active overrides now show as a blue time-remaining badge on individual app rows in AppsTab. Removed overrides section from RequestsTab. Override data refreshes every 30s and on request events.
+
+### [x] Save button for app time limits (#91) — 2026-04-03
+Time limit input no longer auto-saves on blur. A blue "Save" button appears when the input differs from the saved value. Enter key also saves. Clearing and saving removes the limit.
+
+### [x] Fix notification deep link navigating to wrong tab (#94) — 2026-04-03
+PendingIntents used `FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT`, which on Android 12+ prevents updating cached intent data. After process restarts, the static `notificationId` counter resets, causing request code collisions with stale cached intents pointing to the wrong tab. Fixed by switching to `FLAG_CANCEL_CURRENT` in all three PendingIntent builders.
+
+### [x] Fix overlay not dismissed when daily limit removed (#90) — 2026-04-03
+Two fixes: (1) UI — clearing the time limit input now deletes `dailyLimitSeconds` from the policy instead of silently keeping the old value. (2) Enforcement — `checkAndShowOverlayIfNeeded()` now re-evaluates `getBlockReason()` every 5s while the overlay is showing, dismissing it if the block no longer applies.
+
+### [x] Fix false "enforcement may be off" notifications after reinstalls (#88) — 2026-04-03
+ParentConnectionService now has a 3-minute grace period after startup before checking stale heartbeats, and ignores heartbeat timestamps from before the current service session. Prevents false notifications when P2P connection hasn't re-established yet.
+
 ### [x] Warn at 10/5/1 min before schedule or time-limit (#44) — 2026-04-03
 Added warning notifications on the child device at 10, 5, and 1 minute before a schedule block starts or a daily time limit is reached. New `pearguard_upcoming_warning` notification channel (IMPORTANCE_HIGH) with heads-up display. Logic runs in EnforcementService's 5-second polling loop with in-memory dedup that resets daily.
 

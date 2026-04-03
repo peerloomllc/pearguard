@@ -156,7 +156,13 @@ public class AppBlockerModule extends AccessibilityService {
         final String pkg = inst.lastForegroundPackage;
         new Handler(Looper.getMainLooper()).post(() -> {
             if ((inst.overlayView != null || inst.overlayPending)
-                    && pkg.equals(inst.currentOverlayPackage)) return;
+                    && pkg.equals(inst.currentOverlayPackage)) {
+                // Overlay is showing — re-check whether the block still applies.
+                // Handles policy changes (e.g. daily limit removed) while overlay is up.
+                String reason = inst.getBlockReason(pkg);
+                if (reason == null) inst.dismissOverlay();
+                return;
+            }
             // Suppressed while an interaction dialog (e.g. extra-time picker) is showing.
             if (System.currentTimeMillis() < inst.enforcementSuppressedUntil) return;
             String reason = inst.getBlockReason(pkg);

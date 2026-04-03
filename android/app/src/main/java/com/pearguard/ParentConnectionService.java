@@ -42,6 +42,7 @@ public class ParentConnectionService extends Service {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int loopTick = 0; // counts 30s ticks; heartbeat check runs every 2nd tick (60 s)
+    private long serviceStartedAt = 0;
 
     // --- Lifecycle ---
 
@@ -50,6 +51,7 @@ public class ParentConnectionService extends Service {
         super.onCreate();
         createNotificationChannel();
         startForeground(NOTIF_ID, buildNotification());
+        serviceStartedAt = System.currentTimeMillis();
         handler.postDelayed(reconnectLoop, RECONNECT_INTERVAL_MS);
     }
 
@@ -99,8 +101,14 @@ public class ParentConnectionService extends Service {
      * UsageStatsModule.updateChildHeartbeat which writes heartbeat_notified_=false).
      */
     private void checkStaleHeartbeats() {
-        SharedPreferences prefs = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE);
+        // Grace period: don't flag stale heartbeats until the service has been
+        // running long enough for the P2P connection to re-establish and the
+        // child to send at least one heartbeat. Prevents false "enforcement may
+        // be off" notifications after app reinstalls or device restarts.
         long now = System.currentTimeMillis();
+        if (now - serviceStartedAt < HEARTBEAT_STALE_MS) return;
+
+        SharedPreferences prefs = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE);
         Map<String, ?> all = prefs.getAll();
         SharedPreferences.Editor editor = null;
 
@@ -113,6 +121,11 @@ public class ParentConnectionService extends Service {
             if (!(val instanceof Long)) continue;
             long lastHeartbeat = (Long) val;
             if (lastHeartbeat <= 0) continue;
+
+            // Ignore heartbeat timestamps from before this service session —
+            // they are leftover from a previous run and don't indicate the
+            // child went offline during this session.
+            if (lastHeartbeat < serviceStartedAt) continue;
 
             boolean alreadyNotified = prefs.getBoolean("heartbeat_notified_" + childPublicKey, false);
             if (now - lastHeartbeat > HEARTBEAT_STALE_MS && !alreadyNotified) {

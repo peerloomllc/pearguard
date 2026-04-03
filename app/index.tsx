@@ -430,8 +430,11 @@ export default function Root () {
         // Usage flush timer fired — gather usage and send report
         DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
           try {
-            const usageList = await NativeModules.UsageStatsModule.getDailyUsageAll()
-            sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
+            const [usageList, weeklyList] = await Promise.all([
+              NativeModules.UsageStatsModule.getDailyUsageAllEvents(),
+              NativeModules.UsageStatsModule.getWeeklyUsageAll(),
+            ])
+            sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList } })
           } catch (err) {
             console.warn('[PearGuard] Usage flush failed:', err)
           }
@@ -483,9 +486,12 @@ export default function Root () {
               }
               // Handle usageFlushRequested locally — gather usage stats and flush immediately
               if (msg.event === 'usageFlushRequested') {
-                NativeModules.UsageStatsModule?.getDailyUsageAll?.()
-                  .then((usageList: { packageName: string; appName: string; secondsToday: number }[]) => {
-                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList } })
+                Promise.all([
+                  NativeModules.UsageStatsModule?.getDailyUsageAllEvents?.(),
+                  NativeModules.UsageStatsModule?.getWeeklyUsageAll?.(),
+                ])
+                  .then(([usageList, weeklyList]: [{ packageName: string; appName: string; secondsToday: number }[], { packageName: string; appName: string; secondsThisWeek: number }[]]) => {
+                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList } })
                   })
                   .catch((e: any) => console.warn('[RN] usageFlushRequested getDailyUsageAll failed:', e))
                 return

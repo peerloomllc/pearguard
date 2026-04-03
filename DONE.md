@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-03
 
+### [x] More reliable/accurate usage metrics (#92) — 2026-04-03
+Switched daily usage collection from aggregate stats to raw queryEvents() for real-time accuracy (includes current live session). Added batch weekly usage. Usage reports now include weekSeconds and dailyLimitSeconds. Bars scale against daily limit when set, 24h/168h otherwise.
+
 ### [x] Move overrides from Requests tab to Apps list (#84) — 2026-04-03
 Active overrides now show as a blue time-remaining badge on individual app rows in AppsTab. Removed overrides section from RequestsTab. Override data refreshes every 30s and on request events.
 

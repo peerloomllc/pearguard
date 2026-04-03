@@ -37,8 +37,13 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
 
   function handleLimitBlur() {
     const mins = parseInt(limitInput, 10);
-    if (!isNaN(mins) && mins >= 0) {
+    if (!isNaN(mins) && mins > 0) {
       onUpdate(packageName, { ...appData, dailyLimitSeconds: mins * 60 });
+    } else {
+      // Empty or zero — remove the daily limit
+      const { dailyLimitSeconds, ...rest } = appData;
+      setLimitInput('');
+      onUpdate(packageName, rest);
     }
   }
 

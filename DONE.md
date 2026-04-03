@@ -6,6 +6,12 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-03
 
+### [x] Fix overlay not dismissed when daily limit removed (#90) — 2026-04-03
+Two fixes: (1) UI — clearing the time limit input now deletes `dailyLimitSeconds` from the policy instead of silently keeping the old value. (2) Enforcement — `checkAndShowOverlayIfNeeded()` now re-evaluates `getBlockReason()` every 5s while the overlay is showing, dismissing it if the block no longer applies.
+
+### [x] Fix false "enforcement may be off" notifications after reinstalls (#88) — 2026-04-03
+ParentConnectionService now has a 3-minute grace period after startup before checking stale heartbeats, and ignores heartbeat timestamps from before the current service session. Prevents false notifications when P2P connection hasn't re-established yet.
+
 ### [x] Warn at 10/5/1 min before schedule or time-limit (#44) — 2026-04-03
 Added warning notifications on the child device at 10, 5, and 1 minute before a schedule block starts or a daily time limit is reached. New `pearguard_upcoming_warning` notification channel (IMPORTANCE_HIGH) with heads-up display. Logic runs in EnforcementService's 5-second polling loop with in-memory dedup that resets daily.
 

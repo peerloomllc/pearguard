@@ -886,7 +886,10 @@ function createDispatch (ctx) {
         if (!childPublicKey || !policy || typeof policy !== 'object') {
           throw new Error('invalid policy:update args')
         }
-        const newPolicy = { ...policy, childPublicKey, version: (policy.version || 0) + 1 }
+        // Merge parent settings into policy so they reach the child device
+        const settingsRaw = await ctx.db.get('parentSettings')
+        const parentSettings = settingsRaw ? settingsRaw.value : {}
+        const newPolicy = { ...policy, childPublicKey, settings: parentSettings, version: (policy.version || 0) + 1 }
         await ctx.db.put('policy:' + childPublicKey, newPolicy)
         try {
           // sendToPeer requires the Hyperswarm noise key, not the identity key.
@@ -897,6 +900,30 @@ function createDispatch (ctx) {
           }
         } catch (_e) {
           // child offline — policy stored; will be sent on reconnect
+        }
+        return { ok: true }
+      }
+
+      case 'settings:get': {
+        const raw = await ctx.db.get('parentSettings')
+        return raw ? raw.value : {}
+      }
+
+      case 'settings:save': {
+        const { settings } = args
+        if (!settings || typeof settings !== 'object') throw new Error('invalid settings:save args')
+        await ctx.db.put('parentSettings', settings)
+
+        // Push updated settings into all child policies
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'policy:', lt: 'policy:~' })) {
+          const childKey = key.replace(/^policy:/, '')
+          const updated = { ...value, settings, version: (value.version || 0) + 1 }
+          await ctx.db.put(key, updated)
+          try {
+            const peerRecord = await ctx.db.get('peers:' + childKey).catch(() => null)
+            const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+            if (noiseKey) ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: updated })
+          } catch (_e) {}
         }
         return { ok: true }
       }

@@ -16516,6 +16516,34 @@
 
   // src/ui/components/Settings.jsx
   var import_jsx_runtime13 = __toESM(require_jsx_runtime());
+  var DEFAULT_TIME_OPTIONS = [15, 30, 60, 120];
+  var DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
+  var AVAILABLE_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
+  var AVAILABLE_WARNING_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 30];
+  function formatMinutes(min) {
+    if (min < 60) return min + " min";
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (m === 0) return h + (h === 1 ? " hour" : " hours");
+    return h + "h " + m + "m";
+  }
+  function ChipSelect({ options, selected, onChange, formatter }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: styles12.chipRow, children: options.map((val) => {
+      const active = selected.includes(val);
+      return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        "button",
+        {
+          onClick: () => {
+            window.callBare("haptic:tap");
+            onChange(active ? selected.filter((v) => v !== val) : [...selected, val].sort((a, b) => a - b));
+          },
+          style: { ...styles12.chip, ...active ? styles12.chipActive : {} },
+          children: formatter ? formatter(val) : val
+        },
+        val
+      );
+    }) });
+  }
   function Settings() {
     const [name, setName] = (0, import_react13.useState)("");
     const [savedName, setSavedName] = (0, import_react13.useState)("");
@@ -16527,6 +16555,10 @@
     const [confirmPin, setConfirmPin] = (0, import_react13.useState)("");
     const [pinStatus, setPinStatus] = (0, import_react13.useState)(null);
     const confirmPinRef = (0, import_react13.useRef)(null);
+    const [timeRequestMinutes, setTimeRequestMinutes] = (0, import_react13.useState)(DEFAULT_TIME_OPTIONS);
+    const [warningMinutes, setWarningMinutes] = (0, import_react13.useState)(DEFAULT_WARNING_THRESHOLDS);
+    const [settingsStatus, setSettingsStatus] = (0, import_react13.useState)(null);
+    const [settingsLoaded, setSettingsLoaded] = (0, import_react13.useState)(false);
     (0, import_react13.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
@@ -16535,6 +16567,11 @@
         if (av) setAvatar(av);
       }).catch(() => {
       });
+      window.callBare("settings:get").then((s) => {
+        if (s.timeRequestMinutes) setTimeRequestMinutes(s.timeRequestMinutes);
+        if (s.warningMinutes) setWarningMinutes(s.warningMinutes);
+        setSettingsLoaded(true);
+      }).catch(() => setSettingsLoaded(true));
     }, []);
     async function handleNameSave() {
       const trimmed = name.trim();
@@ -16581,6 +16618,21 @@
       }).catch((err) => {
         setPinStatus(err.message || "Failed to set PIN. Please try again.");
       });
+    }
+    async function handleSettingsSave() {
+      if (timeRequestMinutes.length === 0 || warningMinutes.length === 0) {
+        setSettingsStatus("Select at least one option for each setting.");
+        return;
+      }
+      setSettingsStatus(null);
+      try {
+        await window.callBare("settings:save", {
+          settings: { timeRequestMinutes, warningMinutes }
+        });
+        setSettingsStatus("success");
+      } catch {
+        setSettingsStatus("Failed to save settings.");
+      }
     }
     const nameUnchanged = name.trim() === savedName || !name.trim();
     return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: styles12.container, children: [
@@ -16684,6 +16736,53 @@
           pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.successText, role: "status", children: "PIN updated successfully." }),
           /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { type: "submit", style: styles12.submitBtn, "aria-label": "Save PIN", children: "Save PIN" })
         ] })
+      ] }),
+      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { style: styles12.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: styles12.sectionHead, children: "Time Request Options" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.hint, children: "Choose which duration options the child sees when requesting more time from the block overlay." }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          ChipSelect,
+          {
+            options: AVAILABLE_TIME_OPTIONS,
+            selected: timeRequestMinutes,
+            onChange: (v) => {
+              setTimeRequestMinutes(v);
+              setSettingsStatus(null);
+            },
+            formatter: formatMinutes
+          }
+        )
+      ] }),
+      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { style: styles12.section, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: styles12.sectionHead, children: "Warning Notifications" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.hint, children: "The child will be notified this many minutes before a schedule block starts or a daily time limit runs out." }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          ChipSelect,
+          {
+            options: AVAILABLE_WARNING_OPTIONS,
+            selected: warningMinutes,
+            onChange: (v) => {
+              setWarningMinutes(v);
+              setSettingsStatus(null);
+            },
+            formatter: (v) => v + " min"
+          }
+        )
+      ] }),
+      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { style: styles12.section, children: [
+        settingsStatus && settingsStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.errorText, children: settingsStatus }),
+        settingsStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: styles12.successText, children: "Settings saved and synced to child." }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          "button",
+          {
+            onClick: () => {
+              window.callBare("haptic:tap");
+              handleSettingsSave();
+            },
+            style: styles12.submitBtn,
+            children: "Save Settings"
+          }
+        )
       ] })
     ] });
   }
@@ -16732,7 +16831,22 @@
     },
     btnDisabled: { backgroundColor: "#ccc", cursor: "not-allowed" },
     errorText: { color: "#ea4335", fontSize: "13px", margin: 0 },
-    successText: { color: "#34a853", fontSize: "13px", margin: 0 }
+    successText: { color: "#34a853", fontSize: "13px", margin: 0 },
+    chipRow: { display: "flex", flexWrap: "wrap", gap: "8px" },
+    chip: {
+      padding: "8px 14px",
+      borderRadius: "20px",
+      border: "1px solid #ccc",
+      backgroundColor: "#fff",
+      fontSize: "13px",
+      color: "#555",
+      cursor: "pointer"
+    },
+    chipActive: {
+      backgroundColor: "#1a73e8",
+      color: "#fff",
+      borderColor: "#1a73e8"
+    }
   };
 
   // src/ui/components/AboutTab.jsx

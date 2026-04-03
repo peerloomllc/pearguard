@@ -37,7 +37,7 @@ public class EnforcementService extends Service {
     private static final long POLL_INTERVAL_MS = 5_000;       // 5 seconds
     private static final long USAGE_FLUSH_INTERVAL_MS = 300_000; // 5 minutes
     private static final String WARNING_CHANNEL_ID = "pearguard_upcoming_warning";
-    private static final int[] WARNING_THRESHOLDS_MIN = {10, 5, 1};
+    private static final int[] DEFAULT_WARNING_THRESHOLDS_MIN = {10, 5, 1};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastUsageFlushTime = 0;
@@ -206,6 +206,21 @@ public class EnforcementService extends Service {
         checkTimeLimitWarnings(policy);
     }
 
+    private int[] getWarningThresholds(JSONObject policy) {
+        try {
+            JSONObject settings = policy.optJSONObject("settings");
+            if (settings != null) {
+                org.json.JSONArray arr = settings.optJSONArray("warningMinutes");
+                if (arr != null && arr.length() > 0) {
+                    int[] thresholds = new int[arr.length()];
+                    for (int i = 0; i < arr.length(); i++) thresholds[i] = arr.getInt(i);
+                    return thresholds;
+                }
+            }
+        } catch (Exception ignored) {}
+        return DEFAULT_WARNING_THRESHOLDS_MIN;
+    }
+
     private JSONObject loadPolicyFromPrefs() {
         try {
             String json = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
@@ -243,12 +258,15 @@ public class EnforcementService extends Service {
                 int secondsUntil = startSeconds - nowSeconds;
                 if (secondsUntil < 0) secondsUntil += 24 * 3600;
 
-                if (secondsUntil > 11 * 60 || secondsUntil <= 0) continue;
+                if (secondsUntil <= 0) continue;
 
                 String label = schedule.optString("label", "Scheduled block");
 
-                for (int t = 0; t < WARNING_THRESHOLDS_MIN.length; t++) {
-                    int threshMin = WARNING_THRESHOLDS_MIN[t];
+                int[] thresholds = getWarningThresholds(policy);
+                // Skip if we're further out than the largest threshold + 1 min
+                if (thresholds.length > 0 && secondsUntil > (thresholds[0] + 1) * 60) continue;
+                for (int t = 0; t < thresholds.length; t++) {
+                    int threshMin = thresholds[t];
                     int threshSec = threshMin * 60;
                     if (secondsUntil <= threshSec && secondsUntil > threshSec - 6) {
                         String dedupKey = "sched:" + i + ":" + threshMin;
@@ -284,8 +302,9 @@ public class EnforcementService extends Service {
 
             String appName = appPolicy.optString("appName", foregroundPkg);
 
-            for (int t = 0; t < WARNING_THRESHOLDS_MIN.length; t++) {
-                int threshMin = WARNING_THRESHOLDS_MIN[t];
+            int[] thresholds = getWarningThresholds(policy);
+            for (int t = 0; t < thresholds.length; t++) {
+                int threshMin = thresholds[t];
                 int threshSec = threshMin * 60;
                 if (remainingSeconds <= threshSec && remainingSeconds > threshSec - 6) {
                     String dedupKey = "limit:" + foregroundPkg + ":" + threshMin;

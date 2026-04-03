@@ -2,6 +2,41 @@ import React, { useState, useEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 
+const DEFAULT_TIME_OPTIONS = [15, 30, 60, 120];
+const DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
+const AVAILABLE_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
+const AVAILABLE_WARNING_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 30];
+
+function formatMinutes(min) {
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (m === 0) return h + (h === 1 ? ' hour' : ' hours');
+  return h + 'h ' + m + 'm';
+}
+
+function ChipSelect({ options, selected, onChange, formatter }) {
+  return (
+    <div style={styles.chipRow}>
+      {options.map((val) => {
+        const active = selected.includes(val);
+        return (
+          <button
+            key={val}
+            onClick={() => {
+              window.callBare('haptic:tap');
+              onChange(active ? selected.filter((v) => v !== val) : [...selected, val].sort((a, b) => a - b));
+            }}
+            style={{ ...styles.chip, ...(active ? styles.chipActive : {}) }}
+          >
+            {formatter ? formatter(val) : val}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Settings() {
   // Profile state
   const [name, setName] = useState('');
@@ -17,6 +52,12 @@ export default function Settings() {
   const [pinStatus, setPinStatus] = useState(null);
   const confirmPinRef = useRef(null);
 
+  // Settings state
+  const [timeRequestMinutes, setTimeRequestMinutes] = useState(DEFAULT_TIME_OPTIONS);
+  const [warningMinutes, setWarningMinutes] = useState(DEFAULT_WARNING_THRESHOLDS);
+  const [settingsStatus, setSettingsStatus] = useState(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   useEffect(() => {
     window.callBare('identity:getName')
       .then(({ displayName, avatar: av }) => {
@@ -26,6 +67,14 @@ export default function Settings() {
         if (av) setAvatar(av);
       })
       .catch(() => {});
+
+    window.callBare('settings:get')
+      .then((s) => {
+        if (s.timeRequestMinutes) setTimeRequestMinutes(s.timeRequestMinutes);
+        if (s.warningMinutes) setWarningMinutes(s.warningMinutes);
+        setSettingsLoaded(true);
+      })
+      .catch(() => setSettingsLoaded(true));
   }, []);
 
   async function handleNameSave() {
@@ -78,6 +127,22 @@ export default function Settings() {
       .catch((err) => {
         setPinStatus(err.message || 'Failed to set PIN. Please try again.');
       });
+  }
+
+  async function handleSettingsSave() {
+    if (timeRequestMinutes.length === 0 || warningMinutes.length === 0) {
+      setSettingsStatus('Select at least one option for each setting.');
+      return;
+    }
+    setSettingsStatus(null);
+    try {
+      await window.callBare('settings:save', {
+        settings: { timeRequestMinutes, warningMinutes },
+      });
+      setSettingsStatus('success');
+    } catch {
+      setSettingsStatus('Failed to save settings.');
+    }
   }
 
   const nameUnchanged = name.trim() === savedName || !name.trim();
@@ -181,6 +246,55 @@ export default function Settings() {
         </form>
       </section>
 
+      {/* Time Request Options */}
+      {settingsLoaded && (
+        <section style={styles.section}>
+          <h3 style={styles.sectionHead}>Time Request Options</h3>
+          <p style={styles.hint}>
+            Choose which duration options the child sees when requesting more time from the block overlay.
+          </p>
+          <ChipSelect
+            options={AVAILABLE_TIME_OPTIONS}
+            selected={timeRequestMinutes}
+            onChange={(v) => { setTimeRequestMinutes(v); setSettingsStatus(null); }}
+            formatter={formatMinutes}
+          />
+        </section>
+      )}
+
+      {/* Warning Thresholds */}
+      {settingsLoaded && (
+        <section style={styles.section}>
+          <h3 style={styles.sectionHead}>Warning Notifications</h3>
+          <p style={styles.hint}>
+            The child will be notified this many minutes before a schedule block starts or a daily time limit runs out.
+          </p>
+          <ChipSelect
+            options={AVAILABLE_WARNING_OPTIONS}
+            selected={warningMinutes}
+            onChange={(v) => { setWarningMinutes(v); setSettingsStatus(null); }}
+            formatter={(v) => v + ' min'}
+          />
+        </section>
+      )}
+
+      {/* Save settings button */}
+      {settingsLoaded && (
+        <section style={styles.section}>
+          {settingsStatus && settingsStatus !== 'success' && (
+            <p style={styles.errorText}>{settingsStatus}</p>
+          )}
+          {settingsStatus === 'success' && (
+            <p style={styles.successText}>Settings saved and synced to child.</p>
+          )}
+          <button
+            onClick={() => { window.callBare('haptic:tap'); handleSettingsSave(); }}
+            style={styles.submitBtn}
+          >
+            Save Settings
+          </button>
+        </section>
+      )}
     </div>
   );
 }
@@ -216,4 +330,14 @@ const styles = {
   btnDisabled: { backgroundColor: '#ccc', cursor: 'not-allowed' },
   errorText: { color: '#ea4335', fontSize: '13px', margin: 0 },
   successText: { color: '#34a853', fontSize: '13px', margin: 0 },
+  chipRow: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
+  chip: {
+    padding: '8px 14px', borderRadius: '20px',
+    border: '1px solid #ccc', backgroundColor: '#fff',
+    fontSize: '13px', color: '#555', cursor: 'pointer',
+  },
+  chipActive: {
+    backgroundColor: '#1a73e8', color: '#fff',
+    borderColor: '#1a73e8',
+  },
 };

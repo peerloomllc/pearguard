@@ -47,8 +47,10 @@ public class PackageMonitorModule extends BroadcastReceiver {
                 android.content.pm.ApplicationInfo ai =
                         pm.getApplicationInfo(packageName, 0);
                 params.putString("appName", pm.getApplicationLabel(ai).toString());
+                params.putString("category", AppCategoryHelper.getCategory(ai));
             } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
                 params.putString("appName", packageName);
+                params.putString("category", "Other");
             }
             try {
                 android.graphics.drawable.Drawable drawable = pm.getApplicationIcon(packageName);

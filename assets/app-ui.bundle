@@ -14688,6 +14688,18 @@
   var import_react4 = __toESM(require_react());
   var import_jsx_runtime4 = __toESM(require_jsx_runtime());
   var ICON_COLORS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853", "#ff6d00", "#46bdc6", "#7b1fa2", "#c62828"];
+  var APP_CATEGORIES = ["Games", "Social", "Video & Music", "Communication", "Education", "Productivity", "News", "System", "Other"];
+  var CATEGORY_COLORS = {
+    Games: "#ea4335",
+    Social: "#4285f4",
+    "Video & Music": "#7b1fa2",
+    Communication: "#34a853",
+    Education: "#fbbc05",
+    Productivity: "#46bdc6",
+    News: "#ff6d00",
+    System: "#888",
+    Other: "#aaa"
+  };
   function getInitials2(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
   }
@@ -14784,12 +14796,12 @@
       ] })
     ] });
   }
-  var CATEGORIES = [
+  var STATUS_CATEGORIES = [
     { key: "pending", label: "Pending Approval", color: "#f59e0b" },
     { key: "allowed", label: "Allowed", color: "#34a853" },
     { key: "blocked", label: "Blocked", color: "#ea4335" }
   ];
-  function CategorySection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
+  function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.section, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
         "button",
@@ -14817,12 +14829,64 @@
       ))
     ] });
   }
+  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, collapsed, onToggle }) {
+    const color = CATEGORY_COLORS[categoryName] || "#aaa";
+    const pendingCount = entries.filter(([, d]) => d.status === "pending").length;
+    const allowedCount = entries.filter(([, d]) => d.status === "allowed").length;
+    const blockedCount = entries.filter(([, d]) => d.status !== "pending" && d.status !== "allowed").length;
+    function handleApproveAll() {
+      const pkgs = entries.map(([pkg]) => pkg);
+      onBatchDecide(pkgs, "approve");
+    }
+    function handleDenyAll() {
+      const pkgs = entries.map(([pkg]) => pkg);
+      onBatchDecide(pkgs, "deny");
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.section, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+        "button",
+        {
+          style: { ...styles3.sectionHeader, borderLeft: `4px solid ${color}` },
+          onClick: onToggle,
+          "aria-expanded": !collapsed,
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles3.sectionLabel, children: categoryName }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.badgeRow, children: [
+              pendingCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { ...styles3.sectionBadge, backgroundColor: "#f59e0b" }, children: pendingCount }),
+              allowedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { ...styles3.sectionBadge, backgroundColor: "#34a853" }, children: allowedCount }),
+              blockedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { ...styles3.sectionBadge, backgroundColor: "#ea4335" }, children: blockedCount })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { ...styles3.sectionBadge, backgroundColor: color }, children: entries.length }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: styles3.chevron, children: collapsed ? "\u203A" : "\u2304" })
+          ]
+        }
+      ),
+      !collapsed && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.batchActions, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.approveAllBtn, onClick: handleApproveAll, children: "Approve All" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.denyAllBtn, onClick: handleDenyAll, children: "Deny All" })
+        ] }),
+        entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          AppRow,
+          {
+            childPublicKey,
+            packageName: pkg,
+            appData: data,
+            onUpdate,
+            onDecide
+          },
+          pkg
+        ))
+      ] })
+    ] });
+  }
   function AppsTab({ childPublicKey }) {
     const [policy, setPolicy] = (0, import_react4.useState)(null);
     const [loading, setLoading] = (0, import_react4.useState)(true);
     const [sortOrder, setSortOrder] = (0, import_react4.useState)("alpha");
     const [search, setSearch] = (0, import_react4.useState)("");
-    const [collapsed, setCollapsed] = (0, import_react4.useState)({ pending: true, allowed: true, blocked: true });
+    const [viewMode, setViewMode] = (0, import_react4.useState)("category");
+    const [collapsed, setCollapsed] = (0, import_react4.useState)({});
     const loadPolicy = (0, import_react4.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
@@ -14850,8 +14914,19 @@
         apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } }
       }));
     }
+    function handleBatchDecide(packageNames, decision) {
+      const newStatus = decision === "approve" ? "allowed" : "blocked";
+      setPolicy((prev) => {
+        const apps = { ...prev.apps };
+        for (const pkg of packageNames) {
+          apps[pkg] = { ...apps[pkg], status: newStatus };
+        }
+        return { ...prev, apps };
+      });
+      window.callBare("apps:decideBatch", { childPublicKey, packageNames, decision });
+    }
     function toggleSection(key) {
-      setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+      setCollapsed((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
     }
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: styles3.msg, children: "Loading apps..." });
     if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
@@ -14868,11 +14943,6 @@
       }
       return (b[1].addedAt || 0) - (a[1].addedAt || 0);
     });
-    const grouped = {
-      pending: sorted.filter(([, d]) => d.status === "pending"),
-      allowed: sorted.filter(([, d]) => d.status === "allowed"),
-      blocked: sorted.filter(([, d]) => d.status !== "pending" && d.status !== "allowed")
-    };
     const totalCount = Object.keys(policy.apps).length;
     const visibleCount = filtered.length;
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: styles3.container, children: [
@@ -14894,7 +14964,16 @@
             style: styles3.sortBtn,
             onClick: () => setSortOrder((s) => s === "alpha" ? "date" : "alpha"),
             "aria-label": "Toggle sort order",
-            children: sortOrder === "alpha" ? "\u{1F524} A\u2013Z" : "\u{1F550} Date"
+            children: sortOrder === "alpha" ? "A-Z" : "Date"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            style: { ...styles3.sortBtn, ...viewMode === "category" ? styles3.viewBtnActive : {} },
+            onClick: () => setViewMode((v) => v === "status" ? "category" : "status"),
+            "aria-label": "Toggle view mode",
+            children: viewMode === "status" ? "By Status" : "By Category"
           }
         )
       ] }),
@@ -14906,21 +14985,38 @@
         ] }),
         q && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { style: styles3.clearSearch, onClick: () => setSearch(""), children: "Clear" })
       ] }),
-      CATEGORIES.map((cat) => {
-        const entries = grouped[cat.key];
+      viewMode === "status" ? STATUS_CATEGORIES.map((cat) => {
+        const entries = cat.key === "blocked" ? sorted.filter(([, d]) => d.status !== "pending" && d.status !== "allowed") : sorted.filter(([, d]) => d.status === cat.key);
         if (entries.length === 0) return null;
         return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          CategorySection,
+          StatusSection,
           {
             category: cat,
             entries,
             childPublicKey,
             onUpdate: handleUpdate,
             onDecide: handleDecide,
-            collapsed: collapsed[cat.key],
+            collapsed: collapsed[cat.key] ?? true,
             onToggle: () => toggleSection(cat.key)
           },
           cat.key
+        );
+      }) : APP_CATEGORIES.map((catName) => {
+        const entries = sorted.filter(([, d]) => (d.category || "Other") === catName);
+        if (entries.length === 0) return null;
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          CategorySection,
+          {
+            categoryName: catName,
+            entries,
+            childPublicKey,
+            onUpdate: handleUpdate,
+            onDecide: handleDecide,
+            onBatchDecide: handleBatchDecide,
+            collapsed: collapsed[catName] ?? true,
+            onToggle: () => toggleSection(catName)
+          },
+          catName
         );
       })
     ] });
@@ -14953,6 +15049,11 @@
       color: "#444",
       whiteSpace: "nowrap"
     },
+    viewBtnActive: {
+      background: "#e8f0fe",
+      borderColor: "#4285f4",
+      color: "#1a73e8"
+    },
     appCountRow: {
       display: "flex",
       alignItems: "center",
@@ -14984,6 +15085,7 @@
       marginBottom: "4px"
     },
     sectionLabel: { flex: 1, fontSize: "13px", fontWeight: "600", color: "#333" },
+    badgeRow: { display: "flex", gap: "4px" },
     sectionBadge: {
       fontSize: "11px",
       color: "#fff",
@@ -14992,6 +15094,34 @@
       fontWeight: "700"
     },
     chevron: { fontSize: "16px", color: "#888", lineHeight: 1 },
+    batchActions: {
+      display: "flex",
+      gap: "8px",
+      padding: "8px 0",
+      borderBottom: "1px solid #eee"
+    },
+    approveAllBtn: {
+      flex: 1,
+      padding: "8px 12px",
+      border: "none",
+      borderRadius: "6px",
+      backgroundColor: "#34a853",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "13px",
+      fontWeight: "600"
+    },
+    denyAllBtn: {
+      flex: 1,
+      padding: "8px 12px",
+      border: "none",
+      borderRadius: "6px",
+      backgroundColor: "#ea4335",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "13px",
+      fontWeight: "600"
+    },
     appRow: {
       padding: "12px 0",
       borderBottom: "1px solid #eee",

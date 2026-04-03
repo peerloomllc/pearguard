@@ -255,6 +255,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             item.putString("packageName", ai.packageName);
             item.putString("appName", appName);
             item.putBoolean("isLauncher", ai.packageName.equals(launcherPackage));
+            item.putString("category", AppCategoryHelper.getCategory(ai));
             try {
                 android.graphics.drawable.Drawable drawable = pm.getApplicationIcon(ai.packageName);
                 android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(144, 144, android.graphics.Bitmap.Config.ARGB_8888);

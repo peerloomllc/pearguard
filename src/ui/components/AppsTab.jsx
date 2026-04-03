@@ -2,6 +2,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 const ICON_COLORS = ['#4285f4','#ea4335','#fbbc05','#34a853','#ff6d00','#46bdc6','#7b1fa2','#c62828'];
 
+const APP_CATEGORIES = ['Games', 'Social', 'Video & Music', 'Communication', 'Education', 'Productivity', 'News', 'System', 'Other'];
+
+const CATEGORY_COLORS = {
+  Games: '#ea4335',
+  Social: '#4285f4',
+  'Video & Music': '#7b1fa2',
+  Communication: '#34a853',
+  Education: '#fbbc05',
+  Productivity: '#46bdc6',
+  News: '#ff6d00',
+  System: '#888',
+  Other: '#aaa',
+};
+
 function getInitials(name) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 }
@@ -30,8 +44,6 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
 
   function handleApprove() {
     window.callBare('app:decide', { childPublicKey, packageName, decision: 'approve' });
-    // Use onDecide (local state only) instead of onUpdate — onUpdate sends a redundant
-    // policy:update P2P alongside app:decide's app:decision, causing double notifications (#68).
     onDecide(packageName, 'allowed');
   }
 
@@ -111,13 +123,13 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
   );
 }
 
-const CATEGORIES = [
+const STATUS_CATEGORIES = [
   { key: 'pending', label: 'Pending Approval', color: '#f59e0b' },
   { key: 'allowed', label: 'Allowed',          color: '#34a853' },
   { key: 'blocked', label: 'Blocked',           color: '#ea4335' },
 ];
 
-function CategorySection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
+function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
   return (
     <div style={styles.section}>
       <button
@@ -143,12 +155,71 @@ function CategorySection({ category, entries, childPublicKey, onUpdate, onDecide
   );
 }
 
+function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, collapsed, onToggle }) {
+  const color = CATEGORY_COLORS[categoryName] || '#aaa';
+  const pendingCount = entries.filter(([, d]) => d.status === 'pending').length;
+  const allowedCount = entries.filter(([, d]) => d.status === 'allowed').length;
+  const blockedCount = entries.filter(([, d]) => d.status !== 'pending' && d.status !== 'allowed').length;
+
+  function handleApproveAll() {
+    const pkgs = entries.map(([pkg]) => pkg);
+    onBatchDecide(pkgs, 'approve');
+  }
+
+  function handleDenyAll() {
+    const pkgs = entries.map(([pkg]) => pkg);
+    onBatchDecide(pkgs, 'deny');
+  }
+
+  return (
+    <div style={styles.section}>
+      <button
+        style={{ ...styles.sectionHeader, borderLeft: `4px solid ${color}` }}
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+      >
+        <span style={styles.sectionLabel}>{categoryName}</span>
+        <div style={styles.badgeRow}>
+          {pendingCount > 0 && <span style={{ ...styles.sectionBadge, backgroundColor: '#f59e0b' }}>{pendingCount}</span>}
+          {allowedCount > 0 && <span style={{ ...styles.sectionBadge, backgroundColor: '#34a853' }}>{allowedCount}</span>}
+          {blockedCount > 0 && <span style={{ ...styles.sectionBadge, backgroundColor: '#ea4335' }}>{blockedCount}</span>}
+        </div>
+        <span style={{ ...styles.sectionBadge, backgroundColor: color }}>{entries.length}</span>
+        <span style={styles.chevron}>{collapsed ? '›' : '⌄'}</span>
+      </button>
+      {!collapsed && (
+        <>
+          <div style={styles.batchActions}>
+            <button style={styles.approveAllBtn} onClick={handleApproveAll}>
+              Approve All
+            </button>
+            <button style={styles.denyAllBtn} onClick={handleDenyAll}>
+              Deny All
+            </button>
+          </div>
+          {entries.map(([pkg, data]) => (
+            <AppRow
+              key={pkg}
+              childPublicKey={childPublicKey}
+              packageName={pkg}
+              appData={data}
+              onUpdate={onUpdate}
+              onDecide={onDecide}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AppsTab({ childPublicKey }) {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sortOrder, setSortOrder] = useState('alpha'); // 'alpha' | 'date'
   const [search, setSearch] = useState('');
-  const [collapsed, setCollapsed] = useState({ pending: true, allowed: true, blocked: true });
+  const [viewMode, setViewMode] = useState('category'); // 'status' | 'category'
+  const [collapsed, setCollapsed] = useState({});
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -182,8 +253,21 @@ export default function AppsTab({ childPublicKey }) {
     }));
   }
 
+  function handleBatchDecide(packageNames, decision) {
+    const newStatus = decision === 'approve' ? 'allowed' : 'blocked';
+    // Optimistic local update
+    setPolicy(prev => {
+      const apps = { ...prev.apps };
+      for (const pkg of packageNames) {
+        apps[pkg] = { ...apps[pkg], status: newStatus };
+      }
+      return { ...prev, apps };
+    });
+    window.callBare('apps:decideBatch', { childPublicKey, packageNames, decision });
+  }
+
   function toggleSection(key) {
-    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+    setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }
 
   if (loading) return <div style={styles.msg}>Loading apps...</div>;
@@ -204,12 +288,6 @@ export default function AppsTab({ childPublicKey }) {
     return (b[1].addedAt || 0) - (a[1].addedAt || 0);
   });
 
-  const grouped = {
-    pending: sorted.filter(([, d]) => d.status === 'pending'),
-    allowed: sorted.filter(([, d]) => d.status === 'allowed'),
-    blocked: sorted.filter(([, d]) => d.status !== 'pending' && d.status !== 'allowed'),
-  };
-
   const totalCount = Object.keys(policy.apps).length;
   const visibleCount = filtered.length;
 
@@ -229,7 +307,14 @@ export default function AppsTab({ childPublicKey }) {
           onClick={() => setSortOrder(s => s === 'alpha' ? 'date' : 'alpha')}
           aria-label="Toggle sort order"
         >
-          {sortOrder === 'alpha' ? '🔤 A–Z' : '🕐 Date'}
+          {sortOrder === 'alpha' ? 'A-Z' : 'Date'}
+        </button>
+        <button
+          style={{ ...styles.sortBtn, ...(viewMode === 'category' ? styles.viewBtnActive : {}) }}
+          onClick={() => setViewMode(v => v === 'status' ? 'category' : 'status')}
+          aria-label="Toggle view mode"
+        >
+          {viewMode === 'status' ? 'By Status' : 'By Category'}
         </button>
       </div>
       <div style={styles.appCountRow}>
@@ -242,22 +327,44 @@ export default function AppsTab({ childPublicKey }) {
           </button>
         )}
       </div>
-      {CATEGORIES.map(cat => {
-        const entries = grouped[cat.key];
-        if (entries.length === 0) return null;
-        return (
-          <CategorySection
-            key={cat.key}
-            category={cat}
-            entries={entries}
-            childPublicKey={childPublicKey}
-            onUpdate={handleUpdate}
-            onDecide={handleDecide}
-            collapsed={collapsed[cat.key]}
-            onToggle={() => toggleSection(cat.key)}
-          />
-        );
-      })}
+      {viewMode === 'status' ? (
+        STATUS_CATEGORIES.map(cat => {
+          const entries = cat.key === 'blocked'
+            ? sorted.filter(([, d]) => d.status !== 'pending' && d.status !== 'allowed')
+            : sorted.filter(([, d]) => d.status === cat.key);
+          if (entries.length === 0) return null;
+          return (
+            <StatusSection
+              key={cat.key}
+              category={cat}
+              entries={entries}
+              childPublicKey={childPublicKey}
+              onUpdate={handleUpdate}
+              onDecide={handleDecide}
+              collapsed={collapsed[cat.key] ?? true}
+              onToggle={() => toggleSection(cat.key)}
+            />
+          );
+        })
+      ) : (
+        APP_CATEGORIES.map(catName => {
+          const entries = sorted.filter(([, d]) => (d.category || 'Other') === catName);
+          if (entries.length === 0) return null;
+          return (
+            <CategorySection
+              key={catName}
+              categoryName={catName}
+              entries={entries}
+              childPublicKey={childPublicKey}
+              onUpdate={handleUpdate}
+              onDecide={handleDecide}
+              onBatchDecide={handleBatchDecide}
+              collapsed={collapsed[catName] ?? true}
+              onToggle={() => toggleSection(catName)}
+            />
+          );
+        })
+      )}
     </div>
   );
 }
@@ -290,6 +397,11 @@ const styles = {
     color: '#444',
     whiteSpace: 'nowrap',
   },
+  viewBtnActive: {
+    background: '#e8f0fe',
+    borderColor: '#4285f4',
+    color: '#1a73e8',
+  },
   appCountRow: {
     display: 'flex',
     alignItems: 'center',
@@ -321,6 +433,7 @@ const styles = {
     marginBottom: '4px',
   },
   sectionLabel: { flex: 1, fontSize: '13px', fontWeight: '600', color: '#333' },
+  badgeRow: { display: 'flex', gap: '4px' },
   sectionBadge: {
     fontSize: '11px',
     color: '#fff',
@@ -329,6 +442,34 @@ const styles = {
     fontWeight: '700',
   },
   chevron: { fontSize: '16px', color: '#888', lineHeight: 1 },
+  batchActions: {
+    display: 'flex',
+    gap: '8px',
+    padding: '8px 0',
+    borderBottom: '1px solid #eee',
+  },
+  approveAllBtn: {
+    flex: 1,
+    padding: '8px 12px',
+    border: 'none',
+    borderRadius: '6px',
+    backgroundColor: '#34a853',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  denyAllBtn: {
+    flex: 1,
+    padding: '8px 12px',
+    border: 'none',
+    borderRadius: '6px',
+    backgroundColor: '#ea4335',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
   appRow: {
     padding: '12px 0',
     borderBottom: '1px solid #eee',

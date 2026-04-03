@@ -554,7 +554,7 @@ function createDispatch (ctx) {
       }
 
       case 'app:installed': {
-        const { packageName, appName } = args
+        const { packageName, appName, category } = args
 
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : { apps: {} }
@@ -562,7 +562,7 @@ function createDispatch (ctx) {
 
         // Mark as pending if not already in policy
         if (!policy.apps[packageName]) {
-          policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: Date.now() }
+          policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: Date.now(), ...(category && { category }) }
           await ctx.db.put('policy', policy)
 
           // Notify native enforcement of updated policy
@@ -575,7 +575,7 @@ function createDispatch (ctx) {
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
 
           if (ctx.sendToParent) {
-            await ctx.sendToParent({ type: 'app:installed', payload: { packageName, appName: appName || packageName, detectedAt: Date.now() } })
+            await ctx.sendToParent({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, detectedAt: Date.now() } })
           }
         }
 
@@ -629,11 +629,14 @@ function createDispatch (ctx) {
         const isInitialSync = Object.keys(policy.apps).length === 0
 
         let newCount = 0
-        for (const { packageName, appName, isLauncher } of apps) {
+        for (const { packageName, appName, isLauncher, category } of apps) {
           if (!policy.apps[packageName]) {
             const status = (isInitialSync || isLauncher) ? 'allowed' : 'pending'
-            policy.apps[packageName] = { status, appName: appName || packageName, addedAt: Date.now() }
+            policy.apps[packageName] = { status, appName: appName || packageName, addedAt: Date.now(), ...(category && { category }) }
             newCount++
+          } else if (category && !policy.apps[packageName].category) {
+            // Backfill category for apps already in policy
+            policy.apps[packageName].category = category
           }
         }
 
@@ -830,6 +833,43 @@ function createDispatch (ctx) {
         return { ok: true, decision: d }
       }
 
+      case 'apps:decideBatch': {
+        const { childPublicKey, packageNames, decision } = args
+        if (!childPublicKey || !Array.isArray(packageNames) || packageNames.length === 0 || !['approve', 'deny'].includes(decision)) {
+          throw new Error('invalid apps:decideBatch args')
+        }
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+        if (!policy.apps) policy.apps = {}
+        const d = decision === 'approve' ? 'allowed' : 'blocked'
+
+        for (const packageName of packageNames) {
+          policy.apps[packageName] = { ...(policy.apps[packageName] || {}), status: d }
+        }
+        policy.version = (policy.version || 0) + 1
+        await ctx.db.put('policy:' + childPublicKey, policy)
+
+        // Push full policy to child in one shot — avoids per-app notifications
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+          }
+        } catch (_e) {}
+
+        // Mark matching pending requests as resolved
+        const reqStatus = d === 'allowed' ? 'approved' : 'denied'
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+          if (value.childPublicKey === childPublicKey && packageNames.includes(value.packageName) && value.status === 'pending') {
+            await ctx.db.put(key, { ...value, status: reqStatus })
+          }
+        }
+
+        ctx.send({ type: 'event', event: 'apps:synced', data: { childPublicKey } })
+        return { ok: true, decision: d, count: packageNames.length }
+      }
+
       case 'policy:update': {
         const { childPublicKey, policy } = args
         if (!childPublicKey || !policy || typeof policy !== 'object') {
@@ -928,18 +968,15 @@ async function handleAppDecision (payload, db, send) {
   // Update any pending time requests for this package so the child's request
   // list reflects the parent's decision ('allowed' → 'approved', 'blocked' → 'denied').
   const requestStatus = decision === 'allowed' ? 'approved' : 'denied'
-  let requestFound = false
+  // Only emit request:updated (which triggers a child notification) when a
+  // pending request actually exists. Proactive parent decisions (approve/deny
+  // from the Apps tab without a child request) should NOT notify the child.
   for await (const { key, value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
     if (value.packageName === packageName && value.status === 'pending') {
       const updated = { ...value, status: requestStatus }
       await db.put(key, updated)
       send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
-      requestFound = true
     }
-  }
-  // Fallback: always emit so the child notification fires even if no req:* entry was found
-  if (!requestFound) {
-    send({ type: 'event', event: 'request:updated', data: { status: requestStatus, packageName } })
   }
 }
 
@@ -1088,7 +1125,7 @@ async function flushMessageQueue (db, writeMessage) {
  * Runs on the PARENT device.
  */
 async function handleIncomingAppInstalled (payload, childPublicKey, db, send, sendToPeer) {
-  const { packageName, appName, iconBase64 } = payload
+  const { packageName, appName, iconBase64, category } = payload
   if (!packageName) {
     console.warn('[bare] app:installed from child: missing packageName')
     return
@@ -1106,7 +1143,7 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
 
   if (!policy.apps[packageName]) {
     const now = Date.now()
-    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }) }
+    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }), ...(category && { category }) }
     policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
@@ -1171,15 +1208,21 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
   // sort together by date rather than getting subtly different millisecond values.
   const batchAddedAt = Date.now()
   const newApps = []
-  for (const { packageName, appName, iconBase64 } of apps) {
+  for (const { packageName, appName, iconBase64, category } of apps) {
     if (!policy.apps[packageName]) {
-      policy.apps[packageName] = { status: isFirstSync ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(iconBase64 && { iconBase64 }) }
+      policy.apps[packageName] = { status: isFirstSync ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(iconBase64 && { iconBase64 }), ...(category && { category }) }
       newApps.push({ packageName, appName: appName || packageName })
       newCount++
-    } else if (iconBase64 && !policy.apps[packageName].iconBase64) {
-      // Back-fill icon for apps already in the policy (e.g. from before this feature)
-      policy.apps[packageName].iconBase64 = iconBase64
-      iconUpdateCount++
+    } else {
+      // Back-fill icon and category for apps already in the policy
+      if (iconBase64 && !policy.apps[packageName].iconBase64) {
+        policy.apps[packageName].iconBase64 = iconBase64
+        iconUpdateCount++
+      }
+      if (category && !policy.apps[packageName].category) {
+        policy.apps[packageName].category = category
+        iconUpdateCount++ // reuse counter — any metadata backfill triggers a save
+      }
     }
   }
 

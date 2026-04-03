@@ -734,12 +734,23 @@ function createDispatch (ctx) {
         const identityRaw = await ctx.db.get('identity')
         const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
 
-        // args.usage is [{ packageName, appName, secondsToday }] from getDailyUsageAll()
+        // Build weekly lookup: packageName → secondsThisWeek
+        const weeklyMap = {}
+        for (const w of args.weekly || []) {
+          weeklyMap[w.packageName] = w.secondsThisWeek || 0
+        }
+
+        // Load policy to attach daily limits per app
+        const policyRaw = await ctx.db.get('policy')
+        const policyApps = policyRaw?.value?.apps || {}
+
+        // args.usage is [{ packageName, appName, secondsToday }] from getDailyUsageAllEvents()
         const apps = (args.usage || []).map((a) => ({
           packageName: a.packageName,
           displayName: a.appName || a.packageName,
           todaySeconds: a.secondsToday || 0,
-          weekSeconds: 0,
+          weekSeconds: weeklyMap[a.packageName] || 0,
+          dailyLimitSeconds: policyApps[a.packageName]?.dailyLimitSeconds || null,
         }))
 
         // Skip storing/sending if no usage data — avoids overwriting a valid

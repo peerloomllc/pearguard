@@ -14597,9 +14597,10 @@
     return `${m}m`;
   }
   function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
-    const maxSeconds = dailyLimitSeconds || 3600;
-    const todayPct = Math.min(100, todaySeconds / maxSeconds * 100);
-    const weekPct = Math.min(100, weekSeconds / (maxSeconds * 7) * 100);
+    const todayScale = dailyLimitSeconds || 86400;
+    const weekScale = dailyLimitSeconds ? dailyLimitSeconds * 7 : 604800;
+    const todayPct = Math.min(100, todaySeconds / todayScale * 100);
+    const weekPct = Math.min(100, weekSeconds / weekScale * 100);
     const overLimit = dailyLimitSeconds && todaySeconds > dailyLimitSeconds;
     return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: styles2.usageRow, children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: styles2.appName, children: appName }),

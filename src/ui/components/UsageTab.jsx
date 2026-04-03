@@ -19,9 +19,12 @@ function formatSeconds(s) {
 }
 
 function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
-  const maxSeconds = dailyLimitSeconds || 3600; // fallback to 1h for display
-  const todayPct = Math.min(100, (todaySeconds / maxSeconds) * 100);
-  const weekPct = Math.min(100, (weekSeconds / (maxSeconds * 7)) * 100);
+  // When a limit is set, scale against the limit. Otherwise scale against
+  // 24h (daily) / 168h (weekly) — the natural maximum.
+  const todayScale = dailyLimitSeconds || 86400;
+  const weekScale = dailyLimitSeconds ? dailyLimitSeconds * 7 : 604800;
+  const todayPct = Math.min(100, (todaySeconds / todayScale) * 100);
+  const weekPct = Math.min(100, (weekSeconds / weekScale) * 100);
   const overLimit = dailyLimitSeconds && todaySeconds > dailyLimitSeconds;
 
   return (

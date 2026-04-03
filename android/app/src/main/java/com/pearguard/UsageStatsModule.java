@@ -6,6 +6,7 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.usage.UsageEvents;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
@@ -210,6 +211,149 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 item.putString("packageName", entry.getKey());
                 item.putString("appName", label);
                 item.putInt("secondsToday", (int)(ms / 1000));
+                result.pushMap(item);
+            }
+        }
+        promise.resolve(result);
+    }
+
+    /**
+     * Like getDailyUsageAll() but uses raw MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND
+     * events instead of aggregate stats. This includes the current live session,
+     * giving real-time accuracy (aggregate stats lag until the app backgrounds).
+     * Falls back to getDailyUsageAll() if event query fails.
+     */
+    @ReactMethod
+    public void getDailyUsageAllEvents(Promise promise) {
+        try {
+            UsageStatsManager usm = (UsageStatsManager)
+                    reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
+            PackageManager pm = reactContext.getPackageManager();
+
+            Calendar cal = Calendar.getInstance();
+            cal.set(Calendar.HOUR_OF_DAY, 0);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+            long startOfDay = cal.getTimeInMillis();
+            long now = System.currentTimeMillis();
+
+            // Build launcher-visible set
+            java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+            if (resolveInfos != null) {
+                for (ResolveInfo ri : resolveInfos) {
+                    launcherPackages.add(ri.activityInfo.packageName);
+                }
+            }
+
+            // Track per-package foreground time from raw events
+            java.util.Map<String, Long> totalMs = new java.util.HashMap<>();
+            java.util.Map<String, Long> sessionStarts = new java.util.HashMap<>();
+
+            UsageEvents events = usm.queryEvents(startOfDay, now);
+            if (events != null) {
+                UsageEvents.Event event = new UsageEvents.Event();
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event);
+                    String pkg = event.getPackageName();
+                    if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                        sessionStarts.put(pkg, event.getTimeStamp());
+                    } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                        Long start = sessionStarts.remove(pkg);
+                        if (start != null) {
+                            long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                            totalMs.put(pkg, prev + (event.getTimeStamp() - start));
+                        }
+                    }
+                }
+            }
+
+            // Add elapsed time for apps still in foreground
+            for (java.util.Map.Entry<String, Long> entry : sessionStarts.entrySet()) {
+                String pkg = entry.getKey();
+                long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                totalMs.put(pkg, prev + (now - entry.getValue()));
+            }
+
+            WritableArray result = Arguments.createArray();
+            for (java.util.Map.Entry<String, Long> entry : totalMs.entrySet()) {
+                long ms = entry.getValue();
+                if (ms <= 0) continue;
+                if (!launcherPackages.contains(entry.getKey())) continue;
+                if (entry.getKey().equals(reactContext.getPackageName())) continue;
+
+                String label = entry.getKey();
+                try {
+                    ApplicationInfo info = pm.getApplicationInfo(entry.getKey(), 0);
+                    label = pm.getApplicationLabel(info).toString();
+                } catch (PackageManager.NameNotFoundException ignored) {}
+
+                WritableMap item = Arguments.createMap();
+                item.putString("packageName", entry.getKey());
+                item.putString("appName", label);
+                item.putInt("secondsToday", (int)(ms / 1000));
+                result.pushMap(item);
+            }
+            promise.resolve(result);
+        } catch (Exception e) {
+            // Fall back to aggregate-based method
+            getDailyUsageAll(promise);
+        }
+    }
+
+    /**
+     * Returns weekly usage for all launcher-visible apps as an array of
+     * { packageName: string, appName: string, secondsThisWeek: number }.
+     * Only includes apps with > 0 seconds.
+     */
+    @ReactMethod
+    public void getWeeklyUsageAll(Promise promise) {
+        UsageStatsManager usm = (UsageStatsManager)
+                reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
+        PackageManager pm = reactContext.getPackageManager();
+
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.DAY_OF_WEEK, cal.getFirstDayOfWeek());
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long startOfWeek = cal.getTimeInMillis();
+        long now = System.currentTimeMillis();
+
+        Map<String, UsageStats> statsMap = usm.queryAndAggregateUsageStats(startOfWeek, now);
+
+        java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+        if (resolveInfos != null) {
+            for (ResolveInfo ri : resolveInfos) {
+                launcherPackages.add(ri.activityInfo.packageName);
+            }
+        }
+
+        WritableArray result = Arguments.createArray();
+        if (statsMap != null) {
+            for (Map.Entry<String, UsageStats> entry : statsMap.entrySet()) {
+                long ms = entry.getValue().getTotalTimeInForeground();
+                if (ms <= 0) continue;
+                if (!launcherPackages.contains(entry.getKey())) continue;
+                if (entry.getKey().equals(reactContext.getPackageName())) continue;
+
+                String label = entry.getKey();
+                try {
+                    ApplicationInfo info = pm.getApplicationInfo(entry.getKey(), 0);
+                    label = pm.getApplicationLabel(info).toString();
+                } catch (PackageManager.NameNotFoundException ignored) {}
+
+                WritableMap item = Arguments.createMap();
+                item.putString("packageName", entry.getKey());
+                item.putString("appName", label);
+                item.putInt("secondsThisWeek", (int)(ms / 1000));
                 result.pushMap(item);
             }
         }

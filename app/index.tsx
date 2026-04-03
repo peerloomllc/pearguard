@@ -241,6 +241,14 @@ export default function Root () {
         return
       }
 
+      if (msg.method === 'haptic:tap') {
+        NativeModules.UsageStatsModule?.hapticTap?.()
+        webViewRef.current?.injectJavaScript(
+          'window.__pearResponse(' + msg.id + ', null);true;'
+        )
+        return
+      }
+
       if (msg.method === 'share:text') {
         Share.share({ message: msg.args.text })
         webViewRef.current?.injectJavaScript(

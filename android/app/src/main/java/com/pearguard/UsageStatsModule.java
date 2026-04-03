@@ -17,6 +17,8 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Process;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 
 import androidx.core.app.NotificationCompat;
 
@@ -706,6 +708,22 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             promise.resolve(url);
         } else {
             promise.resolve(null);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @ReactMethod
+    public void hapticTap() {
+        Vibrator v = (Vibrator) reactContext.getSystemService(Context.VIBRATOR_SERVICE);
+        if (v == null || !v.hasVibrator()) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (v.hasAmplitudeControl()) {
+                v.vibrate(VibrationEffect.createOneShot(20, 80));
+            } else {
+                v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
+            }
+        } else {
+            v.vibrate(50);
         }
     }
 

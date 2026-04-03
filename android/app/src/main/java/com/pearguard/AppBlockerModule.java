@@ -71,7 +71,7 @@ public class AppBlockerModule extends AccessibilityService {
     // Last non-system-overlay package seen in onAccessibilityEvent. Used by the
     // EnforcementService polling loop to enforce time limits / schedule blocks on
     // apps that are already in the foreground when a block condition activates (#66).
-    private String lastForegroundPackage = null;
+    private volatile String lastForegroundPackage = null;
     // Suppresses the polling-loop overlay until this timestamp. Set when the user
     // taps "Request More Time" so the extra-time picker dialog is not overwritten
     // by the next polling tick showing the overlay again (#66).
@@ -91,6 +91,12 @@ public class AppBlockerModule extends AccessibilityService {
 
     // Singleton reference — set in onServiceConnected, cleared in onDestroy.
     private static AppBlockerModule sInstance = null;
+
+    /** Returns the package currently in the foreground, or null. */
+    public static String getLastForegroundPackage() {
+        AppBlockerModule inst = sInstance;
+        return inst != null ? inst.lastForegroundPackage : null;
+    }
 
     /**
      * Called from UsageStatsModule when a policy update or P2P override arrives that

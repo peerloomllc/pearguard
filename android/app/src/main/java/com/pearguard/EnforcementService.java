@@ -5,6 +5,8 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.usage.UsageEvents;
+import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -21,16 +23,27 @@ import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.Calendar;
+import java.util.HashSet;
+import java.util.Set;
+
 public class EnforcementService extends Service {
 
     private static final String CHANNEL_ID = "pearguard_enforcement";
     private static final int NOTIFICATION_ID = 1000;
     private static final long POLL_INTERVAL_MS = 5_000;       // 5 seconds
     private static final long USAGE_FLUSH_INTERVAL_MS = 300_000; // 5 minutes
+    private static final String WARNING_CHANNEL_ID = "pearguard_upcoming_warning";
+    private static final int[] WARNING_THRESHOLDS_MIN = {10, 5, 1};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastUsageFlushTime = 0;
     private boolean lastAccessibilityState = true;
+    private final Set<String> shownWarnings = new HashSet<>();
+    private int lastWarningDayOfYear = -1;
 
     // --- Lifecycle ---
 
@@ -38,6 +51,7 @@ public class EnforcementService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        createWarningNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
         lastAccessibilityState = isAccessibilityServiceEnabled();
         handler.post(enforcementLoop);
@@ -69,6 +83,7 @@ public class EnforcementService extends Service {
                 writeEnforcementHeartbeat();
                 checkAccessibilityService();
                 checkForegroundEnforcement();
+                checkWarningNotifications();
                 maybeFlushUsageStats();
             } catch (Exception ignored) {
             } finally {
@@ -173,6 +188,190 @@ public class EnforcementService extends Service {
             if (splitter.next().equalsIgnoreCase(ourService)) return true;
         }
         return false;
+    }
+
+    // --- Upcoming warning notifications ---
+
+    private void checkWarningNotifications() {
+        int today = Calendar.getInstance().get(Calendar.DAY_OF_YEAR);
+        if (today != lastWarningDayOfYear) {
+            shownWarnings.clear();
+            lastWarningDayOfYear = today;
+        }
+
+        JSONObject policy = loadPolicyFromPrefs();
+        if (policy == null) return;
+
+        checkScheduleWarnings(policy);
+        checkTimeLimitWarnings(policy);
+    }
+
+    private JSONObject loadPolicyFromPrefs() {
+        try {
+            String json = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+                .getString("pearguard_policy", null);
+            return json != null ? new JSONObject(json) : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void checkScheduleWarnings(JSONObject policy) {
+        try {
+            JSONArray schedules = policy.optJSONArray("schedules");
+            if (schedules == null) return;
+
+            Calendar now = Calendar.getInstance();
+            int dayOfWeek = now.get(Calendar.DAY_OF_WEEK) - 1; // 0=Sunday
+            int nowSeconds = (now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)) * 60
+                    + now.get(Calendar.SECOND);
+
+            for (int i = 0; i < schedules.length(); i++) {
+                JSONObject schedule = schedules.getJSONObject(i);
+                JSONArray days = schedule.getJSONArray("days");
+
+                boolean dayMatches = false;
+                for (int d = 0; d < days.length(); d++) {
+                    if (days.getInt(d) == dayOfWeek) { dayMatches = true; break; }
+                }
+                if (!dayMatches) continue;
+
+                String[] startParts = schedule.getString("start").split(":");
+                int startSeconds = (Integer.parseInt(startParts[0]) * 60
+                        + Integer.parseInt(startParts[1])) * 60;
+
+                int secondsUntil = startSeconds - nowSeconds;
+                if (secondsUntil < 0) secondsUntil += 24 * 3600;
+
+                if (secondsUntil > 11 * 60 || secondsUntil <= 0) continue;
+
+                String label = schedule.optString("label", "Scheduled block");
+
+                for (int t = 0; t < WARNING_THRESHOLDS_MIN.length; t++) {
+                    int threshMin = WARNING_THRESHOLDS_MIN[t];
+                    int threshSec = threshMin * 60;
+                    if (secondsUntil <= threshSec && secondsUntil > threshSec - 6) {
+                        String dedupKey = "sched:" + i + ":" + threshMin;
+                        if (shownWarnings.add(dedupKey)) {
+                            int notifId = 2000 + i * 10 + t;
+                            showWarningNotification(notifId,
+                                label + " starts in " + threshMin
+                                    + " minute" + (threshMin > 1 ? "s" : ""),
+                                "Apps will be restricted when \""
+                                    + label + "\" begins.");
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void checkTimeLimitWarnings(JSONObject policy) {
+        try {
+            String foregroundPkg = AppBlockerModule.getLastForegroundPackage();
+            if (foregroundPkg == null) return;
+
+            JSONObject apps = policy.optJSONObject("apps");
+            if (apps == null || !apps.has(foregroundPkg)) return;
+
+            JSONObject appPolicy = apps.getJSONObject(foregroundPkg);
+            int limitSeconds = appPolicy.optInt("dailyLimitSeconds", -1);
+            if (limitSeconds <= 0) return;
+
+            int usedSeconds = getDailyUsageSeconds(foregroundPkg);
+            int remainingSeconds = limitSeconds - usedSeconds;
+            if (remainingSeconds <= 0) return;
+
+            String appName = appPolicy.optString("appName", foregroundPkg);
+
+            for (int t = 0; t < WARNING_THRESHOLDS_MIN.length; t++) {
+                int threshMin = WARNING_THRESHOLDS_MIN[t];
+                int threshSec = threshMin * 60;
+                if (remainingSeconds <= threshSec && remainingSeconds > threshSec - 6) {
+                    String dedupKey = "limit:" + foregroundPkg + ":" + threshMin;
+                    if (shownWarnings.add(dedupKey)) {
+                        int notifId = 3000
+                                + (foregroundPkg.hashCode() & 0x7FFFFFFF) % 900 + t;
+                        showWarningNotification(notifId,
+                            appName + ": " + threshMin
+                                + " minute" + (threshMin > 1 ? "s" : "")
+                                + " remaining",
+                            "Your daily limit for " + appName + " is almost up.");
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private int getDailyUsageSeconds(String packageName) {
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return 0;
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long startOfDay = cal.getTimeInMillis();
+        long now = System.currentTimeMillis();
+        try {
+            UsageEvents events = usm.queryEvents(startOfDay, now);
+            if (events == null) return 0;
+            UsageEvents.Event event = new UsageEvents.Event();
+            long totalMs = 0;
+            long sessionStart = -1;
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event);
+                if (!packageName.equals(event.getPackageName())) continue;
+                if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    sessionStart = event.getTimeStamp();
+                } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND
+                        && sessionStart >= 0) {
+                    totalMs += event.getTimeStamp() - sessionStart;
+                    sessionStart = -1;
+                }
+            }
+            if (sessionStart >= 0) totalMs += now - sessionStart;
+            return (int) (totalMs / 1000);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void showWarningNotification(int notificationId, String title, String body) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null) return;
+
+        PendingIntent pi = null;
+        try {
+            Intent openApp = new Intent(this, Class.forName("com.pearguard.MainActivity"));
+            pi = PendingIntent.getActivity(this, notificationId, openApp,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        } catch (ClassNotFoundException ignored) {}
+
+        NotificationCompat.Builder builder =
+                new NotificationCompat.Builder(this, WARNING_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true)
+                    .setTimeoutAfter(5 * 60 * 1000);
+
+        if (pi != null) builder.setContentIntent(pi);
+        nm.notify(notificationId, builder.build());
+    }
+
+    private void createWarningNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                WARNING_CHANNEL_ID,
+                "Upcoming Limit Warnings",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Warnings before schedule blocks or time limits");
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.createNotificationChannel(channel);
+        }
     }
 
     // --- Foreground notification ---

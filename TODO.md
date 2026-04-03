@@ -14,9 +14,11 @@ Open items only. Completed items are in `DONE.md`.
 | # | Title | Where |
 |---|-------|-------|
 | 12 | Persistent parent identity key — decision needed | `documentDirectory` keypair survives data clear; keep vs. force fresh? |
-| 44 | Child: warn at 10/5/1 min before schedule or time-limit starts | `EnforcementService.java` — poll upcoming windows, heads-up notification |
 | 79 | About page on Parent device | Match PearCal's `AboutTab` — app name/tagline, "How It Works" (P2P explainer + pears.com link), Support Development (Bitcoin Lightning `pearloomllc@strike.me`, Buy Me a Coffee), Learn About Bitcoin (Nakamoto Institute), Share the App, Contact (email `peerloomllc@proton.me`, GitHub Issues), version number. Reference: `~/peerloomllc/pearcal-native/src/ui/App.jsx` lines 3975-4141 |
 | 83 | Animation/feedback on approve/deny in Apps list | `AppsTab.jsx` — animate transition when app moves between Pending/Allowed/Blocked groups |
 | 84 | Move overrides on Parent from Requests tab to Apps list | `AppsTab.jsx` — show active override badge/timer per app; remove from `RequestsTab.jsx` |
 | 87 | UI overhaul session | Full review and refresh of visual design across all screens — colors, spacing, typography, consistency |
 | 88 | Periodic "enforcement may be off" notifications | Child device sends recurring notification if Accessibility Service or other enforcement prerequisites are disabled |
+| 90 | Overlay not dismissed when daily limit removed | If daily limit is reached and Parent removes the limit (makes unlimited), overlay stays. Increasing the limit does dismiss it. |
+| 91 | Save button for app time limits | Better UX: add a Save button next to per-app time limit inputs instead of auto-saving |
+| 92 | More reliable/accurate usage metrics | Investigate options for improving usage stats reliability and accuracy |

@@ -4,6 +4,13 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-03
+
+### [x] Warn at 10/5/1 min before schedule or time-limit (#44) — 2026-04-03
+Added warning notifications on the child device at 10, 5, and 1 minute before a schedule block starts or a daily time limit is reached. New `pearguard_upcoming_warning` notification channel (IMPORTANCE_HIGH) with heads-up display. Logic runs in EnforcementService's 5-second polling loop with in-memory dedup that resets daily.
+
+---
+
 ## Added 2026-04-02
 
 ### [x] Remove Child Home status card (#89) — 2026-04-02

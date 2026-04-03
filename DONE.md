@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-03
 
+### [x] Configurable time request options and warning thresholds (#96) — 2026-04-03
+Added Settings UI chip selectors for time request duration options (child block overlay) and warning notification thresholds (minutes before block). Settings stored in Hyperbee, synced to child via policy. Native EnforcementService and AppBlockerModule read from policy settings instead of hardcoded values.
+
 ### [x] About page on Parent device (#79) — 2026-04-03
 Added About tab with P2P explainer, Support Development (Donate BTC + Buy Me a Coffee), Learn About Bitcoin, Share the App, and Contact sections. Merged parent Profile into Settings (avatar + name on top, PIN below). Added openURL IPC handler.
 

@@ -99,16 +99,8 @@ function RequestRow({ req, childPublicKey, onResolved }) {
   );
 }
 
-function timeRemaining(expiresAt) {
-  const diff = Math.max(0, expiresAt - Date.now());
-  const mins = Math.ceil(diff / 60000);
-  if (mins >= 60) return Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
-  return mins + 'm';
-}
-
 export default function RequestsTab({ childPublicKey }) {
   const [requests, setRequests] = useState([]);
-  const [overrides, setOverrides] = useState([]);
   const [loading, setLoading] = useState(true);
 
   function reload() {
@@ -127,41 +119,18 @@ export default function RequestsTab({ childPublicKey }) {
       .catch(() => setLoading(false));
   }
 
-  function loadOverrides() {
-    window.callBare('overrides:list', { childPublicKey })
-      .then(({ overrides }) => setOverrides(overrides || []))
-      .catch(() => {});
-  }
-
   useEffect(() => {
     reload();
-    loadOverrides();
-    const unsub = window.onBareEvent('time:request:received', () => { reload(); loadOverrides(); });
-    const unsub2 = window.onBareEvent('request:updated', () => { reload(); loadOverrides(); });
-    const timer = setInterval(loadOverrides, 30000);
-    return () => { unsub(); unsub2(); clearInterval(timer); };
+    const unsub = window.onBareEvent('time:request:received', reload);
+    const unsub2 = window.onBareEvent('request:updated', reload);
+    return () => { unsub(); unsub2(); };
   }, [childPublicKey]);
 
   if (loading) return <div style={styles.msg}>Loading...</div>;
 
   return (
     <div style={styles.container}>
-      {overrides.length > 0 && (
-        <div style={{ marginBottom: '16px' }}>
-          <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#555' }}>Active Overrides</h4>
-          {overrides.map((o, i) => (
-            <div key={i} style={styles.overrideRow}>
-              <div>
-                <span style={{ fontWeight: '600', fontSize: '13px' }}>{o.appName}</span>
-              </div>
-              <span style={{ color: '#1a73e8', fontSize: '12px', fontWeight: '600' }}>
-                {timeRemaining(o.expiresAt)} left
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      {requests.length === 0 && overrides.length === 0 && (
+      {requests.length === 0 && (
         <div style={styles.msg}>No requests yet.</div>
       )}
       {requests.map((req) => (
@@ -169,7 +138,7 @@ export default function RequestsTab({ childPublicKey }) {
           key={req.id}
           req={req}
           childPublicKey={childPublicKey}
-          onResolved={() => { reload(); loadOverrides(); }}
+          onResolved={reload}
         />
       ))}
     </div>
@@ -198,9 +167,4 @@ const styles = {
     backgroundColor: '#ea4335', color: '#fff', cursor: 'pointer', fontSize: '13px',
   },
   statusLabel: { fontSize: '13px', fontWeight: '600' },
-  overrideRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '8px 12px', marginBottom: '6px', borderRadius: '6px',
-    backgroundColor: '#F0F7FF', border: '1px solid #D0E3FF',
-  },
 };

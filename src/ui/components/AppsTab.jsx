@@ -26,21 +26,27 @@ function getIconColor(str) {
   return ICON_COLORS[Math.abs(hash) % ICON_COLORS.length];
 }
 
-function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
-  const [limitInput, setLimitInput] = useState(
-    appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : ''
-  );
+function timeRemaining(expiresAt) {
+  const diff = Math.max(0, expiresAt - Date.now());
+  const mins = Math.ceil(diff / 60000);
+  if (mins >= 60) return Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
+  return mins + 'm';
+}
+
+function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override }) {
+  const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : '';
+  const [limitInput, setLimitInput] = useState(savedMinutes);
+  const limitDirty = limitInput !== savedMinutes;
 
   function setStatus(newStatus) {
     onUpdate(packageName, { ...appData, status: newStatus });
   }
 
-  function handleLimitBlur() {
+  function saveLimit() {
     const mins = parseInt(limitInput, 10);
     if (!isNaN(mins) && mins > 0) {
       onUpdate(packageName, { ...appData, dailyLimitSeconds: mins * 60 });
     } else {
-      // Empty or zero — remove the daily limit
       const { dailyLimitSeconds, ...rest } = appData;
       setLimitInput('');
       onUpdate(packageName, rest);
@@ -87,6 +93,11 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
           {appData.appName && <span style={styles.pkgName}>{packageName}</span>}
           {addedDate && <span style={styles.addedDate}>Added {addedDate}</span>}
         </div>
+        {override && (
+          <span style={styles.overrideBadge}>
+            {timeRemaining(override.expiresAt)} left
+          </span>
+        )}
       </div>
       {isPending ? (
         <div style={styles.actions}>
@@ -115,12 +126,15 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide }) {
               min="0"
               value={limitInput}
               onChange={(e) => setLimitInput(e.target.value)}
-              onBlur={handleLimitBlur}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveLimit(); }}
               style={styles.limitInput}
               aria-label={`Daily limit for ${appData.appName || packageName} in minutes`}
               placeholder="∞"
             />
             min/day
+            {limitDirty && (
+              <button style={styles.saveBtn} onClick={saveLimit}>Save</button>
+            )}
           </label>
         </div>
       )}
@@ -134,7 +148,7 @@ const STATUS_CATEGORIES = [
   { key: 'blocked', label: 'Blocked',           color: '#ea4335' },
 ];
 
-function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, collapsed, onToggle }) {
+function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, overrideMap, collapsed, onToggle }) {
   return (
     <div style={styles.section}>
       <button
@@ -154,13 +168,14 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
           appData={data}
           onUpdate={onUpdate}
           onDecide={onDecide}
+          override={overrideMap[pkg]}
         />
       ))}
     </div>
   );
 }
 
-function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, collapsed, onToggle }) {
+function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle }) {
   const color = CATEGORY_COLORS[categoryName] || '#aaa';
   const pendingCount = entries.filter(([, d]) => d.status === 'pending').length;
   const allowedCount = entries.filter(([, d]) => d.status === 'allowed').length;
@@ -210,6 +225,7 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
               appData={data}
               onUpdate={onUpdate}
               onDecide={onDecide}
+              override={overrideMap[pkg]}
             />
           ))}
         </>
@@ -225,6 +241,7 @@ export default function AppsTab({ childPublicKey }) {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState('category'); // 'status' | 'category'
   const [collapsed, setCollapsed] = useState({});
+  const [overrides, setOverrides] = useState([]);
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -232,14 +249,22 @@ export default function AppsTab({ childPublicKey }) {
       .catch(() => setLoading(false));
   }, [childPublicKey]);
 
-  useEffect(() => { loadPolicy(); }, [loadPolicy]);
+  const loadOverrides = useCallback(() => {
+    window.callBare('overrides:list', { childPublicKey })
+      .then(({ overrides }) => setOverrides(overrides || []))
+      .catch(() => {});
+  }, [childPublicKey]);
+
+  useEffect(() => { loadPolicy(); loadOverrides(); }, [loadPolicy, loadOverrides]);
 
   useEffect(() => {
     const unsub = window.onBareEvent('apps:synced', (data) => {
-      if (data.childPublicKey === childPublicKey) loadPolicy();
+      if (data.childPublicKey === childPublicKey) { loadPolicy(); loadOverrides(); }
     });
-    return unsub;
-  }, [childPublicKey, loadPolicy]);
+    const unsub2 = window.onBareEvent('request:updated', loadOverrides);
+    const timer = setInterval(loadOverrides, 30000);
+    return () => { unsub(); unsub2(); clearInterval(timer); };
+  }, [childPublicKey, loadPolicy, loadOverrides]);
 
   function handleUpdate(packageName, newAppData) {
     const newApps = { ...policy.apps, [packageName]: newAppData };
@@ -296,6 +321,12 @@ export default function AppsTab({ childPublicKey }) {
   const totalCount = Object.keys(policy.apps).length;
   const visibleCount = filtered.length;
 
+  // Build packageName → override lookup for active overrides
+  const overrideMap = {};
+  for (const o of overrides) {
+    if (o.packageName) overrideMap[o.packageName] = o;
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.toolbar}>
@@ -346,6 +377,7 @@ export default function AppsTab({ childPublicKey }) {
               childPublicKey={childPublicKey}
               onUpdate={handleUpdate}
               onDecide={handleDecide}
+              overrideMap={overrideMap}
               collapsed={collapsed[cat.key] ?? true}
               onToggle={() => toggleSection(cat.key)}
             />
@@ -364,6 +396,7 @@ export default function AppsTab({ childPublicKey }) {
               onUpdate={handleUpdate}
               onDecide={handleDecide}
               onBatchDecide={handleBatchDecide}
+              overrideMap={overrideMap}
               collapsed={collapsed[catName] ?? true}
               onToggle={() => toggleSection(catName)}
             />
@@ -519,4 +552,24 @@ const styles = {
   toggle: { display: 'flex', alignItems: 'center', fontSize: '13px', cursor: 'pointer' },
   limitLabel: { fontSize: '13px', color: '#555', display: 'flex', alignItems: 'center', gap: '6px' },
   limitInput: { width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px' },
+  saveBtn: {
+    padding: '3px 10px',
+    border: 'none',
+    borderRadius: '4px',
+    backgroundColor: '#1a73e8',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '600',
+  },
+  overrideBadge: {
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#1a73e8',
+    backgroundColor: '#E8F0FE',
+    padding: '2px 8px',
+    borderRadius: '10px',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
 };

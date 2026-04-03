@@ -6,6 +6,15 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-03
 
+### [x] Move overrides from Requests tab to Apps list (#84) — 2026-04-03
+Active overrides now show as a blue time-remaining badge on individual app rows in AppsTab. Removed overrides section from RequestsTab. Override data refreshes every 30s and on request events.
+
+### [x] Save button for app time limits (#91) — 2026-04-03
+Time limit input no longer auto-saves on blur. A blue "Save" button appears when the input differs from the saved value. Enter key also saves. Clearing and saving removes the limit.
+
+### [x] Fix notification deep link navigating to wrong tab (#94) — 2026-04-03
+PendingIntents used `FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT`, which on Android 12+ prevents updating cached intent data. After process restarts, the static `notificationId` counter resets, causing request code collisions with stale cached intents pointing to the wrong tab. Fixed by switching to `FLAG_CANCEL_CURRENT` in all three PendingIntent builders.
+
 ### [x] Fix overlay not dismissed when daily limit removed (#90) — 2026-04-03
 Two fixes: (1) UI — clearing the time limit input now deletes `dailyLimitSeconds` from the policy instead of silently keeping the old value. (2) Enforcement — `checkAndShowOverlayIfNeeded()` now re-evaluates `getBlockReason()` every 5s while the overlay is showing, dismissing it if the block no longer applies.
 

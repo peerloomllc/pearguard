@@ -97,7 +97,7 @@ export default function Profile({ mode }) {
       <div style={styles.avatarWrap}>
         <div style={styles.avatarContainer}>
           <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
-          <div style={styles.editBadge} onClick={() => setShowPicker(true)}>
+          <div style={styles.editBadge} onClick={() => { window.callBare('haptic:tap'); setShowPicker(true); }}>
             <span style={styles.editIcon}>&#9998;</span>
           </div>
         </div>
@@ -128,7 +128,7 @@ export default function Profile({ mode }) {
         {status === 'error' && <p style={styles.error}>Failed to save name.</p>}
 
         <button
-          onClick={handleSave}
+          onClick={() => { window.callBare('haptic:tap'); handleSave(); }}
           disabled={saving || unchanged}
           style={{ ...styles.btn, ...(saving || unchanged ? styles.btnDisabled : {}) }}
         >
@@ -158,7 +158,7 @@ export default function Profile({ mode }) {
           )}
 
           {pairState === 'idle' && (
-            <button style={styles.btn} onClick={handlePair}>
+            <button style={styles.btn} onClick={() => { window.callBare('haptic:tap'); handlePair(); }}>
               {parents.length > 0 ? 'Pair Another Parent' : 'Pair to Parent'}
             </button>
           )}
@@ -174,7 +174,7 @@ export default function Profile({ mode }) {
           {pairState === 'error' && (
             <>
               <p style={styles.error}>{pairError}</p>
-              <button style={styles.btn} onClick={() => setPairState('idle')}>
+              <button style={styles.btn} onClick={() => { window.callBare('haptic:tap'); setPairState('idle'); }}>
                 Try Again
               </button>
             </>

@@ -8,13 +8,13 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 78 | FCM push for force-stopped parent (enhancement to #76 soft fix) | Add Firebase Messaging SDK; child stores parent FCM token (exchanged at pairing); child POSTs to FCM HTTP v1 API when parent is unreachable; parent `FirebaseMessagingService` shows native notification — survives force-stop on Android ≤12 |
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
+| 89 | Child Home tab always shows "All Good" | Is there a condition where it should show something else? Evaluate whether this status is meaningful or remove/rework it |
 
 ## Features
 
 | # | Title | Where |
 |---|-------|-------|
 | 12 | Persistent parent identity key — decision needed | `documentDirectory` keypair survives data clear; keep vs. force fresh? |
-| 16 | Approve All / Deny All per category (requires #15) | `AppsTab.jsx` — batch `app:decide` |
 | 17 | Haptic feedback | `AppBlockerModule.java` (`Vibrator`); WebView (`navigator.vibrate()`) |
 | 44 | Child: warn at 10/5/1 min before schedule or time-limit starts | `EnforcementService.java` — poll upcoming windows, heads-up notification |
 | 79 | About page on Parent device | Match PearCal's `AboutTab` — app name/tagline, "How It Works" (P2P explainer + pears.com link), Support Development (Bitcoin Lightning `pearloomllc@strike.me`, Buy Me a Coffee), Learn About Bitcoin (Nakamoto Institute), Share the App, Contact (email `peerloomllc@proton.me`, GitHub Issues), version number. Reference: `~/peerloomllc/pearcal-native/src/ui/App.jsx` lines 3975-4141 |

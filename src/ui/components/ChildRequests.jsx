@@ -50,7 +50,7 @@ export default function ChildRequests() {
         <h2 style={{ margin: 0 }}>My Requests</h2>
         {requests.some((r) => r.status === 'approved' || r.status === 'denied') && (
           <button
-            onClick={handleClearResolved}
+            onClick={() => { window.callBare('haptic:tap'); handleClearResolved(); }}
             disabled={clearing}
             style={{ fontSize: 13, padding: '6px 12px', border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: clearing ? 'not-allowed' : 'pointer', color: '#555' }}
           >

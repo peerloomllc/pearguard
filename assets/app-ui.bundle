@@ -15926,7 +15926,7 @@
         "button",
         {
           onClick: () => {
-            navigator.vibrate(30);
+            window.callBare("haptic:tap");
             setActiveTab(tab.key);
           },
           style: {
@@ -16695,7 +16695,10 @@
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { style: styles13.heading, children: "Profile" }),
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.avatarWrap, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: styles13.avatarContainer, children: [
         /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.editBadge, onClick: () => setShowPicker(true), children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.editIcon, children: "\u270E" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: styles13.editBadge, onClick: () => {
+          window.callBare("haptic:tap");
+          setShowPicker(true);
+        }, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.editIcon, children: "\u270E" }) })
       ] }) }),
       showPicker && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
         AvatarPicker,
@@ -16728,7 +16731,10 @@
         /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
           "button",
           {
-            onClick: handleSave,
+            onClick: () => {
+              window.callBare("haptic:tap");
+              handleSave();
+            },
             disabled: saving || unchanged,
             style: { ...styles13.btn, ...saving || unchanged ? styles13.btnDisabled : {} },
             children: saving ? "Saving\u2026" : "Save Name"
@@ -16744,12 +16750,18 @@
           /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.parentName, children: p.displayName || "Parent Device" }),
           /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: styles13.parentStatus, children: p.isOnline ? "Connected" : "Offline" })
         ] }, p.publicKey)) }),
-        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: handlePair, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
+        pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: () => {
+          window.callBare("haptic:tap");
+          handlePair();
+        }, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }),
         pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.hint, children: "Connecting to parent\\u2026" }),
         pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.success, children: "Pairing in progress\\u2026" }),
         pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: styles13.error, children: pairError }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: () => setPairState("idle"), children: "Try Again" })
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { style: styles13.btn, onClick: () => {
+            window.callBare("haptic:tap");
+            setPairState("idle");
+          }, children: "Try Again" })
         ] })
       ] })
     ] });
@@ -16952,7 +16964,7 @@
         "button",
         {
           onClick: () => {
-            navigator.vibrate(30);
+            window.callBare("haptic:tap");
             setActiveTab(tab.key);
           },
           style: {
@@ -17248,7 +17260,10 @@
         requests.some((r) => r.status === "approved" || r.status === "denied") && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
           "button",
           {
-            onClick: handleClearResolved,
+            onClick: () => {
+              window.callBare("haptic:tap");
+              handleClearResolved();
+            },
             disabled: clearing,
             style: { fontSize: 13, padding: "6px 12px", border: "1px solid #ccc", borderRadius: 6, background: "#fff", cursor: clearing ? "not-allowed" : "pointer", color: "#555" },
             children: clearing ? "Clearing\u2026" : "Clear resolved"
@@ -17315,7 +17330,7 @@
             "button",
             {
               onClick: () => {
-                navigator.vibrate(30);
+                window.callBare("haptic:tap");
                 setActiveTab(tab.id);
               },
               style: {

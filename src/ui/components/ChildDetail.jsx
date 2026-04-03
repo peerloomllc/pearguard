@@ -58,7 +58,7 @@ export default function ChildDetail({ child, onBack, initialTab }) {
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => { navigator.vibrate(30); setActiveTab(tab.key); }}
+            onClick={() => { window.callBare('haptic:tap'); setActiveTab(tab.key); }}
             style={{
               ...styles.tabBtn,
               ...(activeTab === tab.key ? styles.tabActive : styles.tabInactive),

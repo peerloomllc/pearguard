@@ -12,8 +12,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,7 +27,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
-import android.widget.Button;
+import android.util.TypedValue;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -60,6 +65,110 @@ public class AppBlockerModule extends AccessibilityService {
         PHONE_PACKAGES.add("com.google.android.dialer");
         PHONE_PACKAGES.add("com.android.mms");
         PHONE_PACKAGES.add("com.google.android.apps.messaging");
+    }
+
+    // --- Overlay Theme (matches dark palette in src/ui/theme.js) ---
+    private static final class OT {
+        static final int SURFACE_BASE   = Color.argb(240, 13, 13, 13);
+        static final int SURFACE_CARD   = Color.parseColor("#1A1A1A");
+        static final int SURFACE_ELEV   = Color.parseColor("#252525");
+        static final int TEXT_PRIMARY   = Color.parseColor("#F0F0F0");
+        static final int TEXT_SECONDARY = Color.parseColor("#A0A0A0");
+        static final int TEXT_MUTED     = Color.parseColor("#666666");
+        static final int BORDER         = Color.parseColor("#333333");
+        static final int DIVIDER        = Color.parseColor("#2A2A2A");
+        static final int PRIMARY        = Color.parseColor("#4CAF50");
+        static final int PRIMARY_BG     = Color.argb(38, 76, 175, 80); // 15% opacity
+        static final int ERROR          = Color.parseColor("#EF5350");
+        static final int CARD_RADIUS    = 16;
+        static final int KEY_RADIUS     = 12;
+        static final int BTN_RADIUS     = 12;
+        static final int ICON_CIRCLE    = 72;
+        static final int ICON_CIRCLE_SM = 64;
+    }
+
+    // --- Phosphor Icon SVG paths (256x256 viewBox) ---
+    private static final String ICON_SHIELD = "M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.27,47,25.53a8,8,0,0,0,4.2,0c1-.26,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0Z";
+    private static final String ICON_CLOCK = "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z";
+    private static final String ICON_LOCK = "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z";
+    private static final String ICON_BACKSPACE = "M216,40H68.53a16.12,16.12,0,0,0-13.72,7.77L9.14,123.88a8,8,0,0,0,0,8.24l45.67,76.11A16.11,16.11,0,0,0,68.53,216H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H68.53l-43.2-72,43.2-72H216ZM106.34,146.34,124.69,128l-18.35-18.34a8,8,0,0,1,11.32-11.32L136,116.69l18.34-18.35a8,8,0,0,1,11.32,11.32L147.31,128l18.35,18.34a8,8,0,0,1-11.32,11.32L136,139.31l-18.34,18.35a8,8,0,0,1-11.32-11.32Z";
+    private static final String ICON_CARET_RIGHT = "M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z";
+
+    private Typeface nunitoRegular;
+    private Typeface nunitoSemiBold;
+
+    private Typeface getNunitoRegular() {
+        if (nunitoRegular == null) {
+            try { nunitoRegular = Typeface.createFromAsset(getAssets(), "fonts/Nunito-Regular.ttf"); }
+            catch (Exception e) { nunitoRegular = Typeface.SANS_SERIF; }
+        }
+        return nunitoRegular;
+    }
+
+    private Typeface getNunitoSemiBold() {
+        if (nunitoSemiBold == null) {
+            try { nunitoSemiBold = Typeface.createFromAsset(getAssets(), "fonts/Nunito-SemiBold.ttf"); }
+            catch (Exception e) { nunitoSemiBold = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD); }
+        }
+        return nunitoSemiBold;
+    }
+
+    private int dp(int value) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics());
+    }
+
+    private Bitmap renderIcon(String svgPath, int sizeDp, int color) {
+        int sizePx = dp(sizeDp);
+        Bitmap bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        android.graphics.Path path = androidx.core.graphics.PathParser.createPathFromPathData(svgPath);
+        android.graphics.Matrix matrix = new android.graphics.Matrix();
+        matrix.setScale(sizePx / 256f, sizePx / 256f);
+        path.transform(matrix);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(color);
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawPath(path, paint);
+        return bmp;
+    }
+
+    private ImageView iconView(String svgPath, int sizeDp, int color) {
+        ImageView iv = new ImageView(this);
+        iv.setImageBitmap(renderIcon(svgPath, sizeDp, color));
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
+        iv.setLayoutParams(p);
+        return iv;
+    }
+
+    private LinearLayout iconCircle(int circleDp, String svgPath, int iconDp, int iconColor, int bgColor) {
+        LinearLayout circle = new LinearLayout(this);
+        circle.setGravity(Gravity.CENTER);
+        int px = dp(circleDp);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px, px);
+        circle.setLayoutParams(cp);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        bg.setColor(bgColor);
+        circle.setBackground(bg);
+        circle.addView(iconView(svgPath, iconDp, iconColor));
+        return circle;
+    }
+
+    private android.graphics.drawable.GradientDrawable roundedRect(int color, int radiusDp) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radiusDp));
+        return d;
+    }
+
+    private android.graphics.drawable.GradientDrawable roundedRectWithBorder(int fillColor, int borderColor, int radiusDp) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(fillColor);
+        d.setCornerRadius(dp(radiusDp));
+        d.setStroke(dp(1), borderColor);
+        return d;
     }
 
     private WindowManager windowManager;
@@ -571,12 +680,22 @@ public class AppBlockerModule extends AccessibilityService {
 
         String appName = getAppName(packageName);
 
+        // --- Themed overlay layout ---
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(Color.argb(240, 20, 20, 20));
+        layout.setBackgroundColor(OT.SURFACE_BASE);
         layout.setGravity(Gravity.CENTER);
-        layout.setPadding(64, 64, 64, 64);
+        layout.setPadding(dp(24), dp(24), dp(24), dp(24));
 
+        // Icon circle
+        LinearLayout icon = iconCircle(OT.ICON_CIRCLE, ICON_SHIELD, 36, OT.ERROR, OT.PRIMARY_BG);
+        LinearLayout.LayoutParams iconP = new LinearLayout.LayoutParams(dp(OT.ICON_CIRCLE), dp(OT.ICON_CIRCLE));
+        iconP.setMargins(0, 0, 0, dp(20));
+        iconP.gravity = Gravity.CENTER_HORIZONTAL;
+        icon.setLayoutParams(iconP);
+        layout.addView(icon);
+
+        // Title
         String titleText;
         switch (currentOverlayBlockCategory) {
             case "pending":     titleText = appName + " needs approval"; break;
@@ -586,44 +705,66 @@ public class AppBlockerModule extends AccessibilityService {
         }
         TextView title = new TextView(this);
         title.setText(titleText);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(OT.TEXT_PRIMARY);
         title.setTextSize(22);
+        title.setTypeface(getNunitoRegular());
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 24);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleP.setMargins(0, 0, 0, dp(8));
+        title.setLayoutParams(titleP);
         layout.addView(title);
 
+        // Subtitle (reason)
         TextView reasonView = new TextView(this);
         reasonView.setText(reason);
-        reasonView.setTextColor(Color.LTGRAY);
-        reasonView.setTextSize(16);
+        reasonView.setTextColor(OT.TEXT_SECONDARY);
+        reasonView.setTextSize(14);
+        reasonView.setTypeface(getNunitoRegular());
         reasonView.setGravity(Gravity.CENTER);
-        reasonView.setPadding(0, 0, 0, 48);
+        LinearLayout.LayoutParams reasonP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        reasonP.setMargins(0, 0, 0, dp(40));
+        reasonView.setLayoutParams(reasonP);
         layout.addView(reasonView);
 
-        Button requestButton = new Button(this);
+        // Action card
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(roundedRectWithBorder(OT.SURFACE_CARD, OT.BORDER, OT.CARD_RADIUS));
+        card.setPadding(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout.LayoutParams cardP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardP.setMargins(dp(16), 0, dp(16), 0);
+        card.setLayoutParams(cardP);
+
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
         final String blockCategory = currentOverlayBlockCategory;
         boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
-        if (requestAlreadySent) {
-            requestButton.setText(isExtraTime ? "Resend Time Request" : "Resend Approval Request");
-        } else {
-            requestButton.setText(isExtraTime ? "Request More Time" : "Request Approval");
-        }
-        requestButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory); });
-        layout.addView(requestButton);
 
-        Button pinButton = new Button(this);
-        pinButton.setText("Enter PIN");
-        pinButton.setPadding(0, 24, 0, 0);
-        pinButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onEnterPin(packageName); });
-        layout.addView(pinButton);
+        // Row 1: Request Approval / Request More Time
+        String requestLabel = requestAlreadySent
+                ? (isExtraTime ? "Resend Time Request" : "Resend Approval Request")
+                : (isExtraTime ? "Request More Time" : "Request Approval");
+        String requestIcon = isExtraTime ? ICON_CLOCK : ICON_SHIELD;
+        card.addView(makeActionRow(requestIcon, requestLabel, OT.PRIMARY,
+                () -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory); }));
+
+        // Divider
+        View div1 = new View(this);
+        div1.setBackgroundColor(OT.DIVIDER);
+        div1.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+        card.addView(div1);
+
+        // Row 2: Enter PIN
+        card.addView(makeActionRow(ICON_LOCK, "Enter PIN", OT.TEXT_PRIMARY,
+                () -> { vibrate(PATTERN_BUTTON); onEnterPin(packageName); }));
+
+        layout.addView(card);
 
         final View pendingOverlay = layout;
 
-        // FLAG_NOT_FOCUSABLE prevents the overlay from stealing keyboard focus.
-        // Without it, adding the overlay fires TYPE_WINDOW_STATE_CHANGED with
-        // PearGuard's own package name, triggering dismissOverlay() and causing
-        // the flash loop. Touch events (button clicks) are unaffected by this flag.
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -640,7 +781,6 @@ public class AppBlockerModule extends AccessibilityService {
                 windowManager.addView(pendingOverlay, params);
                 overlayView = pendingOverlay;
             } catch (Exception e) {
-                // addView failed — reset pending flag so next event can retry
                 overlayView = null;
             }
             overlayPending = false;
@@ -665,6 +805,32 @@ public class AppBlockerModule extends AccessibilityService {
             currentOverlayPackage = null;
             currentOverlayBlockCategory = null;
         }
+    }
+
+    /** Creates a single row for the grouped action card. */
+    private LinearLayout makeActionRow(String iconPath, String label, int textColor, Runnable onClick) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(16), dp(16), dp(16));
+        row.setClickable(true);
+        row.setOnClickListener(v -> onClick.run());
+
+        row.addView(iconView(iconPath, 20, textColor == OT.PRIMARY ? OT.PRIMARY : OT.TEXT_SECONDARY));
+
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(dp(12), 0));
+        row.addView(spacer);
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextColor(textColor);
+        tv.setTextSize(15);
+        tv.setTypeface(getNunitoSemiBold());
+        tv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(tv);
+
+        return row;
     }
 
     private String getAppName(String packageName) {
@@ -750,169 +916,303 @@ public class AppBlockerModule extends AccessibilityService {
      * Shows a duration picker for extra-time requests (schedule/daily-limit blocks).
      * On selection, fires onTimeRequest with requestType='extra_time' and extraSeconds.
      */
-    private void showExtraTimePicker(String packageName) {
-        int[] optionMinutes = getTimeRequestOptions();
-        int[][] options = new int[optionMinutes.length][2];
-        String[] labels = new String[optionMinutes.length];
-        for (int i = 0; i < optionMinutes.length; i++) {
-            options[i][0] = optionMinutes[i];
-            options[i][1] = optionMinutes[i] * 60;
-            labels[i] = formatMinutes(optionMinutes[i]);
-        }
-
+    private LinearLayout makeDurationLayout(String titleText, String[] labels, int[] seconds,
+                                            java.util.function.IntConsumer onSelect,
+                                            boolean showCancel, Runnable onCancel) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(Color.argb(255, 30, 30, 30));
-        layout.setPadding(48, 48, 48, 48);
-        layout.setGravity(Gravity.CENTER);
+        layout.setBackgroundColor(OT.SURFACE_BASE);
+        layout.setGravity(Gravity.CENTER_HORIZONTAL);
+        layout.setPadding(dp(24), dp(48), dp(24), dp(48));
+
+        // Icon circle
+        LinearLayout icon = iconCircle(OT.ICON_CIRCLE_SM, ICON_CLOCK, 32, OT.PRIMARY, OT.PRIMARY_BG);
+        LinearLayout.LayoutParams iconP = new LinearLayout.LayoutParams(dp(OT.ICON_CIRCLE_SM), dp(OT.ICON_CIRCLE_SM));
+        iconP.setMargins(0, 0, 0, dp(16));
+        iconP.gravity = Gravity.CENTER_HORIZONTAL;
+        icon.setLayoutParams(iconP);
+        layout.addView(icon);
 
         TextView title = new TextView(this);
-        title.setText("How much extra time?");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
+        title.setText(titleText);
+        title.setTextColor(OT.TEXT_PRIMARY);
+        title.setTextSize(18);
+        title.setTypeface(getNunitoRegular());
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 32);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleP.setMargins(0, 0, 0, dp(24));
+        title.setLayoutParams(titleP);
         layout.addView(title);
 
+        // Duration card
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(roundedRectWithBorder(OT.SURFACE_CARD, OT.BORDER, OT.CARD_RADIUS));
+        card.setPadding(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout.LayoutParams cardP = new LinearLayout.LayoutParams(dp(280), LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardP.gravity = Gravity.CENTER_HORIZONTAL;
+        card.setLayoutParams(cardP);
+
         for (int i = 0; i < labels.length; i++) {
-            final int durationSeconds = options[i][1];
-            final String label = labels[i];
-            Button btn = new Button(this);
-            btn.setText(label);
-            btn.setTextColor(Color.WHITE);
-            btn.setTextSize(16);
-            btn.setBackgroundColor(Color.argb(200, 26, 115, 232));
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            p.setMargins(0, 8, 0, 8);
-            btn.setLayoutParams(p);
-            btn.setOnClickListener(v -> {
-                vibrate(PATTERN_BUTTON);
-                try { windowManager.removeView(layout); } catch (Exception ignored) {}
-                pinDialogView = null;
+            final int secs = seconds[i];
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(16), dp(16), dp(16), dp(16));
+            row.setClickable(true);
+            row.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSelect.accept(secs); });
 
-                ReactContext rc = PearGuardReactHost.get();
-                if (rc != null && rc.hasActiveReactInstance()) {
-                    WritableMap params = Arguments.createMap();
-                    params.putString("packageName", packageName);
-                    params.putString("appName", getAppName(packageName));
-                    params.putString("requestType", "extra_time");
-                    params.putInt("extraSeconds", durationSeconds);
-                    rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                            .emit("onTimeRequest", params);
-                    Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
-                } else {
-                    Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
-                }
-                pendingRequestPackages.add(packageName);
+            TextView label = new TextView(this);
+            label.setText(labels[i]);
+            label.setTextColor(OT.TEXT_PRIMARY);
+            label.setTextSize(16);
+            label.setTypeface(getNunitoRegular());
+            label.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(label);
 
-                Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-                homeIntent.addCategory(Intent.CATEGORY_HOME);
-                homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(homeIntent);
-            });
-            layout.addView(btn);
+            row.addView(iconView(ICON_CARET_RIGHT, 16, OT.TEXT_MUTED));
+            card.addView(row);
+
+            if (i < labels.length - 1) {
+                View div = new View(this);
+                div.setBackgroundColor(OT.DIVIDER);
+                div.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+                card.addView(div);
+            }
+        }
+        layout.addView(card);
+
+        if (showCancel && onCancel != null) {
+            TextView cancelBtn = new TextView(this);
+            cancelBtn.setText("Cancel");
+            cancelBtn.setTextColor(OT.TEXT_SECONDARY);
+            cancelBtn.setTextSize(14);
+            cancelBtn.setTypeface(getNunitoSemiBold());
+            cancelBtn.setGravity(Gravity.CENTER);
+            cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
+            cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
+            LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            cancelP.setMargins(0, dp(20), 0, 0);
+            cancelP.gravity = Gravity.CENTER_HORIZONTAL;
+            cancelBtn.setLayoutParams(cancelP);
+            cancelBtn.setClickable(true);
+            cancelBtn.setOnClickListener(v -> onCancel.run());
+            layout.addView(cancelBtn);
         }
 
-        Button cancelBtn = new Button(this);
-        cancelBtn.setText("Cancel");
-        cancelBtn.setTextColor(Color.WHITE);
-        cancelBtn.setBackgroundColor(Color.argb(200, 100, 30, 30));
-        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cancelParams.setMargins(0, 24, 0, 0);
-        cancelBtn.setLayoutParams(cancelParams);
-        cancelBtn.setOnClickListener(v -> {
-            try { windowManager.removeView(layout); } catch (Exception ignored) {}
-            pinDialogView = null;
-        });
-        layout.addView(cancelBtn);
+        return layout;
+    }
 
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+    private void showExtraTimePicker(String packageName) {
+        int[] optionMinutes = getTimeRequestOptions();
+        String[] labels = new String[optionMinutes.length];
+        int[] seconds = new int[optionMinutes.length];
+        for (int i = 0; i < optionMinutes.length; i++) {
+            labels[i] = formatMinutes(optionMinutes[i]);
+            seconds[i] = optionMinutes[i] * 60;
+        }
+
+        final LinearLayout[] holder = { null };
+        holder[0] = makeDurationLayout("How much extra time?", labels, seconds,
+                (durationSeconds) -> {
+                    try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
+                    pinDialogView = null;
+
+                    ReactContext rc = PearGuardReactHost.get();
+                    if (rc != null && rc.hasActiveReactInstance()) {
+                        WritableMap params = Arguments.createMap();
+                        params.putString("packageName", packageName);
+                        params.putString("appName", getAppName(packageName));
+                        params.putString("requestType", "extra_time");
+                        params.putInt("extraSeconds", durationSeconds);
+                        rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onTimeRequest", params);
+                        Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
+                    }
+                    pendingRequestPackages.add(packageName);
+
+                    Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+                    homeIntent.addCategory(Intent.CATEGORY_HOME);
+                    homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(homeIntent);
+                },
+                true,
+                () -> {
+                    try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
+                    pinDialogView = null;
+                });
+
+        WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                         : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
         );
-        params.gravity = Gravity.CENTER;
-        windowManager.addView(layout, params);
-        pinDialogView = layout;
+        windowManager.addView(holder[0], wlp);
+        pinDialogView = holder[0];
     }
 
     private void onEnterPin(String packageName) {
-        // TYPE_ACCESSIBILITY_OVERLAY cannot receive IME (keyboard) on Android 11+.
-        // Use a numeric keypad UI instead of EditText.
-
         final String[] enteredPin = { "" };
 
         LinearLayout dialogLayout = new LinearLayout(this);
         dialogLayout.setOrientation(LinearLayout.VERTICAL);
-        dialogLayout.setBackgroundColor(Color.argb(255, 30, 30, 30));
-        dialogLayout.setPadding(48, 48, 48, 48);
-        dialogLayout.setGravity(Gravity.CENTER);
+        dialogLayout.setBackgroundColor(OT.SURFACE_BASE);
+        dialogLayout.setGravity(Gravity.CENTER_HORIZONTAL);
+        dialogLayout.setPadding(dp(24), dp(48), dp(24), dp(48));
 
-        // PIN prompt / dots display
-        final TextView pinDisplay = new TextView(this);
-        pinDisplay.setText("Enter parent PIN");
-        pinDisplay.setTextColor(Color.WHITE);
-        pinDisplay.setTextSize(20);
-        pinDisplay.setGravity(Gravity.CENTER);
-        dialogLayout.addView(pinDisplay);
+        // Icon circle
+        LinearLayout icon = iconCircle(OT.ICON_CIRCLE_SM, ICON_LOCK, 32, OT.PRIMARY, OT.PRIMARY_BG);
+        LinearLayout.LayoutParams iconP = new LinearLayout.LayoutParams(dp(OT.ICON_CIRCLE_SM), dp(OT.ICON_CIRCLE_SM));
+        iconP.setMargins(0, 0, 0, dp(16));
+        iconP.gravity = Gravity.CENTER_HORIZONTAL;
+        icon.setLayoutParams(iconP);
+        dialogLayout.addView(icon);
 
-        Runnable updateDisplay = () -> {
-            if (enteredPin[0].isEmpty()) {
-                pinDisplay.setText("Enter parent PIN");
-            } else {
-                StringBuilder dots = new StringBuilder();
-                for (int i = 0; i < enteredPin[0].length(); i++) {
-                    if (i > 0) dots.append("  ");
-                    dots.append("●");
+        // Title
+        final TextView pinTitle = new TextView(this);
+        pinTitle.setText("Enter parent PIN");
+        pinTitle.setTextColor(OT.TEXT_PRIMARY);
+        pinTitle.setTextSize(18);
+        pinTitle.setTypeface(getNunitoRegular());
+        pinTitle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleP.setMargins(0, 0, 0, dp(24));
+        pinTitle.setLayoutParams(titleP);
+        dialogLayout.addView(pinTitle);
+
+        // PIN dots
+        LinearLayout dotsRow = new LinearLayout(this);
+        dotsRow.setOrientation(LinearLayout.HORIZONTAL);
+        dotsRow.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams dotsP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        dotsP.setMargins(0, 0, 0, dp(32));
+        dotsP.gravity = Gravity.CENTER_HORIZONTAL;
+        dotsRow.setLayoutParams(dotsP);
+
+        final View[] dots = new View[4];
+        for (int i = 0; i < 4; i++) {
+            View dot = new View(this);
+            int dotSize = dp(14);
+            LinearLayout.LayoutParams dotP = new LinearLayout.LayoutParams(dotSize, dotSize);
+            if (i > 0) dotP.setMargins(dp(16), 0, 0, 0);
+            dot.setLayoutParams(dotP);
+            android.graphics.drawable.GradientDrawable emptyDot = new android.graphics.drawable.GradientDrawable();
+            emptyDot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            emptyDot.setStroke(dp(2), OT.BORDER);
+            emptyDot.setColor(Color.TRANSPARENT);
+            dot.setBackground(emptyDot);
+            dots[i] = dot;
+            dotsRow.addView(dot);
+        }
+        dialogLayout.addView(dotsRow);
+
+        Runnable updateDots = () -> {
+            int len = enteredPin[0].length();
+            for (int i = 0; i < 4; i++) {
+                android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+                d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                if (i < len) {
+                    d.setColor(OT.PRIMARY);
+                } else {
+                    d.setStroke(dp(2), OT.BORDER);
+                    d.setColor(Color.TRANSPARENT);
                 }
-                pinDisplay.setText(dots.toString());
+                dots[i].setBackground(d);
             }
         };
 
-        // Number pad  1-2-3 / 4-5-6 / 7-8-9 / ⌫-0  (auto-submits at 4 digits)
+        Runnable showError = () -> {
+            for (View dot : dots) {
+                android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+                d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                d.setColor(OT.ERROR);
+                dot.setBackground(d);
+            }
+            pinTitle.setTextColor(OT.ERROR);
+            pinTitle.setText("Incorrect PIN");
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                pinTitle.setTextColor(OT.TEXT_PRIMARY);
+                pinTitle.setText("Enter parent PIN");
+                updateDots.run();
+            }, 1500);
+        };
+
+        // Number pad card
+        LinearLayout padCard = new LinearLayout(this);
+        padCard.setOrientation(LinearLayout.VERTICAL);
+        padCard.setBackground(roundedRectWithBorder(OT.SURFACE_CARD, OT.BORDER, OT.CARD_RADIUS));
+        padCard.setPadding(dp(12), dp(12), dp(12), dp(12));
+        LinearLayout.LayoutParams padCardP = new LinearLayout.LayoutParams(dp(260), LinearLayout.LayoutParams.WRAP_CONTENT);
+        padCardP.gravity = Gravity.CENTER_HORIZONTAL;
+        padCard.setLayoutParams(padCardP);
+
         String[][] rows = { {"1","2","3"}, {"4","5","6"}, {"7","8","9"}, {"⌫","0",""} };
+        boolean firstRow = true;
         for (String[] row : rows) {
             LinearLayout rowLayout = new LinearLayout(this);
             rowLayout.setOrientation(LinearLayout.HORIZONTAL);
             rowLayout.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rowParams.setMargins(0, 8, 0, 0);
+            if (!firstRow) rowParams.setMargins(0, dp(8), 0, 0);
+            firstRow = false;
             rowLayout.setLayoutParams(rowParams);
 
             for (String digit : row) {
-                Button btn = new Button(this);
-                btn.setText(digit);
-                btn.setTextColor(Color.WHITE);
-                btn.setTextSize(20);
-                LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                btnParams.setMargins(6, 0, 6, 0);
-                btn.setLayoutParams(btnParams);
-                btn.setBackgroundColor(Color.argb(200, 60, 60, 60));
-
-                btn.setOnClickListener(v -> {
-                    if ("⌫".equals(digit)) {
+                if ("\u232B".equals(digit)) {
+                    // Backspace icon button
+                    LinearLayout bsBtn = new LinearLayout(this);
+                    bsBtn.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams bsP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    bsP.setMargins(dp(4), 0, dp(4), 0);
+                    bsBtn.setLayoutParams(bsP);
+                    bsBtn.setBackground(roundedRect(Color.TRANSPARENT, OT.KEY_RADIUS));
+                    bsBtn.addView(iconView(ICON_BACKSPACE, 24, OT.TEXT_SECONDARY));
+                    bsBtn.setClickable(true);
+                    bsBtn.setOnClickListener(v -> {
                         if (!enteredPin[0].isEmpty()) {
                             vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0].substring(0, enteredPin[0].length() - 1);
-                            updateDisplay.run();
+                            updateDots.run();
                         }
-                    } else if ("".equals(digit)) {
-                        // placeholder cell — no action
-                    } else {
+                    });
+                    rowLayout.addView(bsBtn);
+                } else if ("".equals(digit)) {
+                    View empty = new View(this);
+                    LinearLayout.LayoutParams emptyP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    emptyP.setMargins(dp(4), 0, dp(4), 0);
+                    empty.setLayoutParams(emptyP);
+                    rowLayout.addView(empty);
+                } else {
+                    TextView btn = new TextView(this);
+                    btn.setText(digit);
+                    btn.setTextColor(OT.TEXT_PRIMARY);
+                    btn.setTextSize(22);
+                    btn.setTypeface(getNunitoRegular());
+                    btn.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    btnP.setMargins(dp(4), 0, dp(4), 0);
+                    btn.setLayoutParams(btnP);
+                    btn.setBackground(roundedRect(OT.SURFACE_ELEV, OT.KEY_RADIUS));
+                    btn.setClickable(true);
+                    final String d = digit;
+                    btn.setOnClickListener(v -> {
                         if (enteredPin[0].length() < 4) {
                             vibrate(PATTERN_TAP);
-                            enteredPin[0] = enteredPin[0] + digit;
-                            updateDisplay.run();
+                            enteredPin[0] = enteredPin[0] + d;
+                            updateDots.run();
 
-                            // Auto-submit when 4 digits entered
                             if (enteredPin[0].length() == 4) {
                                 if (verifyPin(enteredPin[0])) {
                                     vibrate(PATTERN_SUCCESS);
@@ -922,32 +1222,33 @@ public class AppBlockerModule extends AccessibilityService {
                                 } else {
                                     vibrate(PATTERN_ERROR);
                                     enteredPin[0] = "";
-                                    pinDisplay.setTextColor(Color.RED);
-                                    pinDisplay.setText("Incorrect PIN");
-                                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                                        pinDisplay.setTextColor(Color.WHITE);
-                                        pinDisplay.setText("Enter parent PIN");
-                                    }, 1500);
+                                    showError.run();
                                 }
                             }
                         }
-                    }
-                });
-
-                rowLayout.addView(btn);
+                    });
+                    rowLayout.addView(btn);
+                }
             }
-            dialogLayout.addView(rowLayout);
+            padCard.addView(rowLayout);
         }
+        dialogLayout.addView(padCard);
 
-        // Cancel button
-        Button cancelBtn = new Button(this);
+        // Cancel button (ghost)
+        TextView cancelBtn = new TextView(this);
         cancelBtn.setText("Cancel");
-        cancelBtn.setTextColor(Color.WHITE);
-        cancelBtn.setBackgroundColor(Color.argb(200, 100, 30, 30));
-        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cancelParams.setMargins(0, 24, 0, 0);
-        cancelBtn.setLayoutParams(cancelParams);
+        cancelBtn.setTextColor(OT.TEXT_SECONDARY);
+        cancelBtn.setTextSize(14);
+        cancelBtn.setTypeface(getNunitoSemiBold());
+        cancelBtn.setGravity(Gravity.CENTER);
+        cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
+        cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
+        LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelP.setMargins(0, dp(20), 0, 0);
+        cancelP.gravity = Gravity.CENTER_HORIZONTAL;
+        cancelBtn.setLayoutParams(cancelP);
+        cancelBtn.setClickable(true);
         cancelBtn.setOnClickListener(v -> {
             try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
             pinDialogView = null;
@@ -956,74 +1257,42 @@ public class AppBlockerModule extends AccessibilityService {
 
         WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // no IME needed — using button pad
-                PixelFormat.TRANSLUCENT
-        );
-        dialogParams.gravity = Gravity.CENTER;
-
-        windowManager.addView(dialogLayout, dialogParams);
-        pinDialogView = dialogLayout;
-    }
-
-    private void showDurationPicker(String packageName) {
-        int[][] options = {
-            { 15,   15 * 60 },
-            { 30,   30 * 60 },
-            { 60,   60 * 60 },
-            { 120, 120 * 60 },
-        };
-        String[] labels = { "15 min", "30 min", "1 hour", "2 hours" };
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(Color.argb(255, 30, 30, 30));
-        layout.setPadding(48, 48, 48, 48);
-        layout.setGravity(Gravity.CENTER);
-
-        TextView title = new TextView(this);
-        title.setText("How long?");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 32);
-        layout.addView(title);
-
-        for (int i = 0; i < labels.length; i++) {
-            final int durationSeconds = options[i][1];
-            Button btn = new Button(this);
-            btn.setText(labels[i]);
-            btn.setTextColor(Color.WHITE);
-            btn.setTextSize(16);
-            btn.setBackgroundColor(Color.argb(200, 26, 115, 232));
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            p.setMargins(0, 8, 0, 8);
-            btn.setLayoutParams(p);
-            btn.setOnClickListener(v -> {
-                vibrate(PATTERN_BUTTON);
-                try { windowManager.removeView(layout); } catch (Exception ignored) {}
-                pinDialogView = null;
-                grantOverride(packageName, durationSeconds);
-            });
-            layout.addView(btn);
-        }
-
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                         : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
         );
-        params.gravity = Gravity.CENTER;
-        windowManager.addView(layout, params);
-        pinDialogView = layout;
+
+        windowManager.addView(dialogLayout, dialogParams);
+        pinDialogView = dialogLayout;
+    }
+
+    private void showDurationPicker(String packageName) {
+        String[] labels = { "15 minutes", "30 minutes", "1 hour", "2 hours" };
+        int[] seconds = { 900, 1800, 3600, 7200 };
+
+        final LinearLayout[] holder = { null };
+        holder[0] = makeDurationLayout("How long?", labels, seconds,
+                (durationSeconds) -> {
+                    try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
+                    pinDialogView = null;
+                    grantOverride(packageName, durationSeconds);
+                },
+                false, null);
+
+        WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+        );
+        windowManager.addView(holder[0], wlp);
+        pinDialogView = holder[0];
     }
 
     private void grantOverride(String packageName, int durationSeconds) {

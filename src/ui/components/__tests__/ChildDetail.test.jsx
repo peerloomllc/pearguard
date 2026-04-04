@@ -5,10 +5,8 @@ import ChildDetail from '../ChildDetail.jsx';
 // Mock all child-specific tabs
 jest.mock('../UsageTab.jsx', () => ({ childPublicKey }) => <div>Usage content {childPublicKey}</div>);
 jest.mock('../AppsTab.jsx', () => ({ childPublicKey }) => <div>Apps content</div>);
-jest.mock('../RequestsTab.jsx', () => ({ childPublicKey }) => <div>Requests content</div>);
-jest.mock('../ScheduleTab.jsx', () => ({ childPublicKey }) => <div>Schedule content</div>);
-jest.mock('../ContactsTab.jsx', () => ({ childPublicKey }) => <div>Contacts content</div>);
-jest.mock('../AlertsTab.jsx', () => ({ childPublicKey }) => <div>Activity content</div>);
+jest.mock('../ActivityTab.jsx', () => ({ childPublicKey }) => <div>Activity content</div>);
+jest.mock('../RulesTab.jsx', () => ({ childPublicKey }) => <div>Rules content</div>);
 
 const MOCK_CHILD = { publicKey: 'pk-alice', displayName: 'Alice' };
 
@@ -17,9 +15,9 @@ test('renders child display name in header', () => {
   expect(screen.getByText('Alice')).toBeInTheDocument();
 });
 
-test('renders all six tab buttons', () => {
+test('renders all four tab buttons', () => {
   render(<ChildDetail child={MOCK_CHILD} onBack={() => {}} />);
-  ['Usage', 'Apps', 'Requests', 'Schedule', 'Contacts', 'Activity'].forEach((label) => {
+  ['Usage', 'Apps', 'Activity', 'Rules'].forEach((label) => {
     expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
   });
 });
@@ -35,10 +33,10 @@ test('clicking Apps tab shows Apps content', () => {
   expect(screen.getByText('Apps content')).toBeInTheDocument();
 });
 
-test('clicking Requests tab shows Requests content', () => {
+test('clicking Rules tab shows Rules content', () => {
   render(<ChildDetail child={MOCK_CHILD} onBack={() => {}} />);
-  fireEvent.click(screen.getByRole('tab', { name: 'Requests' }));
-  expect(screen.getByText('Requests content')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Rules' }));
+  expect(screen.getByText('Rules content')).toBeInTheDocument();
 });
 
 test('clicking Activity tab shows Activity content', () => {
@@ -57,7 +55,7 @@ test('back button calls onBack', () => {
 test('active tab has aria-selected=true', () => {
   render(<ChildDetail child={MOCK_CHILD} onBack={() => {}} />);
   expect(screen.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'true');
-  fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-  expect(screen.getByRole('tab', { name: 'Schedule' })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.click(screen.getByRole('tab', { name: 'Rules' }));
+  expect(screen.getByRole('tab', { name: 'Rules' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'false');
 });

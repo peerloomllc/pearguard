@@ -831,7 +831,7 @@ function createDispatch (ctx) {
         }
 
         // Mark matching pending requests for this child+package as resolved in Hyperbee
-        // so AlertsTab shows the correct status after navigating away and back.
+        // so ActivityTab shows the correct status after navigating away and back.
         const reqStatus = d === 'allowed' ? 'approved' : 'denied'
         for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
           if (value.childPublicKey === childPublicKey && value.packageName === packageName && value.status === 'pending') {

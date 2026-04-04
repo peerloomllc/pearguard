@@ -16107,6 +16107,12 @@
   function ChildDetail({ child, initialTab, onBack }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
     const [tab, setTab] = (0, import_react8.useState)(initialTab || "usage");
+    (0, import_react8.useEffect)(() => {
+      const unsub = window.onBareEvent("navigate:child:alerts", (data) => {
+        if (data?.tab) setTab(data.tab);
+      });
+      return () => unsub();
+    }, []);
     const [confirmRemove, setConfirmRemove] = (0, import_react8.useState)(false);
     const [locked, setLocked] = (0, import_react8.useState)(child.locked || false);
     async function handleRemove() {
@@ -16321,6 +16327,8 @@
     const [selectedTab, setSelectedTab] = (0, import_react10.useState)(null);
     const [showAdd, setShowAdd] = (0, import_react10.useState)(false);
     const [lockTarget, setLockTarget] = (0, import_react10.useState)(null);
+    const childrenRef = (0, import_react10.useRef)(children);
+    childrenRef.current = children;
     function loadChildren() {
       window.callBare("children:list").then((list) => {
         setChildren((list || []).map((c) => ({
@@ -16354,14 +16362,11 @@
       function handleNav(data) {
         const key = data?.childPublicKey;
         if (!key) return;
-        setChildren((prev) => {
-          const child = prev.find((c) => c.publicKey === key);
-          if (child) {
-            setSelectedChild(child);
-            setSelectedTab(data.tab || "activity");
-          }
-          return prev;
-        });
+        const child = childrenRef.current.find((c) => c.publicKey === key);
+        if (child) {
+          setSelectedChild(child);
+          setSelectedTab(data.tab || "activity");
+        }
       }
       const unsub1 = window.onBareEvent("navigate:child:alerts", handleNav);
       const unsub2 = window.onBareEvent("navigate:child:requests", handleNav);

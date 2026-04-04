@@ -411,6 +411,12 @@ export default function Root () {
           sendToWorklet({ method: 'pin:used', args: e })
         }),
 
+        // Notification tapped while app is in foreground — onNewIntent fires but
+        // AppState doesn't change, so we need this dedicated listener.
+        DeviceEventEmitter.addListener('pearguard_pendingNav', () => {
+          consumePendingNavigation()
+        }),
+
         // App foregrounded — kick Hyperswarm to reconnect in case connection dropped while backgrounded
         AppState.addEventListener('change', (state) => {
           if (state !== 'active') return

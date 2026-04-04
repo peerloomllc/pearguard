@@ -16309,7 +16309,7 @@
 
   // src/ui/components/Dashboard.jsx
   var import_jsx_runtime14 = __toESM(require_jsx_runtime());
-  var Dashboard_default = (0, import_react10.forwardRef)(function Dashboard(props, ref) {
+  var Dashboard_default = (0, import_react10.forwardRef)(function Dashboard(_props, ref) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
     const [children, setChildren] = (0, import_react10.useState)([]);
     const [loading, setLoading] = (0, import_react10.useState)(true);
@@ -16333,6 +16333,38 @@
     }
     (0, import_react10.useEffect)(() => {
       loadChildren();
+    }, []);
+    (0, import_react10.useEffect)(() => {
+      if (children.length === 0) return;
+      const nav = window.__pendingAlertsNav;
+      if (nav?.childPublicKey) {
+        window.__pendingAlertsNav = null;
+        const child = children.find((c) => c.publicKey === nav.childPublicKey);
+        if (child) {
+          setSelectedChild(child);
+          setSelectedTab(nav.tab || "activity");
+        }
+      }
+    }, [children]);
+    (0, import_react10.useEffect)(() => {
+      function handleNav(data) {
+        const key = data?.childPublicKey;
+        if (!key) return;
+        setChildren((prev) => {
+          const child = prev.find((c) => c.publicKey === key);
+          if (child) {
+            setSelectedChild(child);
+            setSelectedTab(data.tab || "activity");
+          }
+          return prev;
+        });
+      }
+      const unsub1 = window.onBareEvent("navigate:child:alerts", handleNav);
+      const unsub2 = window.onBareEvent("navigate:child:requests", handleNav);
+      return () => {
+        unsub1();
+        unsub2();
+      };
     }, []);
     (0, import_react10.useEffect)(() => {
       const unsubs = [
@@ -17282,7 +17314,6 @@
     const [tab, setTab] = (0, import_react14.useState)("dashboard");
     const [banner, setBanner] = (0, import_react14.useState)(null);
     const [pinCheckState, setPinCheckState] = (0, import_react14.useState)("loading");
-    const [navTrigger, setNavTrigger] = (0, import_react14.useState)(null);
     const dashRef = (0, import_react14.useRef)(null);
     (0, import_react14.useEffect)(() => {
       function checkPin() {
@@ -17292,25 +17323,13 @@
       return window.onBareEvent("ready", checkPin);
     }, []);
     (0, import_react14.useEffect)(() => {
-      const pending2 = window.__pendingAlertsNav;
-      if (pending2) {
-        window.__pendingAlertsNav = null;
-        setTab("dashboard");
-        setNavTrigger({ ...pending2, tab: "activity", _ts: Date.now() });
-      }
-      const unsub = window.onBareEvent("navigate:child:alerts", (data) => {
-        window.__pendingAlertsNav = null;
-        setTab("dashboard");
-        setNavTrigger({ ...data, tab: "activity", _ts: Date.now() });
-      });
-      return unsub;
-    }, []);
-    (0, import_react14.useEffect)(() => {
-      const unsub = window.onBareEvent("navigate:child:requests", (data) => {
-        setTab("dashboard");
-        setNavTrigger({ ...data, tab: "activity", _ts: Date.now() });
-      });
-      return unsub;
+      if (window.__pendingAlertsNav) setTab("dashboard");
+      const unsub1 = window.onBareEvent("navigate:child:alerts", () => setTab("dashboard"));
+      const unsub2 = window.onBareEvent("navigate:child:requests", () => setTab("dashboard"));
+      return () => {
+        unsub1();
+        unsub2();
+      };
     }, []);
     (0, import_react14.useEffect)(() => {
       const unsub = window.onBareEvent("child:connected", (data) => {
@@ -17346,7 +17365,7 @@
         ...typography2.body,
         fontWeight: "500"
       }, children: banner }),
-      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: tab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Dashboard_default, { ref: dashRef, navTrigger, onNavConsumed: () => setNavTrigger(null) }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(ActiveTab, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: tab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Dashboard_default, { ref: dashRef }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(ActiveTab, {}) }),
       tab === "dashboard" && /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(FAB, { icon: "Plus", onPress: () => dashRef.current?.showAddChild?.() }),
       /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(TabBar, { tabs: TABS2, activeTab: tab, onTabChange: setTab })
     ] });
@@ -17401,20 +17420,16 @@
       });
     }, []);
     (0, import_react16.useEffect)(() => {
-      let isMounted = true;
       loadHomeData();
-      function onPearEvent(event) {
-        if (!isMounted) return;
-        const { name } = event.detail;
-        if (name === "policy:updated" || name === "override:granted" || name === "request:updated" || name === "request:submitted") {
-          loadHomeData();
-        }
-      }
-      window.addEventListener("__pearEvent", onPearEvent);
+      const unsubs = [
+        window.onBareEvent("policy:updated", loadHomeData),
+        window.onBareEvent("override:granted", loadHomeData),
+        window.onBareEvent("request:updated", loadHomeData),
+        window.onBareEvent("request:submitted", loadHomeData)
+      ];
       const timer = setInterval(loadHomeData, 3e4);
       return () => {
-        isMounted = false;
-        window.removeEventListener("__pearEvent", onPearEvent);
+        unsubs.forEach((fn) => fn());
         clearInterval(timer);
       };
     }, [loadHomeData]);

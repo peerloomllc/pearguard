@@ -18,26 +18,20 @@ export default function ChildHome() {
   }, [])
 
   useEffect(() => {
-    let isMounted = true
-
     loadHomeData()
 
-    function onPearEvent(event) {
-      if (!isMounted) return
-      const { name } = event.detail
-      if (name === 'policy:updated' || name === 'override:granted' || name === 'request:updated' || name === 'request:submitted') {
-        loadHomeData()
-      }
-    }
-
-    window.addEventListener('__pearEvent', onPearEvent)
+    const unsubs = [
+      window.onBareEvent('policy:updated', loadHomeData),
+      window.onBareEvent('override:granted', loadHomeData),
+      window.onBareEvent('request:updated', loadHomeData),
+      window.onBareEvent('request:submitted', loadHomeData),
+    ]
 
     // Refresh overrides every 30s so countdowns stay accurate
     const timer = setInterval(loadHomeData, 30000)
 
     return () => {
-      isMounted = false
-      window.removeEventListener('__pearEvent', onPearEvent)
+      unsubs.forEach((fn) => fn())
       clearInterval(timer)
     }
   }, [loadHomeData])

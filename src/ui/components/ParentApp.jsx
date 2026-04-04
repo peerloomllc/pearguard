@@ -100,7 +100,6 @@ export default function ParentApp() {
   const [tab, setTab] = useState('dashboard');
   const [banner, setBanner] = useState(null);
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
-  const [navTrigger, setNavTrigger] = useState(null);
   const dashRef = useRef(null);
 
   useEffect(() => {
@@ -116,29 +115,13 @@ export default function ParentApp() {
   }, []);
 
   // Listen for notification-tap navigation at this level (always mounted).
-  // Switches to Dashboard tab and passes the payload down so Dashboard can
-  // navigate to the correct child + tab -- fixes #69 and #77.
+  // Ensure Dashboard tab is visible when notification deep links fire.
+  // Dashboard itself listens for the events and handles child navigation.
   useEffect(() => {
-    const pending = window.__pendingAlertsNav;
-    if (pending) {
-      window.__pendingAlertsNav = null;
-      setTab('dashboard');
-      setNavTrigger({ ...pending, tab: 'activity', _ts: Date.now() });
-    }
-    const unsub = window.onBareEvent('navigate:child:alerts', (data) => {
-      window.__pendingAlertsNav = null;
-      setTab('dashboard');
-      setNavTrigger({ ...data, tab: 'activity', _ts: Date.now() });
-    });
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    const unsub = window.onBareEvent('navigate:child:requests', (data) => {
-      setTab('dashboard');
-      setNavTrigger({ ...data, tab: 'activity', _ts: Date.now() });
-    });
-    return unsub;
+    if (window.__pendingAlertsNav) setTab('dashboard');
+    const unsub1 = window.onBareEvent('navigate:child:alerts', () => setTab('dashboard'));
+    const unsub2 = window.onBareEvent('navigate:child:requests', () => setTab('dashboard'));
+    return () => { unsub1(); unsub2(); };
   }, []);
 
   useEffect(() => {
@@ -186,7 +169,7 @@ export default function ParentApp() {
       )}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {tab === 'dashboard'
-          ? <Dashboard ref={dashRef} navTrigger={navTrigger} onNavConsumed={() => setNavTrigger(null)} />
+          ? <Dashboard ref={dashRef} />
           : <ActiveTab />}
       </div>
       {tab === 'dashboard' && (

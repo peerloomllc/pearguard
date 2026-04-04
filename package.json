@@ -39,6 +39,7 @@
     "react-native-bare-kit": "^0.12.2",
     "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "^4.23.0",
+    "react-native-svg": "15.12.1",
     "react-native-webview": "13.15.0",
     "sodium-native": "^4.3.3"
   },

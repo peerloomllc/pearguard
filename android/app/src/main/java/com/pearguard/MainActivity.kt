@@ -9,6 +9,7 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 import expo.modules.ReactActivityDelegateWrapper
 
@@ -54,6 +55,19 @@ class MainActivity : ReactActivity() {
         // and strip the URI so Expo Router doesn't navigate away from index.tsx.
         interceptNotificationDeepLink(intent)
         super.onNewIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // After onNewIntent stores a nav URL, onResume fires. Emit a native event
+        // so JS can consume the pending navigation immediately. This handles both
+        // foreground (no AppState change) and background (AppState may race) cases.
+        val prefs = getSharedPreferences("pearguard_nav", MODE_PRIVATE)
+        if (prefs.getString("pendingNavUrl", null) != null) {
+            PearGuardReactHost.get()
+                ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                ?.emit("pearguard_pendingNav", null)
+        }
     }
 
     /**

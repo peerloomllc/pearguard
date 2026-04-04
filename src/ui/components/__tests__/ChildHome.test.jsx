@@ -1,100 +1,75 @@
 import React from 'react'
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import ChildHome from '../ChildHome.jsx'
 
+let bareEventHandlers
 beforeEach(() => {
-  window.callBare = jest.fn().mockResolvedValue({ policy: null })
+  bareEventHandlers = {}
+  window.onBareEvent = jest.fn((event, handler) => {
+    if (!bareEventHandlers[event]) bareEventHandlers[event] = []
+    bareEventHandlers[event].push(handler)
+    return () => {
+      bareEventHandlers[event] = bareEventHandlers[event].filter((h) => h !== handler)
+    }
+  })
+  window.callBare = jest.fn().mockResolvedValue({
+    blockedCount: 0,
+    pendingCount: 0,
+    pendingRequests: 0,
+    activeOverrides: [],
+    hasPolicy: true,
+    locked: false,
+    parentName: null,
+    childName: null,
+  })
 })
 
-test('renders "Loading..." initially (before callBare resolves)', () => {
+test('renders "Loading..." initially', () => {
   render(<ChildHome />)
   expect(screen.getByText('Loading...')).toBeInTheDocument()
 })
 
-test('after callBare resolves with { policy: null }, shows "All good"', async () => {
+test('shows greeting after data loads', async () => {
+  window.callBare.mockResolvedValue({
+    blockedCount: 2,
+    pendingCount: 1,
+    pendingRequests: 3,
+    activeOverrides: [],
+    hasPolicy: true,
+    locked: false,
+    parentName: null,
+    childName: 'Alex',
+  })
   render(<ChildHome />)
   await waitFor(() => {
-    expect(screen.getByText('All good')).toBeInTheDocument()
+    expect(screen.getByText('Hi, Alex')).toBeInTheDocument()
+  })
+  expect(screen.getByText('2')).toBeInTheDocument()
+})
+
+test('shows LockOverlay when locked', async () => {
+  window.callBare.mockResolvedValue({
+    blockedCount: 0,
+    pendingCount: 0,
+    pendingRequests: 0,
+    activeOverrides: [],
+    hasPolicy: true,
+    locked: true,
+    parentName: 'Mom',
+    childName: 'Alex',
+  })
+  render(<ChildHome />)
+  await waitFor(() => {
+    expect(screen.getByText(/Device locked by Mom/)).toBeInTheDocument()
   })
 })
 
-test('after callBare resolves with a policy, shows "All good"', async () => {
-  window.callBare.mockResolvedValue({ policy: { rules: [] } })
+test('subscribes to bare events', async () => {
   render(<ChildHome />)
   await waitFor(() => {
-    expect(screen.getByText('All good')).toBeInTheDocument()
-  })
-})
-
-test('dispatch __pearEvent with name "enforcement:offline" → shows "Enforcement offline" with red background', async () => {
-  render(<ChildHome />)
-  await waitFor(() => {
-    expect(screen.getByText('All good')).toBeInTheDocument()
-  })
-
-  act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'enforcement:offline', data: {} },
-    })
-    window.dispatchEvent(event)
-  })
-
-  await waitFor(() => {
-    expect(screen.getByText('Enforcement offline')).toBeInTheDocument()
-  })
-
-  const heading = screen.getByText('Enforcement offline')
-  const container = heading.closest('div')
-  expect(container).toHaveStyle({ backgroundColor: '#FFEDED', borderColor: '#FF4444' })
-})
-
-test('dispatch __pearEvent with name "enforcement:status" and scheduleActive:true → shows "Bedtime mode" with label', async () => {
-  render(<ChildHome />)
-  await waitFor(() => {
-    expect(screen.getByText('All good')).toBeInTheDocument()
-  })
-
-  act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: {
-        name: 'enforcement:status',
-        data: { scheduleActive: true, scheduleLabel: 'Bedtime' },
-      },
-    })
-    window.dispatchEvent(event)
-  })
-
-  await waitFor(() => {
-    expect(screen.getByText('Bedtime mode')).toBeInTheDocument()
-    expect(screen.getByText('Bedtime')).toBeInTheDocument()
-  })
-})
-
-test('dispatch __pearEvent with name "policy:updated" → resets to "All good"', async () => {
-  render(<ChildHome />)
-  await waitFor(() => {
-    expect(screen.getByText('All good')).toBeInTheDocument()
-  })
-
-  act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'enforcement:offline', data: {} },
-    })
-    window.dispatchEvent(event)
-  })
-
-  await waitFor(() => {
-    expect(screen.getByText('Enforcement offline')).toBeInTheDocument()
-  })
-
-  act(() => {
-    const event = new CustomEvent('__pearEvent', {
-      detail: { name: 'policy:updated', data: {} },
-    })
-    window.dispatchEvent(event)
-  })
-
-  await waitFor(() => {
-    expect(screen.getByText('All good')).toBeInTheDocument()
+    expect(window.onBareEvent).toHaveBeenCalledWith('policy:updated', expect.any(Function))
+    expect(window.onBareEvent).toHaveBeenCalledWith('override:granted', expect.any(Function))
+    expect(window.onBareEvent).toHaveBeenCalledWith('request:updated', expect.any(Function))
+    expect(window.onBareEvent).toHaveBeenCalledWith('request:submitted', expect.any(Function))
   })
 })

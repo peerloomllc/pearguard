@@ -7,7 +7,7 @@ import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 import AddChildFlow from './AddChildFlow.jsx';
 
-export default forwardRef(function Dashboard(props, ref) {
+export default forwardRef(function Dashboard(_props, ref) {
   const { colors, typography, spacing } = useTheme();
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +34,40 @@ export default forwardRef(function Dashboard(props, ref) {
   }
 
   useEffect(() => { loadChildren(); }, []);
+
+  // Handle notification deep link navigation from window global (set by RN shell)
+  useEffect(() => {
+    if (children.length === 0) return;
+    const nav = window.__pendingAlertsNav;
+    if (nav?.childPublicKey) {
+      window.__pendingAlertsNav = null;
+      const child = children.find((c) => c.publicKey === nav.childPublicKey);
+      if (child) {
+        setSelectedChild(child);
+        setSelectedTab(nav.tab || 'activity');
+      }
+    }
+  }, [children]);
+
+  // Handle notification deep link navigation from live events
+  useEffect(() => {
+    function handleNav(data) {
+      const key = data?.childPublicKey;
+      if (!key) return;
+      // Read current children via setter to avoid stale closure
+      setChildren((prev) => {
+        const child = prev.find((c) => c.publicKey === key);
+        if (child) {
+          setSelectedChild(child);
+          setSelectedTab(data.tab || 'activity');
+        }
+        return prev;
+      });
+    }
+    const unsub1 = window.onBareEvent('navigate:child:alerts', handleNav);
+    const unsub2 = window.onBareEvent('navigate:child:requests', handleNav);
+    return () => { unsub1(); unsub2(); };
+  }, []);
 
   useEffect(() => {
     const unsubs = [

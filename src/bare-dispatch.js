@@ -550,7 +550,17 @@ function createDispatch (ctx) {
           }
         }
 
-        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy }
+        // Locked state and names for LockOverlay / greeting
+        const locked = !!(policy && policy.locked)
+        let parentName = null
+        let childName = null
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (value && value.displayName) { parentName = value.displayName; break }
+        }
+        const identRaw = await ctx.db.get('identity')
+        if (identRaw && identRaw.value && identRaw.value.name) childName = identRaw.value.name
+
+        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy, locked, parentName, childName }
       }
 
       case 'app:installed': {

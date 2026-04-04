@@ -12,34 +12,35 @@ import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, Activ
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { getBareCaller } from './setup'
+import NativeIcon from './NativeIcon'
 
 type Permissions = { accessibility: boolean; usageStats: boolean }
 
-function IconA() {
+function IconAccessibility() {
   return (
     <View style={styles.iconCircle}>
-      <Text style={styles.iconLetter}>A</Text>
+      <NativeIcon name="GearSix" size={32} color="#81C784" />
     </View>
   )
 }
-function IconU() {
+function IconUsage() {
   return (
     <View style={styles.iconCircle}>
-      <Text style={styles.iconLetter}>U</Text>
+      <NativeIcon name="ChartBar" size={32} color="#81C784" />
     </View>
   )
 }
-function IconP() {
+function IconPair() {
   return (
     <View style={[styles.iconCircle, styles.iconCirclePair]}>
-      <Text style={[styles.iconLetter, styles.iconLetterPair]}>P</Text>
+      <NativeIcon name="QrCode" size={32} color="#7B9FEB" />
     </View>
   )
 }
 
 const PERMISSION_STEPS = {
   1: {
-    Icon: IconA,
+    Icon: IconAccessibility,
     title: 'Enable Accessibility Service',
     description:
       'PearGuard needs the Accessibility Service to detect and block restricted apps on this device.',
@@ -53,7 +54,7 @@ const PERMISSION_STEPS = {
     settingsAction: 'android.settings.ACCESSIBILITY_SETTINGS',
   },
   2: {
-    Icon: IconU,
+    Icon: IconUsage,
     title: 'Grant Usage Access',
     description:
       'PearGuard needs Usage Access to track daily app time and enforce screen time limits set by your parent.',
@@ -124,7 +125,7 @@ const scannerStyles = StyleSheet.create({
   overlay:    { flex: 1, justifyContent: 'flex-end', padding: 32 },
   cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderRadius: 8, alignItems: 'center' },
   cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
+  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0D0D0D' },
 })
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -238,7 +239,7 @@ export default function ChildSetupScreen() {
       <View style={styles.container}>
         <Text style={styles.stepLabel}>Step 3 of 3</Text>
 
-        <IconP />
+        <IconPair />
 
         <Text style={styles.title}>Pair with your parent</Text>
         <Text style={styles.description}>
@@ -321,28 +322,26 @@ export default function ChildSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  stepLabel:        { color: '#555', fontSize: 13, marginBottom: 24, textTransform: 'uppercase', letterSpacing: 1 },
-  iconCircle:       { width: 72, height: 72, borderRadius: 36, backgroundColor: '#1a2e1a', borderWidth: 2, borderColor: '#6FCF97', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  iconLetter:       { color: '#6FCF97', fontSize: 28, fontWeight: '700' },
+  container:        { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  stepLabel:        { color: '#707070', fontSize: 13, marginBottom: 24, textTransform: 'uppercase', letterSpacing: 1 },
+  iconCircle:       { width: 72, height: 72, borderRadius: 36, backgroundColor: '#1A2E1A', borderWidth: 2, borderColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   iconCirclePair:   { backgroundColor: '#1a1a2e', borderColor: '#7B9FEB' },
-  iconLetterPair:   { color: '#7B9FEB' },
-  title:            { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
-  description:      { color: '#aaa', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  instructions:     { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#333', borderRadius: 12, padding: 16, width: '100%', marginBottom: 32 },
-  instructionsLabel:{ color: '#555', fontSize: 11, letterSpacing: 0.5, marginBottom: 10 },
-  instructionLine:  { color: '#ccc', fontSize: 14, lineHeight: 26 },
-  button:           { backgroundColor: '#1a2e1a', borderWidth: 1, borderColor: '#6FCF97', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
-  buttonText:       { color: '#6FCF97', fontSize: 15, fontWeight: '600' },
+  title:            { color: '#EAEAEA', fontSize: 20, fontWeight: '300', textAlign: 'center', marginBottom: 12 },
+  description:      { color: '#B0B0B0', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  instructions:     { backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333333', borderRadius: 12, padding: 16, width: '100%', marginBottom: 32 },
+  instructionsLabel:{ color: '#707070', fontSize: 11, letterSpacing: 0.5, marginBottom: 10 },
+  instructionLine:  { color: '#B0B0B0', fontSize: 14, lineHeight: 26 },
+  button:           { backgroundColor: '#1A2E1A', borderWidth: 1, borderColor: '#4CAF50', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
+  buttonText:       { color: '#4CAF50', fontSize: 15, fontWeight: '600' },
   buttonPair:       { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
   buttonPairText:   { color: '#7B9FEB', fontSize: 15, fontWeight: '600' },
   waitingRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  waitingText:      { color: '#555', fontSize: 13 },
+  waitingText:      { color: '#707070', fontSize: 13 },
   connectingBox:    { alignItems: 'center', gap: 12, marginBottom: 16 },
   connectingText:   { color: '#7B9FEB', fontSize: 15, fontWeight: '600' },
-  connectingSubText:{ color: '#555', fontSize: 13 },
-  notifyBanner:     { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#ea4335', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
-  notifyText:       { color: '#ea4335', fontSize: 13, textAlign: 'center' },
-  errorBanner:      { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#ea4335', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
-  errorText:        { color: '#ea4335', fontSize: 13, textAlign: 'center' },
+  connectingSubText:{ color: '#707070', fontSize: 13 },
+  notifyBanner:     { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#EF5350', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
+  notifyText:       { color: '#EF5350', fontSize: 13, textAlign: 'center' },
+  errorBanner:      { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#EF5350', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
+  errorText:        { color: '#EF5350', fontSize: 13, textAlign: 'center' },
 })

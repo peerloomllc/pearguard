@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '../theme.js';
 
 function timeAgo(timestamp) {
   if (!timestamp) return 'Never';
@@ -19,8 +20,10 @@ function formatSeconds(s) {
 }
 
 function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
+  const { colors, spacing, radius } = useTheme();
+
   // When a limit is set, scale against the limit. Otherwise scale against
-  // 24h (daily) / 168h (weekly) — the natural maximum.
+  // 24h (daily) / 168h (weekly) - the natural maximum.
   const todayScale = dailyLimitSeconds || 86400;
   const weekScale = dailyLimitSeconds ? dailyLimitSeconds * 7 : 604800;
   const todayPct = Math.min(100, (todaySeconds / todayScale) * 100);
@@ -28,22 +31,24 @@ function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
   const overLimit = dailyLimitSeconds && todaySeconds > dailyLimitSeconds;
 
   return (
-    <div style={styles.usageRow}>
-      <div style={styles.appName}>{appName}</div>
-      <div style={styles.bars}>
-        <div style={styles.barLabel}>Today: {formatSeconds(todaySeconds)}</div>
-        <div style={styles.barTrack}>
+    <div style={{ marginBottom: `${spacing.lg}px` }}>
+      <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: colors.text.primary }}>{appName}</div>
+      <div>
+        <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>Today: {formatSeconds(todaySeconds)}</div>
+        <div style={{ height: '8px', backgroundColor: colors.surface.elevated, borderRadius: `${radius.sm}px`, overflow: 'hidden' }}>
           <div
             style={{
-              ...styles.barFill,
+              height: '100%',
+              borderRadius: `${radius.sm}px`,
+              transition: 'width 0.3s ease',
               width: `${todayPct}%`,
-              backgroundColor: overLimit ? '#ea4335' : '#1a73e8',
+              backgroundColor: overLimit ? colors.error : colors.primary,
             }}
           />
         </div>
-        <div style={styles.barLabel}>This week: {formatSeconds(weekSeconds)}</div>
-        <div style={styles.barTrack}>
-          <div style={{ ...styles.barFill, width: `${weekPct}%`, backgroundColor: '#34a853' }} />
+        <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>This week: {formatSeconds(weekSeconds)}</div>
+        <div style={{ height: '8px', backgroundColor: colors.surface.elevated, borderRadius: `${radius.sm}px`, overflow: 'hidden' }}>
+          <div style={{ height: '100%', borderRadius: `${radius.sm}px`, transition: 'width 0.3s ease', width: `${weekPct}%`, backgroundColor: colors.success }} />
         </div>
       </div>
     </div>
@@ -51,6 +56,7 @@ function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
 }
 
 export default function UsageTab({ childPublicKey }) {
+  const { colors, spacing } = useTheme();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -63,7 +69,7 @@ export default function UsageTab({ childPublicKey }) {
       .catch(() => setLoading(false));
 
     // Also update when a fresh report arrives over P2P while the tab is open.
-    // Only overwrite if the incoming report has actual app data — empty reports
+    // Only overwrite if the incoming report has actual app data - empty reports
     // (e.g. from a flush that ran before permissions were granted) should not
     // wipe out a previously displayed valid report.
     const unsub = window.onBareEvent('usage:report', (data) => {
@@ -75,14 +81,14 @@ export default function UsageTab({ childPublicKey }) {
     return unsub;
   }, [childPublicKey]);
 
-  if (loading) return <div style={styles.msg}>Loading usage data...</div>;
+  if (loading) return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>Loading usage data...</div>;
   if (!report || !report.apps || report.apps.length === 0) {
-    return <div style={styles.msg}>No usage data yet. Data syncs every 5 minutes.</div>;
+    return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>No usage data yet. Data syncs every 5 minutes.</div>;
   }
 
   return (
-    <div style={styles.container}>
-      <p style={styles.syncLabel}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
+    <div style={{ padding: `${spacing.base}px` }}>
+      <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.base}px` }}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
       {report.apps.map((app) => (
         <UsageBar
           key={app.packageName}
@@ -95,24 +101,3 @@ export default function UsageTab({ childPublicKey }) {
     </div>
   );
 }
-
-const styles = {
-  container: { padding: '16px' },
-  msg: { padding: '16px', color: '#666', fontSize: '14px' },
-  syncLabel: { fontSize: '12px', color: '#888', marginBottom: '16px' },
-  usageRow: { marginBottom: '20px' },
-  appName: { fontSize: '14px', fontWeight: '600', marginBottom: '6px' },
-  bars: {},
-  barLabel: { fontSize: '12px', color: '#555', marginBottom: '3px', marginTop: '6px' },
-  barTrack: {
-    height: '8px',
-    backgroundColor: '#eee',
-    borderRadius: '4px',
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease',
-  },
-};

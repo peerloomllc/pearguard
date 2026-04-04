@@ -550,7 +550,17 @@ function createDispatch (ctx) {
           }
         }
 
-        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy }
+        // Locked state and names for LockOverlay / greeting
+        const locked = !!(policy && policy.locked)
+        let parentName = null
+        let childName = null
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (value && value.displayName) { parentName = value.displayName; break }
+        }
+        const identRaw = await ctx.db.get('identity')
+        if (identRaw && identRaw.value && identRaw.value.name) childName = identRaw.value.name
+
+        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy, locked, parentName, childName }
       }
 
       case 'app:installed': {
@@ -831,7 +841,7 @@ function createDispatch (ctx) {
         }
 
         // Mark matching pending requests for this child+package as resolved in Hyperbee
-        // so AlertsTab shows the correct status after navigating away and back.
+        // so ActivityTab shows the correct status after navigating away and back.
         const reqStatus = d === 'allowed' ? 'approved' : 'denied'
         for await (const { key, value } of ctx.db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
           if (value.childPublicKey === childPublicKey && value.packageName === packageName && value.status === 'pending') {
@@ -904,6 +914,26 @@ function createDispatch (ctx) {
         return { ok: true }
       }
 
+      case 'policy:setLock': {
+        const { childPublicKey, locked } = args
+        if (!childPublicKey) throw new Error('invalid policy:setLock args')
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+        policy.locked = !!locked
+        policy.version = (policy.version || 0) + 1
+        await ctx.db.put('policy:' + childPublicKey, policy)
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+          }
+        } catch (_e) {
+          // child offline — policy stored; will be sent on reconnect
+        }
+        return { ok: true }
+      }
+
       case 'settings:get': {
         const raw = await ctx.db.get('parentSettings')
         return raw ? raw.value : {}
@@ -926,6 +956,18 @@ function createDispatch (ctx) {
           } catch (_e) {}
         }
         return { ok: true }
+      }
+
+      case 'settings:setTheme': {
+        const { theme } = args
+        if (!theme || typeof theme !== 'string') throw new Error('invalid settings:setTheme args')
+        await ctx.db.put('settings:theme', theme)
+        return {}
+      }
+
+      case 'settings:getTheme': {
+        const entry = await ctx.db.get('settings:theme')
+        return { theme: entry ? entry.value.toString() : 'dark' }
       }
 
       case 'alerts:list': {

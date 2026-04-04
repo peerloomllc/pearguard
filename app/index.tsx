@@ -139,7 +139,7 @@ function buildHtml (appBundleJs: string): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />',
     '<style>',
     '* { box-sizing: border-box; margin: 0; padding: 0; }',
-    'html, body, #root { height: 100dvh; width: 100%; overflow: hidden; background: #111; }',
+    'html, body, #root { height: 100dvh; width: 100%; overflow: hidden; background: #0D0D0D; }',
     '</style>',
     '</head>',
     '<body>',
@@ -409,6 +409,12 @@ export default function Root () {
         // PIN entered successfully — log the override event
         DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
           sendToWorklet({ method: 'pin:used', args: e })
+        }),
+
+        // Notification tapped while app is in foreground — onNewIntent fires but
+        // AppState doesn't change, so we need this dedicated listener.
+        DeviceEventEmitter.addListener('pearguard_pendingNav', () => {
+          consumePendingNavigation()
         }),
 
         // App foregrounded — kick Hyperswarm to reconnect in case connection dropped while backgrounded

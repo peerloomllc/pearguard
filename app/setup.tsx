@@ -9,6 +9,7 @@
 import { useState, useRef } from 'react'
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from 'react-native'
 import { useRouter } from 'expo-router'
+import NativeIcon from './NativeIcon'
 
 let _callBare: ((method: string, args: any) => Promise<any>) | null = null
 
@@ -84,6 +85,9 @@ export default function SetupScreen () {
   if (step === 'name') {
     return (
       <View style={styles.container}>
+        <View style={[styles.iconCircle, styles.iconCircleGreen]}>
+          <NativeIcon name="User" size={32} color="#81C784" />
+        </View>
         <Text style={styles.title}>What's your name?</Text>
         <Text style={styles.subtitle}>
           This name is shown to the other device when you pair.
@@ -92,7 +96,7 @@ export default function SetupScreen () {
         {error && <Text style={styles.error}>{error}</Text>}
 
         {loading ? (
-          <ActivityIndicator color="#6FCF97" size="large" />
+          <ActivityIndicator color="#4CAF50" size="large" />
         ) : (
           <View style={styles.form}>
             <Text style={styles.label}>Your name</Text>
@@ -116,6 +120,9 @@ export default function SetupScreen () {
   if (step === 'pin') {
     return (
       <View style={styles.container}>
+        <View style={[styles.iconCircle, styles.iconCircleGreen]}>
+          <NativeIcon name="LockSimple" size={32} color="#81C784" />
+        </View>
         <Text style={styles.title}>Set Override PIN</Text>
         <Text style={styles.subtitle}>
           Children enter this PIN on the block screen to request temporary access.
@@ -125,7 +132,7 @@ export default function SetupScreen () {
         {error && <Text style={styles.error}>{error}</Text>}
 
         {loading ? (
-          <ActivityIndicator color="#6FCF97" size="large" />
+          <ActivityIndicator color="#4CAF50" size="large" />
         ) : (
           <View style={styles.form}>
             <Text style={styles.label}>PIN (4+ digits)</Text>
@@ -170,17 +177,17 @@ export default function SetupScreen () {
       {error && <Text style={styles.error}>{error}</Text>}
 
       {loading ? (
-        <ActivityIndicator color="#6FCF97" size="large" />
+        <ActivityIndicator color="#4CAF50" size="large" />
       ) : (
         <View style={styles.buttons}>
           <TouchableOpacity style={[styles.btn, styles.btnParent]} onPress={() => selectMode('parent')}>
-            <Text style={styles.btnIcon}>👤</Text>
+            <NativeIcon name="Shield" size={36} color="#4CAF50" />
             <Text style={styles.btnTitle}>I'm a Parent</Text>
             <Text style={styles.btnSub}>Monitor and manage your child's device</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.btn, styles.btnChild]} onPress={() => selectMode('child')}>
-            <Text style={styles.btnIcon}>🧒</Text>
+            <NativeIcon name="User" size={36} color="#7B9FEB" />
             <Text style={styles.btnTitle}>I'm a Child</Text>
             <Text style={styles.btnSub}>This device will be monitored by a parent</Text>
           </TouchableOpacity>
@@ -191,20 +198,21 @@ export default function SetupScreen () {
 }
 
 const styles = StyleSheet.create({
-  container:   { flex: 1, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  title:       { color: '#fff', fontSize: 26, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  subtitle:    { color: '#aaa', fontSize: 16, marginBottom: 40, textAlign: 'center' },
-  error:       { color: '#EB5757', fontSize: 14, marginBottom: 16, textAlign: 'center' },
+  container:   { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  title:       { color: '#EAEAEA', fontSize: 26, fontWeight: '300', marginBottom: 8, textAlign: 'center' },
+  subtitle:    { color: '#B0B0B0', fontSize: 16, marginBottom: 40, textAlign: 'center' },
+  error:       { color: '#EF5350', fontSize: 14, marginBottom: 16, textAlign: 'center' },
   buttons:     { width: '100%', gap: 16 },
-  btn:         { borderRadius: 16, padding: 24, alignItems: 'center', gap: 6 },
-  btnParent:   { backgroundColor: '#1a2e1a', borderWidth: 1, borderColor: '#6FCF97' },
+  btn:         { borderRadius: 16, padding: 24, alignItems: 'center', gap: 10 },
+  iconCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  iconCircleGreen: { backgroundColor: '#1A2E1A', borderWidth: 2, borderColor: '#4CAF50' },
+  btnParent:   { backgroundColor: '#1A2E1A', borderWidth: 1, borderColor: '#4CAF50' },
   btnChild:    { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB' },
-  btnIcon:     { fontSize: 32 },
-  btnTitle:    { color: '#fff', fontSize: 18, fontWeight: '600' },
-  btnSub:      { color: '#888', fontSize: 13, textAlign: 'center' },
+  btnTitle:    { color: '#EAEAEA', fontSize: 18, fontWeight: '600' },
+  btnSub:      { color: '#707070', fontSize: 13, textAlign: 'center' },
   form:        { width: '100%', gap: 12 },
-  label:       { color: '#aaa', fontSize: 14, marginBottom: 2 },
-  input:       { backgroundColor: '#222', color: '#fff', borderRadius: 10, padding: 14, fontSize: 16, borderWidth: 1, borderColor: '#444', width: '100%' },
-  btnSave:     { backgroundColor: '#6FCF97', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
-  btnSaveText: { color: '#111', fontSize: 17, fontWeight: '700' },
+  label:       { color: '#B0B0B0', fontSize: 14, marginBottom: 2 },
+  input:       { backgroundColor: '#2A2A2A', color: '#EAEAEA', borderRadius: 10, padding: 14, fontSize: 16, borderWidth: 1, borderColor: '#333333', width: '100%' },
+  btnSave:     { backgroundColor: '#4CAF50', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
+  btnSaveText: { color: '#0D0D0D', fontSize: 17, fontWeight: '700' },
 })

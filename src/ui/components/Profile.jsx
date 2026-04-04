@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useTheme } from '../theme.js'
+import Icon from '../icons.js'
 import Avatar from './Avatar.jsx'
 import AvatarPicker from './AvatarPicker.jsx'
 
 export default function Profile({ mode }) {
+  const { colors, typography, spacing, radius } = useTheme()
   const [name, setName] = useState('')
   const [savedName, setSavedName] = useState('')
   const [avatar, setAvatar] = useState(null)
@@ -90,15 +93,46 @@ export default function Profile({ mode }) {
   const placeholder = mode === 'parent' ? 'e.g. Mom' : 'e.g. Alex'
   const unchanged = name.trim() === savedName || !name.trim()
 
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.heading}>Profile</h2>
+  const inputStyle = {
+    padding: '10px',
+    border: `1px solid ${colors.border}`,
+    borderRadius: `${radius.md}px`,
+    fontSize: '15px',
+    marginTop: `${spacing.xs}px`,
+    backgroundColor: colors.surface.input,
+    color: colors.text.primary,
+  }
 
-      <div style={styles.avatarWrap}>
-        <div style={styles.avatarContainer}>
+  const btnStyle = {
+    padding: `${spacing.md}px`,
+    border: 'none',
+    borderRadius: `${radius.md}px`,
+    backgroundColor: colors.primary,
+    color: '#FFFFFF',
+    cursor: 'pointer',
+    fontSize: '15px',
+    fontWeight: '600',
+    marginTop: `${spacing.xs}px`,
+  }
+
+  return (
+    <div style={{ padding: `${spacing.base}px` }}>
+      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.xl}px` }}>Profile</h2>
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.xl}px` }}>
+        <div style={{ position: 'relative', display: 'inline-block' }}>
           <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
-          <div style={styles.editBadge} onClick={() => { window.callBare('haptic:tap'); setShowPicker(true); }}>
-            <span style={styles.editIcon}>&#9998;</span>
+          <div
+            style={{
+              position: 'absolute', bottom: '0', right: '0',
+              width: '26px', height: '26px', borderRadius: '50%',
+              backgroundColor: colors.primary, border: '2px solid #FFF',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+            onClick={() => { window.callBare('haptic:tap'); setShowPicker(true); }}
+          >
+            <Icon name="PencilSimple" size={13} color="#FFFFFF" />
           </div>
         </div>
       </div>
@@ -112,69 +146,83 @@ export default function Profile({ mode }) {
         />
       )}
 
-      <div style={styles.field}>
-        <label style={styles.label}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px`, fontSize: '14px', color: colors.text.secondary }}>
           {label}
           <input
             type="text"
             value={name}
             onChange={(e) => { setName(e.target.value); setStatus(null) }}
             placeholder={placeholder}
-            style={styles.input}
+            style={inputStyle}
           />
         </label>
 
-        {status === 'success' && <p style={styles.success}>Name saved.</p>}
-        {status === 'error' && <p style={styles.error}>Failed to save name.</p>}
+        {status === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Name saved.</p>}
+        {status === 'error' && <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>Failed to save name.</p>}
 
         <button
           onClick={() => { window.callBare('haptic:tap'); handleSave(); }}
           disabled={saving || unchanged}
-          style={{ ...styles.btn, ...(saving || unchanged ? styles.btnDisabled : {}) }}
+          style={{ ...btnStyle, ...(saving || unchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: 'not-allowed' } : {}) }}
         >
           {saving ? 'Saving\u2026' : 'Save Name'}
         </button>
       </div>
 
       {mode === 'child' && pairedBanner && (
-        <div style={styles.banner}>Successfully paired with parent!</div>
+        <div style={{
+          backgroundColor: `${colors.success}22`,
+          color: colors.success,
+          border: `1px solid ${colors.success}44`,
+          borderRadius: `${radius.md}px`,
+          padding: `10px 14px`,
+          marginTop: `${spacing.base}px`,
+          fontSize: '14px',
+          fontWeight: '500',
+        }}>
+          Successfully paired with parent!
+        </div>
       )}
 
       {mode === 'child' && (
-        <div style={styles.section}>
-          <h3 style={styles.sectionHeading}>Parents</h3>
+        <div style={{ marginTop: `${spacing.xxl}px` }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: `${spacing.md}px`, color: colors.text.primary }}>Parents</h3>
 
           {parents.length > 0 && (
-            <div style={styles.parentsList}>
+            <div style={{ marginBottom: `${spacing.base}px` }}>
               {parents.map((p) => (
-                <div key={p.publicKey} style={styles.parentRow}>
+                <div key={p.publicKey} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 0', borderBottom: `1px solid ${colors.divider}`,
+                }}>
                   <Avatar avatar={p.avatarThumb} name={p.displayName || 'Parent'} size={32} />
-                  <span style={{ ...styles.onlineDot, backgroundColor: p.isOnline ? '#34a853' : '#bbb' }} />
-                  <span style={styles.parentName}>{p.displayName || 'Parent Device'}</span>
-                  <span style={styles.parentStatus}>{p.isOnline ? 'Connected' : 'Offline'}</span>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border }} />
+                  <span style={{ fontSize: '15px', fontWeight: '500', flex: 1, color: colors.text.primary }}>{p.displayName || 'Parent Device'}</span>
+                  <span style={{ fontSize: '12px', color: colors.text.muted }}>{p.isOnline ? 'Connected' : 'Offline'}</span>
                 </div>
               ))}
             </div>
           )}
 
           {pairState === 'idle' && (
-            <button style={styles.btn} onClick={() => { window.callBare('haptic:tap'); handlePair(); }}>
+            <button style={btnStyle} onClick={() => { window.callBare('haptic:tap'); handlePair(); }}>
               {parents.length > 0 ? 'Pair Another Parent' : 'Pair to Parent'}
             </button>
           )}
 
           {pairState === 'connecting' && (
-            <p style={styles.hint}>Connecting to parent\u2026</p>
+            <p style={{ color: colors.text.muted, fontSize: '14px' }}>Connecting to parent\u2026</p>
           )}
 
           {pairState === 'success' && (
-            <p style={styles.success}>Pairing in progress\u2026</p>
+            <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Pairing in progress\u2026</p>
           )}
 
           {pairState === 'error' && (
             <>
-              <p style={styles.error}>{pairError}</p>
-              <button style={styles.btn} onClick={() => { window.callBare('haptic:tap'); setPairState('idle'); }}>
+              <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>{pairError}</p>
+              <button style={btnStyle} onClick={() => { window.callBare('haptic:tap'); setPairState('idle'); }}>
                 Try Again
               </button>
             </>
@@ -183,45 +231,4 @@ export default function Profile({ mode }) {
       )}
     </div>
   )
-}
-
-const styles = {
-  container: { padding: '16px', fontFamily: 'sans-serif' },
-  heading: { fontSize: '20px', fontWeight: '700', marginBottom: '24px' },
-  avatarWrap: { display: 'flex', justifyContent: 'center', marginBottom: '24px' },
-  avatarContainer: { position: 'relative', display: 'inline-block' },
-  editBadge: {
-    position: 'absolute', bottom: '0', right: '0',
-    width: '26px', height: '26px', borderRadius: '50%',
-    backgroundColor: '#1a73e8', border: '2px solid #FFF',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  editIcon: { color: '#FFF', fontSize: '13px' },
-  field: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  label: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '14px', color: '#444' },
-  input: {
-    padding: '10px', border: '1px solid #ccc', borderRadius: '6px',
-    fontSize: '15px', marginTop: '4px',
-  },
-  btn: {
-    padding: '12px', border: 'none', borderRadius: '6px',
-    backgroundColor: '#1a73e8', color: '#fff', cursor: 'pointer',
-    fontSize: '15px', fontWeight: '600', marginTop: '4px',
-  },
-  btnDisabled: { backgroundColor: '#ccc', cursor: 'not-allowed' },
-  success: { color: '#34a853', fontSize: '13px', margin: 0 },
-  error: { color: '#ea4335', fontSize: '13px', margin: 0 },
-  banner: {
-    backgroundColor: '#e6f4ea', color: '#1e7e34', border: '1px solid #a8d5b5',
-    borderRadius: '6px', padding: '10px 14px', marginTop: '16px', fontSize: '14px', fontWeight: '500',
-  },
-  section:        { marginTop: '32px' },
-  sectionHeading: { fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#333' },
-  hint:           { color: '#888', fontSize: '14px' },
-  parentsList:    { marginBottom: '16px' },
-  parentRow:      { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #eee' },
-  onlineDot:      { width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 },
-  parentName:     { fontSize: '15px', fontWeight: '500', flex: 1 },
-  parentStatus:   { fontSize: '12px', color: '#888' },
 }

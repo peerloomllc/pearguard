@@ -1,180 +1,184 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useTheme } from '../theme.js';
+import Icon from '../icons.js';
+import Modal from './primitives/Modal.jsx';
+import Button from './primitives/Button.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 import AddChildFlow from './AddChildFlow.jsx';
 
-export default function Dashboard({ navTrigger, onNavConsumed }) {
+export default forwardRef(function Dashboard(_props, ref) {
+  const { colors, typography, spacing } = useTheme();
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [initialTab, setInitialTab] = useState(null);
   const [selectedChild, setSelectedChild] = useState(null);
-  const [showAddChild, setShowAddChild] = useState(false);
+  const [selectedTab, setSelectedTab] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [lockTarget, setLockTarget] = useState(null);
 
-  const loadChildren = useCallback(() => {
+  function loadChildren() {
     window.callBare('children:list')
       .then((list) => {
-        setChildren(
-          list.map((c) => ({
-            ...c,
-            bypassAlerts: c.bypassAlerts || 0,
-            pendingApprovals: c.pendingApprovals || 0,
-            pendingTimeRequests: c.pendingTimeRequests || 0,
-            todayScreenTimeSeconds: c.todayScreenTimeSeconds || 0,
-            currentApp: c.currentApp || null,
-          }))
-        );
+        setChildren((list || []).map((c) => ({
+          ...c,
+          bypassAlerts: c.bypassAlerts || 0,
+          pendingApprovals: c.pendingApprovals || 0,
+          pendingTimeRequests: c.pendingTimeRequests || 0,
+          todayScreenTimeSeconds: c.todayScreenTimeSeconds || 0,
+          currentApp: c.currentApp || null,
+          locked: c.locked || false,
+        })));
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }
 
-  // Navigate to a specific child's tab. Retries up to 2× at 500 ms intervals
-  // in case children:list races with worklet initialization on cold/warm start.
-  const navigateToChild = useCallback((childPublicKey, tab, attempt) => {
-    if (attempt === undefined) attempt = 0;
-    window.callBare('children:list').then((list) => {
-      const child = list.find((c) => c.publicKey === childPublicKey);
-      if (child) {
-        setInitialTab(tab || 'alerts');
-        setSelectedChild(child);
-      } else if (attempt < 2) {
-        setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
-      }
-    }).catch(() => {
-      if (attempt < 2) setTimeout(() => navigateToChild(childPublicKey, tab, attempt + 1), 500);
-    });
-  }, []);
+  useEffect(() => { loadChildren(); }, []);
 
-  // Consume navTrigger from ParentApp (notification tap navigation)
+  // Handle notification deep link navigation from window global (set by RN shell)
   useEffect(() => {
-    if (navTrigger && navTrigger.childPublicKey) {
-      navigateToChild(navTrigger.childPublicKey, navTrigger.tab);
-      onNavConsumed?.();
-    }
-  }, [navTrigger, navigateToChild, onNavConsumed]);
-
-  useEffect(() => {
-    loadChildren();
-
-    // Update screen time + currentApp when a usage report arrives
-    const unsubUsage = window.onBareEvent('child:usageReport', ({ childPublicKey, todayScreenTimeSeconds, currentApp }) => {
-      setChildren((prev) =>
-        prev.map((c) =>
-          c.publicKey === childPublicKey
-            ? { ...c, todayScreenTimeSeconds, currentApp }
-            : c
-        )
-      );
-    });
-
-    // Increment pending time request badge
-    const unsubTime = window.onBareEvent('child:timeRequest', ({ childPublicKey }) => {
-      setChildren((prev) =>
-        prev.map((c) =>
-          c.publicKey === childPublicKey
-            ? { ...c, pendingTimeRequests: (c.pendingTimeRequests || 0) + 1 }
-            : c
-        )
-      );
-    });
-
-    // Increment bypass alert badge
-    const unsubBypass = window.onBareEvent('alert:bypass', ({ childPublicKey }) => {
-      setChildren((prev) =>
-        prev.map((c) =>
-          c.publicKey === childPublicKey
-            ? { ...c, bypassAlerts: (c.bypassAlerts || 0) + 1 }
-            : c
-        )
-      );
-    });
-
-    // Notification tap: navigate directly to a child's tab (tab defaults to 'alerts').
-    // Also clears the persistent __pendingAlertsNav marker set by index.tsx.
-    const unsubNav = window.onBareEvent('navigate:child:alerts', ({ childPublicKey, tab }) => {
+    if (children.length === 0) return;
+    const nav = window.__pendingAlertsNav;
+    if (nav?.childPublicKey) {
       window.__pendingAlertsNav = null;
-      navigateToChild(childPublicKey, tab);
-    });
+      const child = children.find((c) => c.publicKey === nav.childPublicKey);
+      if (child) {
+        setSelectedChild(child);
+        setSelectedTab(nav.tab || 'activity');
+      }
+    }
+  }, [children]);
 
-    const unsubChildConnected = window.onBareEvent('child:connected', () => {
-      setShowAddChild(false);
-      loadChildren();
-    });
+  // Handle notification deep link navigation from live events
+  useEffect(() => {
+    function handleNav(data) {
+      const key = data?.childPublicKey;
+      if (!key) return;
+      // Read current children via setter to avoid stale closure
+      setChildren((prev) => {
+        const child = prev.find((c) => c.publicKey === key);
+        if (child) {
+          setSelectedChild(child);
+          setSelectedTab(data.tab || 'activity');
+        }
+        return prev;
+      });
+    }
+    const unsub1 = window.onBareEvent('navigate:child:alerts', handleNav);
+    const unsub2 = window.onBareEvent('navigate:child:requests', handleNav);
+    return () => { unsub1(); unsub2(); };
+  }, []);
 
-    const unsubUnpaired = window.onBareEvent('child:unpaired', ({ childPublicKey }) => {
-      setChildren((prev) => prev.filter((c) => c.publicKey !== childPublicKey));
-      setSelectedChild((prev) => (prev?.publicKey === childPublicKey ? null : prev));
-      setInitialTab(null);
-    });
+  useEffect(() => {
+    const unsubs = [
+      window.onBareEvent('child:usageReport', (data) => {
+        setChildren((prev) => prev.map((c) =>
+          c.publicKey === data.childPublicKey
+            ? { ...c, todayScreenTimeSeconds: data.todayScreenTimeSeconds, currentApp: data.currentApp }
+            : c
+        ));
+      }),
+      window.onBareEvent('child:timeRequest', (data) => {
+        setChildren((prev) => prev.map((c) =>
+          c.publicKey === data.childPublicKey ? { ...c, pendingTimeRequests: c.pendingTimeRequests + 1 } : c
+        ));
+      }),
+      window.onBareEvent('alert:bypass', (data) => {
+        setChildren((prev) => prev.map((c) =>
+          c.publicKey === data.childPublicKey ? { ...c, bypassAlerts: c.bypassAlerts + 1 } : c
+        ));
+      }),
+      window.onBareEvent('child:connected', () => { loadChildren(); setShowAdd(false); }),
+      window.onBareEvent('child:unpaired', (data) => {
+        setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
 
-    return () => {
-      unsubUsage();
-      unsubTime();
-      unsubBypass();
-      unsubNav();
-      unsubChildConnected();
-      unsubUnpaired();
-    };
-  }, [loadChildren]);
+  const navigateToChild = useCallback((publicKey, tab) => {
+    const child = children.find((c) => c.publicKey === publicKey);
+    if (child) {
+      setSelectedChild(child);
+      if (tab) setSelectedTab(tab);
+    }
+  }, [children]);
 
-  if (showAddChild) {
-    return (
-      <AddChildFlow
-        onConnected={() => { setShowAddChild(false); loadChildren(); }}
-        onCancel={() => setShowAddChild(false)}
-      />
-    );
+  useImperativeHandle(ref, () => ({
+    navigateToChild,
+    showAddChild: () => setShowAdd(true),
+  }));
+
+  async function handleLockToggle(child) {
+    if (child.locked) {
+      await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: false });
+      setChildren((prev) => prev.map((c) => c.publicKey === child.publicKey ? { ...c, locked: false } : c));
+    } else {
+      setLockTarget(child);
+    }
+  }
+
+  async function confirmLock() {
+    if (!lockTarget) return;
+    await window.callBare('policy:setLock', { childPublicKey: lockTarget.publicKey, locked: true });
+    setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true } : c));
+    setLockTarget(null);
   }
 
   if (selectedChild) {
     return (
       <ChildDetail
         child={selectedChild}
-        initialTab={initialTab}
-        onBack={() => {
-          setSelectedChild(null);
-          setInitialTab(null);
-          loadChildren(); // refresh badges on return
-        }}
+        initialTab={selectedTab}
+        onBack={() => { setSelectedChild(null); setSelectedTab(null); loadChildren(); }}
       />
     );
   }
 
+  if (showAdd) {
+    return <AddChildFlow onConnected={() => { setShowAdd(false); loadChildren(); }} onCancel={() => setShowAdd(false)} />;
+  }
+
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.heading}>Dashboard</h2>
-        <button style={styles.addBtn} onClick={() => setShowAddChild(true)}>
-          + Add Child
-        </button>
-      </div>
-      {loading && <p style={styles.msg}>Loading...</p>}
+    <div style={{ padding: `${spacing.base}px` }}>
+      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.base}px` }}>
+        Dashboard
+      </h2>
+
+      {loading && <p style={{ ...typography.body, color: colors.text.secondary }}>Loading...</p>}
+
       {!loading && children.length === 0 && (
-        <p style={styles.msg}>No children paired yet. Tap "+ Add Child" to get started.</p>
+        <div style={{ textAlign: 'center', padding: `${spacing.xxxl}px ${spacing.base}px` }}>
+          <Icon name="User" size={48} color={colors.text.muted} />
+          <p style={{ ...typography.body, color: colors.text.secondary, marginTop: `${spacing.md}px` }}>
+            No children added yet
+          </p>
+          <p style={{ ...typography.caption, color: colors.text.muted }}>
+            Tap the + button to add your first child
+          </p>
+        </div>
       )}
+
       {children.map((child) => (
         <ChildCard
           key={child.publicKey}
           child={child}
-          onPress={() => setSelectedChild(child)}
+          onPress={() => navigateToChild(child.publicKey)}
+          onLockToggle={() => handleLockToggle(child)}
         />
       ))}
+
+      <Modal
+        visible={!!lockTarget}
+        onClose={() => setLockTarget(null)}
+        title={`Lock ${lockTarget?.displayName}'s device?`}
+        footer={<>
+          <Button variant="secondary" onClick={() => setLockTarget(null)}>Cancel</Button>
+          <Button variant="primary" icon="LockSimple" onClick={confirmLock}>Lock</Button>
+        </>}
+      >
+        All apps will be blocked until you unlock.
+      </Modal>
     </div>
   );
-}
-
-const styles = {
-  container: { padding: '16px' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' },
-  heading: { fontSize: '20px', fontWeight: '700', margin: 0 },
-  addBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#1a73e8',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  msg: { color: '#666', fontSize: '14px' },
-};
+});

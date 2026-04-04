@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useTheme } from '../theme.js'
+import LockOverlay from './LockOverlay.jsx'
 
 function timeRemaining(expiresAt) {
   const diff = Math.max(0, expiresAt - Date.now())
@@ -8,6 +10,7 @@ function timeRemaining(expiresAt) {
 }
 
 export default function ChildHome() {
+  const { colors, typography, spacing, radius } = useTheme()
   const [homeData, setHomeData] = useState(null)
 
   const loadHomeData = useCallback(() => {
@@ -15,99 +18,87 @@ export default function ChildHome() {
   }, [])
 
   useEffect(() => {
-    let isMounted = true
-
     loadHomeData()
 
-    function onPearEvent(event) {
-      if (!isMounted) return
-      const { name } = event.detail
-      if (name === 'policy:updated' || name === 'override:granted' || name === 'request:updated' || name === 'request:submitted') {
-        loadHomeData()
-      }
-    }
-
-    window.addEventListener('__pearEvent', onPearEvent)
+    const unsubs = [
+      window.onBareEvent('policy:updated', loadHomeData),
+      window.onBareEvent('override:granted', loadHomeData),
+      window.onBareEvent('request:updated', loadHomeData),
+      window.onBareEvent('request:submitted', loadHomeData),
+    ]
 
     // Refresh overrides every 30s so countdowns stay accurate
     const timer = setInterval(loadHomeData, 30000)
 
     return () => {
-      isMounted = false
-      window.removeEventListener('__pearEvent', onPearEvent)
+      unsubs.forEach((fn) => fn())
       clearInterval(timer)
     }
   }, [loadHomeData])
 
-  if (!homeData) return <div style={{ padding: 24 }}>Loading...</div>
+  if (!homeData) return <div style={{ padding: `${spacing.xl}px`, color: colors.text.muted }}>Loading...</div>
+
+  if (homeData.locked) {
+    return <LockOverlay parentName={homeData.parentName} />
+  }
 
   return (
-    <div style={styles.container}>
+    <div style={{ padding: `${spacing.xl}px` }}>
+      <h2 style={{ ...typography.display, color: colors.text.primary, marginBottom: `${spacing.base}px` }}>
+        Hi, {homeData.childName || 'there'}
+      </h2>
+
       {/* Summary row */}
-      <div style={styles.summaryRow}>
-        <div style={styles.statBox}>
-          <div style={styles.statNum}>{homeData.blockedCount}</div>
-          <div style={styles.statLabel}>Blocked</div>
+      <div style={{ display: 'flex', gap: `${spacing.md}px` }}>
+        <div style={{
+          flex: 1, padding: '14px', borderRadius: `${radius.lg}px`,
+          backgroundColor: colors.surface.elevated, textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: colors.error }}>{homeData.blockedCount}</div>
+          <div style={{ fontSize: '11px', color: colors.text.muted, marginTop: `${spacing.xs}px` }}>Blocked</div>
         </div>
-        <div style={styles.statBox}>
-          <div style={styles.statNum}>{homeData.pendingCount}</div>
-          <div style={styles.statLabel}>Awaiting approval</div>
+        <div style={{
+          flex: 1, padding: '14px', borderRadius: `${radius.lg}px`,
+          backgroundColor: colors.surface.elevated, textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: colors.secondary }}>{homeData.pendingCount}</div>
+          <div style={{ fontSize: '11px', color: colors.text.muted, marginTop: `${spacing.xs}px` }}>Awaiting approval</div>
         </div>
-        <div style={styles.statBox}>
-          <div style={styles.statNum}>{homeData.pendingRequests}</div>
-          <div style={styles.statLabel}>Pending requests</div>
+        <div style={{
+          flex: 1, padding: '14px', borderRadius: `${radius.lg}px`,
+          backgroundColor: colors.surface.elevated, textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: colors.primary }}>{homeData.pendingRequests}</div>
+          <div style={{ fontSize: '11px', color: colors.text.muted, marginTop: `${spacing.xs}px` }}>Pending requests</div>
         </div>
       </div>
 
       {/* Active overrides */}
       {homeData.activeOverrides.length > 0 && (
-        <div style={styles.section}>
-          <h3 style={styles.sectionHead}>Active overrides</h3>
+        <div style={{ marginTop: `${spacing.xl}px` }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '10px', color: colors.text.primary }}>Active overrides</h3>
           {homeData.activeOverrides.map((o, i) => (
-            <div key={i} style={styles.overrideRow}>
+            <div key={i} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: `${spacing.md}px 14px`,
+              marginBottom: `${spacing.sm}px`,
+              borderRadius: `${radius.md}px`,
+              backgroundColor: colors.surface.card,
+              border: `1px solid ${colors.primary}44`,
+            }}>
               <div>
-                <div style={styles.overrideName}>{o.appName}</div>
-                <div style={styles.overrideSource}>
+                <div style={{ fontWeight: '600', fontSize: '14px', color: colors.text.primary }}>{o.appName}</div>
+                <div style={{ fontSize: '12px', color: colors.text.muted, marginTop: '2px' }}>
                   {o.source === 'parent-approved' ? 'Granted by parent' : 'PIN override'}
                 </div>
               </div>
-              <div style={styles.overrideTime}>{timeRemaining(o.expiresAt)} left</div>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: colors.primary }}>{timeRemaining(o.expiresAt)} left</div>
             </div>
           ))}
         </div>
       )}
     </div>
   )
-}
-
-const styles = {
-  container: { padding: 24 },
-  summaryRow: {
-    display: 'flex',
-    gap: 12,
-  },
-  statBox: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: '#F5F5F5',
-    textAlign: 'center',
-  },
-  statNum: { fontSize: 22, fontWeight: '700', color: '#333' },
-  statLabel: { fontSize: 11, color: '#888', marginTop: 4 },
-  section: { marginTop: 24 },
-  sectionHead: { fontSize: 15, fontWeight: '700', marginBottom: 10, color: '#333' },
-  overrideRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '12px 14px',
-    marginBottom: 8,
-    borderRadius: 8,
-    backgroundColor: '#F0F7FF',
-    border: '1px solid #D0E3FF',
-  },
-  overrideName: { fontWeight: '600', fontSize: 14 },
-  overrideSource: { fontSize: 12, color: '#888', marginTop: 2 },
-  overrideTime: { fontSize: 13, fontWeight: '600', color: '#1a73e8' },
 }

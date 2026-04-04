@@ -1,58 +1,40 @@
-import React, { useState, useEffect } from 'react'
-import ChildHome from './ChildHome'
-import ChildRequests from './ChildRequests'
-import Profile from './Profile.jsx'
-
-const ChildProfile = () => <Profile mode="child" />
+import React, { useState, useEffect } from 'react';
+import { useTheme } from '../theme.js';
+import TabBar from './TabBar.jsx';
+import FAB from './FAB.jsx';
+import ChildHome from './ChildHome.jsx';
+import ChildRequests from './ChildRequests.jsx';
+import Profile from './Profile.jsx';
 
 const TABS = [
-  { id: 'home', label: 'Home', Component: ChildHome },
-  { id: 'requests', label: 'Requests', Component: ChildRequests },
-  { id: 'profile', label: 'Profile', Component: ChildProfile },
-]
+  { key: 'home', label: 'Home', icon: 'House', Component: ChildHome },
+  { key: 'requests', label: 'Requests', icon: 'Bell', Component: ChildRequests },
+  { key: 'profile', label: 'Profile', icon: 'User', Component: () => <Profile mode="child" /> },
+];
 
 export default function ChildApp() {
-  const [activeTab, setActiveTab] = useState('home')
-  const ActiveComponent = TABS.find((t) => t.id === activeTab).Component
+  const { colors, typography } = useTheme();
+  const [tab, setTab] = useState('home');
 
   useEffect(() => {
-    const unsub = window.onBareEvent('navigate:child:requests', () => {
-      setActiveTab('requests')
-    })
-    return unsub
-  }, [])
+    const unsub = window.onBareEvent('navigate:child:requests', () => setTab('requests'));
+    return unsub;
+  }, []);
+
+  const ActiveTab = TABS.find((t) => t.key === tab)?.Component || ChildHome;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#fff' }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100vh',
+      backgroundColor: colors.surface.base, ...typography.body,
+    }}>
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <ActiveComponent />
+        <ActiveTab />
       </div>
-
-      {/* Bottom tab bar */}
-      <div
-        style={{
-          display: 'flex',
-          borderTop: '1px solid #DDD',
-          backgroundColor: '#FFF',
-        }}
-      >
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => { window.callBare('haptic:tap'); setActiveTab(tab.id); }}
-            style={{
-              flex: 1,
-              padding: '12px 0',
-              border: 'none',
-              backgroundColor: activeTab === tab.id ? '#F0F0F0' : '#FFF',
-              fontWeight: activeTab === tab.id ? 'bold' : 'normal',
-              cursor: 'pointer',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {tab === 'home' && (
+        <FAB icon="Clock" onPress={() => setTab('requests')} />
+      )}
+      <TabBar tabs={TABS} activeTab={tab} onTabChange={setTab} />
     </div>
-  )
+  );
 }

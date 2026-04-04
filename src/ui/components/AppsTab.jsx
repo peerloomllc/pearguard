@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTheme } from '../theme.js';
 
 const ICON_COLORS = ['#4285f4','#ea4335','#fbbc05','#34a853','#ff6d00','#46bdc6','#7b1fa2','#c62828'];
 
@@ -34,6 +35,7 @@ function timeRemaining(expiresAt) {
 }
 
 function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override }) {
+  const { colors, spacing, radius } = useTheme();
   const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : '';
   const [limitInput, setLimitInput] = useState(savedMinutes);
   const limitDirty = limitInput !== savedMinutes;
@@ -69,18 +71,33 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
     : null;
 
   return (
-    <div style={styles.appRow}>
-      <div style={styles.appInfo}>
+    <div style={{
+      padding: '12px 0',
+      borderBottom: `1px solid ${colors.divider}`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: `${spacing.sm}px`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
         {appData.iconBase64 ? (
           <img
             src={`data:image/png;base64,${appData.iconBase64}`}
             alt={`${appData.appName || packageName} icon`}
-            style={styles.appIcon}
+            style={{ width: '40px', height: '40px', borderRadius: `${radius.md}px`, objectFit: 'contain', flexShrink: 0 }}
           />
         ) : (
           <div
             style={{
-              ...styles.initialsCircle,
+              width: '40px',
+              height: '40px',
+              borderRadius: `${radius.md}px`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FFFFFF',
+              fontSize: '14px',
+              fontWeight: '700',
+              flexShrink: 0,
               backgroundColor: getIconColor(appData.appName || packageName),
             }}
             aria-hidden="true"
@@ -88,29 +105,46 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
             {getInitials(appData.appName || packageName)}
           </div>
         )}
-        <div style={styles.appNameBlock}>
-          <span style={styles.appName}>{appData.appName || packageName}</span>
-          {appData.appName && <span style={styles.pkgName}>{packageName}</span>}
-          {addedDate && <span style={styles.addedDate}>Added {addedDate}</span>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+          <span style={{ fontSize: '14px', color: colors.text.primary, fontWeight: '500' }}>{appData.appName || packageName}</span>
+          {appData.appName && <span style={{ fontSize: '11px', fontFamily: 'monospace', color: colors.text.muted }}>{packageName}</span>}
+          {addedDate && <span style={{ fontSize: '11px', color: colors.text.muted, marginTop: '1px' }}>Added {addedDate}</span>}
         </div>
         {override && (
-          <span style={styles.overrideBadge}>
+          <span style={{
+            fontSize: '11px',
+            fontWeight: '600',
+            color: colors.primary,
+            backgroundColor: `${colors.primary}22`,
+            padding: '2px 8px',
+            borderRadius: `${radius.full}px`,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}>
             {timeRemaining(override.expiresAt)} left
           </span>
         )}
       </div>
       {isPending ? (
-        <div style={styles.actions}>
-          <button style={styles.approveBtn} onClick={handleApprove} aria-label={`Approve ${appData.appName || packageName}`}>
+        <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+          <button
+            style={{ padding: '6px 14px', border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.success, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px' }}
+            onClick={handleApprove}
+            aria-label={`Approve ${appData.appName || packageName}`}
+          >
             Approve
           </button>
-          <button style={styles.denyBtn} onClick={handleDeny} aria-label={`Deny ${appData.appName || packageName}`}>
+          <button
+            style={{ padding: '6px 14px', border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px' }}
+            onClick={handleDeny}
+            aria-label={`Deny ${appData.appName || packageName}`}
+          >
             Deny
           </button>
         </div>
       ) : (
-        <div style={styles.controls}>
-          <label style={styles.toggle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.base}px`, flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px', cursor: 'pointer', color: colors.text.primary }}>
             <input
               type="checkbox"
               checked={appData.status === 'allowed'}
@@ -119,7 +153,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
             />
             <span style={{ marginLeft: '4px' }}>{appData.status === 'allowed' ? 'Allowed' : 'Blocked'}</span>
           </label>
-          <label style={styles.limitLabel}>
+          <label style={{ fontSize: '13px', color: colors.text.secondary, display: 'flex', alignItems: 'center', gap: '6px' }}>
             Limit:
             <input
               type="number"
@@ -127,13 +161,18 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
               value={limitInput}
               onChange={(e) => setLimitInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveLimit(); }}
-              style={styles.limitInput}
+              style={{ width: '60px', padding: '4px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, fontSize: '13px', backgroundColor: colors.surface.input, color: colors.text.primary }}
               aria-label={`Daily limit for ${appData.appName || packageName} in minutes`}
-              placeholder="∞"
+              placeholder="&#8734;"
             />
             min/day
             {limitDirty && (
-              <button style={styles.saveBtn} onClick={saveLimit}>Save</button>
+              <button
+                style={{ padding: '3px 10px', border: 'none', borderRadius: `${radius.sm}px`, backgroundColor: colors.primary, color: '#FFFFFF', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                onClick={saveLimit}
+              >
+                Save
+              </button>
             )}
           </label>
         </div>
@@ -149,16 +188,30 @@ const STATUS_CATEGORIES = [
 ];
 
 function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, overrideMap, collapsed, onToggle }) {
+  const { colors, spacing, radius } = useTheme();
   return (
-    <div style={styles.section}>
+    <div style={{ marginBottom: `${spacing.sm}px` }}>
       <button
-        style={{ ...styles.sectionHeader, borderLeft: `4px solid ${category.color}` }}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: `${spacing.sm}px`,
+          padding: `10px ${spacing.md}px`,
+          background: colors.surface.elevated,
+          border: `1px solid ${colors.border}`,
+          borderLeft: `4px solid ${category.color}`,
+          borderRadius: `${radius.md}px`,
+          cursor: 'pointer',
+          textAlign: 'left',
+          marginBottom: '4px',
+        }}
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
-        <span style={styles.sectionLabel}>{category.label}</span>
-        <span style={{ ...styles.sectionBadge, backgroundColor: category.color }}>{entries.length}</span>
-        <span style={styles.chevron}>{collapsed ? '›' : '⌄'}</span>
+        <span style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: colors.text.primary }}>{category.label}</span>
+        <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: category.color }}>{entries.length}</span>
+        <span style={{ fontSize: '16px', color: colors.text.muted, lineHeight: 1 }}>{collapsed ? '›' : '⌄'}</span>
       </button>
       {!collapsed && entries.map(([pkg, data]) => (
         <AppRow
@@ -176,6 +229,7 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
 }
 
 function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle }) {
+  const { colors, spacing, radius } = useTheme();
   const color = CATEGORY_COLORS[categoryName] || '#aaa';
   const pendingCount = entries.filter(([, d]) => d.status === 'pending').length;
   const allowedCount = entries.filter(([, d]) => d.status === 'allowed').length;
@@ -192,28 +246,47 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
   }
 
   return (
-    <div style={styles.section}>
+    <div style={{ marginBottom: `${spacing.sm}px` }}>
       <button
-        style={{ ...styles.sectionHeader, borderLeft: `4px solid ${color}` }}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: `${spacing.sm}px`,
+          padding: `10px ${spacing.md}px`,
+          background: colors.surface.elevated,
+          border: `1px solid ${colors.border}`,
+          borderLeft: `4px solid ${color}`,
+          borderRadius: `${radius.md}px`,
+          cursor: 'pointer',
+          textAlign: 'left',
+          marginBottom: '4px',
+        }}
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
-        <span style={styles.sectionLabel}>{categoryName}</span>
-        <div style={styles.badgeRow}>
-          {pendingCount > 0 && <span style={{ ...styles.sectionBadge, backgroundColor: '#f59e0b' }}>{pendingCount}</span>}
-          {allowedCount > 0 && <span style={{ ...styles.sectionBadge, backgroundColor: '#34a853' }}>{allowedCount}</span>}
-          {blockedCount > 0 && <span style={{ ...styles.sectionBadge, backgroundColor: '#ea4335' }}>{blockedCount}</span>}
+        <span style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: colors.text.primary }}>{categoryName}</span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: '#f59e0b' }}>{pendingCount}</span>}
+          {allowedCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.success }}>{allowedCount}</span>}
+          {blockedCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.error }}>{blockedCount}</span>}
         </div>
-        <span style={{ ...styles.sectionBadge, backgroundColor: color }}>{entries.length}</span>
-        <span style={styles.chevron}>{collapsed ? '›' : '⌄'}</span>
+        <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: color }}>{entries.length}</span>
+        <span style={{ fontSize: '16px', color: colors.text.muted, lineHeight: 1 }}>{collapsed ? '›' : '⌄'}</span>
       </button>
       {!collapsed && (
         <>
-          <div style={styles.batchActions}>
-            <button style={styles.approveAllBtn} onClick={handleApproveAll}>
+          <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
+            <button
+              style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.success, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+              onClick={handleApproveAll}
+            >
               Approve All
             </button>
-            <button style={styles.denyAllBtn} onClick={handleDenyAll}>
+            <button
+              style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+              onClick={handleDenyAll}
+            >
               Deny All
             </button>
           </div>
@@ -235,6 +308,7 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
 }
 
 export default function AppsTab({ childPublicKey }) {
+  const { colors, spacing, radius } = useTheme();
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sortOrder, setSortOrder] = useState('alpha'); // 'alpha' | 'date'
@@ -273,7 +347,7 @@ export default function AppsTab({ childPublicKey }) {
     window.callBare('policy:update', { childPublicKey, policy: newPolicy });
   }
 
-  // Updates local state only — used by approve/deny which already send app:decide.
+  // Updates local state only - used by approve/deny which already send app:decide.
   // Avoids a redundant policy:update P2P alongside app:decision, preventing double
   // notifications on the child device (#68).
   function handleDecide(packageName, newStatus) {
@@ -300,9 +374,9 @@ export default function AppsTab({ childPublicKey }) {
     setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }
 
-  if (loading) return <div style={styles.msg}>Loading apps...</div>;
+  if (loading) return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>Loading apps...</div>;
   if (!policy || !policy.apps || Object.keys(policy.apps).length === 0) {
-    return <div style={styles.msg}>No apps found. Apps appear here after they are installed on the child device.</div>;
+    return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>No apps found. Apps appear here after they are installed on the child device.</div>;
   }
 
   const q = search.trim().toLowerCase();
@@ -321,44 +395,74 @@ export default function AppsTab({ childPublicKey }) {
   const totalCount = Object.keys(policy.apps).length;
   const visibleCount = filtered.length;
 
-  // Build packageName → override lookup for active overrides
+  // Build packageName -> override lookup for active overrides
   const overrideMap = {};
   for (const o of overrides) {
     if (o.packageName) overrideMap[o.packageName] = o;
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.toolbar}>
+    <div style={{ padding: `${spacing.base}px` }}>
+      <div style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search apps..."
-          style={styles.searchInput}
+          style={{
+            flex: 1,
+            padding: '7px 10px',
+            fontSize: '13px',
+            border: `1px solid ${colors.border}`,
+            borderRadius: `${radius.md}px`,
+            outline: 'none',
+            color: colors.text.primary,
+            backgroundColor: colors.surface.input,
+          }}
           aria-label="Search apps"
         />
         <button
-          style={styles.sortBtn}
+          style={{
+            padding: '6px 10px',
+            fontSize: '12px',
+            border: `1px solid ${colors.border}`,
+            borderRadius: `${radius.full}px`,
+            background: colors.surface.elevated,
+            cursor: 'pointer',
+            color: colors.text.secondary,
+            whiteSpace: 'nowrap',
+          }}
           onClick={() => setSortOrder(s => s === 'alpha' ? 'date' : 'alpha')}
           aria-label="Toggle sort order"
         >
           {sortOrder === 'alpha' ? 'A-Z' : 'Date'}
         </button>
         <button
-          style={{ ...styles.sortBtn, ...(viewMode === 'category' ? styles.viewBtnActive : {}) }}
+          style={{
+            padding: '6px 10px',
+            fontSize: '12px',
+            border: `1px solid ${viewMode === 'category' ? colors.primary : colors.border}`,
+            borderRadius: `${radius.full}px`,
+            background: viewMode === 'category' ? `${colors.primary}22` : colors.surface.elevated,
+            cursor: 'pointer',
+            color: viewMode === 'category' ? colors.primary : colors.text.secondary,
+            whiteSpace: 'nowrap',
+          }}
           onClick={() => setViewMode(v => v === 'status' ? 'category' : 'status')}
           aria-label="Toggle view mode"
         >
           {viewMode === 'status' ? 'By Status' : 'By Category'}
         </button>
       </div>
-      <div style={styles.appCountRow}>
-        <span style={styles.appCount}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
+        <span style={{ fontSize: '13px', color: colors.text.muted }}>
           {q ? `${visibleCount} of ${totalCount}` : totalCount} app{totalCount !== 1 ? 's' : ''}
         </span>
         {q && (
-          <button style={styles.clearSearch} onClick={() => setSearch('')}>
+          <button
+            style={{ fontSize: '12px', padding: '2px 8px', border: `1px solid ${colors.border}`, borderRadius: '10px', background: 'none', cursor: 'pointer', color: colors.text.secondary }}
+            onClick={() => setSearch('')}
+          >
             Clear
           </button>
         )}
@@ -406,170 +510,3 @@ export default function AppsTab({ childPublicKey }) {
     </div>
   );
 }
-
-const styles = {
-  container: { padding: '16px' },
-  msg: { padding: '16px', color: '#666', fontSize: '14px' },
-  toolbar: {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-    marginBottom: '8px',
-  },
-  searchInput: {
-    flex: 1,
-    padding: '7px 10px',
-    fontSize: '13px',
-    border: '1px solid #ccc',
-    borderRadius: '8px',
-    outline: 'none',
-    color: '#111',
-  },
-  sortBtn: {
-    padding: '6px 10px',
-    fontSize: '12px',
-    border: '1px solid #ccc',
-    borderRadius: '12px',
-    background: '#f5f5f5',
-    cursor: 'pointer',
-    color: '#444',
-    whiteSpace: 'nowrap',
-  },
-  viewBtnActive: {
-    background: '#e8f0fe',
-    borderColor: '#4285f4',
-    color: '#1a73e8',
-  },
-  appCountRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '12px',
-  },
-  appCount: { fontSize: '13px', color: '#888' },
-  clearSearch: {
-    fontSize: '12px',
-    padding: '2px 8px',
-    border: '1px solid #ccc',
-    borderRadius: '10px',
-    background: 'none',
-    cursor: 'pointer',
-    color: '#666',
-  },
-  section: { marginBottom: '8px' },
-  sectionHeader: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 12px',
-    background: '#f9f9f9',
-    border: '1px solid #eee',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    textAlign: 'left',
-    marginBottom: '4px',
-  },
-  sectionLabel: { flex: 1, fontSize: '13px', fontWeight: '600', color: '#333' },
-  badgeRow: { display: 'flex', gap: '4px' },
-  sectionBadge: {
-    fontSize: '11px',
-    color: '#fff',
-    borderRadius: '10px',
-    padding: '1px 7px',
-    fontWeight: '700',
-  },
-  chevron: { fontSize: '16px', color: '#888', lineHeight: 1 },
-  batchActions: {
-    display: 'flex',
-    gap: '8px',
-    padding: '8px 0',
-    borderBottom: '1px solid #eee',
-  },
-  approveAllBtn: {
-    flex: 1,
-    padding: '8px 12px',
-    border: 'none',
-    borderRadius: '6px',
-    backgroundColor: '#34a853',
-    color: '#fff',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '600',
-  },
-  denyAllBtn: {
-    flex: 1,
-    padding: '8px 12px',
-    border: 'none',
-    borderRadius: '6px',
-    backgroundColor: '#ea4335',
-    color: '#fff',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '600',
-  },
-  appRow: {
-    padding: '12px 0',
-    borderBottom: '1px solid #eee',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  appInfo: { display: 'flex', alignItems: 'center', gap: '8px' },
-  appIcon: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '8px',
-    objectFit: 'contain',
-    flexShrink: 0,
-  },
-  initialsCircle: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#fff',
-    fontSize: '14px',
-    fontWeight: '700',
-    flexShrink: 0,
-  },
-  appNameBlock: { display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 },
-  appName: { fontSize: '14px', color: '#111', fontWeight: '500' },
-  pkgName: { fontSize: '11px', fontFamily: 'monospace', color: '#888' },
-  addedDate: { fontSize: '11px', color: '#aaa', marginTop: '1px' },
-  actions: { display: 'flex', gap: '8px' },
-  approveBtn: {
-    padding: '6px 14px', border: 'none', borderRadius: '6px',
-    backgroundColor: '#34a853', color: '#fff', cursor: 'pointer', fontSize: '13px',
-  },
-  denyBtn: {
-    padding: '6px 14px', border: 'none', borderRadius: '6px',
-    backgroundColor: '#ea4335', color: '#fff', cursor: 'pointer', fontSize: '13px',
-  },
-  controls: { display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
-  toggle: { display: 'flex', alignItems: 'center', fontSize: '13px', cursor: 'pointer' },
-  limitLabel: { fontSize: '13px', color: '#555', display: 'flex', alignItems: 'center', gap: '6px' },
-  limitInput: { width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px' },
-  saveBtn: {
-    padding: '3px 10px',
-    border: 'none',
-    borderRadius: '4px',
-    backgroundColor: '#1a73e8',
-    color: '#fff',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '600',
-  },
-  overrideBadge: {
-    fontSize: '11px',
-    fontWeight: '600',
-    color: '#1a73e8',
-    backgroundColor: '#E8F0FE',
-    padding: '2px 8px',
-    borderRadius: '10px',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-  },
-};

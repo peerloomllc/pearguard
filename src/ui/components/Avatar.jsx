@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTheme } from '../theme.js'
 import { PRESETS } from './presetAvatars.js'
 
 function getInitials(name) {
@@ -23,6 +24,7 @@ function resolveThumb(thumb) {
 }
 
 export default function Avatar({ avatar, name, size = 48, onClick }) {
+  const { colors } = useTheme()
   const resolved = typeof avatar === 'string' ? resolveThumb(avatar) : avatar
   const circleStyle = {
     width: size + 'px',
@@ -65,10 +67,10 @@ export default function Avatar({ avatar, name, size = 48, onClick }) {
   // Fallback: initials circle
   return (
     <div
-      style={{ ...circleStyle, backgroundColor: getColor(name) }}
+      style={{ ...circleStyle, backgroundColor: colors.surface.elevated }}
       onClick={onClick}
     >
-      <span style={{ color: '#FFF', fontSize: Math.round(size * 0.35) + 'px', fontWeight: '700' }}>
+      <span style={{ color: colors.text.secondary, fontSize: Math.round(size * 0.35) + 'px', fontWeight: '700' }}>
         {getInitials(name)}
       </span>
     </div>

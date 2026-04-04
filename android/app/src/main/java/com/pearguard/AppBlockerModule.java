@@ -333,6 +333,10 @@ public class AppBlockerModule extends AccessibilityService {
         if (policy == null) return null; // no policy yet, allow everything
 
         try {
+            // Step 0: Device-wide lock — parent toggled quick-lock, block everything.
+            boolean locked = policy.optBoolean("locked", false);
+            if (locked) return "Device is locked by your parent.";
+
             // Step 1: Active override — PIN success (in-memory) or parent P2P grant (SharedPrefs).
             // Overrides win over schedule, daily limits, and policy status.
             Long overrideExpiry = overrides.get(packageName);

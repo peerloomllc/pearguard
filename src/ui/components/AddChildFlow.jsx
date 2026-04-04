@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useTheme } from '../theme.js';
 import QRCode from 'qrcode';
 
 export default function AddChildFlow({ onConnected, onCancel }) {
+  const { colors, typography, spacing, radius } = useTheme();
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
@@ -38,92 +40,90 @@ export default function AddChildFlow({ onConnected, onCancel }) {
 
   if (error) {
     return (
-      <div style={styles.container}>
-        <p style={styles.error}>{error}</p>
-        <button style={styles.cancelBtn} onClick={onCancel}>Go Back</button>
+      <div style={{ padding: `${spacing.base}px` }}>
+        <p style={{ color: colors.error, marginBottom: `${spacing.md}px` }}>{error}</p>
+        <button
+          style={{ padding: '10px 20px', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, background: colors.surface.card, cursor: 'pointer', fontSize: '14px', color: colors.text.primary }}
+          onClick={onCancel}
+        >
+          Go Back
+        </button>
       </div>
     );
   }
 
   if (!invite) {
     return (
-      <div style={styles.container}>
-        <p style={styles.hint}>Generating invite…</p>
+      <div style={{ padding: `${spacing.base}px` }}>
+        <p style={{ color: colors.text.secondary, fontSize: '13px', marginBottom: `${spacing.base}px` }}>Generating invite&#8230;</p>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <h3 style={styles.heading}>Add a Child Device</h3>
-      <p style={styles.hint}>Ask the child to scan this QR code, or share the link below via SMS or a messaging app.</p>
+    <div style={{ padding: `${spacing.base}px` }}>
+      <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Add a Child Device</h3>
+      <p style={{ color: colors.text.secondary, fontSize: '13px', marginBottom: `${spacing.base}px` }}>
+        Ask the child to scan this QR code, or share the link below via SMS or a messaging app.
+      </p>
 
-      <div style={styles.qrWrap}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        marginBottom: `${spacing.base}px`,
+        padding: `${spacing.md}px`,
+        backgroundColor: colors.surface.card,
+        borderRadius: `${radius.md}px`,
+        border: `1px solid ${colors.border}`,
+      }}>
         <canvas ref={canvasRef} />
       </div>
 
-      <p style={styles.linkLabel}>Or share this link:</p>
-      <div style={styles.linkRow}>
-        <span style={styles.link}>{invite.inviteLink}</span>
-        <button style={styles.copyBtn} onClick={handleShare} disabled={sharing}>
+      <p style={{ fontSize: '13px', color: colors.text.secondary, marginBottom: '4px' }}>Or share this link:</p>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: `${spacing.sm}px`,
+        marginBottom: `${spacing.xl}px`,
+        padding: '10px',
+        backgroundColor: colors.surface.elevated,
+        borderRadius: `${radius.md}px`,
+        border: `1px solid ${colors.border}`,
+      }}>
+        <span style={{ flex: 1, fontSize: '11px', color: colors.text.primary, wordBreak: 'break-all' }}>{invite.inviteLink}</span>
+        <button
+          style={{
+            flexShrink: 0,
+            padding: '6px 12px',
+            border: 'none',
+            borderRadius: `${radius.sm}px`,
+            backgroundColor: colors.primary,
+            color: '#FFFFFF',
+            cursor: 'pointer',
+            fontSize: '13px',
+          }}
+          onClick={handleShare}
+          disabled={sharing}
+        >
           Share
         </button>
       </div>
 
-      <p style={styles.waiting}>Waiting for child to connect…</p>
-      <button style={styles.cancelBtn} onClick={onCancel}>Cancel</button>
+      <p style={{ fontSize: '14px', color: colors.text.muted, fontStyle: 'italic', marginBottom: `${spacing.base}px` }}>Waiting for child to connect&#8230;</p>
+      <button
+        style={{
+          padding: '10px 20px',
+          border: `1px solid ${colors.border}`,
+          borderRadius: `${radius.md}px`,
+          background: colors.surface.card,
+          cursor: 'pointer',
+          fontSize: '14px',
+          color: colors.text.primary,
+        }}
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
     </div>
   );
 }
-
-const styles = {
-  container: { padding: '16px' },
-  heading: { fontSize: '18px', fontWeight: '700', marginBottom: '8px' },
-  hint: { color: '#555', fontSize: '13px', marginBottom: '16px' },
-  qrWrap: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginBottom: '16px',
-    padding: '12px',
-    backgroundColor: '#fff',
-    borderRadius: '8px',
-    border: '1px solid #ddd',
-  },
-  linkLabel: { fontSize: '13px', color: '#555', marginBottom: '4px' },
-  linkRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '24px',
-    padding: '10px',
-    backgroundColor: '#f5f5f5',
-    borderRadius: '6px',
-    border: '1px solid #ddd',
-  },
-  link: {
-    flex: 1,
-    fontSize: '11px',
-    color: '#333',
-    wordBreak: 'break-all',
-  },
-  copyBtn: {
-    flexShrink: 0,
-    padding: '6px 12px',
-    border: 'none',
-    borderRadius: '4px',
-    backgroundColor: '#1a73e8',
-    color: '#fff',
-    cursor: 'pointer',
-    fontSize: '13px',
-  },
-  waiting: { fontSize: '14px', color: '#888', fontStyle: 'italic', marginBottom: '16px' },
-  cancelBtn: {
-    padding: '10px 20px',
-    border: '1px solid #ccc',
-    borderRadius: '6px',
-    background: '#fff',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  error: { color: '#ea4335', marginBottom: '12px' },
-};

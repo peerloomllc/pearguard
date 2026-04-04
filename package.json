@@ -11,7 +11,7 @@
     "android": "expo run:android",
     "build:bare": "bare-pack --linked src/bare.js -o assets/bare-universal.bundle",
     "build:fonts": "node scripts/build-fonts.js",
-    "build:ui": "npm run build:fonts && esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
+    "build:ui": "npm run build:fonts && esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --loader:.js=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
     "test": "jest",
     "test:policy": "node src/policy.test.js",
     "ios": "expo run:ios"

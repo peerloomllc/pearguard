@@ -12,8 +12,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,7 +27,9 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.util.TypedValue;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -60,6 +66,110 @@ public class AppBlockerModule extends AccessibilityService {
         PHONE_PACKAGES.add("com.google.android.dialer");
         PHONE_PACKAGES.add("com.android.mms");
         PHONE_PACKAGES.add("com.google.android.apps.messaging");
+    }
+
+    // --- Overlay Theme (matches dark palette in src/ui/theme.js) ---
+    private static final class OT {
+        static final int SURFACE_BASE   = Color.argb(240, 13, 13, 13);
+        static final int SURFACE_CARD   = Color.parseColor("#1A1A1A");
+        static final int SURFACE_ELEV   = Color.parseColor("#252525");
+        static final int TEXT_PRIMARY   = Color.parseColor("#F0F0F0");
+        static final int TEXT_SECONDARY = Color.parseColor("#A0A0A0");
+        static final int TEXT_MUTED     = Color.parseColor("#666666");
+        static final int BORDER         = Color.parseColor("#333333");
+        static final int DIVIDER        = Color.parseColor("#2A2A2A");
+        static final int PRIMARY        = Color.parseColor("#4CAF50");
+        static final int PRIMARY_BG     = Color.argb(38, 76, 175, 80); // 15% opacity
+        static final int ERROR          = Color.parseColor("#EF5350");
+        static final int CARD_RADIUS    = 16;
+        static final int KEY_RADIUS     = 12;
+        static final int BTN_RADIUS     = 12;
+        static final int ICON_CIRCLE    = 72;
+        static final int ICON_CIRCLE_SM = 64;
+    }
+
+    // --- Phosphor Icon SVG paths (256x256 viewBox) ---
+    private static final String ICON_SHIELD = "M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.27,47,25.53a8,8,0,0,0,4.2,0c1-.26,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0Z";
+    private static final String ICON_CLOCK = "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z";
+    private static final String ICON_LOCK = "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z";
+    private static final String ICON_BACKSPACE = "M216,40H68.53a16.12,16.12,0,0,0-13.72,7.77L9.14,123.88a8,8,0,0,0,0,8.24l45.67,76.11A16.11,16.11,0,0,0,68.53,216H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H68.53l-43.2-72,43.2-72H216ZM106.34,146.34,124.69,128l-18.35-18.34a8,8,0,0,1,11.32-11.32L136,116.69l18.34-18.35a8,8,0,0,1,11.32,11.32L147.31,128l18.35,18.34a8,8,0,0,1-11.32,11.32L136,139.31l-18.34,18.35a8,8,0,0,1-11.32-11.32Z";
+    private static final String ICON_CARET_RIGHT = "M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z";
+
+    private Typeface nunitoRegular;
+    private Typeface nunitoSemiBold;
+
+    private Typeface getNunitoRegular() {
+        if (nunitoRegular == null) {
+            try { nunitoRegular = Typeface.createFromAsset(getAssets(), "fonts/Nunito-Regular.ttf"); }
+            catch (Exception e) { nunitoRegular = Typeface.SANS_SERIF; }
+        }
+        return nunitoRegular;
+    }
+
+    private Typeface getNunitoSemiBold() {
+        if (nunitoSemiBold == null) {
+            try { nunitoSemiBold = Typeface.createFromAsset(getAssets(), "fonts/Nunito-SemiBold.ttf"); }
+            catch (Exception e) { nunitoSemiBold = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD); }
+        }
+        return nunitoSemiBold;
+    }
+
+    private int dp(int value) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics());
+    }
+
+    private Bitmap renderIcon(String svgPath, int sizeDp, int color) {
+        int sizePx = dp(sizeDp);
+        Bitmap bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        android.graphics.Path path = androidx.core.graphics.PathParser.createPathFromPathData(svgPath);
+        android.graphics.Matrix matrix = new android.graphics.Matrix();
+        matrix.setScale(sizePx / 256f, sizePx / 256f);
+        path.transform(matrix);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(color);
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawPath(path, paint);
+        return bmp;
+    }
+
+    private ImageView iconView(String svgPath, int sizeDp, int color) {
+        ImageView iv = new ImageView(this);
+        iv.setImageBitmap(renderIcon(svgPath, sizeDp, color));
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
+        iv.setLayoutParams(p);
+        return iv;
+    }
+
+    private LinearLayout iconCircle(int circleDp, String svgPath, int iconDp, int iconColor, int bgColor) {
+        LinearLayout circle = new LinearLayout(this);
+        circle.setGravity(Gravity.CENTER);
+        int px = dp(circleDp);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px, px);
+        circle.setLayoutParams(cp);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        bg.setColor(bgColor);
+        circle.setBackground(bg);
+        circle.addView(iconView(svgPath, iconDp, iconColor));
+        return circle;
+    }
+
+    private android.graphics.drawable.GradientDrawable roundedRect(int color, int radiusDp) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radiusDp));
+        return d;
+    }
+
+    private android.graphics.drawable.GradientDrawable roundedRectWithBorder(int fillColor, int borderColor, int radiusDp) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(fillColor);
+        d.setCornerRadius(dp(radiusDp));
+        d.setStroke(dp(1), borderColor);
+        return d;
     }
 
     private WindowManager windowManager;

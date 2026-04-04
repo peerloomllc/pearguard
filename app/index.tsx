@@ -139,7 +139,7 @@ function buildHtml (appBundleJs: string): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />',
     '<style>',
     '* { box-sizing: border-box; margin: 0; padding: 0; }',
-    'html, body, #root { height: 100dvh; width: 100%; overflow: hidden; background: #111; }',
+    'html, body, #root { height: 100dvh; width: 100%; overflow: hidden; background: #0D0D0D; }',
     '</style>',
     '</head>',
     '<body>',

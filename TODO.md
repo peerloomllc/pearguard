@@ -8,7 +8,6 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
 | 93 | Time request sometimes dismisses overlay and unblocks app | Child submits time request but overlay disappears and app becomes usable before parent responds |
-| 98 | Active app indicator on device card never updates | Dashboard device card never reports what app is actually open on Child device |
 
 ## Features
 

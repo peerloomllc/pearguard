@@ -1,6 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { injectFonts } from './fonts.js';
 import App from './App.jsx';
+
+injectFonts();
 
 // Pending IPC calls: id → { resolve, reject }
 const pending = {};

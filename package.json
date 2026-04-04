@@ -10,7 +10,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "build:bare": "bare-pack --linked src/bare.js -o assets/bare-universal.bundle",
-    "build:ui": "esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
+    "build:fonts": "node scripts/build-fonts.js",
+    "build:ui": "npm run build:fonts && esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
     "test": "jest",
     "test:policy": "node src/policy.test.js",
     "ios": "expo run:ios"
@@ -45,6 +46,7 @@
     "@babel/core": "^7.29.0",
     "@babel/preset-env": "^7.29.2",
     "@babel/preset-react": "^7.28.5",
+    "@phosphor-icons/core": "^2.1.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.3",

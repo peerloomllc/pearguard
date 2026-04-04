@@ -893,12 +893,12 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Builds a PendingIntent that deep-links to the child's Requests tab in PearGuard.
-     * URL: pear://pearguard/alerts?childPublicKey=<key>&tab=requests
+     * Builds a PendingIntent that deep-links to the child's Activity tab in PearGuard.
+     * URL: pear://pearguard/alerts?childPublicKey=<key>&tab=activity
      */
     private PendingIntent buildRequestsPendingIntent(String childPublicKey, int reqCode) {
         String url = "pear://pearguard/alerts?childPublicKey=" +
-                Uri.encode(childPublicKey != null ? childPublicKey : "") + "&tab=requests";
+                Uri.encode(childPublicKey != null ? childPublicKey : "") + "&tab=activity";
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         intent.setPackage(reactContext.getPackageName());
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);

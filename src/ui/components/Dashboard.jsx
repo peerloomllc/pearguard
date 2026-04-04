@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useRef } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import Modal from './primitives/Modal.jsx';
@@ -15,6 +15,8 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [selectedTab, setSelectedTab] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
+  const childrenRef = useRef(children);
+  childrenRef.current = children;
 
   function loadChildren() {
     window.callBare('children:list')
@@ -54,15 +56,11 @@ export default forwardRef(function Dashboard(_props, ref) {
     function handleNav(data) {
       const key = data?.childPublicKey;
       if (!key) return;
-      // Read current children via setter to avoid stale closure
-      setChildren((prev) => {
-        const child = prev.find((c) => c.publicKey === key);
-        if (child) {
-          setSelectedChild(child);
-          setSelectedTab(data.tab || 'activity');
-        }
-        return prev;
-      });
+      const child = childrenRef.current.find((c) => c.publicKey === key);
+      if (child) {
+        setSelectedChild(child);
+        setSelectedTab(data.tab || 'activity');
+      }
     }
     const unsub1 = window.onBareEvent('navigate:child:alerts', handleNav);
     const unsub2 = window.onBareEvent('navigate:child:requests', handleNav);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import Button from './primitives/Button.jsx';
@@ -20,6 +20,14 @@ const TAB_COMPONENTS = { usage: UsageTab, apps: AppsTab, activity: ActivityTab, 
 export default function ChildDetail({ child, initialTab, onBack }) {
   const { colors, typography, spacing, radius } = useTheme();
   const [tab, setTab] = useState(initialTab || 'usage');
+  // Listen for notification deep link events directly so we always switch tab,
+  // even when the same tab value is requested consecutively (prop wouldn't change).
+  useEffect(() => {
+    const unsub = window.onBareEvent('navigate:child:alerts', (data) => {
+      if (data?.tab) setTab(data.tab);
+    });
+    return () => unsub();
+  }, []);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
 

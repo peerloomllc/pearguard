@@ -904,6 +904,26 @@ function createDispatch (ctx) {
         return { ok: true }
       }
 
+      case 'policy:setLock': {
+        const { childPublicKey, locked } = args
+        if (!childPublicKey) throw new Error('invalid policy:setLock args')
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+        policy.locked = !!locked
+        policy.version = (policy.version || 0) + 1
+        await ctx.db.put('policy:' + childPublicKey, policy)
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+          }
+        } catch (_e) {
+          // child offline — policy stored; will be sent on reconnect
+        }
+        return { ok: true }
+      }
+
       case 'settings:get': {
         const raw = await ctx.db.get('parentSettings')
         return raw ? raw.value : {}
@@ -926,6 +946,18 @@ function createDispatch (ctx) {
           } catch (_e) {}
         }
         return { ok: true }
+      }
+
+      case 'settings:setTheme': {
+        const { theme } = args
+        if (!theme || typeof theme !== 'string') throw new Error('invalid settings:setTheme args')
+        await ctx.db.put('settings:theme', theme)
+        return {}
+      }
+
+      case 'settings:getTheme': {
+        const entry = await ctx.db.get('settings:theme')
+        return { theme: entry ? entry.value.toString() : 'dark' }
       }
 
       case 'alerts:list': {

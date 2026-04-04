@@ -1010,76 +1010,158 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     private void onEnterPin(String packageName) {
-        // TYPE_ACCESSIBILITY_OVERLAY cannot receive IME (keyboard) on Android 11+.
-        // Use a numeric keypad UI instead of EditText.
-
         final String[] enteredPin = { "" };
 
         LinearLayout dialogLayout = new LinearLayout(this);
         dialogLayout.setOrientation(LinearLayout.VERTICAL);
-        dialogLayout.setBackgroundColor(Color.argb(255, 30, 30, 30));
-        dialogLayout.setPadding(48, 48, 48, 48);
-        dialogLayout.setGravity(Gravity.CENTER);
+        dialogLayout.setBackgroundColor(OT.SURFACE_BASE);
+        dialogLayout.setGravity(Gravity.CENTER_HORIZONTAL);
+        dialogLayout.setPadding(dp(24), dp(48), dp(24), dp(48));
 
-        // PIN prompt / dots display
-        final TextView pinDisplay = new TextView(this);
-        pinDisplay.setText("Enter parent PIN");
-        pinDisplay.setTextColor(Color.WHITE);
-        pinDisplay.setTextSize(20);
-        pinDisplay.setGravity(Gravity.CENTER);
-        dialogLayout.addView(pinDisplay);
+        // Icon circle
+        LinearLayout icon = iconCircle(OT.ICON_CIRCLE_SM, ICON_LOCK, 32, OT.PRIMARY, OT.PRIMARY_BG);
+        LinearLayout.LayoutParams iconP = new LinearLayout.LayoutParams(dp(OT.ICON_CIRCLE_SM), dp(OT.ICON_CIRCLE_SM));
+        iconP.setMargins(0, 0, 0, dp(16));
+        iconP.gravity = Gravity.CENTER_HORIZONTAL;
+        icon.setLayoutParams(iconP);
+        dialogLayout.addView(icon);
 
-        Runnable updateDisplay = () -> {
-            if (enteredPin[0].isEmpty()) {
-                pinDisplay.setText("Enter parent PIN");
-            } else {
-                StringBuilder dots = new StringBuilder();
-                for (int i = 0; i < enteredPin[0].length(); i++) {
-                    if (i > 0) dots.append("  ");
-                    dots.append("●");
+        // Title
+        final TextView pinTitle = new TextView(this);
+        pinTitle.setText("Enter parent PIN");
+        pinTitle.setTextColor(OT.TEXT_PRIMARY);
+        pinTitle.setTextSize(18);
+        pinTitle.setTypeface(getNunitoRegular());
+        pinTitle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleP.setMargins(0, 0, 0, dp(24));
+        pinTitle.setLayoutParams(titleP);
+        dialogLayout.addView(pinTitle);
+
+        // PIN dots
+        LinearLayout dotsRow = new LinearLayout(this);
+        dotsRow.setOrientation(LinearLayout.HORIZONTAL);
+        dotsRow.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams dotsP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        dotsP.setMargins(0, 0, 0, dp(32));
+        dotsP.gravity = Gravity.CENTER_HORIZONTAL;
+        dotsRow.setLayoutParams(dotsP);
+
+        final View[] dots = new View[4];
+        for (int i = 0; i < 4; i++) {
+            View dot = new View(this);
+            int dotSize = dp(14);
+            LinearLayout.LayoutParams dotP = new LinearLayout.LayoutParams(dotSize, dotSize);
+            if (i > 0) dotP.setMargins(dp(16), 0, 0, 0);
+            dot.setLayoutParams(dotP);
+            android.graphics.drawable.GradientDrawable emptyDot = new android.graphics.drawable.GradientDrawable();
+            emptyDot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            emptyDot.setStroke(dp(2), OT.BORDER);
+            emptyDot.setColor(Color.TRANSPARENT);
+            dot.setBackground(emptyDot);
+            dots[i] = dot;
+            dotsRow.addView(dot);
+        }
+        dialogLayout.addView(dotsRow);
+
+        Runnable updateDots = () -> {
+            int len = enteredPin[0].length();
+            for (int i = 0; i < 4; i++) {
+                android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+                d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                if (i < len) {
+                    d.setColor(OT.PRIMARY);
+                } else {
+                    d.setStroke(dp(2), OT.BORDER);
+                    d.setColor(Color.TRANSPARENT);
                 }
-                pinDisplay.setText(dots.toString());
+                dots[i].setBackground(d);
             }
         };
 
-        // Number pad  1-2-3 / 4-5-6 / 7-8-9 / ⌫-0  (auto-submits at 4 digits)
+        Runnable showError = () -> {
+            for (View dot : dots) {
+                android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+                d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                d.setColor(OT.ERROR);
+                dot.setBackground(d);
+            }
+            pinTitle.setTextColor(OT.ERROR);
+            pinTitle.setText("Incorrect PIN");
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                pinTitle.setTextColor(OT.TEXT_PRIMARY);
+                pinTitle.setText("Enter parent PIN");
+                updateDots.run();
+            }, 1500);
+        };
+
+        // Number pad card
+        LinearLayout padCard = new LinearLayout(this);
+        padCard.setOrientation(LinearLayout.VERTICAL);
+        padCard.setBackground(roundedRectWithBorder(OT.SURFACE_CARD, OT.BORDER, OT.CARD_RADIUS));
+        padCard.setPadding(dp(12), dp(12), dp(12), dp(12));
+        LinearLayout.LayoutParams padCardP = new LinearLayout.LayoutParams(dp(260), LinearLayout.LayoutParams.WRAP_CONTENT);
+        padCardP.gravity = Gravity.CENTER_HORIZONTAL;
+        padCard.setLayoutParams(padCardP);
+
         String[][] rows = { {"1","2","3"}, {"4","5","6"}, {"7","8","9"}, {"⌫","0",""} };
+        boolean firstRow = true;
         for (String[] row : rows) {
             LinearLayout rowLayout = new LinearLayout(this);
             rowLayout.setOrientation(LinearLayout.HORIZONTAL);
             rowLayout.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rowParams.setMargins(0, 8, 0, 0);
+            if (!firstRow) rowParams.setMargins(0, dp(8), 0, 0);
+            firstRow = false;
             rowLayout.setLayoutParams(rowParams);
 
             for (String digit : row) {
-                Button btn = new Button(this);
-                btn.setText(digit);
-                btn.setTextColor(Color.WHITE);
-                btn.setTextSize(20);
-                LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                btnParams.setMargins(6, 0, 6, 0);
-                btn.setLayoutParams(btnParams);
-                btn.setBackgroundColor(Color.argb(200, 60, 60, 60));
-
-                btn.setOnClickListener(v -> {
-                    if ("⌫".equals(digit)) {
+                if ("\u232B".equals(digit)) {
+                    // Backspace icon button
+                    LinearLayout bsBtn = new LinearLayout(this);
+                    bsBtn.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams bsP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    bsP.setMargins(dp(4), 0, dp(4), 0);
+                    bsBtn.setLayoutParams(bsP);
+                    bsBtn.setBackground(roundedRect(Color.TRANSPARENT, OT.KEY_RADIUS));
+                    bsBtn.addView(iconView(ICON_BACKSPACE, 24, OT.TEXT_SECONDARY));
+                    bsBtn.setClickable(true);
+                    bsBtn.setOnClickListener(v -> {
                         if (!enteredPin[0].isEmpty()) {
                             vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0].substring(0, enteredPin[0].length() - 1);
-                            updateDisplay.run();
+                            updateDots.run();
                         }
-                    } else if ("".equals(digit)) {
-                        // placeholder cell — no action
-                    } else {
+                    });
+                    rowLayout.addView(bsBtn);
+                } else if ("".equals(digit)) {
+                    View empty = new View(this);
+                    LinearLayout.LayoutParams emptyP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    emptyP.setMargins(dp(4), 0, dp(4), 0);
+                    empty.setLayoutParams(emptyP);
+                    rowLayout.addView(empty);
+                } else {
+                    TextView btn = new TextView(this);
+                    btn.setText(digit);
+                    btn.setTextColor(OT.TEXT_PRIMARY);
+                    btn.setTextSize(22);
+                    btn.setTypeface(getNunitoRegular());
+                    btn.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    btnP.setMargins(dp(4), 0, dp(4), 0);
+                    btn.setLayoutParams(btnP);
+                    btn.setBackground(roundedRect(OT.SURFACE_ELEV, OT.KEY_RADIUS));
+                    btn.setClickable(true);
+                    final String d = digit;
+                    btn.setOnClickListener(v -> {
                         if (enteredPin[0].length() < 4) {
                             vibrate(PATTERN_TAP);
-                            enteredPin[0] = enteredPin[0] + digit;
-                            updateDisplay.run();
+                            enteredPin[0] = enteredPin[0] + d;
+                            updateDots.run();
 
-                            // Auto-submit when 4 digits entered
                             if (enteredPin[0].length() == 4) {
                                 if (verifyPin(enteredPin[0])) {
                                     vibrate(PATTERN_SUCCESS);
@@ -1089,32 +1171,33 @@ public class AppBlockerModule extends AccessibilityService {
                                 } else {
                                     vibrate(PATTERN_ERROR);
                                     enteredPin[0] = "";
-                                    pinDisplay.setTextColor(Color.RED);
-                                    pinDisplay.setText("Incorrect PIN");
-                                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                                        pinDisplay.setTextColor(Color.WHITE);
-                                        pinDisplay.setText("Enter parent PIN");
-                                    }, 1500);
+                                    showError.run();
                                 }
                             }
                         }
-                    }
-                });
-
-                rowLayout.addView(btn);
+                    });
+                    rowLayout.addView(btn);
+                }
             }
-            dialogLayout.addView(rowLayout);
+            padCard.addView(rowLayout);
         }
+        dialogLayout.addView(padCard);
 
-        // Cancel button
-        Button cancelBtn = new Button(this);
+        // Cancel button (ghost)
+        TextView cancelBtn = new TextView(this);
         cancelBtn.setText("Cancel");
-        cancelBtn.setTextColor(Color.WHITE);
-        cancelBtn.setBackgroundColor(Color.argb(200, 100, 30, 30));
-        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cancelParams.setMargins(0, 24, 0, 0);
-        cancelBtn.setLayoutParams(cancelParams);
+        cancelBtn.setTextColor(OT.TEXT_SECONDARY);
+        cancelBtn.setTextSize(14);
+        cancelBtn.setTypeface(getNunitoSemiBold());
+        cancelBtn.setGravity(Gravity.CENTER);
+        cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
+        cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
+        LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelP.setMargins(0, dp(20), 0, 0);
+        cancelP.gravity = Gravity.CENTER_HORIZONTAL;
+        cancelBtn.setLayoutParams(cancelP);
+        cancelBtn.setClickable(true);
         cancelBtn.setOnClickListener(v -> {
             try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
             pinDialogView = null;
@@ -1123,14 +1206,13 @@ public class AppBlockerModule extends AccessibilityService {
 
         WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                         : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // no IME needed — using button pad
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
         );
-        dialogParams.gravity = Gravity.CENTER;
 
         windowManager.addView(dialogLayout, dialogParams);
         pinDialogView = dialogLayout;

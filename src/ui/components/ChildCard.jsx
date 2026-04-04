@@ -14,7 +14,7 @@ function formatSeconds(seconds) {
 export default function ChildCard({ child, onPress, onLockToggle }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
-    displayName, isOnline, currentApp, todayScreenTimeSeconds,
+    displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
     bypassAlerts, pendingApprovals, pendingTimeRequests, locked,
   } = child;
 
@@ -79,7 +79,10 @@ export default function ChildCard({ child, onPress, onLockToggle }) {
         {statusText}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', ...typography.caption, color: colors.text.secondary }}>
-        <span>{currentApp || 'No active app'}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
+          {currentAppIcon && <img src={`data:image/png;base64,${currentAppIcon}`} style={{ width: '16px', height: '16px', borderRadius: '3px' }} />}
+          {currentApp || 'No active app'}
+        </span>
         <span>{formatSeconds(todayScreenTimeSeconds || 0)} today</span>
       </div>
     </button>

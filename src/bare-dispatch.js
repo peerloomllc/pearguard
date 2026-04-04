@@ -63,7 +63,29 @@ function createDispatch (ctx) {
             if (seenNoiseKeys.has(value.noiseKey)) continue
             seenNoiseKeys.add(value.noiseKey)
           }
-          children.push({ ...value, isOnline })
+          // Merge latest usage report so Dashboard has currentApp/todayScreenTimeSeconds on mount
+          let usageFields = {}
+          for await (const { value: report } of ctx.db.createReadStream({
+            gt: 'usageReport:' + value.publicKey + ':',
+            lt: 'usageReport:' + value.publicKey + ':~',
+            reverse: true,
+            limit: 1,
+          })) {
+            // Look up icon from parent's policy store
+            let currentAppIcon = null
+            if (report.currentAppPackage) {
+              const policyRaw = await ctx.db.get('policy:' + value.publicKey).catch(() => null)
+              const policyApps = policyRaw?.value?.apps || {}
+              currentAppIcon = policyApps[report.currentAppPackage]?.iconBase64 || null
+            }
+            usageFields = {
+              currentApp: report.currentApp || null,
+              currentAppPackage: report.currentAppPackage || null,
+              currentAppIcon,
+              todayScreenTimeSeconds: report.todayScreenTimeSeconds || 0,
+            }
+          }
+          children.push({ ...value, isOnline, ...usageFields })
         }
         return children
       }
@@ -769,6 +791,13 @@ function createDispatch (ctx) {
           return { flushed: false, reason: 'no data' }
         }
 
+        // Resolve display name of the current foreground app
+        const foregroundPkg = args.foregroundPackage || null
+        const foregroundEntry = foregroundPkg ? apps.find((a) => a.packageName === foregroundPkg) : null
+        const currentApp = foregroundEntry ? foregroundEntry.displayName : null
+        const currentAppPackage = foregroundEntry ? foregroundPkg : null
+        const todayScreenTimeSeconds = apps.reduce((sum, a) => sum + (a.todaySeconds || 0), 0)
+
         const now = Date.now()
         const report = {
           type: 'usage:report',
@@ -777,6 +806,9 @@ function createDispatch (ctx) {
           apps,
           pinOverrides: pinLog,
           childPublicKey,
+          currentApp,
+          currentAppPackage,
+          todayScreenTimeSeconds,
         }
 
         // Persist report to Hyperbee

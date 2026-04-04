@@ -71,10 +71,10 @@ export default forwardRef(function Dashboard(_props, ref) {
 
   useEffect(() => {
     const unsubs = [
-      window.onBareEvent('child:usageReport', (data) => {
+      window.onBareEvent('usage:report', (data) => {
         setChildren((prev) => prev.map((c) =>
           c.publicKey === data.childPublicKey
-            ? { ...c, todayScreenTimeSeconds: data.todayScreenTimeSeconds, currentApp: data.currentApp }
+            ? { ...c, todayScreenTimeSeconds: data.todayScreenTimeSeconds, currentApp: data.currentApp, currentAppPackage: data.currentAppPackage, currentAppIcon: data.currentAppIcon }
             : c
         ));
       }),

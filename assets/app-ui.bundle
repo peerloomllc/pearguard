@@ -14762,6 +14762,7 @@
       displayName,
       isOnline,
       currentApp,
+      currentAppIcon,
       todayScreenTimeSeconds,
       bypassAlerts,
       pendingApprovals,
@@ -14834,7 +14835,10 @@
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...typography2.caption, color: statusColor, marginBottom: `${spacing2.xs}px` }, children: statusText }),
           /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", ...typography2.caption, color: colors.text.secondary }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: currentApp || "No active app" }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { style: { display: "flex", alignItems: "center", gap: `${spacing2.xs}px` }, children: [
+              currentAppIcon && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("img", { src: `data:image/png;base64,${currentAppIcon}`, style: { width: "16px", height: "16px", borderRadius: "3px" } }),
+              currentApp || "No active app"
+            ] }),
             /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
               formatSeconds(todayScreenTimeSeconds || 0),
               " today"
@@ -16368,9 +16372,9 @@
     }, []);
     (0, import_react10.useEffect)(() => {
       const unsubs = [
-        window.onBareEvent("child:usageReport", (data) => {
+        window.onBareEvent("usage:report", (data) => {
           setChildren((prev) => prev.map(
-            (c) => c.publicKey === data.childPublicKey ? { ...c, todayScreenTimeSeconds: data.todayScreenTimeSeconds, currentApp: data.currentApp } : c
+            (c) => c.publicKey === data.childPublicKey ? { ...c, todayScreenTimeSeconds: data.todayScreenTimeSeconds, currentApp: data.currentApp, currentAppPackage: data.currentAppPackage, currentAppIcon: data.currentAppIcon } : c
           ));
         }),
         window.onBareEvent("child:timeRequest", (data) => {

@@ -855,6 +855,11 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void getLastForegroundPackage(Promise promise) {
+        promise.resolve(AppBlockerModule.getLastForegroundPackage());
+    }
+
     @SuppressWarnings("deprecation")
     @ReactMethod
     public void hapticTap() {

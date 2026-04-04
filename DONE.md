@@ -4,7 +4,21 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-04
+
+### [x] Active app indicator on device card (#98) - completed 2026-04-04
+Fixed Dashboard device card to show current foreground app on Child device. Root causes: wrong event name (`child:usageReport` vs `usage:report`), missing `currentApp`/`todayScreenTimeSeconds` fields in usage report, and `children:list` not merging latest usage data (causing reset on re-mount). Also added app icon (16px) next to app name on the card, reduced usage flush interval from 5min to 1min, and exposed `getLastForegroundPackage` as a React Native method.
+
+### [x] UI overhaul session (#87) - completed 2026-04-04
+Full visual redesign: dark/light theme system, Nunito font, Phosphor icons, component primitives (Button, Card, Badge, Input, Toggle, Modal), TabBar + FAB navigation, consolidated tabs (Activity = Alerts+Requests, Rules = Schedule+Contacts), quick-lock feature, and all screens migrated to themed styles. Follow-up fixes: lock enforcement end-to-end, onboarding Phosphor icons via react-native-svg, notification deep link navigation via onResume event.
+
 ## Added 2026-04-03
+
+### [x] FCM push for force-stopped parent (#78) - closed 2026-04-03
+Closed as won't fix. ParentConnectionService already runs as a foreground service to keep the parent alive. The only remaining gap is force-stop from Settings, which is an intentional user action. Adding FCM would compromise the P2P/privacy-first design for a narrow edge case.
+
+### [x] Persistent parent identity key (#12) - closed 2026-04-03
+Decision: won't fix. Identity lives in Hyperbee (documentDirectory), which is wiped by Android "Clear Data" as expected. Persisting outside Hyperbee adds complexity for a narrow edge case. Current behavior is correct - clearing data is effectively a factory reset.
 
 ### [x] Configurable time request options and warning thresholds (#96) — 2026-04-03
 Added Settings UI chip selectors for time request duration options (child block overlay) and warning notification thresholds (minutes before block). Settings stored in Hyperbee, synced to child via policy. Native EnforcementService and AppBlockerModule read from policy settings instead of hardcoded values.

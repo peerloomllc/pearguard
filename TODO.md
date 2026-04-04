@@ -14,6 +14,5 @@ Open items only. Completed items are in `DONE.md`.
 | # | Title | Where |
 |---|-------|-------|
 | 83 | Animation/feedback on approve/deny in Apps list | `AppsTab.jsx` — animate transition when app moves between Pending/Allowed/Blocked groups |
-| 87 | UI overhaul session | Full review and refresh of visual design across all screens — colors, spacing, typography, consistency |
 | 95 | Interactable Screen Time-style usage reports | High-level summary (total screen time, top apps, daily/weekly trends) with drill-down into per-app details and session history — a generic usage report independent of limits, like iOS Screen Time |
 | 97 | Block overlay UI update | Block overlay buttons (Request Approval/Request Time/Enter PIN), PIN entry overlay, and time selection overlays need themed to match the new UI (colors, spacing, typography, Phosphor icons) |

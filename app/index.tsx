@@ -444,11 +444,12 @@ export default function Root () {
         // Usage flush timer fired — gather usage and send report
         DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
           try {
-            const [usageList, weeklyList] = await Promise.all([
+            const [usageList, weeklyList, foregroundPkg] = await Promise.all([
               NativeModules.UsageStatsModule.getDailyUsageAllEvents(),
               NativeModules.UsageStatsModule.getWeeklyUsageAll(),
+              NativeModules.UsageStatsModule.getLastForegroundPackage(),
             ])
-            sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList } })
+            sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg } })
           } catch (err) {
             console.warn('[PearGuard] Usage flush failed:', err)
           }

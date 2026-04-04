@@ -326,7 +326,14 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       // usage:getLatest queries by child.publicKey (identity key), so both sides must agree.
       const childPublicKey = msg.payload.childPublicKey || msg.from
       await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
-      send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey } })
+      // Look up icon for the current foreground app from parent's policy store
+      let currentAppIcon = null
+      if (msg.payload.currentAppPackage) {
+        const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
+        const policyApps = policyRaw?.value?.apps || {}
+        currentAppIcon = policyApps[msg.payload.currentAppPackage]?.iconBase64 || null
+      }
+      send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey, currentAppIcon } })
       break
     }
     case 'heartbeat': {

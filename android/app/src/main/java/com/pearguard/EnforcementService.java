@@ -35,7 +35,7 @@ public class EnforcementService extends Service {
     private static final String CHANNEL_ID = "pearguard_enforcement";
     private static final int NOTIFICATION_ID = 1000;
     private static final long POLL_INTERVAL_MS = 5_000;       // 5 seconds
-    private static final long USAGE_FLUSH_INTERVAL_MS = 300_000; // 5 minutes
+    private static final long USAGE_FLUSH_INTERVAL_MS = 60_000; // 1 minute
     private static final String WARNING_CHANNEL_ID = "pearguard_upcoming_warning";
     private static final int[] DEFAULT_WARNING_THRESHOLDS_MIN = {10, 5, 1};
 

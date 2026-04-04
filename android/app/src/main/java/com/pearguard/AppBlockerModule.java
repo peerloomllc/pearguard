@@ -681,12 +681,22 @@ public class AppBlockerModule extends AccessibilityService {
 
         String appName = getAppName(packageName);
 
+        // --- Themed overlay layout ---
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(Color.argb(240, 20, 20, 20));
+        layout.setBackgroundColor(OT.SURFACE_BASE);
         layout.setGravity(Gravity.CENTER);
-        layout.setPadding(64, 64, 64, 64);
+        layout.setPadding(dp(24), dp(24), dp(24), dp(24));
 
+        // Icon circle
+        LinearLayout icon = iconCircle(OT.ICON_CIRCLE, ICON_SHIELD, 36, OT.ERROR, OT.PRIMARY_BG);
+        LinearLayout.LayoutParams iconP = new LinearLayout.LayoutParams(dp(OT.ICON_CIRCLE), dp(OT.ICON_CIRCLE));
+        iconP.setMargins(0, 0, 0, dp(20));
+        iconP.gravity = Gravity.CENTER_HORIZONTAL;
+        icon.setLayoutParams(iconP);
+        layout.addView(icon);
+
+        // Title
         String titleText;
         switch (currentOverlayBlockCategory) {
             case "pending":     titleText = appName + " needs approval"; break;
@@ -696,44 +706,66 @@ public class AppBlockerModule extends AccessibilityService {
         }
         TextView title = new TextView(this);
         title.setText(titleText);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(OT.TEXT_PRIMARY);
         title.setTextSize(22);
+        title.setTypeface(getNunitoRegular());
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 24);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleP.setMargins(0, 0, 0, dp(8));
+        title.setLayoutParams(titleP);
         layout.addView(title);
 
+        // Subtitle (reason)
         TextView reasonView = new TextView(this);
         reasonView.setText(reason);
-        reasonView.setTextColor(Color.LTGRAY);
-        reasonView.setTextSize(16);
+        reasonView.setTextColor(OT.TEXT_SECONDARY);
+        reasonView.setTextSize(14);
+        reasonView.setTypeface(getNunitoRegular());
         reasonView.setGravity(Gravity.CENTER);
-        reasonView.setPadding(0, 0, 0, 48);
+        LinearLayout.LayoutParams reasonP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        reasonP.setMargins(0, 0, 0, dp(40));
+        reasonView.setLayoutParams(reasonP);
         layout.addView(reasonView);
 
-        Button requestButton = new Button(this);
+        // Action card
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(roundedRectWithBorder(OT.SURFACE_CARD, OT.BORDER, OT.CARD_RADIUS));
+        card.setPadding(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout.LayoutParams cardP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardP.setMargins(dp(16), 0, dp(16), 0);
+        card.setLayoutParams(cardP);
+
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
         final String blockCategory = currentOverlayBlockCategory;
         boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
-        if (requestAlreadySent) {
-            requestButton.setText(isExtraTime ? "Resend Time Request" : "Resend Approval Request");
-        } else {
-            requestButton.setText(isExtraTime ? "Request More Time" : "Request Approval");
-        }
-        requestButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory); });
-        layout.addView(requestButton);
 
-        Button pinButton = new Button(this);
-        pinButton.setText("Enter PIN");
-        pinButton.setPadding(0, 24, 0, 0);
-        pinButton.setOnClickListener(v -> { vibrate(PATTERN_BUTTON); onEnterPin(packageName); });
-        layout.addView(pinButton);
+        // Row 1: Request Approval / Request More Time
+        String requestLabel = requestAlreadySent
+                ? (isExtraTime ? "Resend Time Request" : "Resend Approval Request")
+                : (isExtraTime ? "Request More Time" : "Request Approval");
+        String requestIcon = isExtraTime ? ICON_CLOCK : ICON_SHIELD;
+        card.addView(makeActionRow(requestIcon, requestLabel, OT.PRIMARY,
+                () -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory); }));
+
+        // Divider
+        View div1 = new View(this);
+        div1.setBackgroundColor(OT.DIVIDER);
+        div1.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+        card.addView(div1);
+
+        // Row 2: Enter PIN
+        card.addView(makeActionRow(ICON_LOCK, "Enter PIN", OT.TEXT_PRIMARY,
+                () -> { vibrate(PATTERN_BUTTON); onEnterPin(packageName); }));
+
+        layout.addView(card);
 
         final View pendingOverlay = layout;
 
-        // FLAG_NOT_FOCUSABLE prevents the overlay from stealing keyboard focus.
-        // Without it, adding the overlay fires TYPE_WINDOW_STATE_CHANGED with
-        // PearGuard's own package name, triggering dismissOverlay() and causing
-        // the flash loop. Touch events (button clicks) are unaffected by this flag.
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -750,7 +782,6 @@ public class AppBlockerModule extends AccessibilityService {
                 windowManager.addView(pendingOverlay, params);
                 overlayView = pendingOverlay;
             } catch (Exception e) {
-                // addView failed — reset pending flag so next event can retry
                 overlayView = null;
             }
             overlayPending = false;
@@ -775,6 +806,32 @@ public class AppBlockerModule extends AccessibilityService {
             currentOverlayPackage = null;
             currentOverlayBlockCategory = null;
         }
+    }
+
+    /** Creates a single row for the grouped action card. */
+    private LinearLayout makeActionRow(String iconPath, String label, int textColor, Runnable onClick) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(16), dp(16), dp(16));
+        row.setClickable(true);
+        row.setOnClickListener(v -> onClick.run());
+
+        row.addView(iconView(iconPath, 20, textColor == OT.PRIMARY ? OT.PRIMARY : OT.TEXT_SECONDARY));
+
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(dp(12), 0));
+        row.addView(spacer);
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextColor(textColor);
+        tv.setTextSize(15);
+        tv.setTypeface(getNunitoSemiBold());
+        tv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(tv);
+
+        return row;
     }
 
     private String getAppName(String packageName) {

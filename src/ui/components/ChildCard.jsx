@@ -1,5 +1,8 @@
 import React from 'react';
+import { useTheme } from '../theme.js';
 import Avatar from './Avatar.jsx';
+import Icon from '../icons.js';
+import Badge from './primitives/Badge.jsx';
 
 function formatSeconds(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -8,104 +11,77 @@ function formatSeconds(seconds) {
   return `${m}m`;
 }
 
-function Badge({ count, color }) {
-  if (!count || count === 0) return null;
-  return (
-    <span style={{ ...styles.badge, backgroundColor: color }}>
-      {count}
-    </span>
-  );
-}
-
-export default function ChildCard({ child, onPress }) {
+export default function ChildCard({ child, onPress, onLockToggle }) {
+  const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
-    displayName,
-    isOnline,
-    currentApp,
-    todayScreenTimeSeconds,
-    bypassAlerts,
-    pendingApprovals,
-    pendingTimeRequests,
+    displayName, isOnline, currentApp, todayScreenTimeSeconds,
+    bypassAlerts, pendingApprovals, pendingTimeRequests, locked,
   } = child;
 
   const hasAlerts = bypassAlerts > 0 || pendingApprovals > 0 || pendingTimeRequests > 0;
 
+  let statusText = 'All good';
+  let statusColor = colors.success;
+  if (pendingApprovals > 0) {
+    statusText = `${pendingApprovals} pending approval${pendingApprovals > 1 ? 's' : ''}`;
+    statusColor = colors.secondary;
+  } else if (bypassAlerts > 0) {
+    statusText = `${bypassAlerts} bypass alert${bypassAlerts > 1 ? 's' : ''}`;
+    statusColor = colors.error;
+  }
+
   return (
-    <button style={styles.card} onClick={onPress} aria-label={`Open ${displayName}`}>
-      <div style={styles.header}>
+    <button
+      style={{
+        display: 'block', width: '100%', textAlign: 'left',
+        backgroundColor: colors.surface.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: `${radius.lg}px`,
+        padding: `${spacing.base}px`,
+        marginBottom: `${spacing.md}px`,
+        cursor: 'pointer',
+        boxShadow: shadow,
+        position: 'relative',
+      }}
+      onClick={onPress}
+      aria-label={`Open ${displayName}`}
+    >
+      <div
+        style={{ position: 'absolute', top: `${spacing.sm}px`, right: `${spacing.sm}px` }}
+        onClick={(e) => { e.stopPropagation(); onLockToggle(); }}
+      >
+        <Icon
+          name={locked ? 'LockSimple' : 'LockSimpleOpen'}
+          size={20}
+          color={locked ? colors.error : colors.text.muted}
+        />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
         <Avatar avatar={child.avatarThumb} name={displayName} size={32} />
-        <span style={{ ...styles.statusDot, backgroundColor: isOnline ? '#34a853' : '#bbb' }} />
-        <span style={styles.name}>{displayName}</span>
+        <span style={{
+          width: '10px', height: '10px', borderRadius: '50%',
+          backgroundColor: isOnline ? colors.success : colors.text.muted,
+          marginRight: `${spacing.sm}px`, flexShrink: 0,
+        }} />
+        <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1 }}>
+          {displayName}
+        </span>
         {hasAlerts && (
-          <div style={styles.badges}>
-            <Badge count={bypassAlerts} color="#ea4335" />
-            <Badge count={pendingApprovals} color="#fbbc04" />
-            <Badge count={pendingTimeRequests} color="#1a73e8" />
+          <div style={{ display: 'flex', gap: `${spacing.xs}px` }}>
+            {bypassAlerts > 0 && <Badge color={colors.error}>{bypassAlerts}</Badge>}
+            {pendingApprovals > 0 && <Badge color={colors.secondary}>{pendingApprovals}</Badge>}
+            {pendingTimeRequests > 0 && <Badge color={colors.primary}>{pendingTimeRequests}</Badge>}
           </div>
         )}
       </div>
-      <div style={styles.row}>
-        <span style={styles.label}>Active:</span>
-        <span style={styles.value}>{currentApp || 'None'}</span>
+      <div style={{ ...typography.caption, color: statusColor, marginBottom: `${spacing.xs}px` }}>
+        {statusText}
       </div>
-      <div style={styles.row}>
-        <span style={styles.label}>Today:</span>
-        <span style={styles.value}>{formatSeconds(todayScreenTimeSeconds || 0)}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', ...typography.caption, color: colors.text.secondary }}>
+        <span>{currentApp || 'No active app'}</span>
+        <span>{formatSeconds(todayScreenTimeSeconds || 0)} today</span>
       </div>
     </button>
   );
 }
-
-const styles = {
-  card: {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left',
-    backgroundColor: '#fff',
-    border: '1px solid #e0e0e0',
-    borderRadius: '8px',
-    padding: '16px',
-    marginBottom: '12px',
-    cursor: 'pointer',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    marginBottom: '8px',
-  },
-  statusDot: {
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-    marginRight: '8px',
-    flexShrink: 0,
-  },
-  name: {
-    fontSize: '16px',
-    fontWeight: '600',
-    flex: 1,
-  },
-  badges: {
-    display: 'flex',
-    gap: '4px',
-  },
-  badge: {
-    display: 'inline-block',
-    color: '#fff',
-    fontSize: '11px',
-    fontWeight: '700',
-    borderRadius: '10px',
-    padding: '2px 7px',
-    minWidth: '20px',
-    textAlign: 'center',
-  },
-  row: {
-    display: 'flex',
-    gap: '8px',
-    fontSize: '13px',
-    marginTop: '4px',
-  },
-  label: { color: '#888', minWidth: '50px' },
-  value: { color: '#333' },
-};

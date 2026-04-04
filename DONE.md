@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-04
 
+### [x] Block overlay UI update (#97) - completed 2026-04-04
+Themed all three native Android overlays (block screen, PIN entry, duration picker) to match the WebView dark UI. Grouped-card layout style with Phosphor icons in tinted circles, Nunito font (Regular + SemiBold TTFs bundled), dot indicators for PIN entry, rounded keypad keys, ghost cancel buttons, and full dark theme color palette. Added `OverlayTheme` constants and `PhosphorIcon` SVG path renderer using `androidx.core.graphics.PathParser`. Removed unused `Button` import.
+
 ### [x] Active app indicator on device card (#98) - completed 2026-04-04
 Fixed Dashboard device card to show current foreground app on Child device. Root causes: wrong event name (`child:usageReport` vs `usage:report`), missing `currentApp`/`todayScreenTimeSeconds` fields in usage report, and `children:list` not merging latest usage data (causing reset on re-mount). Also added app icon (16px) next to app name on the card, reduced usage flush interval from 5min to 1min, and exposed `getLastForegroundPackage` as a React Native method.
 

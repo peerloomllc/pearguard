@@ -1,5 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../theme.js';
+
+const ANIMATION_STYLES = `
+@keyframes pgFadeSlideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-20px); }
+}
+@keyframes pgFadeSlideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pgFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes pgFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+`;
 
 const ICON_COLORS = ['#4285f4','#ea4335','#fbbc05','#34a853','#ff6d00','#46bdc6','#7b1fa2','#c62828'];
 
@@ -34,7 +53,7 @@ function timeRemaining(expiresAt) {
   return mins + 'm';
 }
 
-function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override }) {
+function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override, animationStyle }) {
   const { colors, spacing, radius } = useTheme();
   const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : '';
   const [limitInput, setLimitInput] = useState(savedMinutes);
@@ -77,6 +96,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
       display: 'flex',
       flexDirection: 'column',
       gap: `${spacing.sm}px`,
+      ...animationStyle,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
         {appData.iconBase64 ? (
@@ -187,8 +207,16 @@ const STATUS_CATEGORIES = [
   { key: 'blocked', label: 'Blocked',           color: '#ea4335' },
 ];
 
-function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, overrideMap, collapsed, onToggle }) {
+function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
   const { colors, spacing, radius } = useTheme();
+  const batchAction = category.key === 'allowed' ? 'deny' : category.key === 'blocked' ? 'approve' : null;
+
+  function handleBatchAll() {
+    if (batchAction && onBatchDecide) {
+      onBatchDecide(entries.map(([pkg]) => pkg), batchAction);
+    }
+  }
+
   return (
     <div style={{ marginBottom: `${spacing.sm}px` }}>
       <button
@@ -213,22 +241,37 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
         <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: category.color }}>{entries.length}</span>
         <span style={{ fontSize: '16px', color: colors.text.muted, lineHeight: 1 }}>{collapsed ? '›' : '⌄'}</span>
       </button>
-      {!collapsed && entries.map(([pkg, data]) => (
-        <AppRow
-          key={pkg}
-          childPublicKey={childPublicKey}
-          packageName={pkg}
-          appData={data}
-          onUpdate={onUpdate}
-          onDecide={onDecide}
-          override={overrideMap[pkg]}
-        />
-      ))}
+      {!collapsed && (
+        <div style={batchAnimationStyle}>
+          {batchAction && (
+            <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
+              <button
+                style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: batchAction === 'approve' ? colors.success : colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                onClick={handleBatchAll}
+              >
+                {batchAction === 'approve' ? 'Approve All' : 'Deny All'}
+              </button>
+            </div>
+          )}
+          {entries.map(([pkg, data]) => (
+            <AppRow
+              key={pkg}
+              childPublicKey={childPublicKey}
+              packageName={pkg}
+              appData={data}
+              onUpdate={onUpdate}
+              onDecide={onDecide}
+              override={overrideMap[pkg]}
+              animationStyle={animatingItems?.[pkg]}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle }) {
+function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
   const { colors, spacing, radius } = useTheme();
   const color = CATEGORY_COLORS[categoryName] || '#aaa';
   const pendingCount = entries.filter(([, d]) => d.status === 'pending').length;
@@ -268,14 +311,13 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
         <span style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: colors.text.primary }}>{categoryName}</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: '#f59e0b' }}>{pendingCount}</span>}
-          {allowedCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.success }}>{allowedCount}</span>}
-          {blockedCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.error }}>{blockedCount}</span>}
+          <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.success }}>{allowedCount}</span>
+          <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.error }}>{blockedCount}</span>
         </div>
-        <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: color }}>{entries.length}</span>
         <span style={{ fontSize: '16px', color: colors.text.muted, lineHeight: 1 }}>{collapsed ? '›' : '⌄'}</span>
       </button>
       {!collapsed && (
-        <>
+        <div style={batchAnimationStyle}>
           <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
             <button
               style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.success, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
@@ -299,9 +341,10 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
               onUpdate={onUpdate}
               onDecide={onDecide}
               override={overrideMap[pkg]}
+              animationStyle={animatingItems?.[pkg]}
             />
           ))}
-        </>
+        </div>
       )}
     </div>
   );
@@ -316,6 +359,9 @@ export default function AppsTab({ childPublicKey }) {
   const [viewMode, setViewMode] = useState('category'); // 'status' | 'category'
   const [collapsed, setCollapsed] = useState({});
   const [overrides, setOverrides] = useState([]);
+  const [animatingItems, setAnimatingItems] = useState({});
+  const [animatingSection, setAnimatingSection] = useState(null);
+  const timersRef = useRef([]);
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -340,34 +386,103 @@ export default function AppsTab({ childPublicKey }) {
     return () => { unsub(); unsub2(); clearInterval(timer); };
   }, [childPublicKey, loadPolicy, loadOverrides]);
 
+  useEffect(() => {
+    return () => timersRef.current.forEach(clearTimeout);
+  }, []);
+
+  function scheduleTimer(fn, ms) {
+    const id = setTimeout(() => {
+      timersRef.current = timersRef.current.filter(t => t !== id);
+      fn();
+    }, ms);
+    timersRef.current.push(id);
+  }
+
   function handleUpdate(packageName, newAppData) {
-    const newApps = { ...policy.apps, [packageName]: newAppData };
-    const newPolicy = { ...policy, apps: newApps };
-    setPolicy(newPolicy);
-    window.callBare('policy:update', { childPublicKey, policy: newPolicy });
+    const statusChanged = policy.apps[packageName]?.status !== newAppData.status;
+    if (statusChanged && viewMode === 'status') {
+      // Animate: exit, then update, then enter
+      setAnimatingItems(prev => ({ ...prev, [packageName]: { animation: 'pgFadeSlideOut 300ms ease forwards' } }));
+      scheduleTimer(() => {
+        setPolicy(prev => {
+          const newApps = { ...prev.apps, [packageName]: newAppData };
+          const updated = { ...prev, apps: newApps };
+          window.callBare('policy:update', { childPublicKey, policy: updated });
+          return updated;
+        });
+        setAnimatingItems(prev => ({ ...prev, [packageName]: { animation: 'pgFadeSlideIn 300ms ease forwards' } }));
+        scheduleTimer(() => {
+          setAnimatingItems(prev => {
+            const next = { ...prev };
+            delete next[packageName];
+            return next;
+          });
+        }, 300);
+      }, 300);
+    } else {
+      const newApps = { ...policy.apps, [packageName]: newAppData };
+      const newPolicy = { ...policy, apps: newApps };
+      setPolicy(newPolicy);
+      window.callBare('policy:update', { childPublicKey, policy: newPolicy });
+    }
   }
 
   // Updates local state only - used by approve/deny which already send app:decide.
   // Avoids a redundant policy:update P2P alongside app:decision, preventing double
   // notifications on the child device (#68).
   function handleDecide(packageName, newStatus) {
-    setPolicy(prev => ({
-      ...prev,
-      apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } },
-    }));
+    if (viewMode === 'status') {
+      setAnimatingItems(prev => ({ ...prev, [packageName]: { animation: 'pgFadeSlideOut 300ms ease forwards' } }));
+      scheduleTimer(() => {
+        setPolicy(prev => ({
+          ...prev,
+          apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } },
+        }));
+        setAnimatingItems(prev => ({ ...prev, [packageName]: { animation: 'pgFadeSlideIn 300ms ease forwards' } }));
+        scheduleTimer(() => {
+          setAnimatingItems(prev => {
+            const next = { ...prev };
+            delete next[packageName];
+            return next;
+          });
+        }, 300);
+      }, 300);
+    } else {
+      setPolicy(prev => ({
+        ...prev,
+        apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } },
+      }));
+    }
   }
 
   function handleBatchDecide(packageNames, decision) {
     const newStatus = decision === 'approve' ? 'allowed' : 'blocked';
-    // Optimistic local update
-    setPolicy(prev => {
-      const apps = { ...prev.apps };
-      for (const pkg of packageNames) {
-        apps[pkg] = { ...apps[pkg], status: newStatus };
-      }
-      return { ...prev, apps };
-    });
-    window.callBare('apps:decideBatch', { childPublicKey, packageNames, decision });
+    if (viewMode === 'status') {
+      setAnimatingSection({ phase: 'exiting' });
+      scheduleTimer(() => {
+        setPolicy(prev => {
+          const apps = { ...prev.apps };
+          for (const pkg of packageNames) {
+            apps[pkg] = { ...apps[pkg], status: newStatus };
+          }
+          return { ...prev, apps };
+        });
+        window.callBare('apps:decideBatch', { childPublicKey, packageNames, decision });
+        setAnimatingSection({ phase: 'entering' });
+        scheduleTimer(() => {
+          setAnimatingSection(null);
+        }, 250);
+      }, 250);
+    } else {
+      setPolicy(prev => {
+        const apps = { ...prev.apps };
+        for (const pkg of packageNames) {
+          apps[pkg] = { ...apps[pkg], status: newStatus };
+        }
+        return { ...prev, apps };
+      });
+      window.callBare('apps:decideBatch', { childPublicKey, packageNames, decision });
+    }
   }
 
   function toggleSection(key) {
@@ -401,9 +516,14 @@ export default function AppsTab({ childPublicKey }) {
     if (o.packageName) overrideMap[o.packageName] = o;
   }
 
+  const batchStyle = animatingSection
+    ? { animation: animatingSection.phase === 'exiting' ? 'pgFadeOut 250ms ease forwards' : 'pgFadeIn 250ms ease forwards' }
+    : undefined;
+
   return (
-    <div style={{ padding: `${spacing.base}px` }}>
-      <div style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
+    <div style={{ padding: `0 ${spacing.base}px ${spacing.base}px` }}>
+      <style>{ANIMATION_STYLES}</style>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: colors.surface.base, paddingTop: `${spacing.base}px`, paddingBottom: `${spacing.sm}px`, display: 'flex', gap: `${spacing.sm}px`, alignItems: 'center' }}>
         <input
           type="text"
           value={search}
@@ -481,9 +601,12 @@ export default function AppsTab({ childPublicKey }) {
               childPublicKey={childPublicKey}
               onUpdate={handleUpdate}
               onDecide={handleDecide}
+              onBatchDecide={handleBatchDecide}
               overrideMap={overrideMap}
-              collapsed={collapsed[cat.key] ?? true}
+              collapsed={q ? false : (collapsed[cat.key] ?? true)}
               onToggle={() => toggleSection(cat.key)}
+              animatingItems={animatingItems}
+              batchAnimationStyle={batchStyle}
             />
           );
         })
@@ -501,8 +624,10 @@ export default function AppsTab({ childPublicKey }) {
               onDecide={handleDecide}
               onBatchDecide={handleBatchDecide}
               overrideMap={overrideMap}
-              collapsed={collapsed[catName] ?? true}
+              collapsed={q ? false : (collapsed[catName] ?? true)}
               onToggle={() => toggleSection(catName)}
+              animatingItems={animatingItems}
+              batchAnimationStyle={batchStyle}
             />
           );
         })

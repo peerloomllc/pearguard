@@ -246,6 +246,57 @@ function createDispatch (ctx) {
         return { inviteLink, inviteString: inviteLink, qrData: inviteLink, swarmTopic: topicHex, parentPublicKey }
       }
 
+      case 'coparent:generateInvite': {
+        // args.childPublicKey: which child the co-parent will pair with
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('coparent:generateInvite requires childPublicKey')
+
+        // Verify this child is actually paired with us
+        const childRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+        if (!childRecord) throw new Error('child not paired: ' + childPublicKey.slice(0, 12))
+
+        // Generate a random swarm topic for the parent-to-parent handshake
+        const topicBuf = Buffer.allocUnsafe(32)
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          crypto.getRandomValues(topicBuf)
+        } else {
+          require('sodium-native').randombytes_buf(topicBuf)
+        }
+        const topicHex = topicBuf.toString('hex')
+        const parentPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
+
+        // Join the topic so we can handshake with Parent B
+        await ctx.joinTopic(topicHex)
+
+        // Build the co-parent invite link
+        const { buildCoparentLink } = require('./invite')
+        const inviteLink = buildCoparentLink({ parentPublicKey, swarmTopic: topicHex, childPublicKey })
+
+        return { inviteLink, qrData: inviteLink, swarmTopic: topicHex, childPublicKey }
+      }
+
+      case 'coparent:acceptInvite': {
+        // args[0]: full pear://pearguard/coparent?t=... URL
+        const { parseCoparentLink } = require('./invite')
+        const parsed = parseCoparentLink(args[0])
+        if (!parsed.ok) throw new Error('invalid coparent invite: ' + parsed.error)
+
+        const { parentPublicKey: parentAKey, swarmTopic, childPublicKey } = parsed
+
+        // Store Parent A's key so we can recognize the coparent:hello response
+        await ctx.db.put('pendingCoparent', {
+          parentAKey,
+          childPublicKey,
+          swarmTopic,
+          ts: Date.now(),
+        })
+
+        // Join the parent-to-parent topic
+        await ctx.joinTopic(swarmTopic)
+
+        return { ok: true, swarmTopic, parentAKey, childPublicKey }
+      }
+
       case 'acceptInvite': {
         // args[0]: full pearguard://join/... URL
         const { parseInviteLink } = require('./invite')

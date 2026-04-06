@@ -210,6 +210,134 @@ function DailySummary({ childPublicKey, colors, spacing, radius }) {
   );
 }
 
+// --- Weekly Trends View ---
+
+function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
+  const [period, setPeriod] = useState(7);
+  const [summaries, setSummaries] = useState([]);
+  const [prevSummaries, setPrevSummaries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setAnimated(false);
+    Promise.all([
+      window.callBare('usage:getDailySummaries', { childPublicKey, days: period }),
+      window.callBare('usage:getDailySummaries', { childPublicKey, days: period * 2 }),
+    ]).then(([current, extended]) => {
+      setSummaries((current || []).reverse());
+      setPrevSummaries((extended || []).slice(period).reverse());
+      setLoading(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setAnimated(true));
+      });
+    }).catch(() => { setSummaries([]); setPrevSummaries([]); setLoading(false); });
+  }, [childPublicKey, period]);
+
+  if (loading) return <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>Loading...</div>;
+
+  const maxSeconds = Math.max(...summaries.map((s) => s.totalSeconds), 1);
+  const avgSeconds = summaries.length > 0 ? summaries.reduce((sum, s) => sum + s.totalSeconds, 0) / summaries.length : 0;
+  const prevAvg = prevSummaries.length > 0 ? prevSummaries.reduce((sum, s) => sum + s.totalSeconds, 0) / prevSummaries.length : 0;
+  const changePct = prevAvg > 0 ? Math.round(((avgSeconds - prevAvg) / prevAvg) * 100) : null;
+
+  const chartW = 300;
+  const chartH = 140;
+  const gap = period <= 7 ? 4 : 1;
+  const barW = (chartW - (summaries.length - 1) * gap) / Math.max(summaries.length, 1);
+  const avgY = maxSeconds > 0 ? chartH - (avgSeconds / maxSeconds) * chartH : chartH;
+
+  return (
+    <div>
+      {/* Period toggle */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: `${spacing.xs}px`, marginBottom: `${spacing.base}px` }}>
+        {[7, 30].map((p) => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            style={{
+              padding: `${spacing.xs}px ${spacing.md}px`,
+              border: 'none',
+              borderRadius: `${radius.md}px`,
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: period === p ? '600' : '400',
+              backgroundColor: period === p ? colors.primary : colors.surface.elevated,
+              color: period === p ? '#fff' : colors.text.muted,
+              transition: 'background-color 0.2s ease, color 0.2s ease',
+            }}
+          >
+            {p} days
+          </button>
+        ))}
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: `${spacing.xl}px`, marginBottom: `${spacing.base}px` }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '20px', fontWeight: '700', color: colors.text.primary }}>{formatSeconds(Math.round(avgSeconds))}</div>
+          <div style={{ fontSize: '12px', color: colors.text.muted }}>Daily Average</div>
+        </div>
+        {changePct !== null && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: changePct > 0 ? colors.error : colors.success }}>
+              {changePct > 0 ? '+' : ''}{changePct}%
+            </div>
+            <div style={{ fontSize: '12px', color: colors.text.muted }}>vs Previous</div>
+          </div>
+        )}
+      </div>
+
+      {/* Bar chart */}
+      {summaries.length > 0 && (
+        <svg viewBox={`0 0 ${chartW} ${chartH + 20}`} style={{ width: '100%', maxWidth: '400px', display: 'block', margin: '0 auto' }}>
+          {/* Average line */}
+          <line x1={0} y1={avgY} x2={chartW} y2={avgY} stroke={colors.text.muted} strokeDasharray="4 3" strokeWidth={1} opacity={0.5} />
+
+          {/* Bars */}
+          {summaries.map((s, i) => {
+            const barH = maxSeconds > 0 ? (s.totalSeconds / maxSeconds) * chartH : 0;
+            const x = i * (barW + gap);
+            return (
+              <rect
+                key={i}
+                x={x}
+                y={animated ? chartH - barH : chartH}
+                width={barW}
+                height={animated ? barH : 0}
+                rx={period <= 7 ? 3 : 1}
+                fill={colors.primary}
+                style={{
+                  transition: `y 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${i * 0.03}s, height 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${i * 0.03}s`,
+                }}
+              />
+            );
+          })}
+
+          {/* Date labels (only for 7-day view) */}
+          {period <= 7 && summaries.map((s, i) => (
+            <text
+              key={i}
+              x={i * (barW + gap) + barW / 2}
+              y={chartH + 14}
+              textAnchor="middle"
+              fill={colors.text.muted}
+              fontSize="9"
+            >
+              {new Date(s.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 2)}
+            </text>
+          ))}
+        </svg>
+      )}
+
+      {summaries.length === 0 && (
+        <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>No trend data available yet.</div>
+      )}
+    </div>
+  );
+}
+
 // --- Main UsageReports Component ---
 
 export default function UsageReports({ childPublicKey, onBack }) {
@@ -266,7 +394,7 @@ export default function UsageReports({ childPublicKey, onBack }) {
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: `${spacing.base}px` }}>
         {view === 'daily' && <DailySummary childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
-        {view === 'trends' && <div style={{ color: colors.text.muted, fontSize: '14px' }}>Weekly trends coming next...</div>}
+        {view === 'trends' && <WeeklyTrends childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
         {view === 'apps' && <div style={{ color: colors.text.muted, fontSize: '14px' }}>App drill-down coming next...</div>}
         {view === 'categories' && <div style={{ color: colors.text.muted, fontSize: '14px' }}>Category breakdown coming next...</div>}
       </div>

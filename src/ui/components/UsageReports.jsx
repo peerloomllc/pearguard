@@ -22,6 +22,7 @@ const SYSTEM_PACKAGES = new Set([
 function isSystemPackage(pkg) {
   if (SYSTEM_PACKAGES.has(pkg)) return true;
   if (pkg.startsWith('com.android.') && !pkg.startsWith('com.android.chrome')) return true;
+  if (pkg.includes('.launcher')) return true;
   return false;
 }
 

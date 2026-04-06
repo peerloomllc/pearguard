@@ -326,6 +326,17 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             long startOfToday = cal.getTimeInMillis();
             long lastFlush = prefs.getLong("pearguard_last_session_flush", startOfToday);
 
+            // Build launcher-visible set to filter out system apps
+            java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+            if (resolveInfos != null) {
+                for (ResolveInfo ri : resolveInfos) {
+                    launcherPackages.add(ri.activityInfo.packageName);
+                }
+            }
+
             UsageEvents events = usm.queryEvents(lastFlush, now);
             if (events == null) {
                 promise.resolve(Arguments.createArray());
@@ -339,6 +350,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             while (events.getNextEvent(event)) {
                 String pkg = event.getPackageName();
                 if (pkg.equals(ctx.getPackageName())) continue;
+                if (!launcherPackages.contains(pkg)) continue;
 
                 if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     fgStarts.put(pkg, event.getTimeStamp());

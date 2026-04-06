@@ -7,6 +7,7 @@ import UsageTab from './UsageTab.jsx';
 import AppsTab from './AppsTab.jsx';
 import ActivityTab from './ActivityTab.jsx';
 import RulesTab from './RulesTab.jsx';
+import UsageReports from './UsageReports.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', icon: 'ChartBar' },
@@ -28,6 +29,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     });
     return () => unsub();
   }, []);
+  const [showReports, setShowReports] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
 
@@ -40,6 +42,10 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     const newLocked = !locked;
     await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: newLocked });
     setLocked(newLocked);
+  }
+
+  if (showReports) {
+    return <UsageReports childPublicKey={child.publicKey} onBack={() => setShowReports(false)} />;
   }
 
   const ActiveComponent = TAB_COMPONENTS[tab] || UsageTab;
@@ -122,7 +128,11 @@ export default function ChildDetail({ child, initialTab, onBack }) {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <ActiveComponent childPublicKey={child.publicKey} />
+        {tab === 'usage' ? (
+          <UsageTab childPublicKey={child.publicKey} onShowReports={() => setShowReports(true)} />
+        ) : (
+          <ActiveComponent childPublicKey={child.publicKey} />
+        )}
       </div>
     </div>
   );

@@ -12,6 +12,4 @@ Open items only. Completed items are in `DONE.md`.
 
 ## Features
 
-| # | Title | Where |
-|---|-------|-------|
-| 95 | Interactable Screen Time-style usage reports | High-level summary (total screen time, top apps, daily/weekly trends) with drill-down into per-app details and session history — a generic usage report independent of limits, like iOS Screen Time |
+(none)

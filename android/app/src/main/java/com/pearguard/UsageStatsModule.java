@@ -305,6 +305,104 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Returns session-level usage data since the last flush.
+     * Each session is { packageName, displayName, startedAt, endedAt, durationSeconds }.
+     * Open sessions (still in foreground) have endedAt = null.
+     */
+    @ReactMethod
+    public void getSessionsSinceLastFlush(Promise promise) {
+        try {
+            Context ctx = getReactApplicationContext();
+            UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
+            PackageManager pm = ctx.getPackageManager();
+            SharedPreferences prefs = ctx.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+
+            long now = System.currentTimeMillis();
+            Calendar cal = Calendar.getInstance();
+            cal.set(Calendar.HOUR_OF_DAY, 0);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+            long startOfToday = cal.getTimeInMillis();
+            long lastFlush = prefs.getLong("pearguard_last_session_flush", startOfToday);
+
+            // Build launcher-visible set to filter out system apps
+            java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+            if (resolveInfos != null) {
+                for (ResolveInfo ri : resolveInfos) {
+                    launcherPackages.add(ri.activityInfo.packageName);
+                }
+            }
+
+            UsageEvents events = usm.queryEvents(lastFlush, now);
+            if (events == null) {
+                promise.resolve(Arguments.createArray());
+                return;
+            }
+
+            java.util.Map<String, Long> fgStarts = new java.util.HashMap<>();
+            WritableArray sessions = Arguments.createArray();
+            UsageEvents.Event event = new UsageEvents.Event();
+
+            while (events.getNextEvent(event)) {
+                String pkg = event.getPackageName();
+                if (pkg.equals(ctx.getPackageName())) continue;
+                if (!launcherPackages.contains(pkg)) continue;
+
+                if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    fgStarts.put(pkg, event.getTimeStamp());
+                } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    Long start = fgStarts.remove(pkg);
+                    if (start != null) {
+                        long durationSec = (event.getTimeStamp() - start) / 1000;
+                        if (durationSec >= 1) {
+                            WritableMap session = Arguments.createMap();
+                            session.putString("packageName", pkg);
+                            session.putString("displayName", getAppLabel(pm, pkg));
+                            session.putDouble("startedAt", (double) start);
+                            session.putDouble("endedAt", (double) event.getTimeStamp());
+                            session.putInt("durationSeconds", (int) durationSec);
+                            sessions.pushMap(session);
+                        }
+                    }
+                }
+            }
+
+            // Open sessions (still in foreground)
+            for (java.util.Map.Entry<String, Long> entry : fgStarts.entrySet()) {
+                long start = entry.getValue();
+                long durationSec = (now - start) / 1000;
+                if (durationSec >= 1) {
+                    WritableMap session = Arguments.createMap();
+                    session.putString("packageName", entry.getKey());
+                    session.putString("displayName", getAppLabel(pm, entry.getKey()));
+                    session.putDouble("startedAt", (double) start);
+                    session.putNull("endedAt");
+                    session.putInt("durationSeconds", (int) durationSec);
+                    sessions.pushMap(session);
+                }
+            }
+
+            prefs.edit().putLong("pearguard_last_session_flush", now).apply();
+            promise.resolve(sessions);
+        } catch (Exception e) {
+            promise.reject("SESSION_ERROR", e.getMessage());
+        }
+    }
+
+    private String getAppLabel(PackageManager pm, String packageName) {
+        try {
+            ApplicationInfo ai = pm.getApplicationInfo(packageName, 0);
+            return pm.getApplicationLabel(ai).toString();
+        } catch (Exception e) {
+            return packageName;
+        }
+    }
+
+    /**
      * Returns weekly usage for all launcher-visible apps as an array of
      * { packageName: string, appName: string, secondsThisWeek: number }.
      * Only includes apps with > 0 seconds.

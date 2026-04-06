@@ -255,24 +255,10 @@ function createDispatch (ctx) {
         const { parentPublicKey, swarmTopic } = parsed
 
         // Store the parent's public key as a "pending" entry — will be confirmed on hello
-        await ctx.db.put('pendingParent', { publicKey: parentPublicKey, ts: Date.now() })
+        await ctx.db.put('pendingParent:' + parentPublicKey, { publicKey: parentPublicKey, ts: Date.now() })
 
-        // Leave and delete all existing topics before joining the new one.
-        // A child should only be connected to one parent at a time. Any old topics
-        // (from a previous pairing that wasn't fully cleaned up) would let the child
-        // stay joined to a stale topic, which can cause ghost connections on the parent.
-        const oldTopics = []
-        for await (const { key, value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
-          if (value.topicHex !== swarmTopic) oldTopics.push({ key, topicHex: value.topicHex })
-        }
-        for (const { key, topicHex } of oldTopics) {
-          await ctx.db.del(key).catch(() => {})
-          if (ctx.swarm) {
-            try { ctx.swarm.leave(ctx.b4a.from(topicHex, 'hex')) } catch (_e) {}
-          }
-        }
-
-        // Join the swarm topic (child connects to parent)
+        // Join the swarm topic alongside any existing parent topics (multi-parent support).
+        // Old single-parent behavior deleted all existing topics here — now we keep them.
         await ctx.joinTopic(swarmTopic)
 
         return { ok: true, swarmTopic, parentPublicKey }

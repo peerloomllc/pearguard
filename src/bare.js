@@ -746,9 +746,9 @@ async function handleHello (msg, conn, remoteKeyHex) {
 
   // If we're the child, check if this is our pending parent
   if (mode === 'child') {
-    const pendingParent = await db.get('pendingParent').catch(() => null)
-    if (pendingParent && pendingParent.value.publicKey === peerIdentityKeyHex) {
-      await db.del('pendingParent').catch(() => {})
+    const pendingParent = await db.get('pendingParent:' + peerIdentityKeyHex).catch(() => null)
+    if (pendingParent) {
+      await db.del('pendingParent:' + peerIdentityKeyHex).catch(() => {})
     }
 
     // Track this parent connection

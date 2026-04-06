@@ -338,6 +338,184 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
   );
 }
 
+// --- Sparkline ---
+
+function Sparkline({ data, colors, width = 120, height = 30 }) {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data.map((d) => d.totalSeconds), 1);
+  const step = width / Math.max(data.length - 1, 1);
+  const points = data.map((d, i) => {
+    const x = i * step;
+    const y = height - (d.totalSeconds / max) * height;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: `${width}px`, height: `${height}px` }}>
+      <polyline points={points} fill="none" stroke={colors.primary} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// --- Per-App Drill-Down View ---
+
+function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+  const [sparkData, setSparkData] = useState({});
+
+  const today = new Date().toISOString().slice(0, 10);
+  const minDate = dateOffset(today, -29);
+
+  useEffect(() => {
+    setLoading(true);
+    window.callBare('usage:getSessions', { childPublicKey, date })
+      .then((data) => { setSessions(data || []); setLoading(false); })
+      .catch(() => { setSessions([]); setLoading(false); });
+  }, [childPublicKey, date]);
+
+  // Aggregate by app
+  const appMap = {};
+  for (const s of sessions) {
+    if (!appMap[s.packageName]) {
+      appMap[s.packageName] = { packageName: s.packageName, displayName: s.displayName || s.packageName, totalSeconds: 0, sessions: [] };
+    }
+    appMap[s.packageName].totalSeconds += s.durationSeconds || 0;
+    appMap[s.packageName].sessions.push(s);
+  }
+  const apps = Object.values(appMap).sort((a, b) => b.totalSeconds - a.totalSeconds);
+
+  function handleExpand(pkg) {
+    if (expanded === pkg) { setExpanded(null); return; }
+    setExpanded(pkg);
+    if (!sparkData[pkg]) {
+      window.callBare('usage:getDailySummaries', { childPublicKey, days: 7, packageName: pkg })
+        .then((data) => setSparkData((prev) => ({ ...prev, [pkg]: (data || []).reverse() })))
+        .catch(() => {});
+    }
+  }
+
+  const canGoBack = dateOffset(date, -1) >= minDate;
+  const canGoForward = date < today;
+
+  return (
+    <div>
+      {/* Day selector */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.base}px` }}>
+        <button
+          onClick={() => { if (canGoBack) setDate(dateOffset(date, -1)); }}
+          disabled={!canGoBack}
+          style={{ background: 'none', border: 'none', cursor: canGoBack ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoBack ? 1 : 0.3 }}
+        >
+          <Icon name="CaretLeft" size={20} color={colors.text.primary} />
+        </button>
+        <span style={{ fontSize: '15px', fontWeight: '600', color: colors.text.primary, minWidth: '140px', textAlign: 'center' }}>
+          {formatDate(date)}
+        </span>
+        <button
+          onClick={() => { if (canGoForward) setDate(dateOffset(date, 1)); }}
+          disabled={!canGoForward}
+          style={{ background: 'none', border: 'none', cursor: canGoForward ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoForward ? 1 : 0.3 }}
+        >
+          <Icon name="CaretRight" size={20} color={colors.text.primary} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>Loading...</div>
+      ) : apps.length === 0 ? (
+        <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>No app usage for this day.</div>
+      ) : (
+        apps.map((app) => {
+          const isExpanded = expanded === app.packageName;
+          const appSessions = app.sessions.sort((a, b) => a.startedAt - b.startedAt);
+          const longestSession = Math.max(...appSessions.map((s) => s.durationSeconds || 0));
+          const avgSession = Math.round(app.totalSeconds / appSessions.length);
+
+          return (
+            <div
+              key={app.packageName}
+              style={{
+                marginBottom: `${spacing.xs}px`,
+                backgroundColor: colors.surface.card,
+                borderRadius: `${radius.md}px`,
+                overflow: 'hidden',
+                transition: 'background-color 0.2s ease',
+              }}
+            >
+              {/* App row */}
+              <button
+                onClick={() => handleExpand(app.packageName)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: `${spacing.sm + 2}px ${spacing.md}px`,
+                  border: 'none', background: 'none', cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: '14px', fontWeight: '500', color: colors.text.primary }}>{app.displayName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
+                  <span style={{ fontSize: '13px', color: colors.text.muted }}>{formatSeconds(app.totalSeconds)}</span>
+                  <Icon name={isExpanded ? 'CaretUp' : 'CaretDown'} size={14} color={colors.text.muted} />
+                </div>
+              </button>
+
+              {/* Expanded detail */}
+              {isExpanded && (
+                <div style={{
+                  padding: `0 ${spacing.md}px ${spacing.md}px`,
+                  borderTop: `1px solid ${colors.border}`,
+                }}>
+                  {/* Stats */}
+                  <div style={{ display: 'flex', gap: `${spacing.md}px`, padding: `${spacing.sm}px 0`, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: colors.text.muted }}>Sessions</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: colors.text.primary }}>{appSessions.length}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: colors.text.muted }}>Longest</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: colors.text.primary }}>{formatSeconds(longestSession)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: colors.text.muted }}>Average</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: colors.text.primary }}>{formatSeconds(avgSession)}</div>
+                    </div>
+                  </div>
+
+                  {/* Sparkline */}
+                  {sparkData[app.packageName] && (
+                    <div style={{ padding: `${spacing.xs}px 0` }}>
+                      <div style={{ fontSize: '11px', color: colors.text.muted, marginBottom: '4px' }}>Last 7 days</div>
+                      <Sparkline data={sparkData[app.packageName]} colors={colors} />
+                    </div>
+                  )}
+
+                  {/* Session list */}
+                  <div style={{ marginTop: `${spacing.sm}px` }}>
+                    <div style={{ fontSize: '11px', color: colors.text.muted, marginBottom: '4px' }}>Sessions</div>
+                    {appSessions.map((s, i) => {
+                      const start = new Date(s.startedAt);
+                      const end = s.endedAt ? new Date(s.endedAt) : null;
+                      const fmt = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                      return (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '13px' }}>
+                          <span style={{ color: colors.text.secondary }}>{fmt(start)} - {end ? fmt(end) : 'now'}</span>
+                          <span style={{ color: colors.text.muted }}>{formatSeconds(s.durationSeconds)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 // --- Main UsageReports Component ---
 
 export default function UsageReports({ childPublicKey, onBack }) {
@@ -395,7 +573,7 @@ export default function UsageReports({ childPublicKey, onBack }) {
       <div style={{ flex: 1, overflowY: 'auto', padding: `${spacing.base}px` }}>
         {view === 'daily' && <DailySummary childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
         {view === 'trends' && <WeeklyTrends childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
-        {view === 'apps' && <div style={{ color: colors.text.muted, fontSize: '14px' }}>App drill-down coming next...</div>}
+        {view === 'apps' && <AppDrillDown childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
         {view === 'categories' && <div style={{ color: colors.text.muted, fontSize: '14px' }}>Category breakdown coming next...</div>}
       </div>
     </div>

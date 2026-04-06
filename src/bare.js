@@ -326,6 +326,12 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       // usage:getLatest queries by child.publicKey (identity key), so both sides must agree.
       const childPublicKey = msg.payload.childPublicKey || msg.from
       await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
+      // Store session-level data for reports
+      const incomingSessions = msg.payload.sessions || []
+      if (incomingSessions.length > 0) {
+        const dateStr = new Date(msg.payload.timestamp || Date.now()).toISOString().slice(0, 10)
+        await db.put('sessions:' + childPublicKey + ':' + dateStr + ':' + (msg.payload.timestamp || Date.now()), incomingSessions)
+      }
       // Look up icon for the current foreground app from parent's policy store
       let currentAppIcon = null
       if (msg.payload.currentAppPackage) {

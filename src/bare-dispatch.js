@@ -799,11 +799,20 @@ function createDispatch (ctx) {
         const todayScreenTimeSeconds = apps.reduce((sum, a) => sum + (a.todaySeconds || 0), 0)
 
         const now = Date.now()
+
+        // Store session-level data for usage reports
+        const sessions = args.sessions || []
+        if (sessions.length > 0) {
+          const dateStr = new Date(now).toISOString().slice(0, 10)
+          await ctx.db.put('sessions:' + (childPublicKey || 'local') + ':' + dateStr + ':' + now, sessions)
+        }
+
         const report = {
           type: 'usage:report',
           timestamp: now,
           lastSynced: now,
           apps,
+          sessions,
           pinOverrides: pinLog,
           childPublicKey,
           currentApp,

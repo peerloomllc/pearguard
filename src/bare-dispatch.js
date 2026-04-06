@@ -850,6 +850,99 @@ function createDispatch (ctx) {
         return latest || null
       }
 
+      case 'usage:getSessions': {
+        const { childPublicKey, date } = args
+        if (!childPublicKey || !date) throw new Error('invalid usage:getSessions args')
+        const allSessions = []
+        for await (const { value } of ctx.db.createReadStream({
+          gt: 'sessions:' + childPublicKey + ':' + date + ':',
+          lt: 'sessions:' + childPublicKey + ':' + date + ':~',
+        })) {
+          if (Array.isArray(value)) {
+            for (const s of value) allSessions.push(s)
+          }
+        }
+        // Deduplicate by packageName + startedAt
+        const seen = new Set()
+        const deduped = []
+        for (const s of allSessions) {
+          const key = s.packageName + ':' + s.startedAt
+          if (!seen.has(key)) {
+            seen.add(key)
+            deduped.push(s)
+          }
+        }
+        return deduped
+      }
+
+      case 'usage:getDailySummaries': {
+        const { childPublicKey, days, packageName } = args
+        if (!childPublicKey || !days) throw new Error('invalid usage:getDailySummaries args')
+        const summaries = []
+        const now = new Date()
+        for (let i = 0; i < days; i++) {
+          const d = new Date(now)
+          d.setDate(d.getDate() - i)
+          const dateStr = d.toISOString().slice(0, 10)
+          let totalSeconds = 0
+          let sessionCount = 0
+          for await (const { value } of ctx.db.createReadStream({
+            gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
+            lt: 'sessions:' + childPublicKey + ':' + dateStr + ':~',
+          })) {
+            if (Array.isArray(value)) {
+              for (const s of value) {
+                if (packageName && s.packageName !== packageName) continue
+                totalSeconds += s.durationSeconds || 0
+                sessionCount++
+              }
+            }
+          }
+          summaries.push({ date: dateStr, totalSeconds, sessionCount })
+        }
+        return summaries
+      }
+
+      case 'usage:getCategorySummary': {
+        const { childPublicKey, date } = args
+        if (!childPublicKey || !date) throw new Error('invalid usage:getCategorySummary args')
+        const policyRaw = await ctx.db.get('policy:' + childPublicKey)
+        const policyApps = policyRaw?.value?.apps || {}
+        const sessions = []
+        for await (const { value } of ctx.db.createReadStream({
+          gt: 'sessions:' + childPublicKey + ':' + date + ':',
+          lt: 'sessions:' + childPublicKey + ':' + date + ':~',
+        })) {
+          if (Array.isArray(value)) {
+            for (const s of value) sessions.push(s)
+          }
+        }
+        const categories = {}
+        for (const s of sessions) {
+          const appInfo = policyApps[s.packageName]
+          const category = appInfo?.category || 'Other'
+          if (!categories[category]) {
+            categories[category] = { category, totalSeconds: 0, apps: {} }
+          }
+          categories[category].totalSeconds += s.durationSeconds || 0
+          if (!categories[category].apps[s.packageName]) {
+            categories[category].apps[s.packageName] = {
+              packageName: s.packageName,
+              displayName: s.displayName || s.packageName,
+              totalSeconds: 0,
+              iconBase64: appInfo?.iconBase64 || null,
+            }
+          }
+          categories[category].apps[s.packageName].totalSeconds += s.durationSeconds || 0
+        }
+        const result = Object.values(categories).map((cat) => ({
+          ...cat,
+          apps: Object.values(cat.apps).sort((a, b) => b.totalSeconds - a.totalSeconds),
+        }))
+        result.sort((a, b) => b.totalSeconds - a.totalSeconds)
+        return result
+      }
+
       case 'policy:get': {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid policy:get args')

@@ -485,46 +485,74 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       break
     }
     case 'unpair': {
-      // Parent has removed this child — wipe all local state and return to setup.
-      // Collect keys first, then delete: avoids Hyperbee deadlock from writing
-      // inside a createReadStream iteration.
-      const allKeys = []
-      for await (const { key } of db.createReadStream()) {
-        allKeys.push(key)
+      // A parent has removed this child.
+      // Find which parent sent this by looking up the identity key for this noise key.
+      const senderPeer = peers.get(remoteKeyHex)
+      const senderIdentityKey = senderPeer?.identityKey
+
+      // Remove this parent's peer record and topic
+      if (senderIdentityKey) {
+        const peerRecord = await db.get('peers:' + senderIdentityKey).catch(() => null)
+        const parentTopic = peerRecord?.value?.swarmTopic
+        await db.del('peers:' + senderIdentityKey).catch(() => {})
+        await db.del('pendingParent:' + senderIdentityKey).catch(() => {})
+        parentPeers.delete(senderIdentityKey)
+
+        // Leave this parent's swarm topic if no other parent uses it
+        if (parentTopic) {
+          let topicStillUsed = false
+          for await (const { value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+            if (value && value.swarmTopic === parentTopic) { topicStillUsed = true; break }
+          }
+          if (!topicStillUsed) {
+            await db.del('topics:' + parentTopic).catch(() => {})
+            if (swarm) {
+              try { swarm.leave(b4a.from(parentTopic, 'hex')) } catch (_e) {}
+            }
+          }
+        }
       }
-      for (const key of allKeys) await db.del(key).catch(() => {})
 
-      // Rotate to a fresh identity keypair immediately in memory and DB.
-      // The old keypair may be listed as blocked on the parent (blocked:{oldPK}).
-      // If we keep the old keypair in memory, the next connection attempt after
-      // scanning a new invite will send hello with the old blocked PK — the parent
-      // rejects it, sends unpair again, and the child is stuck in a reset loop.
-      // A fresh keypair is not blocked, so re-pairing succeeds in one scan.
-      //
-      // IMPORTANT: mutate the existing identity object in place rather than
-      // reassigning the variable. The dispatch context (createDispatch) holds a
-      // reference to the same object via ctx.identity. Reassigning would leave
-      // ctx.identity pointing to the old keypair, so identity:setName would
-      // broadcast hello with the stale public key — causing signature mismatches
-      // on the parent and silently dropping the name update.
-      const newKeypair = generateKeypair()
-      identity.publicKey = newKeypair.publicKey
-      identity.secretKey = newKeypair.secretKey
-      await db.put('identity', {
-        publicKey:  b4a.toString(identity.publicKey, 'hex'),
-        secretKey:  b4a.toString(identity.secretKey, 'hex'),
-      })
+      // Close the connection from this parent
+      try { conn.destroy() } catch (_e) {}
+      peers.delete(remoteKeyHex)
 
-      // Destroy the in-memory Hyperswarm so it stops auto-reconnecting on old topics.
-      // joinTopic() recreates the swarm lazily when the child scans a new invite.
-      if (swarm) {
-        try { await swarm.destroy() } catch (_e) {}
-        swarm = null
+      // Check if any parents remain
+      const remainingParents = []
+      for await (const { value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+        if (value) remainingParents.push(value)
       }
-      peerConnected = false
-      parentPeer = null
 
-      send({ type: 'event', event: 'child:reset', data: {} })
+      if (remainingParents.length === 0) {
+        // Last parent removed - full reset
+        const allKeys = []
+        for await (const { key } of db.createReadStream()) {
+          allKeys.push(key)
+        }
+        for (const key of allKeys) await db.del(key).catch(() => {})
+
+        // Rotate identity keypair so re-pairing with a fresh invite works.
+        // Mutate in place so ctx.identity stays in sync (see original comments).
+        const newKeypair = generateKeypair()
+        identity.publicKey = newKeypair.publicKey
+        identity.secretKey = newKeypair.secretKey
+        await db.put('identity', {
+          publicKey:  b4a.toString(identity.publicKey, 'hex'),
+          secretKey:  b4a.toString(identity.secretKey, 'hex'),
+        })
+
+        // Destroy swarm - no parents to reconnect to
+        if (swarm) {
+          try { await swarm.destroy() } catch (_e) {}
+          swarm = null
+        }
+        parentPeers.clear()
+
+        send({ type: 'event', event: 'child:reset', data: {} })
+      } else {
+        // Still have other parent(s) - just notify UI about the removed parent
+        send({ type: 'event', event: 'parent:removed', data: { parentKey: senderIdentityKey } })
+      }
       break
     }
     default:

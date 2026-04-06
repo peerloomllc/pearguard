@@ -249,6 +249,15 @@ export default function Root () {
         return
       }
 
+      if (msg.method === 'clipboard:copy') {
+        const Clipboard = require('@react-native-clipboard/clipboard').default
+        Clipboard.setString(msg.args.text)
+        webViewRef.current?.injectJavaScript(
+          'window.__pearResponse(' + msg.id + ', { ok: true });true;'
+        )
+        return
+      }
+
       if (msg.method === 'share:text') {
         Share.share({ message: msg.args.text })
         webViewRef.current?.injectJavaScript(

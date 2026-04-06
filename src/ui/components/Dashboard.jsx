@@ -5,7 +5,7 @@ import Modal from './primitives/Modal.jsx';
 import Button from './primitives/Button.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
-import AddChildFlow from './AddChildFlow.jsx';
+import InviteCard from './InviteCard.jsx';
 
 export default forwardRef(function Dashboard(_props, ref) {
   const { colors, typography, spacing } = useTheme();
@@ -13,7 +13,7 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [loading, setLoading] = useState(true);
   const [selectedChild, setSelectedChild] = useState(null);
   const [selectedTab, setSelectedTab] = useState(null);
-  const [showAdd, setShowAdd] = useState(false);
+  const [inviteActive, setInviteActive] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
   const childrenRef = useRef(children);
   childrenRef.current = children;
@@ -86,7 +86,7 @@ export default forwardRef(function Dashboard(_props, ref) {
           c.publicKey === data.childPublicKey ? { ...c, bypassAlerts: c.bypassAlerts + 1 } : c
         ));
       }),
-      window.onBareEvent('child:connected', () => { loadChildren(); setShowAdd(false); }),
+      window.onBareEvent('child:connected', () => { loadChildren(); setInviteActive(false); }),
       window.onBareEvent('child:unpaired', (data) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
       }),
@@ -104,7 +104,6 @@ export default forwardRef(function Dashboard(_props, ref) {
 
   useImperativeHandle(ref, () => ({
     navigateToChild,
-    showAddChild: () => setShowAdd(true),
   }));
 
   async function handleLockToggle(child) {
@@ -133,28 +132,49 @@ export default forwardRef(function Dashboard(_props, ref) {
     );
   }
 
-  if (showAdd) {
-    return <AddChildFlow onConnected={() => { setShowAdd(false); loadChildren(); }} onCancel={() => setShowAdd(false)} />;
-  }
-
   return (
     <div style={{ padding: `${spacing.base}px` }}>
-      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.base}px` }}>
-        Dashboard
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.base}px` }}>
+        <h2 style={{ ...typography.heading, color: colors.text.primary, margin: 0 }}>
+          Dashboard
+        </h2>
+        {!inviteActive && !loading && children.length > 0 && (
+          <button
+            onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              ...typography.body, color: colors.primary, fontWeight: '600',
+              display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
+            }}
+          >
+            <Icon name="Plus" size={16} color={colors.primary} />
+            Add Child
+          </button>
+        )}
+      </div>
 
       {loading && <p style={{ ...typography.body, color: colors.text.secondary }}>Loading...</p>}
 
-      {!loading && children.length === 0 && (
+      {!loading && children.length === 0 && !inviteActive && (
         <div style={{ textAlign: 'center', padding: `${spacing.xxxl}px ${spacing.base}px` }}>
-          <Icon name="User" size={48} color={colors.text.muted} />
+          <Icon name="Users" size={48} color={colors.text.muted} />
           <p style={{ ...typography.body, color: colors.text.secondary, marginTop: `${spacing.md}px` }}>
-            No children added yet
+            Welcome to PearGuard
           </p>
-          <p style={{ ...typography.caption, color: colors.text.muted }}>
-            Tap the + button to add your first child
+          <p style={{ ...typography.caption, color: colors.text.muted, marginBottom: `${spacing.xl}px` }}>
+            Add your first child to get started
           </p>
+          <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)}>
+            Add Your First Child
+          </Button>
         </div>
+      )}
+
+      {inviteActive && (
+        <InviteCard
+          onConnected={() => { setInviteActive(false); loadChildren(); }}
+          onDismiss={() => setInviteActive(false)}
+        />
       )}
 
       {children.map((child) => (

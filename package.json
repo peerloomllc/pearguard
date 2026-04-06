@@ -17,6 +17,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@react-native-clipboard/clipboard": "^1.16.3",
     "b4a": "^1.8.0",
     "expo": "^54.0.10",
     "expo-build-properties": "^1.0.9",

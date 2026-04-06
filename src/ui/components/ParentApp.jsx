@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Dashboard from './Dashboard.jsx';
 import Settings from './Settings.jsx';
 import AboutTab from './AboutTab.jsx';
 import TabBar from './TabBar.jsx';
-import FAB from './FAB.jsx';
 import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
 import { useTheme } from '../theme.js';
@@ -100,7 +99,6 @@ export default function ParentApp() {
   const [tab, setTab] = useState('dashboard');
   const [banner, setBanner] = useState(null);
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
-  const dashRef = useRef(null);
 
   useEffect(() => {
     function checkPin() {
@@ -169,12 +167,9 @@ export default function ParentApp() {
       )}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {tab === 'dashboard'
-          ? <Dashboard ref={dashRef} />
+          ? <Dashboard />
           : <ActiveTab />}
       </div>
-      {tab === 'dashboard' && (
-        <FAB icon="Plus" onPress={() => dashRef.current?.showAddChild?.()} />
-      )}
       <TabBar tabs={TABS} activeTab={tab} onTabChange={setTab} />
     </div>
   );

@@ -33,9 +33,8 @@ let _initialized = false  // guard against re-running init on component remount
 // Peers map: hex(publicKey) → { publicKey: Buffer, displayName: string, conn: object }
 const peers = new Map()
 
-// Parent connection state (child mode only)
-let peerConnected = false
-let parentPeer = null  // the connected parent peer entry from `peers` map
+// Parent connections (child mode only) — Map<identityKeyHex, { conn, remoteKeyHex, displayName, topicHex }>
+const parentPeers = new Map()
 
 // ── IPC helpers ───────────────────────────────────────────────────────────────
 
@@ -129,7 +128,10 @@ async function init (dataDir, attempt = 0) {
     joinTopic, sendToPeer, sendToParent, sodium,
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
-    resetParentConnection: () => { peerConnected = false; parentPeer = null } })
+    resetParentConnection: (identityKey) => {
+      if (identityKey) parentPeers.delete(identityKey)
+      else parentPeers.clear()
+    } })
 
   // Rejoin any persisted swarm topics so peers can reconnect after app restart.
   // Run all joins in parallel — each swarm.flush() blocks ~5s waiting for DHT
@@ -285,19 +287,20 @@ async function onPeerConnection (conn, info) {
 
   conn.on('error', e => {
     console.error('[bare] peer error:', e.message)
-    // Proactively reset parent connection state so subsequent sendToParent calls
-    // queue rather than write to the dead socket (close may not fire on all errors)
-    if (mode === 'child' && parentPeer && parentPeer.remoteKeyHex === remoteKeyHex) {
-      peerConnected = false
-      parentPeer = null
+    // Remove from parentPeers if this was a parent connection
+    if (mode === 'child') {
+      for (const [ik, pp] of parentPeers) {
+        if (pp.remoteKeyHex === remoteKeyHex) { parentPeers.delete(ik); break }
+      }
     }
   })
   conn.on('close', () => {
     peers.delete(remoteKeyHex)
-    // Reset parent connection state if this was the parent peer
-    if (mode === 'child' && parentPeer && parentPeer.remoteKeyHex === remoteKeyHex) {
-      peerConnected = false
-      parentPeer = null
+    // Remove from parentPeers if this was a parent connection
+    if (mode === 'child') {
+      for (const [ik, pp] of parentPeers) {
+        if (pp.remoteKeyHex === remoteKeyHex) { parentPeers.delete(ik); break }
+      }
     }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
     // Signal Hyperswarm to expedite reconnection
@@ -744,9 +747,14 @@ async function handleHello (msg, conn, remoteKeyHex) {
       await db.del('pendingParent').catch(() => {})
     }
 
-    // Mark parent as connected and flush any queued messages
-    peerConnected = true
-    parentPeer = peers.get(remoteKeyHex)
+    // Track this parent connection
+    const peerEntry = peers.get(remoteKeyHex)
+    parentPeers.set(peerIdentityKeyHex, {
+      conn: peerEntry.conn,
+      remoteKeyHex,
+      displayName: displayName ?? 'Parent',
+      topicHex: peerEntry.topicHex,
+    })
     await flushPendingMessages(conn)
 
     // Re-send any pending time requests from the child's own Hyperbee.

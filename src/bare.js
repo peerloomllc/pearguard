@@ -327,6 +327,23 @@ async function onPeerConnection (conn, info) {
     peers.get(remoteKeyHex).sentHello = true
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
   }
+
+  // Parent B sends coparent:hello if we have a pending coparent handshake
+  if (mode === 'parent') {
+    const pendingCp = await db.get('pendingCoparent').catch(() => null)
+    if (pendingCp && pendingCp.value) {
+      const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
+      const coparentHello = signMessage({
+        type: 'coparent:hello',
+        payload: {
+          publicKey: myIdentityHex,
+          childPublicKey: pendingCp.value.childPublicKey,
+        },
+      }, identity)
+      peers.get(remoteKeyHex).sentHello = true
+      conn.write(Buffer.from(JSON.stringify(coparentHello) + '\n'))
+    }
+  }
 }
 
 /**
@@ -553,6 +570,70 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
         // Still have other parent(s) - just notify UI about the removed parent
         send({ type: 'event', event: 'parent:removed', data: { parentKey: senderIdentityKey } })
       }
+      break
+    }
+    case 'coparent:hello': {
+      // Parent B has connected on our parent-to-parent topic.
+      // We are Parent A. Generate a new swarm topic for Parent B <-> Child,
+      // then relay it to both the child and Parent B.
+      if (mode !== 'parent') break
+      const parentBIdentityKey = msg.payload?.publicKey
+      if (!parentBIdentityKey) break
+      const childPublicKey = msg.payload?.childPublicKey
+      if (!childPublicKey) break
+
+      // Generate a new topic for Parent B <-> Child
+      const topicBuf = Buffer.allocUnsafe(32)
+      sodium.randombytes_buf(topicBuf)
+      const newTopicHex = b4a.toString(topicBuf, 'hex')
+
+      // Tell the child to join this new topic for Parent B
+      let childNoiseKey = null
+      for (const [noiseKey, p] of peers) {
+        if (p.identityKey === childPublicKey) { childNoiseKey = noiseKey; break }
+      }
+      if (childNoiseKey) {
+        sendToPeer(childNoiseKey, {
+          type: 'coparent:relay',
+          payload: { swarmTopic: newTopicHex, parentPublicKey: parentBIdentityKey },
+        })
+      }
+
+      // Tell Parent B which topic to join for the child connection
+      sendToPeer(remoteKeyHex, {
+        type: 'coparent:childTopic',
+        payload: { swarmTopic: newTopicHex, childPublicKey },
+      })
+
+      console.log('[bare] relayed co-parent topic to child and parent B:', newTopicHex.slice(0, 12))
+      break
+    }
+    case 'coparent:relay': {
+      // Parent A is telling us (child) to join a new topic for Parent B.
+      if (mode !== 'child') break
+      const { swarmTopic: newTopic, parentPublicKey: parentBKey } = msg.payload ?? {}
+      if (!newTopic || !parentBKey) break
+
+      // Store Parent B as pending and join the new topic
+      await db.put('pendingParent:' + parentBKey, { publicKey: parentBKey, ts: Date.now() })
+      await joinTopic(newTopic)
+      console.log('[bare] joining co-parent topic for parent B:', parentBKey.slice(0, 12))
+      break
+    }
+    case 'coparent:childTopic': {
+      // Parent A is telling us (Parent B) which topic to join for the child.
+      if (mode !== 'parent') break
+      const { swarmTopic: childTopic, childPublicKey: cpChildKey } = msg.payload ?? {}
+      if (!childTopic || !cpChildKey) break
+
+      // Join the child's topic - normal hello handshake will follow
+      await joinTopic(childTopic)
+
+      // Clean up the pending coparent state
+      await db.del('pendingCoparent').catch(() => {})
+
+      console.log('[bare] joining child topic as co-parent:', childTopic.slice(0, 12))
+      send({ type: 'event', event: 'coparent:joined', data: { childPublicKey: cpChildKey, swarmTopic: childTopic } })
       break
     }
     default:

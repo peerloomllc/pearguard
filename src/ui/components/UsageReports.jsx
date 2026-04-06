@@ -2,10 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 
+// Return YYYY-MM-DD in local time (not UTC) so date queries
+// match the user's calendar day regardless of timezone.
+function localDateStr(d) {
+  if (!(d instanceof Date)) d = new Date(d || Date.now());
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 const VIEWS = [
   { key: 'daily', label: 'Daily' },
   { key: 'trends', label: 'Trends' },
-  { key: 'apps', label: 'Apps' },
+  { key: 'apps', label: 'App Activity' },
   { key: 'categories', label: 'Categories' },
 ];
 
@@ -41,10 +48,10 @@ function formatSeconds(s) {
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = localDateStr(today);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  const yesterdayStr = localDateStr(yesterday);
   if (dateStr === todayStr) return 'Today';
   if (dateStr === yesterdayStr) return 'Yesterday';
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -53,7 +60,7 @@ function formatDate(dateStr) {
 function dateOffset(dateStr, offset) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 // --- Hourly Bar Chart (SVG) ---
@@ -75,17 +82,18 @@ function HourlyChart({ sessions, colors }) {
   }
   const maxSeconds = Math.max(...hours, 1);
 
+  const pad = 12;
   const chartW = 300;
   const chartH = 120;
   const barW = (chartW - 23 * 2) / 24;
   const labels = [0, 6, 12, 18, 23];
 
   return (
-    <svg viewBox={`0 0 ${chartW} ${chartH + 20}`} style={{ width: '100%', maxWidth: '400px', display: 'block', margin: '0 auto' }}>
+    <svg viewBox={`0 0 ${chartW + pad * 2} ${chartH + 20}`} style={{ width: '100%', maxWidth: '400px', display: 'block', margin: '0 auto' }}>
       {hours.map((sec, i) => {
         const pct = sec / maxSeconds;
         const barH = pct * chartH;
-        const x = i * (barW + 2);
+        const x = pad + i * (barW + 2);
         return (
           <rect
             key={i}
@@ -104,7 +112,7 @@ function HourlyChart({ sessions, colors }) {
       {labels.map((h) => (
         <text
           key={h}
-          x={h * (barW + 2) + barW / 2}
+          x={pad + h * (barW + 2) + barW / 2}
           y={chartH + 14}
           textAnchor="middle"
           fill={colors.text.muted}
@@ -146,12 +154,12 @@ function TopApps({ sessions, colors, spacing }) {
 // --- Daily Summary View ---
 
 function DailySummary({ childPublicKey, colors, spacing, radius }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localDateStr());
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fadeDir, setFadeDir] = useState(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
   const minDate = dateOffset(today, -29);
 
   const fetchSessions = useCallback((d) => {
@@ -259,8 +267,10 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
   if (loading) return <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>Loading...</div>;
 
   const maxSeconds = Math.max(...summaries.map((s) => s.totalSeconds), 1);
-  const avgSeconds = summaries.length > 0 ? summaries.reduce((sum, s) => sum + s.totalSeconds, 0) / summaries.length : 0;
-  const prevAvg = prevSummaries.length > 0 ? prevSummaries.reduce((sum, s) => sum + s.totalSeconds, 0) / prevSummaries.length : 0;
+  const activeDays = summaries.filter((s) => s.totalSeconds > 0);
+  const avgSeconds = activeDays.length > 0 ? activeDays.reduce((sum, s) => sum + s.totalSeconds, 0) / activeDays.length : 0;
+  const prevActive = prevSummaries.filter((s) => s.totalSeconds > 0);
+  const prevAvg = prevActive.length > 0 ? prevActive.reduce((sum, s) => sum + s.totalSeconds, 0) / prevActive.length : 0;
   const changePct = prevAvg > 0 ? Math.round(((avgSeconds - prevAvg) / prevAvg) * 100) : null;
 
   const chartW = 300;
@@ -336,8 +346,8 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
             );
           })}
 
-          {/* Date labels (only for 7-day view) */}
-          {period <= 7 && summaries.map((s, i) => (
+          {/* Date labels */}
+          {period <= 7 ? summaries.map((s, i) => (
             <text
               key={i}
               x={i * (barW + gap) + barW / 2}
@@ -348,6 +358,19 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
             >
               {new Date(s.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 2)}
             </text>
+          )) : [0, Math.floor(summaries.length / 4), Math.floor(summaries.length / 2), Math.floor(3 * summaries.length / 4), summaries.length - 1]
+            .filter((idx, pos, arr) => idx >= 0 && idx < summaries.length && arr.indexOf(idx) === pos)
+            .map((idx) => (
+            <text
+              key={idx}
+              x={idx * (barW + gap) + barW / 2}
+              y={chartH + 14}
+              textAnchor="middle"
+              fill={colors.text.muted}
+              fontSize="8"
+            >
+              {new Date(summaries[idx].date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </text>
           ))}
         </svg>
       )}
@@ -355,6 +378,7 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
       {summaries.length === 0 && (
         <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>No trend data available yet.</div>
       )}
+
     </div>
   );
 }
@@ -381,13 +405,13 @@ function Sparkline({ data, colors, width = 120, height = 30 }) {
 // --- Per-App Drill-Down View ---
 
 function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localDateStr());
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [sparkData, setSparkData] = useState({});
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
   const minDate = dateOffset(today, -29);
 
   useEffect(() => {
@@ -610,46 +634,46 @@ function DonutChart({ categories, colors, totalSeconds }) {
 }
 
 function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [period, setPeriod] = useState(1);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const minDate = dateOffset(today, -29);
-
   useEffect(() => {
     setLoading(true);
-    window.callBare('usage:getCategorySummary', { childPublicKey, date })
+    const params = period === 1
+      ? { childPublicKey, date: localDateStr() }
+      : { childPublicKey, days: period };
+    window.callBare('usage:getCategorySummary', params)
       .then((data) => { setCategories(data || []); setLoading(false); })
       .catch(() => { setCategories([]); setLoading(false); });
-  }, [childPublicKey, date]);
+  }, [childPublicKey, period]);
 
   const totalSeconds = categories.reduce((sum, c) => sum + c.totalSeconds, 0);
-  const canGoBack = dateOffset(date, -1) >= minDate;
-  const canGoForward = date < today;
 
   return (
     <div>
-      {/* Day selector */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.base}px` }}>
-        <button
-          onClick={() => { if (canGoBack) setDate(dateOffset(date, -1)); }}
-          disabled={!canGoBack}
-          style={{ background: 'none', border: 'none', cursor: canGoBack ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoBack ? 1 : 0.3 }}
-        >
-          <Icon name="CaretLeft" size={20} color={colors.text.primary} />
-        </button>
-        <span style={{ fontSize: '15px', fontWeight: '600', color: colors.text.primary, minWidth: '140px', textAlign: 'center' }}>
-          {formatDate(date)}
-        </span>
-        <button
-          onClick={() => { if (canGoForward) setDate(dateOffset(date, 1)); }}
-          disabled={!canGoForward}
-          style={{ background: 'none', border: 'none', cursor: canGoForward ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoForward ? 1 : 0.3 }}
-        >
-          <Icon name="CaretRight" size={20} color={colors.text.primary} />
-        </button>
+      {/* Period toggle */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: `${spacing.xs}px`, marginBottom: `${spacing.base}px` }}>
+        {[{ value: 1, label: 'Today' }, { value: 7, label: '7 days' }, { value: 30, label: '30 days' }].map((p) => (
+          <button
+            key={p.value}
+            onClick={() => setPeriod(p.value)}
+            style={{
+              padding: `${spacing.xs}px ${spacing.md}px`,
+              border: 'none',
+              borderRadius: `${radius.md}px`,
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: period === p.value ? '600' : '400',
+              backgroundColor: period === p.value ? colors.primary : colors.surface.elevated,
+              color: period === p.value ? '#fff' : colors.text.muted,
+              transition: 'background-color 0.2s ease, color 0.2s ease',
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
       {loading ? (

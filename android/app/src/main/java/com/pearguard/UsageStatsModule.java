@@ -259,9 +259,12 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 while (events.hasNextEvent()) {
                     events.getNextEvent(event);
                     String pkg = event.getPackageName();
-                    if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    int type = event.getEventType();
+                    // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
+                    // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
+                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == 7 /* ACTIVITY_RESUMED */) {
                         sessionStarts.put(pkg, event.getTimeStamp());
-                    } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == 8 /* ACTIVITY_PAUSED */) {
                         Long start = sessionStarts.remove(pkg);
                         if (start != null) {
                             long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
@@ -305,9 +308,10 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Returns session-level usage data since the last flush.
+     * Returns session-level usage data for today (from midnight).
      * Each session is { packageName, displayName, startedAt, endedAt, durationSeconds }.
      * Open sessions (still in foreground) have endedAt = null.
+     * Queries from midnight each time so totals match getDailyUsageAllEvents().
      */
     @ReactMethod
     public void getSessionsSinceLastFlush(Promise promise) {
@@ -315,7 +319,6 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             Context ctx = getReactApplicationContext();
             UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
             PackageManager pm = ctx.getPackageManager();
-            SharedPreferences prefs = ctx.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
 
             long now = System.currentTimeMillis();
             Calendar cal = Calendar.getInstance();
@@ -324,7 +327,6 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             cal.set(Calendar.SECOND, 0);
             cal.set(Calendar.MILLISECOND, 0);
             long startOfToday = cal.getTimeInMillis();
-            long lastFlush = prefs.getLong("pearguard_last_session_flush", startOfToday);
 
             // Build launcher-visible set to filter out system apps
             java.util.Set<String> launcherPackages = new java.util.HashSet<>();
@@ -337,7 +339,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            UsageEvents events = usm.queryEvents(lastFlush, now);
+            // Query from midnight so sessions cover the full day and match todaySeconds
+            UsageEvents events = usm.queryEvents(startOfToday, now);
             if (events == null) {
                 promise.resolve(Arguments.createArray());
                 return;
@@ -352,9 +355,12 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 if (pkg.equals(ctx.getPackageName())) continue;
                 if (!launcherPackages.contains(pkg)) continue;
 
-                if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                int type = event.getEventType();
+                // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
+                // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
+                if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == 7 /* ACTIVITY_RESUMED */) {
                     fgStarts.put(pkg, event.getTimeStamp());
-                } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == 8 /* ACTIVITY_PAUSED */) {
                     Long start = fgStarts.remove(pkg);
                     if (start != null) {
                         long durationSec = (event.getTimeStamp() - start) / 1000;
@@ -386,7 +392,6 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            prefs.edit().putLong("pearguard_last_session_flush", now).apply();
             promise.resolve(sessions);
         } catch (Exception e) {
             promise.reject("SESSION_ERROR", e.getMessage());

@@ -4,6 +4,11 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-06
+
+### [x] Move "See Reports" button to top of Usage tab (#100) - completed 2026-04-06
+Moved button inline with "Last synced" header. Sorted apps list descending by today's usage. Renamed "See Details" to "See Reports".
+
 ## Added 2026-04-05
 
 ### [x] Interactable Screen Time-style usage reports (#95) - completed 2026-04-05

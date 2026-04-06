@@ -98,8 +98,13 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
 
   return (
     <div style={{ padding: `${spacing.base}px` }}>
-      <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.base}px` }}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
-      {report.apps.map((app, i) => (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.base}px` }}>
+        <p style={{ fontSize: '12px', color: colors.text.muted, margin: 0 }}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
+        {onShowReports && (
+          <Button variant="secondary" onClick={onShowReports} style={{ fontSize: '12px', padding: '4px 12px' }}>See Reports</Button>
+        )}
+      </div>
+      {[...report.apps].sort((a, b) => b.todaySeconds - a.todaySeconds).map((app, i) => (
         <UsageBar
           key={app.packageName}
           appName={app.displayName || app.packageName}
@@ -109,11 +114,6 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
           index={i}
         />
       ))}
-      {onShowReports && (
-        <div style={{ marginTop: `${spacing.base}px`, textAlign: 'center' }}>
-          <Button variant="secondary" onClick={onShowReports}>See Details</Button>
-        </div>
-      )}
     </div>
   );
 }

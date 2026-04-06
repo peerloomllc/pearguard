@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../theme.js';
+import Button from './primitives/Button.jsx';
 
 function timeAgo(timestamp) {
   if (!timestamp) return 'Never';
@@ -19,11 +20,15 @@ function formatSeconds(s) {
   return `${m}m`;
 }
 
-function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
+function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index }) {
   const { colors, spacing, radius } = useTheme();
+  const [animated, setAnimated] = useState(false);
 
-  // When a limit is set, scale against the limit. Otherwise scale against
-  // 24h (daily) / 168h (weekly) - the natural maximum.
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimated(true), 80 * index);
+    return () => clearTimeout(timer);
+  }, [index]);
+
   const todayScale = dailyLimitSeconds || 86400;
   const weekScale = dailyLimitSeconds ? dailyLimitSeconds * 7 : 604800;
   const todayPct = Math.min(100, (todaySeconds / todayScale) * 100);
@@ -40,22 +45,31 @@ function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds }) {
             style={{
               height: '100%',
               borderRadius: `${radius.sm}px`,
-              transition: 'width 0.3s ease',
-              width: `${todayPct}%`,
+              transition: 'width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              width: animated ? `${todayPct}%` : '0%',
               backgroundColor: overLimit ? colors.error : colors.primary,
             }}
           />
         </div>
         <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>This week: {formatSeconds(weekSeconds)}</div>
         <div style={{ height: '8px', backgroundColor: colors.surface.elevated, borderRadius: `${radius.sm}px`, overflow: 'hidden' }}>
-          <div style={{ height: '100%', borderRadius: `${radius.sm}px`, transition: 'width 0.3s ease', width: `${weekPct}%`, backgroundColor: colors.success }} />
+          <div
+            style={{
+              height: '100%',
+              borderRadius: `${radius.sm}px`,
+              transition: 'width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              transitionDelay: `${0.1 + 0.08 * index}s`,
+              width: animated ? `${weekPct}%` : '0%',
+              backgroundColor: colors.success,
+            }}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-export default function UsageTab({ childPublicKey }) {
+export default function UsageTab({ childPublicKey, onShowReports }) {
   const { colors, spacing } = useTheme();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -68,10 +82,6 @@ export default function UsageTab({ childPublicKey }) {
       })
       .catch(() => setLoading(false));
 
-    // Also update when a fresh report arrives over P2P while the tab is open.
-    // Only overwrite if the incoming report has actual app data - empty reports
-    // (e.g. from a flush that ran before permissions were granted) should not
-    // wipe out a previously displayed valid report.
     const unsub = window.onBareEvent('usage:report', (data) => {
       if (data && data.childPublicKey === childPublicKey && data.apps && data.apps.length > 0) {
         setReport(data);
@@ -89,15 +99,21 @@ export default function UsageTab({ childPublicKey }) {
   return (
     <div style={{ padding: `${spacing.base}px` }}>
       <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.base}px` }}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
-      {report.apps.map((app) => (
+      {report.apps.map((app, i) => (
         <UsageBar
           key={app.packageName}
           appName={app.displayName || app.packageName}
           todaySeconds={app.todaySeconds}
           weekSeconds={app.weekSeconds}
           dailyLimitSeconds={app.dailyLimitSeconds}
+          index={i}
         />
       ))}
+      {onShowReports && (
+        <div style={{ marginTop: `${spacing.base}px`, textAlign: 'center' }}>
+          <Button variant="secondary" onClick={onShowReports}>See Details</Button>
+        </div>
+      )}
     </div>
   );
 }

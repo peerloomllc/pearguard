@@ -18100,6 +18100,57 @@
 
   // src/ui/components/ParentApp.jsx
   var import_jsx_runtime22 = __toESM(require_jsx_runtime());
+  var TWO_WEEKS = 14 * 24 * 60 * 60 * 1e3;
+  function DonationReminderModal({ onDonate, onDismiss }) {
+    const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
+    return /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.75)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: `${spacing2.xl}px`,
+      zIndex: 490
+    }, children: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: {
+      backgroundColor: colors.surface.card,
+      border: `1px solid ${colors.border}`,
+      borderRadius: "20px",
+      padding: `${spacing2.xxl}px`,
+      width: "100%",
+      maxWidth: "360px",
+      textAlign: "center"
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { fontSize: "32px", marginBottom: `${spacing2.md}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Icon, { name: "Lightning", size: 32, color: colors.primary }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.sm}px`, marginTop: 0 }, children: "Enjoying PearGuard?" }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { style: { ...typography2.body, color: colors.text.secondary, marginBottom: `${spacing2.xl}px`, marginTop: 0, lineHeight: "1.6" }, children: "PearGuard is free and open source with no ads or subscriptions. If you've received value from it, consider returning value to support development." }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(Button, { onClick: onDonate, style: { width: "100%" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Icon, { name: "Lightning", size: 16, color: "#FFFFFF" }),
+          " Donate"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { variant: "secondary", onClick: onDismiss, style: { width: "100%" }, children: "Maybe later" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
+          "button",
+          {
+            onClick: onDismiss,
+            style: {
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: colors.text.muted,
+              fontSize: "13px",
+              padding: `${spacing2.sm}px`
+            },
+            children: "Already donated \u2713"
+          }
+        )
+      ] })
+    ] }) });
+  }
   var TABS2 = [
     { key: "dashboard", label: "Dashboard", icon: "House", Component: Dashboard_default },
     { key: "settings", label: "Settings", icon: "GearSix", Component: Settings },
@@ -18194,6 +18245,7 @@
     const [tab, setTab] = (0, import_react15.useState)("dashboard");
     const [banner, setBanner] = (0, import_react15.useState)(null);
     const [pinCheckState, setPinCheckState] = (0, import_react15.useState)("loading");
+    const [showDonation, setShowDonation] = (0, import_react15.useState)(false);
     (0, import_react15.useEffect)(() => {
       function checkPin() {
         window.callBare("pin:isSet", {}).then(({ isSet }) => setPinCheckState(isSet ? "done" : "needed")).catch(() => setPinCheckState("needed"));
@@ -18201,6 +18253,14 @@
       checkPin();
       return window.onBareEvent("ready", checkPin);
     }, []);
+    (0, import_react15.useEffect)(() => {
+      if (pinCheckState !== "done") return;
+      window.callBare("donation:check").then(({ createdAt, dismissed }) => {
+        if (dismissed) return;
+        if (!createdAt || Date.now() - createdAt >= TWO_WEEKS) setShowDonation(true);
+      }).catch(() => {
+      });
+    }, [pinCheckState]);
     (0, import_react15.useEffect)(() => {
       if (window.__pendingAlertsNav) setTab("dashboard");
       const unsub1 = window.onBareEvent("navigate:child:alerts", () => setTab("dashboard"));
@@ -18245,7 +18305,23 @@
         fontWeight: "500"
       }, children: banner }),
       /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: tab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Dashboard_default, {}) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(ActiveTab, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(TabBar, { tabs: TABS2, activeTab: tab, onTabChange: setTab })
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(TabBar, { tabs: TABS2, activeTab: tab, onTabChange: setTab }),
+      showDonation && /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
+        DonationReminderModal,
+        {
+          onDonate: () => {
+            window.callBare("donation:dismiss").catch(() => {
+            });
+            setShowDonation(false);
+            setTab("about");
+          },
+          onDismiss: () => {
+            window.callBare("donation:dismiss").catch(() => {
+            });
+            setShowDonation(false);
+          }
+        }
+      )
     ] });
   }
 

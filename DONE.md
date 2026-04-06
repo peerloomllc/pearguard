@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-06
 
+### [x] Add 2-week donation reminder (#104) - completed 2026-04-06
+Added donation reminder modal matching PearCal's pattern. Shows after 2 weeks based on identity createdAt timestamp; dismissed permanently via donationReminderDismissed flag in Hyperbee. Existing installs without createdAt treated as eligible.
+
 ### [x] Remove FAB from Child Home tab (#107) - completed 2026-04-06
 Removed the floating action button from ChildApp Home tab and deleted the unused FAB.jsx component.
 

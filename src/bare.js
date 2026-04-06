@@ -116,6 +116,7 @@ async function init (dataDir, attempt = 0) {
     await db.put('identity', {
       publicKey: b4a.toString(identity.publicKey, 'hex'),
       secretKey: b4a.toString(identity.secretKey, 'hex'),
+      createdAt: Date.now(),
     })
   }
 

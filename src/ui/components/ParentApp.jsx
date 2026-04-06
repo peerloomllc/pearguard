@@ -5,7 +5,60 @@ import AboutTab from './AboutTab.jsx';
 import TabBar from './TabBar.jsx';
 import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
+import Icon from '../icons.js';
 import { useTheme } from '../theme.js';
+
+const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
+
+function DonationReminderModal({ onDonate, onDismiss }) {
+  const { colors, typography, spacing, radius } = useTheme();
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: `${spacing.xl}px`, zIndex: 490,
+    }}>
+      <div style={{
+        backgroundColor: colors.surface.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: '20px',
+        padding: `${spacing.xxl}px`,
+        width: '100%', maxWidth: '360px',
+        textAlign: 'center',
+      }}>
+        <div style={{ fontSize: '32px', marginBottom: `${spacing.md}px` }}>
+          <Icon name="Lightning" size={32} color={colors.primary} />
+        </div>
+        <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.sm}px`, marginTop: 0 }}>
+          Enjoying PearGuard?
+        </h2>
+        <p style={{ ...typography.body, color: colors.text.secondary, marginBottom: `${spacing.xl}px`, marginTop: 0, lineHeight: '1.6' }}>
+          PearGuard is free and open source with no ads or subscriptions.
+          If you've received value from it, consider returning value to support development.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+          <Button onClick={onDonate} style={{ width: '100%' }}>
+            <Icon name="Lightning" size={16} color="#FFFFFF" /> Donate
+          </Button>
+          <Button variant="secondary" onClick={onDismiss} style={{ width: '100%' }}>
+            Maybe later
+          </Button>
+          <button
+            onClick={onDismiss}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: colors.text.muted, fontSize: '13px', padding: `${spacing.sm}px`,
+            }}
+          >
+            Already donated &#10003;
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', icon: 'House', Component: Dashboard },
@@ -99,6 +152,7 @@ export default function ParentApp() {
   const [tab, setTab] = useState('dashboard');
   const [banner, setBanner] = useState(null);
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
+  const [showDonation, setShowDonation] = useState(false);
 
   useEffect(() => {
     function checkPin() {
@@ -111,6 +165,16 @@ export default function ParentApp() {
     // set during the setup flow is picked up without requiring a full remount.
     return window.onBareEvent('ready', checkPin);
   }, []);
+
+  useEffect(() => {
+    if (pinCheckState !== 'done') return;
+    window.callBare('donation:check')
+      .then(({ createdAt, dismissed }) => {
+        if (dismissed) return;
+        if (!createdAt || Date.now() - createdAt >= TWO_WEEKS) setShowDonation(true);
+      })
+      .catch(() => {});
+  }, [pinCheckState]);
 
   // Listen for notification-tap navigation at this level (always mounted).
   // Ensure Dashboard tab is visible when notification deep links fire.
@@ -171,6 +235,19 @@ export default function ParentApp() {
           : <ActiveTab />}
       </div>
       <TabBar tabs={TABS} activeTab={tab} onTabChange={setTab} />
+      {showDonation && (
+        <DonationReminderModal
+          onDonate={() => {
+            window.callBare('donation:dismiss').catch(() => {});
+            setShowDonation(false);
+            setTab('about');
+          }}
+          onDismiss={() => {
+            window.callBare('donation:dismiss').catch(() => {});
+            setShowDonation(false);
+          }}
+        />
+      )}
     </div>
   );
 }

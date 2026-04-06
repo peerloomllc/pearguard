@@ -1199,6 +1199,19 @@ function createDispatch (ctx) {
         return { theme: entry ? entry.value.toString() : 'dark' }
       }
 
+      case 'donation:check': {
+        const identityRaw = await ctx.db.get('identity')
+        const createdAt = identityRaw && identityRaw.value && identityRaw.value.createdAt
+        const dismissedRaw = await ctx.db.get('donationReminderDismissed')
+        const dismissed = !!(dismissedRaw && dismissedRaw.value)
+        return { createdAt: createdAt || null, dismissed }
+      }
+
+      case 'donation:dismiss': {
+        await ctx.db.put('donationReminderDismissed', true)
+        return { ok: true }
+      }
+
       case 'alerts:list': {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid alerts:list args')

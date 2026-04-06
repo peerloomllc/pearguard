@@ -42,12 +42,10 @@ export default function InviteCard({ onConnected, onDismiss }) {
 
   function handleCopy() {
     if (!invite?.inviteLink) return;
-    navigator.clipboard.writeText(invite.inviteLink).then(() => {
+    window.callBare('clipboard:copy', { text: invite.inviteLink }).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      window.callBare('share:text', { text: invite.inviteLink });
-    });
+    }).catch(() => {});
   }
 
   const cardStyle = {

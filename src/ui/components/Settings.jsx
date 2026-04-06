@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
+import Button from './primitives/Button.jsx';
 import Toggle from './primitives/Toggle.jsx';
 import Avatar from './Avatar.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
@@ -16,6 +17,41 @@ function formatMinutes(min) {
   const m = min % 60;
   if (m === 0) return h + (h === 1 ? ' hour' : ' hours');
   return h + 'h ' + m + 'm';
+}
+
+function Collapsible({ title, open, onToggle, maxHeight, children, colors, spacing, radius }) {
+  return (
+    <div style={{
+      backgroundColor: colors.surface.elevated,
+      borderRadius: `${radius.lg}px`,
+      marginBottom: `${spacing.md}px`,
+      overflow: 'hidden',
+    }}>
+      <div
+        onClick={() => { window.callBare('haptic:tap'); onToggle(); }}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 16px', cursor: 'pointer',
+        }}
+      >
+        <div style={{ fontSize: '12px', fontWeight: '300', color: colors.text.muted, letterSpacing: '0.06em' }}>
+          {title}
+        </div>
+        <span style={{
+          fontSize: '16px', color: colors.text.muted, transition: 'transform 0.3s',
+          transform: open ? 'rotate(90deg)' : 'rotate(0deg)', display: 'inline-block',
+        }}>&rsaquo;</span>
+      </div>
+      <div style={{
+        maxHeight: open ? maxHeight : '0px', overflow: 'hidden',
+        transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+      }}>
+        <div style={{ padding: '0 16px 14px' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ChipSelect({ options, selected, onChange, formatter, colors, spacing, radius }) {
@@ -50,6 +86,12 @@ function ChipSelect({ options, selected, onChange, formatter, colors, spacing, r
 
 export default function Settings() {
   const { colors, typography, spacing, radius, theme: currentTheme, setTheme } = useTheme();
+
+  // Collapsible state
+  const [pinOpen, setPinOpen] = useState(false);
+  const [timeOptsOpen, setTimeOptsOpen] = useState(false);
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
 
   // Profile state
   const [name, setName] = useState('');
@@ -168,24 +210,17 @@ export default function Settings() {
     marginTop: `${spacing.xs}px`,
     backgroundColor: colors.surface.input,
     color: colors.text.primary,
+    width: '100%',
+    boxSizing: 'border-box',
   };
 
-  const submitBtnStyle = {
-    padding: `${spacing.md}px`,
-    border: 'none',
-    borderRadius: `${radius.md}px`,
-    backgroundColor: colors.primary,
-    color: '#FFFFFF',
-    cursor: 'pointer',
-    fontSize: '15px',
-    fontWeight: '600',
-  };
+  const collapsibleProps = { colors, spacing, radius };
 
   return (
-    <div style={{ padding: `${spacing.base}px` }}>
+    <div style={{ padding: `${spacing.base}px`, overflowY: 'auto', flex: 1 }}>
       <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.lg}px` }}>Settings</h2>
 
-      {/* Profile section */}
+      {/* Profile */}
       <section style={{ marginBottom: `${spacing.xxl}px` }}>
         <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Profile</h3>
 
@@ -229,20 +264,19 @@ export default function Settings() {
           </label>
           {nameStatus === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Name saved.</p>}
           {nameStatus === 'error' && <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>Failed to save name.</p>}
-          <button
+          <Button
             onClick={() => { window.callBare('haptic:tap'); handleNameSave(); }}
             disabled={savingName || nameUnchanged}
-            style={{ ...submitBtnStyle, ...(savingName || nameUnchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: 'not-allowed' } : {}) }}
+            style={{ width: '100%' }}
           >
             {savingName ? 'Saving...' : 'Save Name'}
-          </button>
+          </Button>
         </div>
       </section>
 
-      {/* Override PIN section */}
-      <section style={{ marginBottom: `${spacing.xxl}px` }}>
-        <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Override PIN</h3>
-        <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px` }}>
+      {/* Override PIN */}
+      <Collapsible title="OVERRIDE PIN" open={pinOpen} onToggle={() => setPinOpen(o => !o)} maxHeight="350px" {...collapsibleProps}>
+        <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
           Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device.
         </p>
         <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.md}px` }} aria-label="Change PIN form">
@@ -283,17 +317,16 @@ export default function Settings() {
           {pinStatus === 'success' && (
             <p style={{ color: colors.success, fontSize: '13px', margin: 0 }} role="status">PIN updated successfully.</p>
           )}
-          <button type="submit" style={submitBtnStyle} aria-label="Save PIN">
+          <Button type="submit" style={{ width: '100%' }} aria-label="Save PIN">
             Save PIN
-          </button>
+          </Button>
         </form>
-      </section>
+      </Collapsible>
 
       {/* Time Request Options */}
       {settingsLoaded && (
-        <section style={{ marginBottom: `${spacing.xxl}px` }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Time Request Options</h3>
-          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px` }}>
+        <Collapsible title="TIME REQUEST OPTIONS" open={timeOptsOpen} onToggle={() => setTimeOptsOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
             Choose which duration options the child sees when requesting more time from the block overlay.
           </p>
           <ChipSelect
@@ -305,14 +338,13 @@ export default function Settings() {
             spacing={spacing}
             radius={radius}
           />
-        </section>
+        </Collapsible>
       )}
 
       {/* Warning Thresholds */}
       {settingsLoaded && (
-        <section style={{ marginBottom: `${spacing.xxl}px` }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Warning Notifications</h3>
-          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px` }}>
+        <Collapsible title="WARNING NOTIFICATIONS" open={warningOpen} onToggle={() => setWarningOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
             The child will be notified this many minutes before a schedule block starts or a daily time limit runs out.
           </p>
           <ChipSelect
@@ -324,13 +356,12 @@ export default function Settings() {
             spacing={spacing}
             radius={radius}
           />
-        </section>
+        </Collapsible>
       )}
 
-      {/* Theme section */}
+      {/* Appearance */}
       {settingsLoaded && (
-        <section style={{ marginBottom: `${spacing.xxl}px` }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Appearance</h3>
+        <Collapsible title="APPEARANCE" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
               <Icon name={currentTheme === 'dark' ? 'Moon' : 'SunDim'} size={20} color={colors.text.primary} />
@@ -338,25 +369,24 @@ export default function Settings() {
             </div>
             <Toggle checked={currentTheme === 'dark'} onChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
           </div>
-        </section>
+        </Collapsible>
       )}
 
       {/* Save settings button */}
       {settingsLoaded && (
-        <section style={{ marginBottom: `${spacing.xxl}px` }}>
+        <div style={{ textAlign: 'center', marginTop: `${spacing.md}px`, marginBottom: `${spacing.xxl}px` }}>
           {settingsStatus && settingsStatus !== 'success' && (
-            <p style={{ color: colors.error, fontSize: '13px', margin: 0, marginBottom: `${spacing.sm}px` }}>{settingsStatus}</p>
+            <p style={{ color: colors.error, fontSize: '13px', marginBottom: `${spacing.sm}px` }}>{settingsStatus}</p>
           )}
           {settingsStatus === 'success' && (
-            <p style={{ color: colors.success, fontSize: '13px', margin: 0, marginBottom: `${spacing.sm}px` }}>Settings saved and synced to child.</p>
+            <p style={{ color: colors.success, fontSize: '13px', marginBottom: `${spacing.sm}px` }}>Settings saved and synced to child.</p>
           )}
-          <button
+          <Button
             onClick={() => { window.callBare('haptic:tap'); handleSettingsSave(); }}
-            style={submitBtnStyle}
           >
             Save Settings
-          </button>
-        </section>
+          </Button>
+        </div>
       )}
     </div>
   );

@@ -125,7 +125,7 @@ async function init (dataDir, attempt = 0) {
 
   // Build dispatch with live context
   dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
-    joinTopic, sendToPeer, sendToParent, sodium,
+    joinTopic, sendToPeer, sendToAllParents, sodium,
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
     resetParentConnection: (identityKey) => {
@@ -548,27 +548,31 @@ function sendToPeer (remoteKeyHex, msg) {
 }
 
 /**
- * Send a message to the connected parent.
- * - If connected: send immediately. No queuing — avoids duplicate delivery when the
- *   connection is active (queue would be flushed again on next handleHello).
- * - If not connected or send fails: queue in Hyperbee for reconnect delivery.
+ * Send a message to all connected parents.
+ * - If any parent is connected: send immediately to each.
+ * - If no parents connected (or all sends fail): queue for reconnect delivery.
  * Child mode only.
  * @param {{ type: string, payload: object }} message
  */
-async function sendToParent (message) {
-  if (peerConnected && parentPeer && parentPeer.conn) {
+async function sendToAllParents (message) {
+  if (parentPeers.size === 0) {
+    await queueMessage(message, db)
+    return
+  }
+  const signed = signMessage(message, identity)
+  const payload = Buffer.from(JSON.stringify(signed) + '\n')
+  let sentToAny = false
+  for (const [ik, pp] of parentPeers) {
     try {
-      const signed = signMessage(message, identity)
-      parentPeer.conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
-      return  // Sent immediately; queuing would cause a duplicate on next reconnect
+      pp.conn.write(payload)
+      sentToAny = true
     } catch (e) {
-      // Write failed — connection was dead; fall through to queue
-      peerConnected = false
-      parentPeer = null
+      parentPeers.delete(ik)
     }
   }
-  // Not connected (or send failed): queue for delivery on next handleHello
-  await queueMessage(message, db)
+  if (!sentToAny) {
+    await queueMessage(message, db)
+  }
 }
 
 /**

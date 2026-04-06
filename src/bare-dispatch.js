@@ -442,10 +442,10 @@ function createDispatch (ctx) {
         // Notify WebView that request was submitted
         ctx.send({ type: 'event', event: 'request:submitted', data: request })
 
-        if (ctx.sendToParent) {
+        if (ctx.sendToAllParents) {
           const p2pPayload = { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt, requestType: resolvedType }
           if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') p2pPayload.extraSeconds = extraSeconds
-          await ctx.sendToParent({ type: 'time:request', payload: p2pPayload })
+          await ctx.sendToAllParents({ type: 'time:request', payload: p2pPayload })
         }
 
         return { requestId, status: 'pending' }
@@ -631,8 +631,8 @@ function createDispatch (ctx) {
           // Notify WebView
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
 
-          if (ctx.sendToParent) {
-            await ctx.sendToParent({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, detectedAt: Date.now() } })
+          if (ctx.sendToAllParents) {
+            await ctx.sendToAllParents({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, detectedAt: Date.now() } })
           }
         }
 
@@ -662,8 +662,8 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName } })
 
         // Relay to parent so they can prune their Apps list
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'app:uninstalled', payload: { packageName, appName } })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'app:uninstalled', payload: { packageName, appName } })
         }
 
         return { ok: true }
@@ -701,8 +701,8 @@ function createDispatch (ctx) {
           await ctx.db.put('policy', policy)
           ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
-          if (ctx.sendToParent) {
-            await ctx.sendToParent({ type: 'apps:sync', payload: { apps } })
+          if (ctx.sendToAllParents) {
+            await ctx.sendToAllParents({ type: 'apps:sync', payload: { apps } })
           }
         }
 
@@ -734,8 +734,8 @@ function createDispatch (ctx) {
 
         ctx.send({ type: 'event', event: 'heartbeat:send', data: heartbeat })
 
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'heartbeat', payload: heartbeat.payload })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'heartbeat', payload: heartbeat.payload })
         }
 
         return heartbeat.payload
@@ -762,8 +762,8 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'override:granted', data: grant })
 
         // Relay to parent so they see PIN usage in alerts
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'pin:override', payload: { packageName, appName, grantedAt, expiresAt } })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'pin:override', payload: { packageName, appName, grantedAt, expiresAt } })
         }
 
         return { logged: true }
@@ -778,8 +778,8 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'alert:bypass', data: { reason, detectedAt: entry.detectedAt } })
         ctx.send({ type: 'event', event: 'enforcement:offline', data: { reason } })
 
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'bypass:alert', payload: { reason, detectedAt: entry.detectedAt } })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'bypass:alert', payload: { reason, detectedAt: entry.detectedAt } })
         }
 
         return { logged: true }
@@ -856,8 +856,8 @@ function createDispatch (ctx) {
 
         ctx.send({ type: 'event', event: 'usage:report', data: report })
 
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'usage:report', payload: report })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'usage:report', payload: report })
         }
 
         // Clear PIN log for next reporting period

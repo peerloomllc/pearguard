@@ -1,5 +1,7 @@
 import React from 'react';
 import { useTheme } from '../theme.js';
+import Button from './primitives/Button.jsx';
+import Icon from '../icons.js';
 
 function openURL(url) {
   window.callBare('openURL', { url });
@@ -21,17 +23,8 @@ export default function AboutTab() {
     marginBottom: `${spacing.md}px`,
   };
 
-  const btnStyle = {
-    width: '100%',
-    padding: '10px',
-    border: `1px solid ${colors.border}`,
-    borderRadius: `${radius.md}px`,
-    backgroundColor: colors.surface.card,
-    color: colors.text.primary,
-    fontSize: '14px',
-    cursor: 'pointer',
-    textAlign: 'center',
-  };
+  const fullWidth = { width: '100%' };
+  const flexOne = { flex: 1 };
 
   return (
     <div style={{ padding: `${spacing.base}px`, overflowY: 'auto', flex: 1 }}>
@@ -48,9 +41,9 @@ export default function AboutTab() {
           requests stay between your devices. No accounts. No subscriptions. No data
           collection.
         </p>
-        <button onClick={() => openURL('https://pears.com/')} style={btnStyle}>
-          Learn about P2P &#8599;
-        </button>
+        <Button variant="secondary" onClick={() => openURL('https://pears.com/')} style={fullWidth}>
+          Learn about P2P <Icon name="ArrowSquareOut" size={14} color={colors.primary} />
+        </Button>
       </div>
 
       <div style={cardStyle}>
@@ -60,12 +53,12 @@ export default function AboutTab() {
           supporting its development.
         </p>
         <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <button onClick={() => openURL('lightning:peerloomllc@strike.me')} style={{ ...btnStyle, flex: 1 }}>
-            Donate BTC
-          </button>
-          <button onClick={() => openURL('https://buymeacoffee.com/peerloomllc')} style={{ ...btnStyle, flex: 1 }}>
-            Buy Me a Coffee
-          </button>
+          <Button variant="secondary" onClick={() => openURL('lightning:peerloomllc@strike.me')} style={flexOne}>
+            <Icon name="Lightning" size={14} color={colors.primary} /> Donate BTC <Icon name="Lightning" size={14} color={colors.primary} />
+          </Button>
+          <Button variant="secondary" onClick={() => openURL('https://buymeacoffee.com/peerloomllc')} style={flexOne}>
+            <Icon name="CurrencyDollar" size={14} color={colors.primary} /> Donate USD <Icon name="CurrencyDollar" size={14} color={colors.primary} />
+          </Button>
         </div>
       </div>
 
@@ -75,9 +68,9 @@ export default function AboutTab() {
           New to Bitcoin? The Satoshi Nakamoto Institute has a free, concise crash
           course explaining how Bitcoin works and why it matters.
         </p>
-        <button onClick={() => openURL('https://nakamotoinstitute.org/crash-course/')} style={btnStyle}>
-          Bitcoin Crash Course &#8599;
-        </button>
+        <Button variant="secondary" onClick={() => openURL('https://nakamotoinstitute.org/crash-course/')} style={fullWidth}>
+          <Icon name="BookOpen" size={16} color={colors.primary} /> Bitcoin Crash Course <Icon name="ArrowSquareOut" size={14} color={colors.primary} />
+        </Button>
       </div>
 
       <div style={cardStyle}>
@@ -86,26 +79,26 @@ export default function AboutTab() {
           Know someone who could use private, serverless parental controls? Share
           PearGuard with them.
         </p>
-        <button onClick={shareApp} style={btnStyle}>
-          Share PearGuard
-        </button>
+        <Button variant="secondary" onClick={shareApp} style={fullWidth}>
+          <Icon name="ShareNetwork" size={16} color={colors.primary} /> Share PearGuard
+        </Button>
       </div>
 
       <div style={cardStyle}>
         <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>CONTACT</div>
-        <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <button
+        <div style={{ display: 'flex', gap: `${spacing.sm}px`, justifyContent: 'center' }}>
+          <Button
+            variant="secondary"
             onClick={() => openURL('mailto:peerloomllc@proton.me?subject=%5BPearGuard%5D%20Feedback')}
-            style={btnStyle}
           >
-            Send Email &#8599;
-          </button>
-          <button
+            <Icon name="EnvelopeSimple" size={14} color={colors.primary} /> Send Email <Icon name="ArrowSquareOut" size={13} color={colors.primary} />
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => openURL('https://github.com/peerloomllc/pearguard/issues')}
-            style={btnStyle}
           >
-            Report Issue &#8599;
-          </button>
+            <Icon name="Bug" size={14} color={colors.primary} /> Report Issue <Icon name="ArrowSquareOut" size={13} color={colors.primary} />
+          </Button>
         </div>
       </div>
 

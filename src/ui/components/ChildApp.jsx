@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../theme.js';
 import TabBar from './TabBar.jsx';
-import FAB from './FAB.jsx';
 import ChildHome from './ChildHome.jsx';
 import ChildRequests from './ChildRequests.jsx';
 import Profile from './Profile.jsx';
@@ -31,9 +30,6 @@ export default function ChildApp() {
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <ActiveTab />
       </div>
-      {tab === 'home' && (
-        <FAB icon="Clock" onPress={() => setTab('requests')} />
-      )}
       <TabBar tabs={TABS} activeTab={tab} onTabChange={setTab} />
     </div>
   );

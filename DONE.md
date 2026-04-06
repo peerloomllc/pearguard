@@ -6,6 +6,27 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-06
 
+### [x] Remove FAB from Child Home tab (#107) - completed 2026-04-06
+Removed the floating action button from ChildApp Home tab and deleted the unused FAB.jsx component.
+
+### [x] Settings page UI tweaks (#106) - completed 2026-04-06
+Refactored Settings into collapsible accordion sections (Override PIN, Time Request Options, Warning Notifications, Appearance) matching PearCal's pattern. Profile section remains static at top. Replaced custom button styles with shared Button component. Centered Save Settings button.
+
+### [x] Tap highlight shape fix (#109) - completed 2026-04-06
+Added global `-webkit-tap-highlight-color: transparent` and `button:active` opacity rule so tap highlights respect border-radius.
+
+### [x] About page button colors (#105) - completed 2026-04-06
+Replaced custom inline-styled buttons with shared Button component (secondary variant) and added Phosphor icons matching PearCal's About page.
+
+### [x] Usage Reports date keys, session accuracy, and UI fixes (#99) - completed 2026-04-06
+Fixed UTC date keys causing sessions to appear under wrong day. Fixed chart label cutoff for "12a"/"11p".
+
+### [x] Time request overlay dismissal fix (#93) - completed 2026-04-06
+Fixed overlay disappearing and app becoming usable before parent responds to time request.
+
+### [x] Rethink Add Child invite flow (#101) - completed 2026-04-06
+Replaced FAB + modal overlay with inline InviteCard on Dashboard. Empty state shows welcome message with "Add Your First Child" button; existing children get "+ Add Child" header button. Added paste invite link option on child setup step 3. Added native clipboard:copy IPC handler. Deleted AddChildFlow.jsx.
+
 ### [x] Move "See Reports" button to top of Usage tab (#100) - completed 2026-04-06
 Moved button inline with "Last synced" header. Sorted apps list descending by today's usage. Renamed "See Details" to "See Reports".
 

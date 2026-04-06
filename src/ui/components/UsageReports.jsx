@@ -516,6 +516,178 @@ function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
   );
 }
 
+// --- Category Breakdown View ---
+
+const CATEGORY_COLORS = {
+  'Games': '#FF6B6B',
+  'Social': '#4ECDC4',
+  'Video & Music': '#45B7D1',
+  'Communication': '#96CEB4',
+  'Education': '#FFEAA7',
+  'News': '#DDA0DD',
+  'Productivity': '#98D8C8',
+  'System': '#778899',
+  'Other': '#B0B0B0',
+};
+
+function DonutChart({ categories, colors, totalSeconds }) {
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => {
+    setAnimated(false);
+    const t = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setAnimated(true));
+    });
+    return () => cancelAnimationFrame(t);
+  }, [categories]);
+
+  const size = 160;
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = 70;
+  const innerR = 45;
+  const midR = (outerR + innerR) / 2;
+  const circumference = 2 * Math.PI * midR;
+
+  let currentAngle = 0;
+  const segments = categories.map((cat) => {
+    const fraction = totalSeconds > 0 ? cat.totalSeconds / totalSeconds : 0;
+    const dashLen = circumference * fraction;
+    const dashOff = animated ? 0 : dashLen;
+    const rotation = currentAngle;
+    currentAngle += fraction * 360;
+    return { ...cat, fraction, dashLen, dashOff, rotation };
+  });
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: `${size}px`, height: `${size}px`, display: 'block', margin: '0 auto' }}>
+      <circle cx={cx} cy={cy} r={midR} fill="none" stroke={colors.surface.elevated} strokeWidth={outerR - innerR} />
+      {segments.map((seg, i) => (
+        <circle
+          key={i}
+          cx={cx}
+          cy={cy}
+          r={midR}
+          fill="none"
+          stroke={CATEGORY_COLORS[seg.category] || CATEGORY_COLORS['Other']}
+          strokeWidth={outerR - innerR}
+          strokeDasharray={`${seg.dashLen} ${circumference - seg.dashLen}`}
+          strokeDashoffset={seg.dashOff}
+          transform={`rotate(${seg.rotation - 90} ${cx} ${cy})`}
+          style={{
+            transition: `stroke-dashoffset 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${i * 0.1}s`,
+          }}
+        />
+      ))}
+      <text x={cx} y={cy - 6} textAnchor="middle" fill={colors.text.primary} fontSize="16" fontWeight="700">
+        {formatSeconds(totalSeconds)}
+      </text>
+      <text x={cx} y={cy + 10} textAnchor="middle" fill={colors.text.muted} fontSize="9">
+        Total
+      </text>
+    </svg>
+  );
+}
+
+function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const minDate = dateOffset(today, -29);
+
+  useEffect(() => {
+    setLoading(true);
+    window.callBare('usage:getCategorySummary', { childPublicKey, date })
+      .then((data) => { setCategories(data || []); setLoading(false); })
+      .catch(() => { setCategories([]); setLoading(false); });
+  }, [childPublicKey, date]);
+
+  const totalSeconds = categories.reduce((sum, c) => sum + c.totalSeconds, 0);
+  const canGoBack = dateOffset(date, -1) >= minDate;
+  const canGoForward = date < today;
+
+  return (
+    <div>
+      {/* Day selector */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.base}px` }}>
+        <button
+          onClick={() => { if (canGoBack) setDate(dateOffset(date, -1)); }}
+          disabled={!canGoBack}
+          style={{ background: 'none', border: 'none', cursor: canGoBack ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoBack ? 1 : 0.3 }}
+        >
+          <Icon name="CaretLeft" size={20} color={colors.text.primary} />
+        </button>
+        <span style={{ fontSize: '15px', fontWeight: '600', color: colors.text.primary, minWidth: '140px', textAlign: 'center' }}>
+          {formatDate(date)}
+        </span>
+        <button
+          onClick={() => { if (canGoForward) setDate(dateOffset(date, 1)); }}
+          disabled={!canGoForward}
+          style={{ background: 'none', border: 'none', cursor: canGoForward ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoForward ? 1 : 0.3 }}
+        >
+          <Icon name="CaretRight" size={20} color={colors.text.primary} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>Loading...</div>
+      ) : categories.length === 0 ? (
+        <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>No category data for this day.</div>
+      ) : (
+        <>
+          <DonutChart categories={categories} colors={colors} totalSeconds={totalSeconds} />
+
+          <div style={{ marginTop: `${spacing.base}px` }}>
+            {categories.map((cat) => {
+              const isExpanded = expanded === cat.category;
+              const pct = totalSeconds > 0 ? Math.round((cat.totalSeconds / totalSeconds) * 100) : 0;
+              return (
+                <div key={cat.category} style={{
+                  marginBottom: `${spacing.xs}px`,
+                  backgroundColor: colors.surface.card,
+                  borderRadius: `${radius.md}px`,
+                  overflow: 'hidden',
+                }}>
+                  <button
+                    onClick={() => setExpanded(isExpanded ? null : cat.category)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center',
+                      padding: `${spacing.sm + 2}px ${spacing.md}px`,
+                      border: 'none', background: 'none', cursor: 'pointer', gap: `${spacing.sm}px`,
+                    }}
+                  >
+                    <span style={{
+                      width: '10px', height: '10px', borderRadius: '50%',
+                      backgroundColor: CATEGORY_COLORS[cat.category] || CATEGORY_COLORS['Other'],
+                      flexShrink: 0,
+                    }} />
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: colors.text.primary, flex: 1, textAlign: 'left' }}>{cat.category}</span>
+                    <span style={{ fontSize: '13px', color: colors.text.muted }}>{formatSeconds(cat.totalSeconds)} ({pct}%)</span>
+                    <Icon name={isExpanded ? 'CaretUp' : 'CaretDown'} size={14} color={colors.text.muted} />
+                  </button>
+
+                  {isExpanded && (
+                    <div style={{ padding: `0 ${spacing.md}px ${spacing.md}px`, borderTop: `1px solid ${colors.border}` }}>
+                      {cat.apps.map((app) => (
+                        <div key={app.packageName} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                          <span style={{ fontSize: '13px', color: colors.text.secondary }}>{app.displayName}</span>
+                          <span style={{ fontSize: '13px', color: colors.text.muted }}>{formatSeconds(app.totalSeconds)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // --- Main UsageReports Component ---
 
 export default function UsageReports({ childPublicKey, onBack }) {
@@ -574,7 +746,7 @@ export default function UsageReports({ childPublicKey, onBack }) {
         {view === 'daily' && <DailySummary childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
         {view === 'trends' && <WeeklyTrends childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
         {view === 'apps' && <AppDrillDown childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
-        {view === 'categories' && <div style={{ color: colors.text.muted, fontSize: '14px' }}>Category breakdown coming next...</div>}
+        {view === 'categories' && <CategoryBreakdown childPublicKey={childPublicKey} colors={colors} spacing={spacing} radius={radius} />}
       </div>
     </div>
   );

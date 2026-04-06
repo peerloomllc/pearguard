@@ -147,6 +147,40 @@ async function init (dataDir, attempt = 0) {
   }
   await Promise.all(topicHexes.map(t => joinTopic(t).catch(() => {})))
 
+  // Clean up usage data older than 30 days
+  async function cleanupOldUsageData() {
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const cutoffMs = cutoff.getTime()
+
+    for await (const { key } of db.createReadStream({ gt: 'sessions:', lt: 'sessions:~' })) {
+      const parts = key.split(':')
+      if (parts.length >= 3 && parts[2] < cutoffStr) {
+        await db.del(key)
+      }
+    }
+    for await (const { key } of db.createReadStream({ gt: 'usageReport:', lt: 'usageReport:~' })) {
+      const parts = key.split(':')
+      if (parts.length >= 3) {
+        const ts = parseInt(parts[2], 10)
+        if (ts < cutoffMs) await db.del(key)
+      }
+    }
+    for await (const { key } of db.createReadStream({ gt: 'usage:', lt: 'usage:~' })) {
+      const parts = key.split(':')
+      if (parts.length === 2) {
+        const ts = parseInt(parts[1], 10)
+        if (ts < cutoffMs) await db.del(key)
+      }
+    }
+  }
+
+  cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
+  setInterval(() => {
+    cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
+  }, 24 * 60 * 60 * 1000)
+
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
     publicKey: b4a.toString(identity.publicKey, 'hex'),

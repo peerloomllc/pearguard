@@ -8,7 +8,7 @@
 // No back button (gestureEnabled: false in _layout.tsx).
 
 import { useState, useEffect, useRef } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Modal } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Modal, TextInput } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { getBareCaller } from './setup'
@@ -139,6 +139,8 @@ export default function ChildSetupScreen() {
   const [showScanner, setShowScanner] = useState(false)
   const [pairState, setPairState] = useState<'idle' | 'connecting' | 'error'>('idle')
   const [pairError, setPairError] = useState<string | null>(null)
+  const [showPaste, setShowPaste] = useState(false)
+  const [pasteLink, setPasteLink] = useState('')
   const isBypassRecovery = source === 'bypass_recovery'
 
   // Regression guard: whenever step reaches 2, verify step 1 is still satisfied.
@@ -224,6 +226,14 @@ export default function ChildSetupScreen() {
     }, 1500)
   }
 
+  function handlePasteSubmit() {
+    const trimmed = pasteLink.trim()
+    if (!trimmed) return
+    handleScanned(trimmed)
+    setPasteLink('')
+    setShowPaste(false)
+  }
+
   function openSettings() {
     if (step === 3) return
     setPolling(true)
@@ -255,17 +265,58 @@ export default function ChildSetupScreen() {
         {pairState === 'connecting' ? (
           <View style={styles.connectingBox}>
             <ActivityIndicator size="large" color="#7B9FEB" />
-            <Text style={styles.connectingText}>Connecting to parent…</Text>
+            <Text style={styles.connectingText}>Connecting to parent...</Text>
             <Text style={styles.connectingSubText}>This may take up to 30 seconds.</Text>
           </View>
         ) : (
-          <TouchableOpacity
-            style={styles.buttonPair}
-            onPress={() => { setPairError(null); setShowScanner(true) }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.buttonPairText}>Scan Parent's QR Code →</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={styles.buttonPair}
+              onPress={() => { setPairError(null); setShowScanner(true) }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.buttonPairText}>Scan Parent's QR Code</Text>
+            </TouchableOpacity>
+
+            {showPaste ? (
+              <View style={styles.pasteBox}>
+                <TextInput
+                  style={styles.pasteInput}
+                  value={pasteLink}
+                  onChangeText={setPasteLink}
+                  placeholder="Paste invite link here"
+                  placeholderTextColor="#707070"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.pasteButtons}>
+                  <TouchableOpacity
+                    style={[styles.pasteBtn, styles.pasteBtnConnect, !pasteLink.trim() && styles.pasteBtnDisabled]}
+                    onPress={handlePasteSubmit}
+                    disabled={!pasteLink.trim()}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.pasteBtnConnectText}>Connect</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.pasteBtn, styles.pasteBtnCancel]}
+                    onPress={() => { setShowPaste(false); setPasteLink(''); }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.pasteBtnCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.pasteToggle}
+                onPress={() => setShowPaste(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.pasteToggleText}>Or paste an invite link</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
 
         <ScannerModal
@@ -344,4 +395,15 @@ const styles = StyleSheet.create({
   notifyText:       { color: '#EF5350', fontSize: 13, textAlign: 'center' },
   errorBanner:      { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#EF5350', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
   errorText:        { color: '#EF5350', fontSize: 13, textAlign: 'center' },
+  pasteToggle:      { marginTop: 4, padding: 8 },
+  pasteToggleText:  { color: '#707070', fontSize: 13, textAlign: 'center', textDecorationLine: 'underline' },
+  pasteBox:         { backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333333', borderRadius: 12, padding: 16, width: '100%', marginTop: 4 },
+  pasteInput:       { backgroundColor: '#0D0D0D', borderWidth: 1, borderColor: '#444444', borderRadius: 8, padding: 12, color: '#EAEAEA', fontSize: 14, marginBottom: 12 },
+  pasteButtons:     { flexDirection: 'row', gap: 8 },
+  pasteBtn:         { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  pasteBtnConnect:  { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB' },
+  pasteBtnConnectText: { color: '#7B9FEB', fontSize: 14, fontWeight: '600' },
+  pasteBtnDisabled: { opacity: 0.4 },
+  pasteBtnCancel:   { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#333333' },
+  pasteBtnCancelText: { color: '#707070', fontSize: 14 },
 })

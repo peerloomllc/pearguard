@@ -4,6 +4,13 @@
 // Do NOT use Node.js APIs (path, fs, etc.) — use bare-* equivalents.
 // Communicates with the RN shell via BareKit.IPC (JSON-over-newline).
 
+// Return YYYY-MM-DD in local time (not UTC) so session date keys
+// match the user's calendar day regardless of timezone.
+function localDateStr(ts) {
+  const d = new Date(ts || Date.now())
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
 const Hyperbee   = require('hyperbee')
 const Hypercore  = require('hypercore')
 const Hyperswarm = require('hyperswarm')
@@ -151,7 +158,7 @@ async function init (dataDir, attempt = 0) {
   async function cleanupOldUsageData() {
     const cutoff = new Date()
     cutoff.setDate(cutoff.getDate() - 30)
-    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const cutoffStr = localDateStr(cutoff)
     const cutoffMs = cutoff.getTime()
 
     for await (const { key } of db.createReadStream({ gt: 'sessions:', lt: 'sessions:~' })) {
@@ -176,6 +183,41 @@ async function init (dataDir, attempt = 0) {
     }
   }
 
+  // One-time migration: re-key sessions from UTC dates to local dates.
+  // Previous versions used toISOString().slice(0,10) (UTC) for the date
+  // portion of session keys. Re-derive the date from each session's startedAt
+  // so the key matches the user's local calendar day.
+  async function migrateSessionDatesToLocal() {
+    const migrated = await db.get('_migration:sessionLocalDates').catch(() => null)
+    if (migrated) return
+    const toDelete = []
+    const toWrite = new Map()
+    for await (const { key, value } of db.createReadStream({ gt: 'sessions:', lt: 'sessions:~' })) {
+      if (!Array.isArray(value) || value.length === 0) continue
+      const parts = key.split(':')
+      // key format: sessions:{childPublicKey}:{dateStr}:{timestamp}
+      if (parts.length < 4) continue
+      const childPk = parts[1]
+      const oldDate = parts[2]
+      const ts = parts[3]
+      // Derive correct local date from first session's startedAt
+      const firstSession = value[0]
+      const correctDate = firstSession.startedAt ? localDateStr(new Date(firstSession.startedAt)) : oldDate
+      if (correctDate !== oldDate) {
+        const newKey = 'sessions:' + childPk + ':' + correctDate + ':' + ts
+        const existing = toWrite.get(newKey) || []
+        for (const s of value) existing.push(s)
+        toWrite.set(newKey, existing)
+        toDelete.push(key)
+      }
+    }
+    for (const key of toDelete) await db.del(key)
+    for (const [key, sessions] of toWrite) await db.put(key, sessions)
+    await db.put('_migration:sessionLocalDates', { done: true, at: Date.now() })
+    if (toDelete.length > 0) console.log('[bare] migrated', toDelete.length, 'session keys from UTC to local dates')
+  }
+
+  migrateSessionDatesToLocal().catch(e => console.error('[bare] session date migration error:', e))
   cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
   setInterval(() => {
     cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
@@ -360,11 +402,17 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       // usage:getLatest queries by child.publicKey (identity key), so both sides must agree.
       const childPublicKey = msg.payload.childPublicKey || msg.from
       await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
-      // Store session-level data for reports
+      // Store session-level data for reports.
+      // Sessions now cover the full day (from midnight), so overwrite
+      // previous entries for today to avoid stale/duplicate data.
       const incomingSessions = msg.payload.sessions || []
+      const dateStr = localDateStr(msg.payload.timestamp || Date.now())
+      const sessionPrefix = 'sessions:' + childPublicKey + ':' + dateStr + ':'
+      for await (const { key } of db.createReadStream({ gt: sessionPrefix, lt: sessionPrefix + '~' })) {
+        await db.del(key)
+      }
       if (incomingSessions.length > 0) {
-        const dateStr = new Date(msg.payload.timestamp || Date.now()).toISOString().slice(0, 10)
-        await db.put('sessions:' + childPublicKey + ':' + dateStr + ':' + (msg.payload.timestamp || Date.now()), incomingSessions)
+        await db.put(sessionPrefix + (msg.payload.timestamp || Date.now()), incomingSessions)
       }
       // Look up icon for the current foreground app from parent's policy store
       let currentAppIcon = null

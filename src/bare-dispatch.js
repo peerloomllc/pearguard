@@ -4,6 +4,31 @@
 // Separated from IPC wiring so it can be unit tested in Node/jest.
 // src/bare.js imports this and wires it to BareKit.IPC.
 
+// Return YYYY-MM-DD in local time (not UTC) so session date keys
+// match the user's calendar day regardless of timezone.
+function localDateStr(ts) {
+  const d = new Date(ts || Date.now())
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+// Filter out system-level packages that aren't user-facing apps.
+// Must match the UI-side isSystemPackage() filter in UsageReports.jsx.
+const SYSTEM_PACKAGES = new Set([
+  'com.android.launcher', 'com.android.launcher3', 'com.google.android.apps.nexuslauncher',
+  'com.android.packageinstaller', 'com.google.android.packageinstaller',
+  'com.android.permissioncontroller', 'com.google.android.permissioncontroller',
+  'com.android.settings', 'com.android.systemui', 'com.android.vending',
+  'com.android.inputmethod.latin', 'com.google.android.inputmethod.latin',
+  'com.android.providers.downloads.ui', 'com.android.documentsui',
+])
+
+function isSystemPackage(pkg) {
+  if (SYSTEM_PACKAGES.has(pkg)) return true
+  if (pkg.startsWith('com.android.') && !pkg.startsWith('com.android.chrome')) return true
+  if (pkg.includes('.launcher')) return true
+  return false
+}
+
 /**
  * Create a dispatch function bound to the given context (db, swarm, etc.)
  * @param {object} ctx — { db, identity, swarm, peers }
@@ -800,11 +825,17 @@ function createDispatch (ctx) {
 
         const now = Date.now()
 
-        // Store session-level data for usage reports
+        // Store session-level data for usage reports.
+        // Sessions now cover the full day (from midnight), so overwrite
+        // previous entries for today to avoid stale/duplicate data.
         const sessions = args.sessions || []
+        const dateStr = localDateStr(now)
+        const sessionPrefix = 'sessions:' + (childPublicKey || 'local') + ':' + dateStr + ':'
+        for await (const { key } of ctx.db.createReadStream({ gt: sessionPrefix, lt: sessionPrefix + '~' })) {
+          await ctx.db.del(key)
+        }
         if (sessions.length > 0) {
-          const dateStr = new Date(now).toISOString().slice(0, 10)
-          await ctx.db.put('sessions:' + (childPublicKey || 'local') + ':' + dateStr + ':' + now, sessions)
+          await ctx.db.put(sessionPrefix + now, sessions)
         }
 
         const report = {
@@ -883,9 +914,10 @@ function createDispatch (ctx) {
         for (let i = 0; i < days; i++) {
           const d = new Date(now)
           d.setDate(d.getDate() - i)
-          const dateStr = d.toISOString().slice(0, 10)
+          const dateStr = localDateStr(d)
           let totalSeconds = 0
           let sessionCount = 0
+          const seen = new Set()
           for await (const { value } of ctx.db.createReadStream({
             gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
             lt: 'sessions:' + childPublicKey + ':' + dateStr + ':~',
@@ -893,6 +925,10 @@ function createDispatch (ctx) {
             if (Array.isArray(value)) {
               for (const s of value) {
                 if (packageName && s.packageName !== packageName) continue
+                if (isSystemPackage(s.packageName)) continue
+                const key = s.packageName + ':' + s.startedAt
+                if (seen.has(key)) continue
+                seen.add(key)
                 totalSeconds += s.durationSeconds || 0
                 sessionCount++
               }
@@ -903,22 +939,79 @@ function createDispatch (ctx) {
         return summaries
       }
 
-      case 'usage:getCategorySummary': {
+      case 'usage:debugSessions': {
         const { childPublicKey, date } = args
-        if (!childPublicKey || !date) throw new Error('invalid usage:getCategorySummary args')
-        const policyRaw = await ctx.db.get('policy:' + childPublicKey)
-        const policyApps = policyRaw?.value?.apps || {}
-        const sessions = []
-        for await (const { value } of ctx.db.createReadStream({
+        if (!childPublicKey || !date) throw new Error('invalid args')
+        let entryCount = 0
+        let rawCount = 0
+        let rawSeconds = 0
+        const seen = new Set()
+        let dedupCount = 0
+        let dedupSeconds = 0
+        const samples = []
+        for await (const { key, value } of ctx.db.createReadStream({
           gt: 'sessions:' + childPublicKey + ':' + date + ':',
           lt: 'sessions:' + childPublicKey + ':' + date + ':~',
         })) {
+          entryCount++
           if (Array.isArray(value)) {
-            for (const s of value) sessions.push(s)
+            for (const s of value) {
+              rawCount++
+              rawSeconds += s.durationSeconds || 0
+              const dk = s.packageName + ':' + s.startedAt
+              if (!seen.has(dk)) {
+                seen.add(dk)
+                dedupCount++
+                dedupSeconds += s.durationSeconds || 0
+              }
+              if (samples.length < 20) samples.push({ pkg: s.packageName, startedAt: s.startedAt, dur: s.durationSeconds, startType: typeof s.startedAt })
+            }
           }
         }
-        const categories = {}
+        return { entryCount, rawCount, rawSeconds, dedupCount, dedupSeconds, samples }
+      }
+
+      case 'usage:getCategorySummary': {
+        const { childPublicKey, date, days } = args
+        if (!childPublicKey || (!date && !days)) throw new Error('invalid usage:getCategorySummary args')
+        const policyRaw = await ctx.db.get('policy:' + childPublicKey)
+        const policyApps = policyRaw?.value?.apps || {}
+        const sessions = []
+        if (days && days > 1) {
+          const now = new Date()
+          for (let i = 0; i < days; i++) {
+            const d = new Date(now)
+            d.setDate(d.getDate() - i)
+            const dateStr = localDateStr(d)
+            for await (const { value } of ctx.db.createReadStream({
+              gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
+              lt: 'sessions:' + childPublicKey + ':' + dateStr + ':~',
+            })) {
+              if (Array.isArray(value)) {
+                for (const s of value) sessions.push(s)
+              }
+            }
+          }
+        } else {
+          const queryDate = date || localDateStr()
+          for await (const { value } of ctx.db.createReadStream({
+            gt: 'sessions:' + childPublicKey + ':' + queryDate + ':',
+            lt: 'sessions:' + childPublicKey + ':' + queryDate + ':~',
+          })) {
+            if (Array.isArray(value)) {
+              for (const s of value) sessions.push(s)
+            }
+          }
+        }
+        // Deduplicate by packageName + startedAt
+        const seen = new Set()
+        const deduped = []
         for (const s of sessions) {
+          const key = s.packageName + ':' + s.startedAt
+          if (!seen.has(key)) { seen.add(key); deduped.push(s) }
+        }
+        const categories = {}
+        for (const s of deduped) {
           const appInfo = policyApps[s.packageName]
           // Skip apps not in policy (system apps that slipped through)
           if (!appInfo) continue

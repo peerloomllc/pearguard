@@ -14947,6 +14947,24 @@
   // src/ui/components/AppsTab.jsx
   var import_react5 = __toESM(require_react());
   var import_jsx_runtime8 = __toESM(require_jsx_runtime());
+  var ANIMATION_STYLES = `
+@keyframes pgFadeSlideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-20px); }
+}
+@keyframes pgFadeSlideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pgFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes pgFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+`;
   var ICON_COLORS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853", "#ff6d00", "#46bdc6", "#7b1fa2", "#c62828"];
   var APP_CATEGORIES = ["Games", "Social", "Video & Music", "Communication", "Education", "Productivity", "News", "System", "Other"];
   var CATEGORY_COLORS = {
@@ -14974,7 +14992,7 @@
     if (mins >= 60) return Math.floor(mins / 60) + "h " + mins % 60 + "m";
     return mins + "m";
   }
-  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override }) {
+  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override, animationStyle }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : "";
     const [limitInput, setLimitInput] = (0, import_react5.useState)(savedMinutes);
@@ -15007,7 +15025,8 @@
       borderBottom: `1px solid ${colors.divider}`,
       display: "flex",
       flexDirection: "column",
-      gap: `${spacing2.sm}px`
+      gap: `${spacing2.sm}px`,
+      ...animationStyle
     }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px` }, children: [
         appData.iconBase64 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
@@ -15126,8 +15145,14 @@
     { key: "allowed", label: "Allowed", color: "#34a853" },
     { key: "blocked", label: "Blocked", color: "#ea4335" }
   ];
-  function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, overrideMap, collapsed, onToggle }) {
+  function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
+    const batchAction = category.key === "allowed" ? "deny" : category.key === "blocked" ? "approve" : null;
+    function handleBatchAll() {
+      if (batchAction && onBatchDecide) {
+        onBatchDecide(entries.map(([pkg]) => pkg), batchAction);
+      }
+    }
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginBottom: `${spacing2.sm}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
         "button",
@@ -15155,21 +15180,32 @@
           ]
         }
       ),
-      !collapsed && entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-        AppRow,
-        {
-          childPublicKey,
-          packageName: pkg,
-          appData: data,
-          onUpdate,
-          onDecide,
-          override: overrideMap[pkg]
-        },
-        pkg
-      ))
+      !collapsed && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: batchAnimationStyle, children: [
+        batchAction && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          "button",
+          {
+            style: { flex: 1, padding: `${spacing2.sm}px ${spacing2.md}px`, border: "none", borderRadius: `${radius2.md}px`, backgroundColor: batchAction === "approve" ? colors.success : colors.error, color: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
+            onClick: handleBatchAll,
+            children: batchAction === "approve" ? "Approve All" : "Deny All"
+          }
+        ) }),
+        entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          AppRow,
+          {
+            childPublicKey,
+            packageName: pkg,
+            appData: data,
+            onUpdate,
+            onDecide,
+            override: overrideMap[pkg],
+            animationStyle: animatingItems?.[pkg]
+          },
+          pkg
+        ))
+      ] })
     ] });
   }
-  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle }) {
+  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const color = CATEGORY_COLORS[categoryName] || "#aaa";
     const pendingCount = entries.filter(([, d]) => d.status === "pending").length;
@@ -15207,15 +15243,14 @@
             /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { flex: 1, fontSize: "13px", fontWeight: "600", color: colors.text.primary }, children: categoryName }),
             /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: "4px" }, children: [
               pendingCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: "#f59e0b" }, children: pendingCount }),
-              allowedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: colors.success }, children: allowedCount }),
-              blockedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: colors.error }, children: blockedCount })
+              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: colors.success }, children: allowedCount }),
+              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: colors.error }, children: blockedCount })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: color }, children: entries.length }),
             /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "16px", color: colors.text.muted, lineHeight: 1 }, children: collapsed ? "\u203A" : "\u2304" })
           ]
         }
       ),
-      !collapsed && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      !collapsed && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: batchAnimationStyle, children: [
         /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
             "button",
@@ -15242,7 +15277,8 @@
             appData: data,
             onUpdate,
             onDecide,
-            override: overrideMap[pkg]
+            override: overrideMap[pkg],
+            animationStyle: animatingItems?.[pkg]
           },
           pkg
         ))
@@ -15258,6 +15294,9 @@
     const [viewMode, setViewMode] = (0, import_react5.useState)("category");
     const [collapsed, setCollapsed] = (0, import_react5.useState)({});
     const [overrides, setOverrides] = (0, import_react5.useState)([]);
+    const [animatingItems, setAnimatingItems] = (0, import_react5.useState)({});
+    const [animatingSection, setAnimatingSection] = (0, import_react5.useState)(null);
+    const timersRef = (0, import_react5.useRef)([]);
     const loadPolicy = (0, import_react5.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
@@ -15287,28 +15326,95 @@
         clearInterval(timer);
       };
     }, [childPublicKey, loadPolicy, loadOverrides]);
+    (0, import_react5.useEffect)(() => {
+      return () => timersRef.current.forEach(clearTimeout);
+    }, []);
+    function scheduleTimer(fn, ms) {
+      const id = setTimeout(() => {
+        timersRef.current = timersRef.current.filter((t) => t !== id);
+        fn();
+      }, ms);
+      timersRef.current.push(id);
+    }
     function handleUpdate(packageName, newAppData) {
-      const newApps = { ...policy.apps, [packageName]: newAppData };
-      const newPolicy = { ...policy, apps: newApps };
-      setPolicy(newPolicy);
-      window.callBare("policy:update", { childPublicKey, policy: newPolicy });
+      const statusChanged = policy.apps[packageName]?.status !== newAppData.status;
+      if (statusChanged && viewMode === "status") {
+        setAnimatingItems((prev) => ({ ...prev, [packageName]: { animation: "pgFadeSlideOut 300ms ease forwards" } }));
+        scheduleTimer(() => {
+          setPolicy((prev) => {
+            const newApps = { ...prev.apps, [packageName]: newAppData };
+            const updated = { ...prev, apps: newApps };
+            window.callBare("policy:update", { childPublicKey, policy: updated });
+            return updated;
+          });
+          setAnimatingItems((prev) => ({ ...prev, [packageName]: { animation: "pgFadeSlideIn 300ms ease forwards" } }));
+          scheduleTimer(() => {
+            setAnimatingItems((prev) => {
+              const next = { ...prev };
+              delete next[packageName];
+              return next;
+            });
+          }, 300);
+        }, 300);
+      } else {
+        const newApps = { ...policy.apps, [packageName]: newAppData };
+        const newPolicy = { ...policy, apps: newApps };
+        setPolicy(newPolicy);
+        window.callBare("policy:update", { childPublicKey, policy: newPolicy });
+      }
     }
     function handleDecide(packageName, newStatus) {
-      setPolicy((prev) => ({
-        ...prev,
-        apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } }
-      }));
+      if (viewMode === "status") {
+        setAnimatingItems((prev) => ({ ...prev, [packageName]: { animation: "pgFadeSlideOut 300ms ease forwards" } }));
+        scheduleTimer(() => {
+          setPolicy((prev) => ({
+            ...prev,
+            apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } }
+          }));
+          setAnimatingItems((prev) => ({ ...prev, [packageName]: { animation: "pgFadeSlideIn 300ms ease forwards" } }));
+          scheduleTimer(() => {
+            setAnimatingItems((prev) => {
+              const next = { ...prev };
+              delete next[packageName];
+              return next;
+            });
+          }, 300);
+        }, 300);
+      } else {
+        setPolicy((prev) => ({
+          ...prev,
+          apps: { ...prev.apps, [packageName]: { ...prev.apps[packageName], status: newStatus } }
+        }));
+      }
     }
     function handleBatchDecide(packageNames, decision) {
       const newStatus = decision === "approve" ? "allowed" : "blocked";
-      setPolicy((prev) => {
-        const apps = { ...prev.apps };
-        for (const pkg of packageNames) {
-          apps[pkg] = { ...apps[pkg], status: newStatus };
-        }
-        return { ...prev, apps };
-      });
-      window.callBare("apps:decideBatch", { childPublicKey, packageNames, decision });
+      if (viewMode === "status") {
+        setAnimatingSection({ phase: "exiting" });
+        scheduleTimer(() => {
+          setPolicy((prev) => {
+            const apps = { ...prev.apps };
+            for (const pkg of packageNames) {
+              apps[pkg] = { ...apps[pkg], status: newStatus };
+            }
+            return { ...prev, apps };
+          });
+          window.callBare("apps:decideBatch", { childPublicKey, packageNames, decision });
+          setAnimatingSection({ phase: "entering" });
+          scheduleTimer(() => {
+            setAnimatingSection(null);
+          }, 250);
+        }, 250);
+      } else {
+        setPolicy((prev) => {
+          const apps = { ...prev.apps };
+          for (const pkg of packageNames) {
+            apps[pkg] = { ...apps[pkg], status: newStatus };
+          }
+          return { ...prev, apps };
+        });
+        window.callBare("apps:decideBatch", { childPublicKey, packageNames, decision });
+      }
     }
     function toggleSection(key) {
       setCollapsed((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
@@ -15334,8 +15440,10 @@
     for (const o of overrides) {
       if (o.packageName) overrideMap[o.packageName] = o;
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, alignItems: "center", marginBottom: `${spacing2.sm}px` }, children: [
+    const batchStyle = animatingSection ? { animation: animatingSection.phase === "exiting" ? "pgFadeOut 250ms ease forwards" : "pgFadeIn 250ms ease forwards" } : void 0;
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { padding: `0 ${spacing2.base}px ${spacing2.base}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("style", { children: ANIMATION_STYLES }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { position: "sticky", top: 0, zIndex: 10, backgroundColor: colors.surface.base, paddingTop: `${spacing2.base}px`, paddingBottom: `${spacing2.sm}px`, display: "flex", gap: `${spacing2.sm}px`, alignItems: "center" }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           "input",
           {
@@ -15419,9 +15527,12 @@
             childPublicKey,
             onUpdate: handleUpdate,
             onDecide: handleDecide,
+            onBatchDecide: handleBatchDecide,
             overrideMap,
-            collapsed: collapsed[cat.key] ?? true,
-            onToggle: () => toggleSection(cat.key)
+            collapsed: q ? false : collapsed[cat.key] ?? true,
+            onToggle: () => toggleSection(cat.key),
+            animatingItems,
+            batchAnimationStyle: batchStyle
           },
           cat.key
         );
@@ -15438,8 +15549,10 @@
             onDecide: handleDecide,
             onBatchDecide: handleBatchDecide,
             overrideMap,
-            collapsed: collapsed[catName] ?? true,
-            onToggle: () => toggleSection(catName)
+            collapsed: q ? false : collapsed[catName] ?? true,
+            onToggle: () => toggleSection(catName),
+            animatingItems,
+            batchAnimationStyle: batchStyle
           },
           catName
         );

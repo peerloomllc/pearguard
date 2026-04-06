@@ -10,8 +10,8 @@ jest.mock('../ChildCard.jsx', () => ({ child, onPress }) => (
 jest.mock('../ChildDetail.jsx', () => ({ child, onBack }) => (
   <div>Detail: {child.displayName} <button onClick={onBack}>Back</button></div>
 ));
-jest.mock('../AddChildFlow.jsx', () => ({ onCancel }) => (
-  <div>Add Child Flow <button onClick={onCancel}>Cancel</button></div>
+jest.mock('../InviteCard.jsx', () => ({ onDismiss }) => (
+  <div>Invite Card <button onClick={onDismiss}>Dismiss</button></div>
 ));
 
 const MOCK_CHILDREN = [
@@ -33,27 +33,27 @@ test('shows loading state then renders child cards', async () => {
   });
 });
 
-test('shows empty message and add child button when no children returned', async () => {
+test('shows welcome message and add child button when no children', async () => {
   window.callBare.mockResolvedValue([]);
   render(<Dashboard />);
   await waitFor(() => {
-    expect(screen.getByText(/no children paired/i)).toBeInTheDocument();
+    expect(screen.getByText(/Welcome to PearGuard/)).toBeInTheDocument();
   });
-  expect(screen.getByText('+ Add Child')).toBeInTheDocument();
+  expect(screen.getByText('Add Your First Child')).toBeInTheDocument();
 });
 
-test('clicking Add Child shows AddChildFlow', async () => {
+test('clicking Add Your First Child shows InviteCard', async () => {
   window.callBare.mockResolvedValue([]);
   render(<Dashboard />);
-  await waitFor(() => screen.getByText('+ Add Child'));
-  fireEvent.click(screen.getByText('+ Add Child'));
-  expect(screen.getByText('Add Child Flow')).toBeInTheDocument();
+  await waitFor(() => screen.getByText('Add Your First Child'));
+  fireEvent.click(screen.getByText('Add Your First Child'));
+  expect(screen.getByText('Invite Card')).toBeInTheDocument();
 });
 
-test('subscribes to child:usageReport, child:timeRequest, alert:bypass events', async () => {
+test('subscribes to usage:report, child:timeRequest, alert:bypass events', async () => {
   render(<Dashboard />);
   await waitFor(() => screen.getByTestId('child-pk1'));
-  expect(window.onBareEvent).toHaveBeenCalledWith('child:usageReport', expect.any(Function));
+  expect(window.onBareEvent).toHaveBeenCalledWith('usage:report', expect.any(Function));
   expect(window.onBareEvent).toHaveBeenCalledWith('child:timeRequest', expect.any(Function));
   expect(window.onBareEvent).toHaveBeenCalledWith('alert:bypass', expect.any(Function));
 });

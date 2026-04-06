@@ -920,7 +920,9 @@ function createDispatch (ctx) {
         const categories = {}
         for (const s of sessions) {
           const appInfo = policyApps[s.packageName]
-          const category = appInfo?.category || 'Other'
+          // Skip apps not in policy (system apps that slipped through)
+          if (!appInfo) continue
+          const category = appInfo.category || 'Other'
           if (!categories[category]) {
             categories[category] = { category, totalSeconds: 0, apps: {} }
           }

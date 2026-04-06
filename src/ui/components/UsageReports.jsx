@@ -9,6 +9,26 @@ const VIEWS = [
   { key: 'categories', label: 'Categories' },
 ];
 
+// Filter out system-level packages that aren't user-facing apps
+const SYSTEM_PACKAGES = new Set([
+  'com.android.launcher', 'com.android.launcher3', 'com.google.android.apps.nexuslauncher',
+  'com.android.packageinstaller', 'com.google.android.packageinstaller',
+  'com.android.permissioncontroller', 'com.google.android.permissioncontroller',
+  'com.android.settings', 'com.android.systemui', 'com.android.vending',
+  'com.android.inputmethod.latin', 'com.google.android.inputmethod.latin',
+  'com.android.providers.downloads.ui', 'com.android.documentsui',
+]);
+
+function isSystemPackage(pkg) {
+  if (SYSTEM_PACKAGES.has(pkg)) return true;
+  if (pkg.startsWith('com.android.') && !pkg.startsWith('com.android.chrome')) return true;
+  return false;
+}
+
+function filterSessions(sessions) {
+  return (sessions || []).filter((s) => !isSystemPackage(s.packageName));
+}
+
 function formatSeconds(s) {
   if (!s || s <= 0) return '0m';
   const h = Math.floor(s / 3600);
@@ -136,7 +156,7 @@ function DailySummary({ childPublicKey, colors, spacing, radius }) {
   const fetchSessions = useCallback((d) => {
     setLoading(true);
     window.callBare('usage:getSessions', { childPublicKey, date: d })
-      .then((data) => { setSessions(data || []); setLoading(false); })
+      .then((data) => { setSessions(filterSessions(data)); setLoading(false); })
       .catch(() => { setSessions([]); setLoading(false); });
   }, [childPublicKey]);
 
@@ -372,7 +392,7 @@ function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
   useEffect(() => {
     setLoading(true);
     window.callBare('usage:getSessions', { childPublicKey, date })
-      .then((data) => { setSessions(data || []); setLoading(false); })
+      .then((data) => { setSessions(filterSessions(data)); setLoading(false); })
       .catch(() => { setSessions([]); setLoading(false); });
   }, [childPublicKey, date]);
 

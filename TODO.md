@@ -8,10 +8,10 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
 | 93 | Time request sometimes dismisses overlay and unblocks app | Child submits time request but overlay disappears and app becomes usable before parent responds |
+| 98 | Investigate Tailscale VPN compatibility | Tailscale breaks Hyperswarm P2P connections; need to investigate split tunneling or relay options |
 
 ## Features
 
 | # | Title | Where |
 |---|-------|-------|
-| 83 | Animation/feedback on approve/deny in Apps list | `AppsTab.jsx` — animate transition when app moves between Pending/Allowed/Blocked groups |
 | 95 | Interactable Screen Time-style usage reports | High-level summary (total screen time, top apps, daily/weekly trends) with drill-down into per-app details and session history — a generic usage report independent of limits, like iOS Screen Time |

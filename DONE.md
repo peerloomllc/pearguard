@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-05
 
+### [x] Interactable Screen Time-style usage reports (#95) - completed 2026-04-05
+Session-level usage tracking with 30-day retention. Native Android session building from UsageStatsManager events. Four interactive views on parent device: Daily Summary (hourly SVG bar chart, day navigation), Weekly Trends (7/30-day toggle, average line, period comparison), Per-App Drill-Down (session list, sparkline, stats), Category Breakdown (animated SVG donut chart). Animated usage bars on Usage tab with "See Details" entry point. System/launcher app filtering.
+
 ### [x] Animation/feedback on approve/deny in Apps list (#83) - completed 2026-04-05
 Slide/fade animations when apps move between Pending/Allowed/Blocked groups in By Status view. Batch fade for Approve All/Deny All. Also: sticky header row, auto-expand categories on search, batch buttons in status view sections, category header pills show allowed (green) and blocked (red) counts.
 

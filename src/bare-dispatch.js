@@ -246,6 +246,57 @@ function createDispatch (ctx) {
         return { inviteLink, inviteString: inviteLink, qrData: inviteLink, swarmTopic: topicHex, parentPublicKey }
       }
 
+      case 'coparent:generateInvite': {
+        // args.childPublicKey: which child the co-parent will pair with
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('coparent:generateInvite requires childPublicKey')
+
+        // Verify this child is actually paired with us
+        const childRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+        if (!childRecord) throw new Error('child not paired: ' + childPublicKey.slice(0, 12))
+
+        // Generate a random swarm topic for the parent-to-parent handshake
+        const topicBuf = Buffer.allocUnsafe(32)
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          crypto.getRandomValues(topicBuf)
+        } else {
+          require('sodium-native').randombytes_buf(topicBuf)
+        }
+        const topicHex = topicBuf.toString('hex')
+        const parentPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
+
+        // Join the topic so we can handshake with Parent B
+        await ctx.joinTopic(topicHex)
+
+        // Build the co-parent invite link
+        const { buildCoparentLink } = require('./invite')
+        const inviteLink = buildCoparentLink({ parentPublicKey, swarmTopic: topicHex, childPublicKey })
+
+        return { inviteLink, qrData: inviteLink, swarmTopic: topicHex, childPublicKey }
+      }
+
+      case 'coparent:acceptInvite': {
+        // args[0]: full pear://pearguard/coparent?t=... URL
+        const { parseCoparentLink } = require('./invite')
+        const parsed = parseCoparentLink(args[0])
+        if (!parsed.ok) throw new Error('invalid coparent invite: ' + parsed.error)
+
+        const { parentPublicKey: parentAKey, swarmTopic, childPublicKey } = parsed
+
+        // Store Parent A's key so we can recognize the coparent:hello response
+        await ctx.db.put('pendingCoparent', {
+          parentAKey,
+          childPublicKey,
+          swarmTopic,
+          ts: Date.now(),
+        })
+
+        // Join the parent-to-parent topic
+        await ctx.joinTopic(swarmTopic)
+
+        return { ok: true, swarmTopic, parentAKey, childPublicKey }
+      }
+
       case 'acceptInvite': {
         // args[0]: full pearguard://join/... URL
         const { parseInviteLink } = require('./invite')
@@ -255,24 +306,10 @@ function createDispatch (ctx) {
         const { parentPublicKey, swarmTopic } = parsed
 
         // Store the parent's public key as a "pending" entry — will be confirmed on hello
-        await ctx.db.put('pendingParent', { publicKey: parentPublicKey, ts: Date.now() })
+        await ctx.db.put('pendingParent:' + parentPublicKey, { publicKey: parentPublicKey, ts: Date.now() })
 
-        // Leave and delete all existing topics before joining the new one.
-        // A child should only be connected to one parent at a time. Any old topics
-        // (from a previous pairing that wasn't fully cleaned up) would let the child
-        // stay joined to a stale topic, which can cause ghost connections on the parent.
-        const oldTopics = []
-        for await (const { key, value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
-          if (value.topicHex !== swarmTopic) oldTopics.push({ key, topicHex: value.topicHex })
-        }
-        for (const { key, topicHex } of oldTopics) {
-          await ctx.db.del(key).catch(() => {})
-          if (ctx.swarm) {
-            try { ctx.swarm.leave(ctx.b4a.from(topicHex, 'hex')) } catch (_e) {}
-          }
-        }
-
-        // Join the swarm topic (child connects to parent)
+        // Join the swarm topic alongside any existing parent topics (multi-parent support).
+        // Old single-parent behavior deleted all existing topics here — now we keep them.
         await ctx.joinTopic(swarmTopic)
 
         return { ok: true, swarmTopic, parentPublicKey }
@@ -442,10 +479,10 @@ function createDispatch (ctx) {
         // Notify WebView that request was submitted
         ctx.send({ type: 'event', event: 'request:submitted', data: request })
 
-        if (ctx.sendToParent) {
+        if (ctx.sendToAllParents) {
           const p2pPayload = { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt, requestType: resolvedType }
           if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') p2pPayload.extraSeconds = extraSeconds
-          await ctx.sendToParent({ type: 'time:request', payload: p2pPayload })
+          await ctx.sendToAllParents({ type: 'time:request', payload: p2pPayload })
         }
 
         return { requestId, status: 'pending' }
@@ -631,8 +668,8 @@ function createDispatch (ctx) {
           // Notify WebView
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
 
-          if (ctx.sendToParent) {
-            await ctx.sendToParent({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, detectedAt: Date.now() } })
+          if (ctx.sendToAllParents) {
+            await ctx.sendToAllParents({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, detectedAt: Date.now() } })
           }
         }
 
@@ -662,8 +699,8 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName } })
 
         // Relay to parent so they can prune their Apps list
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'app:uninstalled', payload: { packageName, appName } })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'app:uninstalled', payload: { packageName, appName } })
         }
 
         return { ok: true }
@@ -701,8 +738,8 @@ function createDispatch (ctx) {
           await ctx.db.put('policy', policy)
           ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
-          if (ctx.sendToParent) {
-            await ctx.sendToParent({ type: 'apps:sync', payload: { apps } })
+          if (ctx.sendToAllParents) {
+            await ctx.sendToAllParents({ type: 'apps:sync', payload: { apps } })
           }
         }
 
@@ -734,8 +771,8 @@ function createDispatch (ctx) {
 
         ctx.send({ type: 'event', event: 'heartbeat:send', data: heartbeat })
 
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'heartbeat', payload: heartbeat.payload })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'heartbeat', payload: heartbeat.payload })
         }
 
         return heartbeat.payload
@@ -762,8 +799,8 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'override:granted', data: grant })
 
         // Relay to parent so they see PIN usage in alerts
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'pin:override', payload: { packageName, appName, grantedAt, expiresAt } })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'pin:override', payload: { packageName, appName, grantedAt, expiresAt } })
         }
 
         return { logged: true }
@@ -778,8 +815,8 @@ function createDispatch (ctx) {
         ctx.send({ type: 'event', event: 'alert:bypass', data: { reason, detectedAt: entry.detectedAt } })
         ctx.send({ type: 'event', event: 'enforcement:offline', data: { reason } })
 
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'bypass:alert', payload: { reason, detectedAt: entry.detectedAt } })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'bypass:alert', payload: { reason, detectedAt: entry.detectedAt } })
         }
 
         return { logged: true }
@@ -856,8 +893,8 @@ function createDispatch (ctx) {
 
         ctx.send({ type: 'event', event: 'usage:report', data: report })
 
-        if (ctx.sendToParent) {
-          await ctx.sendToParent({ type: 'usage:report', payload: report })
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'usage:report', payload: report })
         }
 
         // Clear PIN log for next reporting period

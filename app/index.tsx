@@ -62,8 +62,9 @@ Linking.addEventListener('url', ({ url }) => {
 
 DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
   console.log('[RN] pearguardLink (module-level):', url)
+  const method = url.includes('/coparent?') ? 'coparent:acceptInvite' : 'acceptInvite'
   if (_worklet) {
-    sendToWorklet({ method: 'acceptInvite', args: [url] })
+    sendToWorklet({ method, args: [url] })
   } else {
     // Worklet not yet ready (cold start) — buffer and send from ready handler
     _pendingInviteUrl = url
@@ -251,8 +252,8 @@ export default function Root () {
       }
 
       if (msg.method === 'clipboard:copy') {
-        const Clipboard = require('@react-native-clipboard/clipboard').default
-        Clipboard.setString(msg.args.text)
+        const { Clipboard: RNClipboard } = require('react-native')
+        RNClipboard.setString(msg.args.text)
         webViewRef.current?.injectJavaScript(
           'window.__pearResponse(' + msg.id + ', { ok: true });true;'
         )
@@ -657,7 +658,8 @@ export default function Root () {
         setDbReady(true)
         // Flush any invite URL that arrived before the worklet was ready
         if (_pendingInviteUrl) {
-          sendToWorklet({ method: 'acceptInvite', args: [_pendingInviteUrl] })
+          const pendingMethod = _pendingInviteUrl.includes('/coparent?') ? 'coparent:acceptInvite' : 'acceptInvite'
+          sendToWorklet({ method: pendingMethod, args: [_pendingInviteUrl] })
           _pendingInviteUrl = null
         }
         if (!data.mode) {

@@ -738,9 +738,13 @@ function createDispatch (ctx) {
           await ctx.db.put('policy', policy)
           ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
-          if (ctx.sendToAllParents) {
-            await ctx.sendToAllParents({ type: 'apps:sync', payload: { apps } })
-          }
+        }
+
+        // Always relay to parents — even when no new apps were added locally.
+        // A second parent may have just paired and needs the full app list even
+        // though the child already has all apps in its own policy (#109).
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'apps:sync', payload: { apps } })
         }
 
         return { count: newCount }

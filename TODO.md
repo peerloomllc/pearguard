@@ -13,6 +13,5 @@ Open items only. Completed items are in `DONE.md`.
 
 | # | Title | Where |
 |---|-------|-------|
-| 102 | Investigate iOS version feasibility | Research what PearGuard features can/can't work on iOS given platform restrictions |
+| 102 | iOS parent-only version | Feasible as parent-only device; enforcement can't port (no Accessibility/DeviceAdmin APIs). P2P pairing, policy sync, and UI all work. Child device stays Android. Only limitation: no background connectivity on iOS, parent must open app to sync. |
 | 103 | Adapt PearCal release script to PearGuard | Port the PearCal build/release script for PearGuard releases |
-| 108 | Multi-parent pairing: on-device validation | Backend implemented on feature/multi-parent-108; needs 3rd device to test multi-parent flows; co-parent invite UI not yet built |

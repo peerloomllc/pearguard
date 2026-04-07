@@ -4,6 +4,16 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-07
+
+### [x] Fix app list not syncing to second parent (#109) - completed 2026-04-07
+Moved sendToAllParents call outside the newCount > 0 guard in apps:sync handler so the full app list is always relayed to all connected parents, even when no new apps were added on the child device.
+
+### [x] Co-parent invite UI (#110) - completed 2026-04-07
+Added "Add Co-Parent" button in child detail top bar with CoparentInviteCard component (QR + share + copy). Added coparent.tsx Expo Router screen and AndroidManifest intent filter for pear://pearguard/coparent deep links. Fixed clipboard:copy to use RN built-in Clipboard.
+
+---
+
 ## Added 2026-04-06
 
 ### [x] Add 2-week donation reminder (#104) - completed 2026-04-06

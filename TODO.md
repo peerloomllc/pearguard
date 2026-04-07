@@ -15,4 +15,3 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 102 | iOS parent-only version | Feasible as parent-only device; enforcement can't port (no Accessibility/DeviceAdmin APIs). P2P pairing, policy sync, and UI all work. Child device stays Android. Only limitation: no background connectivity on iOS, parent must open app to sync. |
 | 103 | Adapt PearCal release script to PearGuard | Port the PearCal build/release script for PearGuard releases |
-| 108 | Multi-parent pairing: on-device validation | Backend implemented; co-parent invite UI done (#110); needs full 3-device validation of policy sync, enforcement, and co-parent handshake flow |

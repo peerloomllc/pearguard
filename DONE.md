@@ -9,6 +9,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 ### [x] Fix app list not syncing to second parent (#109) - completed 2026-04-07
 Moved sendToAllParents call outside the newCount > 0 guard in apps:sync handler so the full app list is always relayed to all connected parents, even when no new apps were added on the child device.
 
+### [x] Multi-parent pairing on-device validation (#108) - completed 2026-04-07
+3-device testing passed: two parent devices (Pixel 9 Pro + Pixel 7) paired to one child (TCL). Usage stats sync, app list sync (after #109 fix), and co-parent invite flow all verified.
+
 ### [x] Co-parent invite UI (#110) - completed 2026-04-07
 Added "Add Co-Parent" button in child detail top bar with CoparentInviteCard component (QR + share + copy). Added coparent.tsx Expo Router screen and AndroidManifest intent filter for pear://pearguard/coparent deep links. Fixed clipboard:copy to use RN built-in Clipboard.
 

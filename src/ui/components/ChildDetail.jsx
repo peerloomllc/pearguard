@@ -8,6 +8,7 @@ import AppsTab from './AppsTab.jsx';
 import ActivityTab from './ActivityTab.jsx';
 import RulesTab from './RulesTab.jsx';
 import UsageReports from './UsageReports.jsx';
+import CoparentInviteCard from './CoparentInviteCard.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', icon: 'ChartBar' },
@@ -32,6 +33,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   const [showReports, setShowReports] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
+  const [coparentInviteActive, setCoparentInviteActive] = useState(false);
 
   async function handleRemove() {
     await window.callBare('child:unpair', { childPublicKey: child.publicKey });
@@ -70,6 +72,19 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           width: '8px', height: '8px', borderRadius: '50%',
           backgroundColor: child.isOnline ? colors.success : colors.text.muted,
         }} />
+
+        <button
+          onClick={() => { window.callBare('haptic:tap'); setCoparentInviteActive(!coparentInviteActive); }}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            ...typography.caption, color: colors.primary, fontWeight: '600',
+            display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
+            padding: `${spacing.xs}px`,
+          }}
+        >
+          <Icon name="UserPlus" size={16} color={colors.primary} />
+          Add Co-Parent
+        </button>
 
         <button
           onClick={handleLockToggle}
@@ -128,6 +143,16 @@ export default function ChildDetail({ child, initialTab, onBack }) {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
+        {coparentInviteActive && (
+          <div style={{ padding: `${spacing.base}px`, paddingBottom: 0 }}>
+            <CoparentInviteCard
+              childPublicKey={child.publicKey}
+              childDisplayName={child.displayName}
+              onConnected={() => setCoparentInviteActive(false)}
+              onDismiss={() => setCoparentInviteActive(false)}
+            />
+          </div>
+        )}
         {tab === 'usage' ? (
           <UsageTab childPublicKey={child.publicKey} onShowReports={() => setShowReports(true)} />
         ) : (

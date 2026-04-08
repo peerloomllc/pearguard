@@ -263,7 +263,17 @@ public class AppBlockerModule extends AccessibilityService {
     public static void checkAndShowOverlayIfNeeded() {
         AppBlockerModule inst = sInstance;
         if (inst == null || inst.lastForegroundPackage == null) return;
-        final String pkg = inst.lastForegroundPackage;
+        // Use UsageStatsManager to get the real foreground app. This catches cases
+        // where lastForegroundPackage is stale - e.g. after the user enters recents
+        // (which sets lastForegroundPackage to the launcher) and then returns to a
+        // blocked app without a TYPE_WINDOW_STATE_CHANGED firing (#113).
+        String realFg = inst.queryForegroundPackage();
+        final String pkg = (realFg != null) ? realFg : inst.lastForegroundPackage;
+        // Keep lastForegroundPackage in sync so onAccessibilityEvent doesn't
+        // immediately dismiss the overlay we're about to show (#113).
+        if (realFg != null && !realFg.equals(inst.lastForegroundPackage)) {
+            inst.lastForegroundPackage = realFg;
+        }
         new Handler(Looper.getMainLooper()).post(() -> {
             // Dismiss overlay while device is locked (#112).
             if (inst.isDeviceLocked()) {
@@ -283,6 +293,23 @@ public class AppBlockerModule extends AccessibilityService {
             String reason = inst.getBlockReason(pkg);
             if (reason != null) inst.showOverlay(pkg, reason);
         });
+    }
+
+    /**
+     * Uses the accessibility service's own window API to find the actual foreground
+     * package. More reliable than UsageStatsManager during recents transitions,
+     * since MOVE_TO_FOREGROUND may not fire when returning from the overview screen.
+     */
+    private String queryForegroundPackage() {
+        try {
+            android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) {
+                CharSequence pkg = root.getPackageName();
+                root.recycle();
+                if (pkg != null) return pkg.toString();
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     // Cooldown: after dismissing an overlay, ignore TYPE_WINDOW_STATE_CHANGED events for the

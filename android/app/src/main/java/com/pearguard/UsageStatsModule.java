@@ -249,9 +249,15 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // Track per-package foreground time from raw events
+            // Track per-package foreground time from raw events.
+            // Gesture navigation on Android 12+ causes rapid RESUMED/PAUSED
+            // transitions (launcher briefly appears during swipe). We merge
+            // sessions separated by gaps shorter than MERGE_GAP_MS so that
+            // e.g. swiping through YouTube Shorts counts as continuous use.
+            final long MERGE_GAP_MS = 3000;
             java.util.Map<String, Long> totalMs = new java.util.HashMap<>();
             java.util.Map<String, Long> sessionStarts = new java.util.HashMap<>();
+            java.util.Map<String, Long> recentPauses = new java.util.HashMap<>();
 
             UsageEvents events = usm.queryEvents(startOfDay, now);
             if (events != null) {
@@ -262,15 +268,36 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                     int type = event.getEventType();
                     // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
                     // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
-                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == 7 /* ACTIVITY_RESUMED */) {
-                        sessionStarts.put(pkg, event.getTimeStamp());
-                    } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == 8 /* ACTIVITY_PAUSED */) {
-                        Long start = sessionStarts.remove(pkg);
-                        if (start != null) {
-                            long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
-                            totalMs.put(pkg, prev + (event.getTimeStamp() - start));
+                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {
+                        Long pausedAt = recentPauses.remove(pkg);
+                        if (pausedAt != null && (event.getTimeStamp() - pausedAt) <= MERGE_GAP_MS) {
+                            // Short gap - merge: restore original session start (still in sessionStarts)
+                        } else {
+                            // Flush any stale pause that exceeded the gap
+                            if (pausedAt != null) {
+                                Long start = sessionStarts.remove(pkg);
+                                if (start != null) {
+                                    long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                                    totalMs.put(pkg, prev + (pausedAt - start));
+                                }
+                            }
+                            sessionStarts.put(pkg, event.getTimeStamp());
+                        }
+                    } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == UsageEvents.Event.ACTIVITY_PAUSED) {
+                        if (sessionStarts.containsKey(pkg)) {
+                            recentPauses.put(pkg, event.getTimeStamp());
                         }
                     }
+                }
+            }
+
+            // Flush remaining pauses that were never followed by a resume
+            for (java.util.Map.Entry<String, Long> entry : recentPauses.entrySet()) {
+                String pkg = entry.getKey();
+                Long start = sessionStarts.remove(pkg);
+                if (start != null) {
+                    long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                    totalMs.put(pkg, prev + (entry.getValue() - start));
                 }
             }
 
@@ -346,7 +373,12 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 return;
             }
 
+            // Merge sessions separated by short gaps caused by gesture navigation.
+            final long SESSION_MERGE_GAP_MS = 3000;
             java.util.Map<String, Long> fgStarts = new java.util.HashMap<>();
+            java.util.Map<String, Long> recentSessionPauses = new java.util.HashMap<>();
+            // Track the original session start for merging
+            java.util.Map<String, Long> mergedSessionStarts = new java.util.HashMap<>();
             WritableArray sessions = Arguments.createArray();
             UsageEvents.Event event = new UsageEvents.Event();
 
@@ -358,28 +390,63 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 int type = event.getEventType();
                 // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
                 // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
-                if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == 7 /* ACTIVITY_RESUMED */) {
-                    fgStarts.put(pkg, event.getTimeStamp());
-                } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == 8 /* ACTIVITY_PAUSED */) {
-                    Long start = fgStarts.remove(pkg);
-                    if (start != null) {
-                        long durationSec = (event.getTimeStamp() - start) / 1000;
-                        if (durationSec >= 1) {
-                            WritableMap session = Arguments.createMap();
-                            session.putString("packageName", pkg);
-                            session.putString("displayName", getAppLabel(pm, pkg));
-                            session.putDouble("startedAt", (double) start);
-                            session.putDouble("endedAt", (double) event.getTimeStamp());
-                            session.putInt("durationSeconds", (int) durationSec);
-                            sessions.pushMap(session);
+                if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {
+                    Long pausedAt = recentSessionPauses.remove(pkg);
+                    if (pausedAt != null && (event.getTimeStamp() - pausedAt) <= SESSION_MERGE_GAP_MS) {
+                        // Short gap - merge: keep original start in mergedSessionStarts
+                        fgStarts.put(pkg, event.getTimeStamp());
+                    } else {
+                        // Flush previous session if gap exceeded
+                        if (pausedAt != null) {
+                            Long mergedStart = mergedSessionStarts.remove(pkg);
+                            long sessionStart = mergedStart != null ? mergedStart : fgStarts.getOrDefault(pkg, pausedAt);
+                            long durationSec = (pausedAt - sessionStart) / 1000;
+                            if (durationSec >= 1) {
+                                WritableMap session = Arguments.createMap();
+                                session.putString("packageName", pkg);
+                                session.putString("displayName", getAppLabel(pm, pkg));
+                                session.putDouble("startedAt", (double) sessionStart);
+                                session.putDouble("endedAt", (double) pausedAt);
+                                session.putInt("durationSeconds", (int) durationSec);
+                                sessions.pushMap(session);
+                            }
+                        }
+                        fgStarts.put(pkg, event.getTimeStamp());
+                        mergedSessionStarts.put(pkg, event.getTimeStamp());
+                    }
+                } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == UsageEvents.Event.ACTIVITY_PAUSED) {
+                    if (fgStarts.containsKey(pkg)) {
+                        recentSessionPauses.put(pkg, event.getTimeStamp());
+                        if (!mergedSessionStarts.containsKey(pkg)) {
+                            mergedSessionStarts.put(pkg, fgStarts.get(pkg));
                         }
                     }
                 }
             }
 
+            // Flush remaining pauses that were never followed by a resume
+            for (java.util.Map.Entry<String, Long> entry : recentSessionPauses.entrySet()) {
+                String pkg = entry.getKey();
+                long pausedAt = entry.getValue();
+                Long mergedStart = mergedSessionStarts.remove(pkg);
+                long sessionStart = mergedStart != null ? mergedStart : fgStarts.getOrDefault(pkg, pausedAt);
+                fgStarts.remove(pkg);
+                long durationSec = (pausedAt - sessionStart) / 1000;
+                if (durationSec >= 1) {
+                    WritableMap session = Arguments.createMap();
+                    session.putString("packageName", pkg);
+                    session.putString("displayName", getAppLabel(pm, pkg));
+                    session.putDouble("startedAt", (double) sessionStart);
+                    session.putDouble("endedAt", (double) pausedAt);
+                    session.putInt("durationSeconds", (int) durationSec);
+                    sessions.pushMap(session);
+                }
+            }
+
             // Open sessions (still in foreground)
             for (java.util.Map.Entry<String, Long> entry : fgStarts.entrySet()) {
-                long start = entry.getValue();
+                Long mergedStart = mergedSessionStarts.get(entry.getKey());
+                long start = mergedStart != null ? mergedStart : entry.getValue();
                 long durationSec = (now - start) / 1000;
                 if (durationSec >= 1) {
                     WritableMap session = Arguments.createMap();

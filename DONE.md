@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-07
 
+### [x] Fix usage report accuracy (#111) - completed 2026-04-07
+Fixed wrong ACTIVITY_RESUMED/PAUSED event type constants (were hardcoded as 7/8, actually 23/24). Added 3-second session merging to handle gesture navigation causing rapid activity cycling. Updated formatSeconds to show seconds for sub-minute usage.
+
 ### [x] Fix app list not syncing to second parent (#109) - completed 2026-04-07
 Moved sendToAllParents call outside the newCount > 0 guard in apps:sync handler so the full app list is always relayed to all connected parents, even when no new apps were added on the child device.
 

@@ -29,7 +29,8 @@ function formatSeconds(s) {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
 }
 
 function PendingRequestCard({ req, childPublicKey, onResolved }) {

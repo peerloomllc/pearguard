@@ -14762,7 +14762,8 @@
     const h = Math.floor(seconds / 3600);
     const m = Math.floor(seconds % 3600 / 60);
     if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${seconds}s`;
   }
   function ChildCard({ child, onPress, onLockToggle }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
@@ -14877,7 +14878,8 @@
     const h = Math.floor(s / 3600);
     const m = Math.floor(s % 3600 / 60);
     if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${s}s`;
   }
   function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
@@ -15646,7 +15648,8 @@
     const h = Math.floor(s / 3600);
     const m = Math.floor(s % 3600 / 60);
     if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${s}s`;
   }
   function PendingRequestCard({ req, childPublicKey, onResolved }) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
@@ -16276,11 +16279,12 @@
     return (sessions || []).filter((s) => !isSystemPackage(s.packageName));
   }
   function formatSeconds4(s) {
-    if (!s || s <= 0) return "0m";
+    if (!s || s <= 0) return "0s";
     const h = Math.floor(s / 3600);
     const m = Math.floor(s % 3600 / 60);
     if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${s}s`;
   }
   function formatDate(dateStr) {
     const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00");

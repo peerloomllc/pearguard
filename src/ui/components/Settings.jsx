@@ -267,7 +267,7 @@ export default function Settings() {
           <Button
             onClick={() => { window.callBare('haptic:tap'); handleNameSave(); }}
             disabled={savingName || nameUnchanged}
-            style={{ width: '100%' }}
+            style={{ alignSelf: 'center' }}
           >
             {savingName ? 'Saving...' : 'Save Name'}
           </Button>

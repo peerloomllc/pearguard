@@ -269,7 +269,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: `${spacing.sm}px` }}>
           <button
             onClick={handleSaveRule}
             aria-label={editingIndex !== null ? 'Save schedule rule' : 'Add schedule rule'}

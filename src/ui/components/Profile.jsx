@@ -164,7 +164,7 @@ export default function Profile({ mode }) {
         <button
           onClick={() => { window.callBare('haptic:tap'); handleSave(); }}
           disabled={saving || unchanged}
-          style={{ ...btnStyle, ...(saving || unchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: 'not-allowed' } : {}) }}
+          style={{ ...btnStyle, alignSelf: 'center', ...(saving || unchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: 'not-allowed' } : {}) }}
         >
           {saving ? 'Saving\u2026' : 'Save Name'}
         </button>

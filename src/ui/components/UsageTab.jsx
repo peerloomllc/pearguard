@@ -40,7 +40,7 @@ function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index
     <div style={{ marginBottom: `${spacing.lg}px` }}>
       <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: colors.text.primary }}>{appName}</div>
       <div>
-        <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>Today: {formatSeconds(todaySeconds)}</div>
+        <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>Today: {formatSeconds(todaySeconds)}{dailyLimitSeconds ? ` of ${formatSeconds(dailyLimitSeconds)}` : ''}</div>
         <div style={{ height: '8px', backgroundColor: colors.surface.elevated, borderRadius: `${radius.sm}px`, overflow: 'hidden' }}>
           <div
             style={{
@@ -52,7 +52,7 @@ function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index
             }}
           />
         </div>
-        <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>This week: {formatSeconds(weekSeconds)}</div>
+        <div style={{ fontSize: '12px', color: colors.text.secondary, marginBottom: '3px', marginTop: '6px' }}>Last 7 days: {formatSeconds(weekSeconds)}</div>
         <div style={{ height: '8px', backgroundColor: colors.surface.elevated, borderRadius: `${radius.sm}px`, overflow: 'hidden' }}>
           <div
             style={{

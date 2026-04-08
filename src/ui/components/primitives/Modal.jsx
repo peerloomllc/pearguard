@@ -31,7 +31,7 @@ export default function Modal({ visible, onClose, title, children, footer }) {
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
-          <div style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.base}px` }}>
+          <div style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.base}px`, textAlign: 'center' }}>
             {title}
           </div>
         )}
@@ -39,7 +39,7 @@ export default function Modal({ visible, onClose, title, children, footer }) {
           {children}
         </div>
         {footer && (
-          <div style={{ display: 'flex', gap: `${spacing.sm}px`, marginTop: `${spacing.base}px`, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: `${spacing.sm}px`, marginTop: `${spacing.base}px`, justifyContent: 'center' }}>
             {footer}
           </div>
         )}

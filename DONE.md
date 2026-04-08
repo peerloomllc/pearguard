@@ -6,6 +6,21 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-07
 
+### [x] Usage stats only updating sometimes (#114) - completed 2026-04-07
+The usageFlushRequested handler (P2P reconnect path) was missing getLastForegroundPackage and getSessionsSinceLastFlush calls, producing incomplete usage reports on reconnect.
+
+### [x] Change "This week" to "Last 7 days" (#115) - completed 2026-04-07
+Updated label on usage bars from "This week" to "Last 7 days" to clarify rolling window.
+
+### [x] Save name button too wide (#117) - completed 2026-04-07
+Added alignSelf: 'center' to Save Name button on both Settings (parent) and Profile (child) screens.
+
+### [x] Add Rule button centering (#118) - completed 2026-04-07
+Added justifyContent: 'center' to the Add Rule button container on the Rules tab.
+
+### [x] Show scale on usage bars with time limits (#120) - completed 2026-04-07
+Usage bars now show "X of Y" (e.g. "45m 30s of 2h 0m") when a daily time limit is set.
+
 ### [x] Fix usage report accuracy (#111) - completed 2026-04-07
 Fixed wrong ACTIVITY_RESUMED/PAUSED event type constants (were hardcoded as 7/8, actually 23/24). Added 3-second session merging to handle gesture navigation causing rapid activity cycling. Updated formatSeconds to show seconds for sub-minute usage.
 

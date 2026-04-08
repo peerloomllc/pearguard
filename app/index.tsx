@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState, BackHandler } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -224,6 +224,7 @@ export default function Root () {
   const [showScanner, setShowScanner] = useState(false)
   const scanResolve = useRef<((url: string) => void) | null>(null)
   const scanReject  = useRef<((reason: string) => void) | null>(null)
+  const backPending = useRef(false)
   const router = useRouter()
 
   // Keep module-level inject pointer in sync with current WebView ref on every render
@@ -233,6 +234,13 @@ export default function Root () {
   const onWebViewMessage = useCallback((e: any) => {
     try {
       const msg = JSON.parse(e.nativeEvent.data)
+
+      // Android back gesture result from WebView
+      if (msg.method === 'back:result') {
+        backPending.current = false
+        if (!msg.args?.handled) BackHandler.exitApp()
+        return
+      }
 
       // Methods handled directly in RN (not forwarded to Bare)
       if (msg.method === 'navigateTo') {
@@ -354,6 +362,29 @@ export default function Root () {
   }, [])
 
   // Start the worklet and load the HTML bundle
+  // Android back gesture: ask the WebView if it can handle back navigation.
+  // Always consume the gesture (return true) to prevent instant exit, then
+  // exitApp() if the WebView reports it didn't handle it.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (backPending.current) return true // already waiting for a response
+      if (webViewRef.current) {
+        backPending.current = true
+        webViewRef.current.injectJavaScript('window.__pearBack?.();true;')
+        // Safety timeout: if WebView doesn't respond within 500ms, exit
+        setTimeout(() => {
+          if (backPending.current) {
+            backPending.current = false
+            BackHandler.exitApp()
+          }
+        }, 500)
+        return true
+      }
+      return false
+    })
+    return () => sub.remove()
+  }, [])
+
   useEffect(() => {
     let buf = ''
     const nativeSubs: ReturnType<typeof DeviceEventEmitter.addListener>[] = []

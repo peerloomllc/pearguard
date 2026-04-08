@@ -14606,9 +14606,9 @@
             },
             onClick: (e) => e.stopPropagation(),
             children: [
-              title && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.base}px` }, children: title }),
+              title && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: title }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { color: colors.text.secondary, ...typography2.body }, children }),
-              footer && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, marginTop: `${spacing2.base}px`, justifyContent: "flex-end" }, children: footer })
+              footer && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, marginTop: `${spacing2.base}px`, justifyContent: "center" }, children: footer })
             ]
           }
         )
@@ -14967,7 +14967,10 @@
           "Last synced: ",
           timeAgo(report.lastSynced || report.timestamp)
         ] }),
-        onShowReports && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Button, { variant: "secondary", onClick: onShowReports, style: { fontSize: "12px", padding: "4px 12px" }, children: "See Reports" })
+        onShowReports && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Button, { variant: "secondary", onClick: () => {
+          window.callBare("haptic:tap");
+          onShowReports();
+        }, style: { fontSize: "12px", padding: "4px 12px" }, children: "See Reports" })
       ] }),
       [...report.apps].sort((a, b) => b.todaySeconds - a.todaySeconds).map((app, i) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         UsageBar,
@@ -16425,7 +16428,10 @@
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
           {
-            onClick: () => navigate(-1),
+            onClick: () => {
+              window.callBare("haptic:tap");
+              navigate(-1);
+            },
             disabled: !canGoBack,
             style: { background: "none", border: "none", cursor: canGoBack ? "pointer" : "default", padding: `${spacing2.xs}px`, opacity: canGoBack ? 1 : 0.3 },
             children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Icon, { name: "CaretLeft", size: 20, color: colors.text.primary })
@@ -16435,7 +16441,10 @@
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
           {
-            onClick: () => navigate(1),
+            onClick: () => {
+              window.callBare("haptic:tap");
+              navigate(1);
+            },
             disabled: !canGoForward,
             style: { background: "none", border: "none", cursor: canGoForward ? "pointer" : "default", padding: `${spacing2.xs}px`, opacity: canGoForward ? 1 : 0.3 },
             children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Icon, { name: "CaretRight", size: 20, color: colors.text.primary })
@@ -16499,7 +16508,10 @@
       /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { display: "flex", justifyContent: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.base}px` }, children: [7, 30].map((p) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
         "button",
         {
-          onClick: () => setPeriod(p),
+          onClick: () => {
+            window.callBare("haptic:tap");
+            setPeriod(p);
+          },
           style: {
             padding: `${spacing2.xs}px ${spacing2.md}px`,
             border: "none",
@@ -16637,7 +16649,10 @@
           "button",
           {
             onClick: () => {
-              if (canGoBack) setDate(dateOffset(date, -1));
+              if (canGoBack) {
+                window.callBare("haptic:tap");
+                setDate(dateOffset(date, -1));
+              }
             },
             disabled: !canGoBack,
             style: { background: "none", border: "none", cursor: canGoBack ? "pointer" : "default", padding: `${spacing2.xs}px`, opacity: canGoBack ? 1 : 0.3 },
@@ -16649,7 +16664,10 @@
           "button",
           {
             onClick: () => {
-              if (canGoForward) setDate(dateOffset(date, 1));
+              if (canGoForward) {
+                window.callBare("haptic:tap");
+                setDate(dateOffset(date, 1));
+              }
             },
             disabled: !canGoForward,
             style: { background: "none", border: "none", cursor: canGoForward ? "pointer" : "default", padding: `${spacing2.xs}px`, opacity: canGoForward ? 1 : 0.3 },
@@ -16676,7 +16694,10 @@
               /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
                 "button",
                 {
-                  onClick: () => handleExpand(app.packageName),
+                  onClick: () => {
+                    window.callBare("haptic:tap");
+                    handleExpand(app.packageName);
+                  },
                   style: {
                     width: "100%",
                     display: "flex",
@@ -16823,7 +16844,10 @@
       /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { display: "flex", justifyContent: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.base}px` }, children: [{ value: 1, label: "Today" }, { value: 7, label: "7 days" }, { value: 30, label: "30 days" }].map((p) => /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
         "button",
         {
-          onClick: () => setPeriod(p.value),
+          onClick: () => {
+            window.callBare("haptic:tap");
+            setPeriod(p.value);
+          },
           style: {
             padding: `${spacing2.xs}px ${spacing2.md}px`,
             border: "none",
@@ -16853,7 +16877,10 @@
             /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
               "button",
               {
-                onClick: () => setExpanded(isExpanded ? null : cat.category),
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  setExpanded(isExpanded ? null : cat.category);
+                },
                 style: {
                   width: "100%",
                   display: "flex",
@@ -16904,7 +16931,10 @@
         borderBottom: `1px solid ${colors.border}`,
         backgroundColor: colors.surface.card
       }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { onClick: onBack, style: { background: "none", border: "none", cursor: "pointer", padding: `${spacing2.xs}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Icon, { name: "CaretLeft", size: 20, color: colors.primary }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { onClick: () => {
+          window.callBare("haptic:tap");
+          onBack();
+        }, style: { background: "none", border: "none", cursor: "pointer", padding: `${spacing2.xs}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Icon, { name: "CaretLeft", size: 20, color: colors.primary }) }),
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600" }, children: "Usage Reports" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: {
@@ -16918,7 +16948,10 @@
         return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
           {
-            onClick: () => setView(v.key),
+            onClick: () => {
+              window.callBare("haptic:tap");
+              setView(v.key);
+            },
             style: {
               flex: 1,
               padding: `${spacing2.xs + 2}px ${spacing2.sm}px`,
@@ -17066,14 +17099,27 @@
     const [locked, setLocked] = (0, import_react10.useState)(child.locked || false);
     const [coparentInviteActive, setCoparentInviteActive] = (0, import_react10.useState)(false);
     async function handleRemove() {
+      window.callBare("haptic:tap");
       await window.callBare("child:unpair", { childPublicKey: child.publicKey });
       onBack();
     }
     async function handleLockToggle() {
+      window.callBare("haptic:tap");
       const newLocked = !locked;
       await window.callBare("policy:setLock", { childPublicKey: child.publicKey, locked: newLocked });
       setLocked(newLocked);
     }
+    const backHandler = (0, import_react10.useCallback)(() => {
+      if (showReports) {
+        setShowReports(false);
+        return true;
+      }
+      return false;
+    }, [showReports]);
+    (0, import_react10.useEffect)(() => {
+      window.__registerBackHandler?.(backHandler);
+      return () => window.__unregisterBackHandler?.(backHandler);
+    }, [backHandler]);
     if (showReports) {
       return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(UsageReports, { childPublicKey: child.publicKey, onBack: () => setShowReports(false) });
     }
@@ -17130,19 +17176,18 @@
             children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Icon, { name: locked ? "LockSimple" : "LockSimpleOpen", size: 20, color: locked ? colors.error : colors.text.muted })
           }
         ),
-        !confirmRemove ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
           "button",
           {
-            onClick: () => setConfirmRemove(true),
+            onClick: () => {
+              window.callBare("haptic:tap");
+              setConfirmRemove(true);
+            },
             style: { background: "none", border: "none", cursor: "pointer", padding: `${spacing2.xs}px` },
             "aria-label": "Remove child",
             children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Icon, { name: "Trash", size: 18, color: colors.text.muted })
           }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: "Remove?" }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Button, { variant: "danger", onClick: handleRemove, style: { padding: `${spacing2.xs}px ${spacing2.sm}px` }, children: "Yes" }),
-          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Button, { variant: "secondary", onClick: () => setConfirmRemove(false), style: { padding: `${spacing2.xs}px ${spacing2.sm}px` }, children: "No" })
-        ] })
+        )
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: {
         display: "flex",
@@ -17192,7 +17237,27 @@
           }
         ) }),
         tab === "usage" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(UsageTab, { childPublicKey: child.publicKey, onShowReports: () => setShowReports(true) }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActiveComponent, { childPublicKey: child.publicKey })
-      ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+        Modal,
+        {
+          visible: confirmRemove,
+          onClose: () => setConfirmRemove(false),
+          title: `Unpair from ${child.displayName}?`,
+          footer: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Button, { variant: "secondary", onClick: () => {
+              window.callBare("haptic:tap");
+              setConfirmRemove(false);
+            }, style: { flex: 1 }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Button, { variant: "danger", icon: "Trash", onClick: handleRemove, style: { flex: 1 }, children: "Unpair" })
+          ] }),
+          children: [
+            "This will remove ",
+            child.displayName,
+            " from your dashboard. You'll need to re-pair to monitor this device again."
+          ]
+        }
+      )
     ] });
   }
 
@@ -17400,6 +17465,19 @@
       setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true } : c));
       setLockTarget(null);
     }
+    const backHandler = (0, import_react12.useCallback)(() => {
+      if (selectedChild) {
+        setSelectedChild(null);
+        setSelectedTab(null);
+        loadChildren();
+        return true;
+      }
+      return false;
+    }, [selectedChild]);
+    (0, import_react12.useEffect)(() => {
+      window.__registerBackHandler?.(backHandler);
+      return () => window.__unregisterBackHandler?.(backHandler);
+    }, [backHandler]);
     if (selectedChild) {
       return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
         ChildDetail,
@@ -17500,7 +17578,10 @@
       {
         role: "switch",
         "aria-checked": checked,
-        onClick: () => onChange(!checked),
+        onClick: () => {
+          window.callBare("haptic:tap");
+          onChange(!checked);
+        },
         style: {
           position: "relative",
           width: `${trackW}px`,
@@ -17508,8 +17589,8 @@
           borderRadius: `${trackH / 2}px`,
           border: "none",
           cursor: "pointer",
-          backgroundColor: checked ? colors.primary : colors.surface.elevated,
-          transition: "background-color 0.2s",
+          backgroundColor: checked ? colors.primary : colors.border,
+          transition: "background-color 0.2s, border-color 0.2s",
           padding: 0,
           ...style
         },
@@ -17524,6 +17605,7 @@
               height: `${thumbSize}px`,
               borderRadius: "50%",
               backgroundColor: "#FFFFFF",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
               transition: "left 0.2s"
             }
           }
@@ -19048,6 +19130,23 @@
       pending[id] = { resolve, reject };
       window.ReactNativeWebView.postMessage(JSON.stringify({ id, method, args: args || {} }));
     });
+  };
+  var backHandlers = [];
+  window.__registerBackHandler = function(handler) {
+    backHandlers.push(handler);
+  };
+  window.__unregisterBackHandler = function(handler) {
+    const idx = backHandlers.indexOf(handler);
+    if (idx !== -1) backHandlers.splice(idx, 1);
+  };
+  window.__pearBack = function() {
+    for (let i = backHandlers.length - 1; i >= 0; i--) {
+      if (backHandlers[i]()) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ method: "back:result", args: { handled: true } }));
+        return;
+      }
+    }
+    window.ReactNativeWebView.postMessage(JSON.stringify({ method: "back:result", args: { handled: false } }));
   };
   var root = (0, import_client.createRoot)(document.getElementById("root"));
   root.render(/* @__PURE__ */ (0, import_jsx_runtime30.jsx)(App, {}));

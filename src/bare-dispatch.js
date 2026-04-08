@@ -331,7 +331,9 @@ function createDispatch (ctx) {
         // Broadcast updated hello to all connected peers (#73).
         const myIdentityHex = ctx.b4a.toString(ctx.identity.publicKey, 'hex')
         const avatarThumb = profile.avatar
-          ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id : profile.avatar.thumb64 || null)
+          ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id
+            : profile.avatar.mime ? 'mime:' + profile.avatar.mime + ';' + (profile.avatar.base64 || profile.avatar.thumb64 || '')
+            : profile.avatar.thumb64 || null)
           : null
         const helloMsg = { type: 'hello', payload: { publicKey: myIdentityHex, displayName: name.trim(), avatarThumb } }
         for (const [noiseKey] of ctx.peers) {
@@ -356,7 +358,9 @@ function createDispatch (ctx) {
         // Broadcast updated hello to all connected peers
         const myIdHex = ctx.b4a.toString(ctx.identity.publicKey, 'hex')
         const thumb = avatar
-          ? (avatar.type === 'preset' ? 'preset:' + avatar.id : avatar.thumb64 || null)
+          ? (avatar.type === 'preset' ? 'preset:' + avatar.id
+            : avatar.mime ? 'mime:' + avatar.mime + ';' + (avatar.base64 || avatar.thumb64 || '')
+            : avatar.thumb64 || null)
           : null
         const helloPayload = { publicKey: myIdHex, displayName: profile.displayName || '', avatarThumb: thumb }
         const helloUpdate = { type: 'hello', payload: helloPayload }

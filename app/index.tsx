@@ -305,19 +305,32 @@ export default function Root () {
               : ImagePicker.launchImageLibraryAsync
             const result = await launch({
               mediaTypes: ['images'],
-              allowsEditing: true,
-              aspect: [1, 1] as [number, number],
+              allowsEditing: false,
               quality: 0.8,
               base64: true,
             })
-            if (result.canceled || !result.assets?.[0]?.base64) {
+            if (result.canceled || !result.assets?.[0]) {
               webViewRef.current?.injectJavaScript(
                 'window.__pearResponse(' + msgId + ', null, "cancelled");true;'
               )
             } else {
-              webViewRef.current?.injectJavaScript(
-                'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64: result.assets[0].base64 }) + ', null);true;'
-              )
+              const asset = result.assets[0]
+              const mime = asset.mimeType || 'image/jpeg'
+              // For animated formats, read the raw file to preserve animation
+              // (ImagePicker's base64 output may strip GIF/WebP frames)
+              let base64 = asset.base64
+              if ((mime === 'image/gif' || mime === 'image/webp') && asset.uri) {
+                base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
+              }
+              if (!base64) {
+                webViewRef.current?.injectJavaScript(
+                  'window.__pearResponse(' + msgId + ', null, "no data");true;'
+                )
+              } else {
+                webViewRef.current?.injectJavaScript(
+                  'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64, mime }) + ', null);true;'
+                )
+              }
             }
           } catch (err: any) {
             webViewRef.current?.injectJavaScript(

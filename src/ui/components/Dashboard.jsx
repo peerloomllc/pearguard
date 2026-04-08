@@ -122,6 +122,22 @@ export default forwardRef(function Dashboard(_props, ref) {
     setLockTarget(null);
   }
 
+  // Android back gesture: close child detail view
+  const backHandler = useCallback(() => {
+    if (selectedChild) {
+      setSelectedChild(null);
+      setSelectedTab(null);
+      loadChildren();
+      return true;
+    }
+    return false;
+  }, [selectedChild]);
+
+  useEffect(() => {
+    window.__registerBackHandler?.(backHandler);
+    return () => window.__unregisterBackHandler?.(backHandler);
+  }, [backHandler]);
+
   if (selectedChild) {
     return (
       <ChildDetail

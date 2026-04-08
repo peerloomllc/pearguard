@@ -62,6 +62,32 @@ window.callBare = function (method, args) {
   });
 };
 
+// Back handler stack — deepest view registers last, gets first crack.
+// Each handler returns true if it consumed the back gesture.
+const backHandlers = [];
+
+window.__registerBackHandler = function (handler) {
+  backHandlers.push(handler);
+};
+
+window.__unregisterBackHandler = function (handler) {
+  const idx = backHandlers.indexOf(handler);
+  if (idx !== -1) backHandlers.splice(idx, 1);
+};
+
+// Called by RN shell via injectJavaScript when Android back gesture fires.
+// Walks the handler stack top-down (deepest first). Posts 'back:result'
+// so RN knows whether the WebView consumed the gesture.
+window.__pearBack = function () {
+  for (let i = backHandlers.length - 1; i >= 0; i--) {
+    if (backHandlers[i]()) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ method: 'back:result', args: { handled: true } }));
+      return;
+    }
+  }
+  window.ReactNativeWebView.postMessage(JSON.stringify({ method: 'back:result', args: { handled: false } }));
+};
+
 // Mount React app
 const root = createRoot(document.getElementById('root'));
 root.render(<App />);

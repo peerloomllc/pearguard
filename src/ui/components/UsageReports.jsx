@@ -196,7 +196,7 @@ function DailySummary({ childPublicKey, colors, spacing, radius }) {
       {/* Day selector */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.base}px` }}>
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => { window.callBare('haptic:tap'); navigate(-1); }}
           disabled={!canGoBack}
           style={{ background: 'none', border: 'none', cursor: canGoBack ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoBack ? 1 : 0.3 }}
         >
@@ -206,7 +206,7 @@ function DailySummary({ childPublicKey, colors, spacing, radius }) {
           {formatDate(date)}
         </span>
         <button
-          onClick={() => navigate(1)}
+          onClick={() => { window.callBare('haptic:tap'); navigate(1); }}
           disabled={!canGoForward}
           style={{ background: 'none', border: 'none', cursor: canGoForward ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoForward ? 1 : 0.3 }}
         >
@@ -287,7 +287,7 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
         {[7, 30].map((p) => (
           <button
             key={p}
-            onClick={() => setPeriod(p)}
+            onClick={() => { window.callBare('haptic:tap'); setPeriod(p); }}
             style={{
               padding: `${spacing.xs}px ${spacing.md}px`,
               border: 'none',
@@ -451,7 +451,7 @@ function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
       {/* Day selector */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.base}px` }}>
         <button
-          onClick={() => { if (canGoBack) setDate(dateOffset(date, -1)); }}
+          onClick={() => { if (canGoBack) { window.callBare('haptic:tap'); setDate(dateOffset(date, -1)); } }}
           disabled={!canGoBack}
           style={{ background: 'none', border: 'none', cursor: canGoBack ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoBack ? 1 : 0.3 }}
         >
@@ -461,7 +461,7 @@ function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
           {formatDate(date)}
         </span>
         <button
-          onClick={() => { if (canGoForward) setDate(dateOffset(date, 1)); }}
+          onClick={() => { if (canGoForward) { window.callBare('haptic:tap'); setDate(dateOffset(date, 1)); } }}
           disabled={!canGoForward}
           style={{ background: 'none', border: 'none', cursor: canGoForward ? 'pointer' : 'default', padding: `${spacing.xs}px`, opacity: canGoForward ? 1 : 0.3 }}
         >
@@ -493,7 +493,7 @@ function AppDrillDown({ childPublicKey, colors, spacing, radius }) {
             >
               {/* App row */}
               <button
-                onClick={() => handleExpand(app.packageName)}
+                onClick={() => { window.callBare('haptic:tap'); handleExpand(app.packageName); }}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: `${spacing.sm + 2}px ${spacing.md}px`,
@@ -659,7 +659,7 @@ function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
         {[{ value: 1, label: 'Today' }, { value: 7, label: '7 days' }, { value: 30, label: '30 days' }].map((p) => (
           <button
             key={p.value}
-            onClick={() => setPeriod(p.value)}
+            onClick={() => { window.callBare('haptic:tap'); setPeriod(p.value); }}
             style={{
               padding: `${spacing.xs}px ${spacing.md}px`,
               border: 'none',
@@ -697,7 +697,7 @@ function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
                   overflow: 'hidden',
                 }}>
                   <button
-                    onClick={() => setExpanded(isExpanded ? null : cat.category)}
+                    onClick={() => { window.callBare('haptic:tap'); setExpanded(isExpanded ? null : cat.category); }}
                     style={{
                       width: '100%', display: 'flex', alignItems: 'center',
                       padding: `${spacing.sm + 2}px ${spacing.md}px`,
@@ -749,7 +749,7 @@ export default function UsageReports({ childPublicKey, onBack }) {
         borderBottom: `1px solid ${colors.border}`,
         backgroundColor: colors.surface.card,
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}>
+        <button onClick={() => { window.callBare('haptic:tap'); onBack(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}>
           <Icon name="CaretLeft" size={20} color={colors.primary} />
         </button>
         <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600' }}>Usage Reports</span>
@@ -767,7 +767,7 @@ export default function UsageReports({ childPublicKey, onBack }) {
           return (
             <button
               key={v.key}
-              onClick={() => setView(v.key)}
+              onClick={() => { window.callBare('haptic:tap'); setView(v.key); }}
               style={{
                 flex: 1,
                 padding: `${spacing.xs + 2}px ${spacing.sm}px`,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import Button from './primitives/Button.jsx';
@@ -9,6 +9,7 @@ import ActivityTab from './ActivityTab.jsx';
 import RulesTab from './RulesTab.jsx';
 import UsageReports from './UsageReports.jsx';
 import CoparentInviteCard from './CoparentInviteCard.jsx';
+import Modal from './primitives/Modal.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', icon: 'ChartBar' },
@@ -36,15 +37,31 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   const [coparentInviteActive, setCoparentInviteActive] = useState(false);
 
   async function handleRemove() {
+    window.callBare('haptic:tap');
     await window.callBare('child:unpair', { childPublicKey: child.publicKey });
     onBack();
   }
 
   async function handleLockToggle() {
+    window.callBare('haptic:tap');
     const newLocked = !locked;
     await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: newLocked });
     setLocked(newLocked);
   }
+
+  // Android back gesture: close UsageReports sub-view
+  const backHandler = useCallback(() => {
+    if (showReports) {
+      setShowReports(false);
+      return true;
+    }
+    return false;
+  }, [showReports]);
+
+  useEffect(() => {
+    window.__registerBackHandler?.(backHandler);
+    return () => window.__unregisterBackHandler?.(backHandler);
+  }, [backHandler]);
 
   if (showReports) {
     return <UsageReports childPublicKey={child.publicKey} onBack={() => setShowReports(false)} />;
@@ -94,21 +111,13 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           <Icon name={locked ? 'LockSimple' : 'LockSimpleOpen'} size={20} color={locked ? colors.error : colors.text.muted} />
         </button>
 
-        {!confirmRemove ? (
-          <button
-            onClick={() => setConfirmRemove(true)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}
-            aria-label="Remove child"
-          >
-            <Icon name="Trash" size={18} color={colors.text.muted} />
-          </button>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
-            <span style={{ ...typography.caption, color: colors.text.secondary }}>Remove?</span>
-            <Button variant="danger" onClick={handleRemove} style={{ padding: `${spacing.xs}px ${spacing.sm}px` }}>Yes</Button>
-            <Button variant="secondary" onClick={() => setConfirmRemove(false)} style={{ padding: `${spacing.xs}px ${spacing.sm}px` }}>No</Button>
-          </div>
-        )}
+        <button
+          onClick={() => { window.callBare('haptic:tap'); setConfirmRemove(true); }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}
+          aria-label="Remove child"
+        >
+          <Icon name="Trash" size={18} color={colors.text.muted} />
+        </button>
       </div>
 
       {/* Sub-tabs */}
@@ -159,6 +168,18 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           <ActiveComponent childPublicKey={child.publicKey} />
         )}
       </div>
+
+      <Modal
+        visible={confirmRemove}
+        onClose={() => setConfirmRemove(false)}
+        title={`Unpair from ${child.displayName}?`}
+        footer={<>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setConfirmRemove(false); }} style={{ flex: 1 }}>Cancel</Button>
+          <Button variant="danger" icon="Trash" onClick={handleRemove} style={{ flex: 1 }}>Unpair</Button>
+        </>}
+      >
+        This will remove {child.displayName} from your dashboard. You'll need to re-pair to monitor this device again.
+      </Modal>
     </div>
   );
 }

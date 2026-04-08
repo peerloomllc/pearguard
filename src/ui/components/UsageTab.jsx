@@ -102,7 +102,7 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.base}px` }}>
         <p style={{ fontSize: '12px', color: colors.text.muted, margin: 0 }}>Last synced: {timeAgo(report.lastSynced || report.timestamp)}</p>
         {onShowReports && (
-          <Button variant="secondary" onClick={onShowReports} style={{ fontSize: '12px', padding: '4px 12px' }}>See Reports</Button>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); onShowReports(); }} style={{ fontSize: '12px', padding: '4px 12px' }}>See Reports</Button>
         )}
       </div>
       {[...report.apps].sort((a, b) => b.todaySeconds - a.todaySeconds).map((app, i) => (

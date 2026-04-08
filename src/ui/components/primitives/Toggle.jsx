@@ -12,7 +12,7 @@ export default function Toggle({ checked, onChange, style }) {
     <button
       role="switch"
       aria-checked={checked}
-      onClick={() => onChange(!checked)}
+      onClick={() => { window.callBare('haptic:tap'); onChange(!checked); }}
       style={{
         position: 'relative',
         width: `${trackW}px`,
@@ -20,8 +20,8 @@ export default function Toggle({ checked, onChange, style }) {
         borderRadius: `${trackH / 2}px`,
         border: 'none',
         cursor: 'pointer',
-        backgroundColor: checked ? colors.primary : colors.surface.elevated,
-        transition: 'background-color 0.2s',
+        backgroundColor: checked ? colors.primary : colors.border,
+        transition: 'background-color 0.2s, border-color 0.2s',
         padding: 0,
         ...style,
       }}
@@ -35,6 +35,7 @@ export default function Toggle({ checked, onChange, style }) {
           height: `${thumbSize}px`,
           borderRadius: '50%',
           backgroundColor: '#FFFFFF',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
           transition: 'left 0.2s',
         }}
       />

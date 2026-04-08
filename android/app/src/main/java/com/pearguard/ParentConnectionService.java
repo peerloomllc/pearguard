@@ -39,6 +39,7 @@ public class ParentConnectionService extends Service {
     private static final int    NOTIF_ID             = 1001;
     private static final long   RECONNECT_INTERVAL_MS  = 30_000; // 30 s
     private static final long   HEARTBEAT_STALE_MS     = 3 * 60_000; // 3 min (3 missed heartbeats)
+    private static final long   NOTIFY_COOLDOWN_MS     = 30 * 60_000; // 30 min between notifications per child
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int loopTick = 0; // counts 30s ticks; heartbeat check runs every 2nd tick (60 s)
@@ -128,11 +129,14 @@ public class ParentConnectionService extends Service {
             if (lastHeartbeat < serviceStartedAt) continue;
 
             boolean alreadyNotified = prefs.getBoolean("heartbeat_notified_" + childPublicKey, false);
-            if (now - lastHeartbeat > HEARTBEAT_STALE_MS && !alreadyNotified) {
+            long lastNotifiedAt = prefs.getLong("heartbeat_notified_at_" + childPublicKey, 0);
+            boolean inCooldown = (now - lastNotifiedAt) < NOTIFY_COOLDOWN_MS;
+            if (now - lastHeartbeat > HEARTBEAT_STALE_MS && !alreadyNotified && !inCooldown) {
                 String childName = prefs.getString("heartbeat_name_" + childPublicKey, "Your child");
                 showOfflineNotification(childName, childPublicKey);
                 if (editor == null) editor = prefs.edit();
                 editor.putBoolean("heartbeat_notified_" + childPublicKey, true);
+                editor.putLong("heartbeat_notified_at_" + childPublicKey, now);
             }
         }
 

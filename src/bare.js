@@ -318,7 +318,9 @@ async function onPeerConnection (conn, info) {
     const profile = profileRaw ? profileRaw.value : {}
     const displayName = profile.displayName || 'Child Device'
     const avatarThumb = profile.avatar
-      ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id : profile.avatar.thumb64 || null)
+      ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id
+        : profile.avatar.mime ? 'mime:' + profile.avatar.mime + ';' + (profile.avatar.base64 || profile.avatar.thumb64 || '')
+        : profile.avatar.thumb64 || null)
       : null
     const hello = signMessage({
       type: 'hello',
@@ -844,7 +846,9 @@ async function handleHello (msg, conn, remoteKeyHex) {
     const myProfile = profileRaw ? profileRaw.value : {}
     const myDisplayName = myProfile.displayName || 'PearGuard Device'
     const myAvatarThumb = myProfile.avatar
-      ? (myProfile.avatar.type === 'preset' ? 'preset:' + myProfile.avatar.id : myProfile.avatar.thumb64 || null)
+      ? (myProfile.avatar.type === 'preset' ? 'preset:' + myProfile.avatar.id
+        : myProfile.avatar.mime ? 'mime:' + myProfile.avatar.mime + ';' + (myProfile.avatar.base64 || myProfile.avatar.thumb64 || '')
+        : myProfile.avatar.thumb64 || null)
       : null
     const hello = signMessage({
       type: 'hello',

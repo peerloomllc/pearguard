@@ -14684,6 +14684,12 @@
   function resolveThumb(thumb) {
     if (!thumb) return null;
     if (thumb.startsWith("preset:")) return { type: "preset", id: thumb.slice(7) };
+    if (thumb.startsWith("mime:")) {
+      const semiIdx = thumb.indexOf(";");
+      const mime = thumb.slice(5, semiIdx);
+      const data = thumb.slice(semiIdx + 1);
+      return { type: "custom", thumb64: data, mime };
+    }
     return { type: "custom", thumb64: thumb };
   }
   function Avatar({ avatar, name, size = 48, onClick }) {
@@ -14712,10 +14718,11 @@
     if (resolved && resolved.type === "custom") {
       const src = resolved.base64 || resolved.thumb64;
       if (src) {
+        const mime = resolved.mime || "image/jpeg";
         return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: circleStyle, onClick, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "img",
           {
-            src: `data:image/jpeg;base64,${src}`,
+            src: `data:${mime};base64,${src}`,
             alt: "avatar",
             style: { width: "100%", height: "100%", objectFit: "cover" }
           }
@@ -14898,7 +14905,8 @@
       /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
         /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { fontSize: "12px", color: colors.text.secondary, marginBottom: "3px", marginTop: "6px" }, children: [
           "Today: ",
-          formatSeconds2(todaySeconds)
+          formatSeconds2(todaySeconds),
+          dailyLimitSeconds ? ` of ${formatSeconds2(dailyLimitSeconds)}` : ""
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { height: "8px", backgroundColor: colors.surface.elevated, borderRadius: `${radius2.sm}px`, overflow: "hidden" }, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           "div",
@@ -14913,7 +14921,7 @@
           }
         ) }),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { fontSize: "12px", color: colors.text.secondary, marginBottom: "3px", marginTop: "6px" }, children: [
-          "This week: ",
+          "Last 7 days: ",
           formatSeconds2(weekSeconds)
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { height: "8px", backgroundColor: colors.surface.elevated, borderRadius: `${radius2.sm}px`, overflow: "hidden" }, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
@@ -16068,7 +16076,7 @@
             appName
           ] }, packageName)) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", justifyContent: "center", gap: `${spacing2.sm}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
             "button",
             {
@@ -17527,7 +17535,7 @@
   // src/ui/components/AvatarPicker.jsx
   var import_react13 = __toESM(require_react());
   var import_jsx_runtime18 = __toESM(require_jsx_runtime());
-  function compressImage(base64, size, quality) {
+  function compressImage(base64, size, quality, sourceMime) {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -17542,7 +17550,20 @@
         const dataUrl = canvas.toDataURL("image/jpeg", quality);
         resolve(dataUrl.split(",")[1]);
       };
-      img.src = "data:image/jpeg;base64," + base64;
+      img.src = "data:" + (sourceMime || "image/jpeg") + ";base64," + base64;
+    });
+  }
+  var ANIMATED_MIMES = ["image/gif", "image/webp"];
+  var MAX_ANIMATED_BASE64 = 5e5;
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        resolve(dataUrl.split(",")[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
   }
   function AvatarPicker({ currentAvatar, name, onSave, onCancel }) {
@@ -17552,22 +17573,47 @@
       currentAvatar && currentAvatar.type === "custom" ? currentAvatar : null
     );
     const [loading, setLoading] = (0, import_react13.useState)(false);
-    async function pickImage(method) {
+    const fileInputRef = import_react13.default.useRef(null);
+    async function pickCamera() {
       setLoading(true);
       try {
-        const result = await window.callBare(method);
+        const result = await window.callBare("avatar:pickCamera");
         if (!result || !result.base64) {
           setLoading(false);
           return;
         }
-        const base64 = await compressImage(result.base64, 256, 0.8);
-        const thumb64 = await compressImage(result.base64, 48, 0.6);
+        const base64 = await compressImage(result.base64, 256, 0.8, result.mime);
+        const thumb64 = await compressImage(result.base64, 48, 0.6, result.mime);
         const avatar = { type: "custom", base64, thumb64 };
         setCustomPreview(avatar);
         setSelected(avatar);
       } catch (e) {
       }
       setLoading(false);
+    }
+    async function handleFileInput(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setLoading(true);
+      try {
+        const mime = file.type || "image/jpeg";
+        const isAnimated = ANIMATED_MIMES.includes(mime);
+        const raw = await readFileAsBase64(file);
+        let avatar;
+        if (isAnimated && raw.length <= MAX_ANIMATED_BASE64) {
+          const thumb64 = await compressImage(raw, 48, 0.6, mime);
+          avatar = { type: "custom", base64: raw, thumb64, mime };
+        } else {
+          const base64 = await compressImage(raw, 256, 0.8, mime);
+          const thumb64 = await compressImage(raw, 48, 0.6, mime);
+          avatar = { type: "custom", base64, thumb64 };
+        }
+        setCustomPreview(avatar);
+        setSelected(avatar);
+      } catch (e2) {
+      }
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
     function selectPreset(id) {
       setSelected({ type: "preset", id });
@@ -17632,19 +17678,29 @@
         /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
           "button",
           {
-            style: { flex: 1, padding: "10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.md}px`, backgroundColor: colors.surface.elevated, fontSize: "13px", fontWeight: "600", color: colors.text.primary, cursor: "pointer" },
-            onClick: () => pickImage("avatar:pickCamera"),
+            style: { flex: 1, padding: "10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.md}px`, backgroundColor: colors.surface.elevated, fontSize: "13px", fontWeight: "600", color: colors.text.primary, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1 },
+            onClick: pickCamera,
             disabled: loading,
-            children: loading ? "Loading..." : "Take Photo"
+            children: "Take Photo"
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
           "button",
           {
-            style: { flex: 1, padding: "10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.md}px`, backgroundColor: colors.surface.elevated, fontSize: "13px", fontWeight: "600", color: colors.text.primary, cursor: "pointer" },
-            onClick: () => pickImage("avatar:pickGallery"),
+            style: { flex: 1, padding: "10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.md}px`, backgroundColor: colors.surface.elevated, fontSize: "13px", fontWeight: "600", color: colors.text.primary, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1 },
+            onClick: () => fileInputRef.current?.click(),
             disabled: loading,
-            children: loading ? "Loading..." : "Choose from Gallery"
+            children: "Choose from Gallery"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+          "input",
+          {
+            ref: fileInputRef,
+            type: "file",
+            accept: "image/*",
+            style: { display: "none" },
+            onChange: handleFileInput
           }
         )
       ] }),
@@ -17941,7 +17997,7 @@
                 handleNameSave();
               },
               disabled: savingName || nameUnchanged,
-              style: { width: "100%" },
+              style: { alignSelf: "center" },
               children: savingName ? "Saving..." : "Save Name"
             }
           )
@@ -18853,7 +18909,7 @@
               handleSave();
             },
             disabled: saving || unchanged,
-            style: { ...btnStyle, ...saving || unchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: "not-allowed" } : {} },
+            style: { ...btnStyle, alignSelf: "center", ...saving || unchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: "not-allowed" } : {} },
             children: saving ? "Saving\u2026" : "Save Name"
           }
         )

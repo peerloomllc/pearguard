@@ -20,6 +20,13 @@ function getColor(name) {
 function resolveThumb(thumb) {
   if (!thumb) return null
   if (thumb.startsWith('preset:')) return { type: 'preset', id: thumb.slice(7) }
+  // Animated avatars use "mime:<type>;base64" prefix to preserve MIME type
+  if (thumb.startsWith('mime:')) {
+    const semiIdx = thumb.indexOf(';')
+    const mime = thumb.slice(5, semiIdx)
+    const data = thumb.slice(semiIdx + 1)
+    return { type: 'custom', thumb64: data, mime }
+  }
   return { type: 'custom', thumb64: thumb }
 }
 
@@ -52,10 +59,11 @@ export default function Avatar({ avatar, name, size = 48, onClick }) {
   if (resolved && resolved.type === 'custom') {
     const src = resolved.base64 || resolved.thumb64
     if (src) {
+      const mime = resolved.mime || 'image/jpeg'
       return (
         <div style={circleStyle} onClick={onClick}>
           <img
-            src={`data:image/jpeg;base64,${src}`}
+            src={`data:${mime};base64,${src}`}
             alt="avatar"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />

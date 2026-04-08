@@ -3,7 +3,7 @@ import { useTheme } from '../theme.js'
 import { PRESETS, PRESET_IDS } from './presetAvatars.js'
 import Avatar from './Avatar.jsx'
 
-function compressImage(base64, size, quality) {
+function compressImage(base64, size, quality, sourceMime) {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
@@ -19,7 +19,33 @@ function compressImage(base64, size, quality) {
       const dataUrl = canvas.toDataURL('image/jpeg', quality)
       resolve(dataUrl.split(',')[1])
     }
-    img.src = 'data:image/jpeg;base64,' + base64
+    img.src = 'data:' + (sourceMime || 'image/jpeg') + ';base64,' + base64
+  })
+}
+
+const ANIMATED_MIMES = ['image/gif', 'image/webp']
+// Max base64 size for animated avatars (~375KB decoded)
+const MAX_ANIMATED_BASE64 = 500_000
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => resolve(e.target.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      // Strip data URL prefix to get raw base64
+      const dataUrl = e.target.result
+      resolve(dataUrl.split(',')[1])
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
   })
 }
 
@@ -30,14 +56,15 @@ export default function AvatarPicker({ currentAvatar, name, onSave, onCancel }) 
     currentAvatar && currentAvatar.type === 'custom' ? currentAvatar : null
   )
   const [loading, setLoading] = useState(false)
+  const fileInputRef = React.useRef(null)
 
-  async function pickImage(method) {
+  async function pickCamera() {
     setLoading(true)
     try {
-      const result = await window.callBare(method)
+      const result = await window.callBare('avatar:pickCamera')
       if (!result || !result.base64) { setLoading(false); return }
-      const base64 = await compressImage(result.base64, 256, 0.8)
-      const thumb64 = await compressImage(result.base64, 48, 0.6)
+      const base64 = await compressImage(result.base64, 256, 0.8, result.mime)
+      const thumb64 = await compressImage(result.base64, 48, 0.6, result.mime)
       const avatar = { type: 'custom', base64, thumb64 }
       setCustomPreview(avatar)
       setSelected(avatar)
@@ -45,6 +72,34 @@ export default function AvatarPicker({ currentAvatar, name, onSave, onCancel }) 
       // User cancelled or error
     }
     setLoading(false)
+  }
+
+  async function handleFileInput(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLoading(true)
+    try {
+      const mime = file.type || 'image/jpeg'
+      const isAnimated = ANIMATED_MIMES.includes(mime)
+      const raw = await readFileAsBase64(file)
+
+      let avatar
+      if (isAnimated && raw.length <= MAX_ANIMATED_BASE64) {
+        const thumb64 = await compressImage(raw, 48, 0.6, mime)
+        avatar = { type: 'custom', base64: raw, thumb64, mime }
+      } else {
+        const base64 = await compressImage(raw, 256, 0.8, mime)
+        const thumb64 = await compressImage(raw, 48, 0.6, mime)
+        avatar = { type: 'custom', base64, thumb64 }
+      }
+      setCustomPreview(avatar)
+      setSelected(avatar)
+    } catch (e) {
+      // Error reading file
+    }
+    setLoading(false)
+    // Reset so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   function selectPreset(id) {
@@ -106,19 +161,26 @@ export default function AvatarPicker({ currentAvatar, name, onSave, onCancel }) 
         <div style={{ fontSize: '13px', fontWeight: '600', color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: `${spacing.sm}px` }}>Custom Photo</div>
         <div style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
           <button
-            style={{ flex: 1, padding: '10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, backgroundColor: colors.surface.elevated, fontSize: '13px', fontWeight: '600', color: colors.text.primary, cursor: 'pointer' }}
-            onClick={() => pickImage('avatar:pickCamera')}
+            style={{ flex: 1, padding: '10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, backgroundColor: colors.surface.elevated, fontSize: '13px', fontWeight: '600', color: colors.text.primary, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1 }}
+            onClick={pickCamera}
             disabled={loading}
           >
-            {loading ? 'Loading...' : 'Take Photo'}
+            Take Photo
           </button>
           <button
-            style={{ flex: 1, padding: '10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, backgroundColor: colors.surface.elevated, fontSize: '13px', fontWeight: '600', color: colors.text.primary, cursor: 'pointer' }}
-            onClick={() => pickImage('avatar:pickGallery')}
+            style={{ flex: 1, padding: '10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, backgroundColor: colors.surface.elevated, fontSize: '13px', fontWeight: '600', color: colors.text.primary, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1 }}
+            onClick={() => fileInputRef.current?.click()}
             disabled={loading}
           >
-            {loading ? 'Loading...' : 'Choose from Gallery'}
+            Choose from Gallery
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleFileInput}
+          />
         </div>
 
         {customPreview && (

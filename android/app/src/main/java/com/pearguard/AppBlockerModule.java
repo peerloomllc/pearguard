@@ -2,6 +2,7 @@ package com.pearguard;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.KeyguardManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -262,8 +263,23 @@ public class AppBlockerModule extends AccessibilityService {
     public static void checkAndShowOverlayIfNeeded() {
         AppBlockerModule inst = sInstance;
         if (inst == null || inst.lastForegroundPackage == null) return;
-        final String pkg = inst.lastForegroundPackage;
+        // Use UsageStatsManager to get the real foreground app. This catches cases
+        // where lastForegroundPackage is stale - e.g. after the user enters recents
+        // (which sets lastForegroundPackage to the launcher) and then returns to a
+        // blocked app without a TYPE_WINDOW_STATE_CHANGED firing (#113).
+        String realFg = inst.queryForegroundPackage();
+        final String pkg = (realFg != null) ? realFg : inst.lastForegroundPackage;
+        // Keep lastForegroundPackage in sync so onAccessibilityEvent doesn't
+        // immediately dismiss the overlay we're about to show (#113).
+        if (realFg != null && !realFg.equals(inst.lastForegroundPackage)) {
+            inst.lastForegroundPackage = realFg;
+        }
         new Handler(Looper.getMainLooper()).post(() -> {
+            // Dismiss overlay while device is locked (#112).
+            if (inst.isDeviceLocked()) {
+                if (inst.overlayView != null || inst.overlayPending) inst.dismissOverlay();
+                return;
+            }
             if ((inst.overlayView != null || inst.overlayPending)
                     && pkg.equals(inst.currentOverlayPackage)) {
                 // Overlay is showing — re-check whether the block still applies.
@@ -277,6 +293,23 @@ public class AppBlockerModule extends AccessibilityService {
             String reason = inst.getBlockReason(pkg);
             if (reason != null) inst.showOverlay(pkg, reason);
         });
+    }
+
+    /**
+     * Uses the accessibility service's own window API to find the actual foreground
+     * package. More reliable than UsageStatsManager during recents transitions,
+     * since MOVE_TO_FOREGROUND may not fire when returning from the overview screen.
+     */
+    private String queryForegroundPackage() {
+        try {
+            android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) {
+                CharSequence pkg = root.getPackageName();
+                root.recycle();
+                if (pkg != null) return pkg.toString();
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     // Cooldown: after dismissing an overlay, ignore TYPE_WINDOW_STATE_CHANGED events for the
@@ -342,6 +375,12 @@ public class AppBlockerModule extends AccessibilityService {
         // is only dismissed by explicit button actions or when another app
         // takes the foreground.
         if (packageName.equals(getPackageName())) {
+            return;
+        }
+
+        // Don't show or maintain overlay while device is locked (#112).
+        if (isDeviceLocked()) {
+            if (overlayView != null) dismissOverlay();
             return;
         }
 
@@ -649,7 +688,19 @@ public class AppBlockerModule extends AccessibilityService {
         return "blocked";
     }
 
+    /**
+     * Returns true when the device is locked (keyguard active). Used to suppress the
+     * block overlay while the lock screen is showing (#112).
+     */
+    private boolean isDeviceLocked() {
+        KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        return km != null && km.isKeyguardLocked();
+    }
+
     private void showOverlay(String packageName, String reason) {
+        // Don't show overlay on the lock screen (#112).
+        if (isDeviceLocked()) return;
+
         // Skip during cooldown window after the overlay was just dismissed for this package.
         // The blocked app fires a final TYPE_WINDOW_STATE_CHANGED as its activity destructs
         // (e.g. after back gesture or Send Request). Without this guard that event would

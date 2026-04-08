@@ -516,9 +516,11 @@ export default function Root () {
                 Promise.all([
                   NativeModules.UsageStatsModule?.getDailyUsageAllEvents?.(),
                   NativeModules.UsageStatsModule?.getWeeklyUsageAll?.(),
+                  NativeModules.UsageStatsModule?.getLastForegroundPackage?.(),
+                  NativeModules.UsageStatsModule?.getSessionsSinceLastFlush?.(),
                 ])
-                  .then(([usageList, weeklyList]: [{ packageName: string; appName: string; secondsToday: number }[], { packageName: string; appName: string; secondsThisWeek: number }[]]) => {
-                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList } })
+                  .then(([usageList, weeklyList, foregroundPkg, sessionsList]: [{ packageName: string; appName: string; secondsToday: number }[], { packageName: string; appName: string; secondsThisWeek: number }[], string | null, any[]]) => {
+                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList } })
                   })
                   .catch((e: any) => console.warn('[RN] usageFlushRequested getDailyUsageAll failed:', e))
                 return

@@ -7,6 +7,17 @@
     "scheme": "pear",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.pearguard",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan QR codes and set profile photos",
+        "NSPhotoLibraryUsageDescription": "Used to set your profile photo",
+        "NSMicrophoneUsageDescription": "Required by AVCaptureSession for QR scanning and camera capture",
+        "BGTaskSchedulerPermittedIdentifiers": ["com.pearguard.bgsync"],
+        "UIBackgroundModes": ["fetch", "processing"]
+      }
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -45,7 +56,9 @@
       ]
     ],
     "assets": [
-      "./assets/bare-universal.bundle"
+      "./assets/bare-universal.bundle",
+      "./assets/bare-ios.bundle",
+      "./assets/bare-ios-sim.bundle"
     ],
     "version": "0.1.0"
   }

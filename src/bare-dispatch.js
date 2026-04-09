@@ -383,20 +383,24 @@ function createDispatch (ctx) {
         const hashStr = hashBuf.toString('hex')
         if (!hashStr) throw new Error('PIN hashing failed — crypto_generichash returned empty result')
 
-        // Store in parent's own policy key
+        // Store in parent's own policy key (unchanged - for local use)
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : {}
         policy.pinHash = hashStr
         await ctx.db.put('policy', policy)
 
-        // Propagate pinHash into every child's policy and push to connected children
+        // Propagate pinHashes into every child's policy and push to connected children
+        const myPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
         for await (const { value: peerRecord } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
           const childPK = peerRecord.publicKey
           const childPolicyRaw = await ctx.db.get('policy:' + childPK).catch(() => null)
           const childPolicy = childPolicyRaw
             ? childPolicyRaw.value
             : { apps: {}, childPublicKey: childPK, version: 0 }
-          childPolicy.pinHash = hashStr
+          // Write per-parent pinHash into pinHashes map; remove legacy field
+          if (!childPolicy.pinHashes) childPolicy.pinHashes = {}
+          childPolicy.pinHashes[myPublicKey] = hashStr
+          delete childPolicy.pinHash
           childPolicy.version = (childPolicy.version || 0) + 1
           await ctx.db.put('policy:' + childPK, childPolicy)
           try {
@@ -405,7 +409,7 @@ function createDispatch (ctx) {
               ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: childPolicy })
             }
           } catch (_e) {
-            // child offline — pinHash stored; will be pushed on next hello
+            // child offline — pinHashes stored; will be pushed on next hello
           }
         }
 

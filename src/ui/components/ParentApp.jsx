@@ -90,8 +90,11 @@ function PinSetupOverlay({ onDone }) {
       backgroundColor: colors.surface.base,
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
       padding: `${spacing.xl}px`,
+      paddingTop: '15vh',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
     }}>
       <div style={{
         backgroundColor: colors.surface.card,
@@ -100,6 +103,7 @@ function PinSetupOverlay({ onDone }) {
         padding: `${spacing.xxl}px`,
         width: '100%',
         maxWidth: '360px',
+        marginBottom: `${spacing.xxl}px`,
       }}>
         <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.sm}px`, marginTop: 0 }}>
           Set Override PIN

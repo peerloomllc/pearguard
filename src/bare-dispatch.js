@@ -1765,9 +1765,27 @@ async function handleRequestResolved (payload, db, send) {
   if (!requestId || !status) return
 
   const existing = await db.get('request:' + requestId).catch(() => null)
-  if (!existing || existing.value.status !== 'pending') return
 
-  await db.put('request:' + requestId, { ...existing.value, status, resolvedAt })
+  // If the request already has a non-pending status, nothing to update.
+  if (existing && existing.value.status !== 'pending') return
+
+  if (existing) {
+    // Normal path: update the existing pending entry.
+    await db.put('request:' + requestId, { ...existing.value, status, resolvedAt })
+  } else {
+    // Defence-in-depth: this parent never received the original time:request
+    // (e.g. was offline during submission and reconnect message ordering lost it).
+    // Create a minimal entry so the activity list shows the resolved request (#122).
+    console.log('[bare] request:resolved creating missing entry for', requestId)
+    await db.put('request:' + requestId, {
+      id: requestId,
+      packageName: packageName || 'unknown',
+      status,
+      resolvedAt,
+      requestedAt: resolvedAt || Date.now(),
+      notified: true,
+    })
+  }
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName } })
 }
 

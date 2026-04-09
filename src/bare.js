@@ -270,6 +270,12 @@ async function onPeerConnection (conn, info) {
     : null
 
   let peerBuf = ''
+  // Sequential message processing: use a promise chain so each message fully
+  // completes (including DB writes) before the next one starts. Without this,
+  // rapid messages (e.g. queued time:request followed by request:resolved
+  // backfill) race and the second message can't find DB entries written by the
+  // first (#122).
+  let msgChain = Promise.resolve()
   conn.on('data', chunk => {
     peerBuf += chunk.toString()
     const lines = peerBuf.split('\n')
@@ -278,7 +284,9 @@ async function onPeerConnection (conn, info) {
       if (!line.trim()) continue
       try {
         const msg = JSON.parse(line)
-        handlePeerMessage(msg, conn, remoteKeyHex)
+        msgChain = msgChain.then(() => handlePeerMessage(msg, conn, remoteKeyHex)).catch(e => {
+          console.error('[bare] peer message handler error:', e.message)
+        })
       } catch (e) {
         console.error('[bare] peer message parse error:', e.message)
       }
@@ -410,6 +418,7 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       await handleAppDecision(msg.payload, db, send, sendToAllParents)
       break
     case 'request:resolved':
+      console.log('[bare] received request:resolved from', msg.from?.slice(0, 8), 'id:', msg.payload?.requestId?.slice(0, 20), 'status:', msg.payload?.status)
       await handleRequestResolved(msg.payload, db, send)
       break
     case 'requests:syncResolved': {
@@ -686,6 +695,7 @@ function sendToPeer (remoteKeyHex, msg) {
  */
 async function sendToAllParents (message) {
   if (parentPeers.size === 0) {
+    console.log('[bare] sendToAllParents: no parents connected, queuing', message.type)
     await queueMessage(message, db)
     return
   }
@@ -695,12 +705,15 @@ async function sendToAllParents (message) {
   for (const [ik, pp] of parentPeers) {
     try {
       pp.conn.write(payload)
+      console.log('[bare] sendToAllParents:', message.type, 'sent to parent', ik.slice(0, 8))
       sentToAny = true
     } catch (e) {
+      console.warn('[bare] sendToAllParents: write failed for parent', ik.slice(0, 8), e.message)
       parentPeers.delete(ik)
     }
   }
   if (!sentToAny) {
+    console.log('[bare] sendToAllParents: all writes failed, queuing', message.type)
     await queueMessage(message, db)
   }
 }
@@ -856,9 +869,13 @@ async function handleHello (msg, conn, remoteKeyHex) {
     }
   }
 
-  // Send our own hello back (if we haven't already) — include real profile name + avatar
-  const alreadySentHello = peer?.sentHello
-  if (!alreadySentHello) {
+  // Send hello reply if we haven't already on THIS specific connection.
+  // Track per-connection (not per-peer) because Hyperswarm dedup creates
+  // multiple connections with the same remoteKeyHex. The peer entry in the
+  // peers map gets overwritten, so sentHello on the peer entry is unreliable.
+  // Using conn._sentHello ensures each connection gets exactly one reply (#122).
+  if (!conn._sentHello) {
+    conn._sentHello = true
     if (peer) peer.sentHello = true
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
     const profileRaw = await db.get('profile').catch(() => null)

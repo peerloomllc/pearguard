@@ -15,7 +15,8 @@
         "NSPhotoLibraryUsageDescription": "Used to set your profile photo",
         "NSMicrophoneUsageDescription": "Required by AVCaptureSession for QR scanning and camera capture",
         "BGTaskSchedulerPermittedIdentifiers": ["com.pearguard.bgsync"],
-        "UIBackgroundModes": ["fetch", "processing"]
+        "UIBackgroundModes": ["fetch", "processing"],
+        "LSApplicationQueriesSchemes": ["lightning"]
       }
     },
     "android": {

@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../theme.js';
 import Button from './primitives/Button.jsx';
+import Modal from './primitives/Modal.jsx';
 import Icon from '../icons.js';
+
+const LIGHTNING_ADDRESS = 'peerloomllc@strike.me';
+
+const WALLETS = [
+  { name: 'Strike', url: 'https://strike.me', desc: 'Simple Lightning payments' },
+  { name: 'Cash App', url: 'https://cash.app', desc: 'Send Bitcoin via Lightning' },
+  { name: 'Wallet of Satoshi', url: 'https://walletofsatoshi.com', desc: 'Beginner-friendly Lightning wallet' },
+  { name: 'Phoenix', url: 'https://phoenix.acinq.co', desc: 'Self-custodial Lightning wallet' },
+];
 
 function openURL(url) {
   window.callBare('openURL', { url });
@@ -15,6 +25,20 @@ function shareApp() {
 
 export default function AboutTab() {
   const { colors, spacing, radius } = useTheme();
+  const [walletModal, setWalletModal] = useState(false);
+
+  async function handleDonateBTC() {
+    try {
+      const can = await window.callBare('canOpenURL', { url: 'lightning:test' });
+      if (can) {
+        openURL('lightning:' + LIGHTNING_ADDRESS);
+      } else {
+        setWalletModal(true);
+      }
+    } catch {
+      setWalletModal(true);
+    }
+  }
 
   const cardStyle = {
     backgroundColor: colors.surface.elevated,
@@ -53,7 +77,7 @@ export default function AboutTab() {
           supporting its development.
         </p>
         <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <Button variant="secondary" onClick={() => openURL('lightning:peerloomllc@strike.me')} style={flexOne}>
+          <Button variant="secondary" onClick={handleDonateBTC} style={flexOne}>
             <Icon name="Lightning" size={14} color={colors.primary} /> Donate BTC <Icon name="Lightning" size={14} color={colors.primary} />
           </Button>
           <Button variant="secondary" onClick={() => openURL('https://buymeacoffee.com/peerloomllc')} style={flexOne}>
@@ -103,6 +127,32 @@ export default function AboutTab() {
       </div>
 
       <div style={{ textAlign: 'center', fontSize: '11px', color: colors.text.muted, paddingTop: `${spacing.md}px`, paddingBottom: `${spacing.sm}px` }}>v0.1.0</div>
+
+      <Modal
+        visible={walletModal}
+        onClose={() => setWalletModal(false)}
+        title={<><Icon name="Lightning" size={18} color={colors.primary} /> Bitcoin Lightning <Icon name="Lightning" size={18} color={colors.primary} /></>}
+        footer={<Button variant="secondary" onClick={() => setWalletModal(false)} style={fullWidth}>Close</Button>}
+      >
+        <p style={{ lineHeight: '1.6', marginTop: 0, marginBottom: `${spacing.base}px` }}>
+          No Lightning wallet was detected on your device. Bitcoin Lightning is a fast, low-fee
+          payment network built on top of Bitcoin. To send a tip, install one of these wallets:
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+          {WALLETS.map((w) => (
+            <Button key={w.name} variant="secondary" onClick={() => openURL(w.url)} style={{ width: '100%', textAlign: 'left' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: '600' }}>{w.name}</div>
+                <div style={{ fontSize: '12px', color: colors.text.muted }}>{w.desc}</div>
+              </div>
+              <Icon name="ArrowSquareOut" size={14} color={colors.text.muted} />
+            </Button>
+          ))}
+        </div>
+        <p style={{ fontSize: '12px', color: colors.text.muted, textAlign: 'center', marginTop: `${spacing.base}px`, marginBottom: 0 }}>
+          After installing, return here and tap Donate again.
+        </p>
+      </Modal>
     </div>
   );
 }

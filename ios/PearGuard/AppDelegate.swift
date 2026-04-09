@@ -73,8 +73,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
   ) {
     let info = response.notification.request.content.userInfo
     if let childKey = info["childPublicKey"] as? String, !childKey.isEmpty {
+      let tab = info["tab"] as? String
       LinkModule.pendingChildPublicKey = childKey
-      LinkModule.pendingTab = info["tab"] as? String
+      LinkModule.pendingTab = tab
+      LinkModule.emitNotificationTapped(childPublicKey: childKey, tab: tab)
     }
     completionHandler()
   }

@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState, BackHandler } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, NativeEventEmitter, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState, BackHandler } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -289,6 +289,19 @@ export default function Root () {
         return
       }
 
+      if (msg.method === 'canOpenURL') {
+        Linking.canOpenURL(msg.args.url).then((can: boolean) => {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearResponse(' + msg.id + ', ' + JSON.stringify(can) + ');true;'
+          )
+        }).catch(() => {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearResponse(' + msg.id + ', false);true;'
+          )
+        })
+        return
+      }
+
       if (msg.method === 'openURL') {
         Linking.openURL(msg.args.url).catch(() => {})
         webViewRef.current?.injectJavaScript(
@@ -555,6 +568,26 @@ export default function Root () {
         )
       }
 
+      // iOS: listen for notification taps via NativeEventEmitter (fires even when
+      // app is already in foreground, unlike AppState which only fires on bg->fg)
+      if (!isAndroid && PearGuardLink) {
+        const linkEmitter = new NativeEventEmitter(PearGuardLink)
+        const sub = linkEmitter.addListener('notificationTapped', (nav: { childPublicKey: string; tab: string }) => {
+          if (!nav?.childPublicKey) return
+          if (_webViewLoaded) {
+            _injectToWebView?.(`window.__pendingAlertsNav=${JSON.stringify(nav)};true;`)
+            setTimeout(() => {
+              _injectToWebView?.(
+                'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
+              )
+            }, 200)
+          } else {
+            _pendingAlertsNav = nav
+          }
+        })
+        nativeSubs.push(sub)
+      }
+
       // If worklet already running (e.g. returning from setup screen or after deep-link
       // navigation), mark DB ready immediately and send init (bare will re-emit 'ready'
       // but the event handlers from the old mount are stale — set dbReady directly here).
@@ -632,7 +665,7 @@ export default function Root () {
                 if (isAndroid) {
                   NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
                 } else {
-                  showNotification(childLabel + ' wants more time', appLabel, childPublicKey, 'requests')
+                  showNotification(childLabel + ' wants more time', appLabel, childPublicKey, 'activity')
                 }
                 // Mark notified so reconnect backfill doesn't re-fire this notification
                 if (requestId) sendToWorklet({ method: 'request:markNotified', args: { requestId } })

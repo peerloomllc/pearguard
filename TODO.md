@@ -9,18 +9,18 @@ Open items only. Completed items are in `DONE.md`.
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
 | 98 | Investigate Tailscale VPN compatibility | Tailscale breaks Hyperswarm P2P connections; need to investigate split tunneling or relay options |
 | 112 | Frequent "Child device has not checked in" notifications | Parent device getting too many false/noisy check-in alerts |
-| 119 | Donate BTC button not working on iOS without Lightning wallet | Should show the Lightning info page when no wallet is installed; currently does nothing |
 | 120 | Multi-parent PIN conflict - last sync wins | Two parents with different PINs overwrite each other; child stores one pinHash in policy. Should accept either parent's PIN. |
 | 121 | Second parent using regular invite instead of Add Parent | Works but parents operate independently with separate policies. Consider detecting and warning, or auto-promoting to coparent flow. |
 | 122 | Co-parent request approval/denial not syncing to other parent | When one parent approves/denies a request, the other parent's activity list should update to show it as completed |
 | 123 | Apps tab should remember last active filter | Defaults to "By Category" every time; should persist the last-used filter selection |
-| 124 | iOS notification tap doesn't navigate to child's Activity tab | Tapping a notification on iPhone should deep-link to the child's Activity tab under Dashboard for immediate approve/deny (works on Android) |
+| 124 | Android cold start notification tap goes to Dashboard instead of Activity tab | Warm open works correctly; cold start doesn't navigate to child. Rare edge case, non-blocking. |
+| 126 | Quickly foregrounding/backgrounding app can dismiss overlay from blocked app | Rapid fg/bg cycling eventually dismisses the block overlay on the child device |
 
 ## Features
 
 | # | Title | Where |
 |---|-------|-------|
-| 102 | iOS parent-only version | Feasible as parent-only device; enforcement can't port (no Accessibility/DeviceAdmin APIs). P2P pairing, policy sync, and UI all work. Child device stays Android. Only limitation: no background connectivity on iOS, parent must open app to sync. |
+| 125 | Camera/Gallery picker for iOS | Use same approach as PearCal's Profile page Avatar customization (camera/gallery picker) |
 
 ## Release Pre-work (before first release)
 

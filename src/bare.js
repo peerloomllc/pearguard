@@ -909,6 +909,26 @@ async function handleHello (msg, conn, remoteKeyHex) {
       console.warn('[bare] pending request resend failed:', e.message)
     }
 
+    // Backfill resolved requests so co-parents who were offline see updated statuses (#122).
+    // Send all non-pending requests from the last 7 days.
+    try {
+      const resolvedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+      let backfilled = 0
+      for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+        if (!value || value.status === 'pending') continue
+        if (value.requestedAt < resolvedCutoff) continue
+        const resolved = signMessage({
+          type: 'request:resolved',
+          payload: { requestId: value.id, status: value.status, packageName: value.packageName, resolvedAt: value.expiresAt || Date.now() },
+        }, identity)
+        conn.write(Buffer.from(JSON.stringify(resolved) + '\n'))
+        backfilled++
+      }
+      if (backfilled > 0) console.log('[bare] backfilled', backfilled, 'resolved request(s) to parent on reconnect')
+    } catch (e) {
+      console.warn('[bare] resolved request backfill failed:', e.message)
+    }
+
     // Ask RN shell to scan installed apps and relay each as app:installed
     send({ type: 'event', event: 'apps:syncRequested', data: {} })
     // Ask RN shell to gather usage stats and send a fresh report to the parent

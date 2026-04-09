@@ -1364,6 +1364,14 @@ async function handlePolicyUpdate (payload, db, send) {
     console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
     return
   }
+
+  // Merge pinHashes so that each parent's PIN survives the other parent's policy push.
+  const existing = await db.get('policy').catch(() => null)
+  const existingPinHashes = (existing && existing.value && existing.value.pinHashes) || {}
+  const incomingPinHashes = payload.pinHashes || {}
+  payload.pinHashes = { ...existingPinHashes, ...incomingPinHashes }
+  delete payload.pinHash  // ensure legacy field is cleaned up
+
   await db.put('policy', payload)
   // Use method format (not event) so the RN shell routes this to
   // NativeModules.UsageStatsModule.setPolicy() via the msg.method === 'native:setPolicy' branch

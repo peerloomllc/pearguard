@@ -19,6 +19,10 @@ import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { setBareCaller } from './setup'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import Constants from 'expo-constants'
+
+const isAndroid = Platform.OS === 'android'
+const { PearGuardNotifications, PearGuardHaptic, PearGuardBGSync, PearGuardLink } = NativeModules
 
 // ── Worklet singleton ─────────────────────────────────────────────────────────
 // The worklet must survive re-renders and navigation — keep it in module scope.
@@ -214,6 +218,11 @@ const scannerStyles = StyleSheet.create({
   waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
 })
 
+function showNotification(title: string, body: string, childPublicKey?: string, tab?: string) {
+  if (isAndroid) return
+  PearGuardNotifications?.postNow?.({ title, body, childPublicKey: childPublicKey ?? '', tab: tab ?? '' }).catch?.(() => {})
+}
+
 // ── Root component ────────────────────────────────────────────────────────────
 
 export default function Root () {
@@ -252,7 +261,11 @@ export default function Root () {
       }
 
       if (msg.method === 'haptic:tap') {
-        NativeModules.UsageStatsModule?.hapticTap?.()
+        if (isAndroid) {
+          NativeModules.UsageStatsModule?.hapticTap?.()
+        } else {
+          PearGuardHaptic?.impact?.('light')
+        }
         webViewRef.current?.injectJavaScript(
           'window.__pearResponse(' + msg.id + ', null);true;'
         )
@@ -366,6 +379,7 @@ export default function Root () {
   // Always consume the gesture (return true) to prevent instant exit, then
   // exitApp() if the WebView reports it didn't handle it.
   useEffect(() => {
+    if (!isAndroid) return
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (backPending.current) return true // already waiting for a response
       if (webViewRef.current) {
@@ -402,7 +416,9 @@ export default function Root () {
       }
       // Notification deep links (alerts, child-requests) are stored in
       // SharedPreferences by MainActivity — check on cold start too.
-      consumePendingNavigation()
+      if (isAndroid) {
+        consumePendingNavigation()
+      }
 
       // Request POST_NOTIFICATIONS permission (Android 13+, API 33)
       if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -437,86 +453,107 @@ export default function Root () {
       // Always register native event listeners — these must survive remounts
       // (e.g. returning from setup screen). If registered only after the early
       // return check below, they would be cleaned up on unmount and never re-added.
+      // Cross-platform listeners
       nativeSubs.push(
-        // New app installed — forward to bare worklet as app:installed
-        DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string; appName?: string; iconBase64?: string; category?: string }) => {
-          sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName, appName: e.appName, iconBase64: e.iconBase64, category: e.category } })
-        }),
-
-        // App uninstalled — forward to bare worklet so parent's Apps list stays current
-        DeviceEventEmitter.addListener('onAppUninstalled', (e: { packageName: string }) => {
-          sendToWorklet({ method: 'app:uninstalled', args: { packageName: e.packageName } })
-        }),
-
-        // Accessibility Service or Device Admin disabled — forward as bypass:detected
-        DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
-          const reason = typeof e === 'string' ? e : e.reason
-          sendToWorklet({ method: 'bypass:detected', args: { reason } })
-        }),
-
-        // Child tapped "Send Request" on block overlay — forward as time:request.
-        // Pass all fields through so requestType ('approval' | 'extra_time') and
-        // extraSeconds (for extra-time requests) reach the worklet.
-        DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string; requestType?: string; extraSeconds?: number }) => {
-          sendToWorklet({ method: 'time:request', args: { ...e } })
-        }),
-
-        // PIN entered successfully — log the override event
-        DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
-          sendToWorklet({ method: 'pin:used', args: e })
-        }),
-
-        // Notification tapped while app is in foreground — onNewIntent fires but
-        // AppState doesn't change, so we need this dedicated listener.
-        DeviceEventEmitter.addListener('pearguard_pendingNav', () => {
-          consumePendingNavigation()
-        }),
-
-        // App foregrounded — kick Hyperswarm to reconnect in case connection dropped while backgrounded
         AppState.addEventListener('change', (state) => {
           if (state !== 'active') return
           sendToWorklet({ method: 'swarm:reconnect' })
-          // Check for pending notification navigation stored by MainActivity
-          consumePendingNavigation()
-          // Re-appear check: only after DB is ready and mode is known
-          if (_dbReady && _mode === 'child') {
-            NativeModules.UsageStatsModule?.checkChildPermissions?.()
-              .then((p: { accessibility: boolean; usageStats: boolean }) => {
-                if (!p.accessibility) router.replace('/child-setup?step=1&source=bypass_recovery')
-                else if (!p.usageStats) router.replace('/child-setup?step=2')
-              })
-              .catch((e: unknown) => console.warn('[index] checkChildPermissions error:', e))
+          if (isAndroid) {
+            consumePendingNavigation()
+            if (_dbReady && _mode === 'child') {
+              NativeModules.UsageStatsModule?.checkChildPermissions?.()
+                .then((p: { accessibility: boolean; usageStats: boolean }) => {
+                  if (!p.accessibility) router.replace('/child-setup?step=1&source=bypass_recovery')
+                  else if (!p.usageStats) router.replace('/child-setup?step=2')
+                })
+                .catch((e: unknown) => console.warn('[index] checkChildPermissions error:', e))
+            }
+          } else {
+            // iOS: check for pending background sync
+            PearGuardBGSync?.checkPendingBGSync?.().then((pending: boolean) => {
+              if (pending) sendToWorklet({ method: 'swarm:reconnect' })
+            }).catch?.(() => {})
+            // iOS: check for pending notification navigation
+            PearGuardLink?.getPendingNav?.().then((nav: { childPublicKey: string; tab: string } | null) => {
+              if (nav && _webViewLoaded) {
+                _injectToWebView?.(`window.__pendingAlertsNav=${JSON.stringify(nav)};true;`)
+                setTimeout(() => {
+                  _injectToWebView?.(
+                    'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
+                  )
+                }, 300)
+              }
+            }).catch?.(() => {})
           }
-        }),
-
-        // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
-        DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
-          webViewRef.current?.injectJavaScript(
-            'window.__pearEvent("block:occurred",' + JSON.stringify({ packageName: e.packageName }) + ');true;'
-          )
-        }),
-
-        // Usage flush timer fired — gather usage and send report
-        DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
-          try {
-            const [usageList, weeklyList, foregroundPkg, sessionsList] = await Promise.all([
-              NativeModules.UsageStatsModule.getDailyUsageAllEvents(),
-              NativeModules.UsageStatsModule.getWeeklyUsageAll(),
-              NativeModules.UsageStatsModule.getLastForegroundPackage(),
-              NativeModules.UsageStatsModule.getSessionsSinceLastFlush(),
-            ])
-            sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList } })
-          } catch (err) {
-            console.warn('[PearGuard] Usage flush failed:', err)
-          }
-        }),
-
-        // ParentConnectionService heartbeat — trigger swarm:reconnect to restore
-        // any connections that dropped while the app was backgrounded
-        DeviceEventEmitter.addListener('onParentReconnectNeeded', () => {
-          sendToWorklet({ method: 'swarm:reconnect' })
         }),
       )
+
+      // Android-only native event listeners
+      if (isAndroid) {
+        nativeSubs.push(
+          // New app installed — forward to bare worklet as app:installed
+          DeviceEventEmitter.addListener('onAppInstalled', (e: { packageName: string; appName?: string; iconBase64?: string; category?: string }) => {
+            sendToWorklet({ method: 'app:installed', args: { packageName: e.packageName, appName: e.appName, iconBase64: e.iconBase64, category: e.category } })
+          }),
+
+          // App uninstalled — forward to bare worklet so parent's Apps list stays current
+          DeviceEventEmitter.addListener('onAppUninstalled', (e: { packageName: string }) => {
+            sendToWorklet({ method: 'app:uninstalled', args: { packageName: e.packageName } })
+          }),
+
+          // Accessibility Service or Device Admin disabled — forward as bypass:detected
+          DeviceEventEmitter.addListener('onBypassDetected', (e: { reason: string } | string) => {
+            const reason = typeof e === 'string' ? e : e.reason
+            sendToWorklet({ method: 'bypass:detected', args: { reason } })
+          }),
+
+          // Child tapped "Send Request" on block overlay — forward as time:request.
+          // Pass all fields through so requestType ('approval' | 'extra_time') and
+          // extraSeconds (for extra-time requests) reach the worklet.
+          DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string; requestType?: string; extraSeconds?: number }) => {
+            sendToWorklet({ method: 'time:request', args: { ...e } })
+          }),
+
+          // PIN entered successfully — log the override event
+          DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
+            sendToWorklet({ method: 'pin:used', args: e })
+          }),
+
+          // Notification tapped while app is in foreground — onNewIntent fires but
+          // AppState doesn't change, so we need this dedicated listener.
+          DeviceEventEmitter.addListener('pearguard_pendingNav', () => {
+            consumePendingNavigation()
+          }),
+
+          // App was blocked by Accessibility Service — tell WebView so ChildRequests can enable button
+          DeviceEventEmitter.addListener('onBlockOccurred', (e: { packageName: string }) => {
+            webViewRef.current?.injectJavaScript(
+              'window.__pearEvent("block:occurred",' + JSON.stringify({ packageName: e.packageName }) + ');true;'
+            )
+          }),
+
+          // Usage flush timer fired — gather usage and send report
+          DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
+            try {
+              const [usageList, weeklyList, foregroundPkg, sessionsList] = await Promise.all([
+                NativeModules.UsageStatsModule.getDailyUsageAllEvents(),
+                NativeModules.UsageStatsModule.getWeeklyUsageAll(),
+                NativeModules.UsageStatsModule.getLastForegroundPackage(),
+                NativeModules.UsageStatsModule.getSessionsSinceLastFlush(),
+              ])
+              sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList } })
+            } catch (err) {
+              console.warn('[PearGuard] Usage flush failed:', err)
+            }
+          }),
+
+          // ParentConnectionService heartbeat — trigger swarm:reconnect to restore
+          // any connections that dropped while the app was backgrounded
+          DeviceEventEmitter.addListener('onParentReconnectNeeded', () => {
+            sendToWorklet({ method: 'swarm:reconnect' })
+          }),
+        )
+      }
 
       // If worklet already running (e.g. returning from setup screen or after deep-link
       // navigation), mark DB ready immediately and send init (bare will re-emit 'ready'
@@ -528,7 +565,12 @@ export default function Root () {
       }
 
       // Load and start the Bare worklet
-      const bundleAsset = Asset.fromModule(require('../assets/bare-universal.bundle'))
+      const bareModule = isAndroid
+        ? require('../assets/bare-universal.bundle')
+        : (Constants.isDevice
+            ? require('../assets/bare-ios.bundle')
+            : require('../assets/bare-ios-sim.bundle'))
+      const bundleAsset = Asset.fromModule(bareModule)
       await bundleAsset.downloadAsync()
       const source = await fetch(bundleAsset.localUri!).then(r => r.text())
       _workletStarted = true
@@ -587,7 +629,11 @@ export default function Root () {
                 const { id: requestId, childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
                 const childLabel = childDisplayName || 'Your child'
                 const appLabel = appName || packageName || 'an app'
-                NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
+                if (isAndroid) {
+                  NativeModules.UsageStatsModule?.showTimeRequestNotification?.(childLabel, appLabel, childPublicKey || '')
+                } else {
+                  showNotification(childLabel + ' wants more time', appLabel, childPublicKey, 'requests')
+                }
                 // Mark notified so reconnect backfill doesn't re-fire this notification
                 if (requestId) sendToWorklet({ method: 'request:markNotified', args: { requestId } })
               }
@@ -605,14 +651,22 @@ export default function Root () {
               if (msg.event === 'alert:bypass') {
                 const { childPublicKey, childDisplayName } = msg.data ?? {}
                 const childName = childDisplayName || 'Your child'
-                NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
+                if (isAndroid) {
+                  NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
+                } else {
+                  showNotification('Protection Disabled', childName + ' turned off app blocking', childPublicKey, 'activity')
+                }
               }
               // Show a notification on the parent device when a child uses the PIN override
               if (msg.event === 'alert:pin_override') {
                 const { childPublicKey, childDisplayName, appDisplayName } = msg.data ?? {}
                 const childName = childDisplayName || 'Your child'
                 const appLabel = appDisplayName || 'an app'
-                NativeModules.UsageStatsModule?.showPinOverrideNotification?.(childName, appLabel, childPublicKey || '')
+                if (isAndroid) {
+                  NativeModules.UsageStatsModule?.showPinOverrideNotification?.(childName, appLabel, childPublicKey || '')
+                } else {
+                  showNotification('PIN Override', childName + ' used PIN to open ' + appLabel, childPublicKey, 'activity')
+                }
               }
               // Notify about app installs — behaviour differs by mode:
               // Parent: show "X installed a new app" notification (childDisplayName present = came via P2P)
@@ -622,8 +676,12 @@ export default function Root () {
                 const appLabel = appName || packageName || 'an app'
                 if (childDisplayName) {
                   // Parent device — message arrived from child over P2P
-                  NativeModules.UsageStatsModule?.showAppInstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
-                } else if (_mode === 'child') {
+                  if (isAndroid) {
+                    NativeModules.UsageStatsModule?.showAppInstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
+                  } else {
+                    showNotification('New App Installed', childDisplayName + ' installed ' + appLabel, childPublicKey)
+                  }
+                } else if (_mode === 'child' && isAndroid) {
                   // Child device — local install event, notify the child themselves
                   NativeModules.UsageStatsModule?.showAppInstalledNotification?.('You', appLabel, '')
                 }
@@ -634,8 +692,12 @@ export default function Root () {
                 const appLabel = appName || packageName || 'an app'
                 if (childDisplayName) {
                   // Parent device — message arrived from child over P2P
-                  NativeModules.UsageStatsModule?.showAppUninstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
-                } else if (_mode === 'child') {
+                  if (isAndroid) {
+                    NativeModules.UsageStatsModule?.showAppUninstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
+                  } else {
+                    showNotification('App Removed', childDisplayName + ' uninstalled ' + appLabel, childPublicKey)
+                  }
+                } else if (_mode === 'child' && isAndroid) {
                   // Child device — local uninstall event
                   NativeModules.UsageStatsModule?.showAppUninstalledNotification?.('You', appLabel, '')
                 }
@@ -656,6 +718,10 @@ export default function Root () {
                 _injectToWebView?.(pearEventJs)
               } else {
                 _pendingWebViewEvents.push({ event: msg.event, data: msg.data })
+              }
+              // iOS: complete background sync task on successful P2P activity
+              if (!isAndroid && (msg.event === 'peer:connected' || msg.event === 'child:connected' || msg.event === 'usage:received' || msg.event === 'policy:synced')) {
+                PearGuardBGSync?.completeBGSync?.(true)
               }
               ;(_eventHandlers.get(msg.event) ?? []).forEach(fn => fn(msg.data))
             } else if (msg.method === 'native:setPolicy') {
@@ -714,7 +780,15 @@ export default function Root () {
         // Start the parent background service so Hyperswarm stays connected
         // while the app is backgrounded (keeps process alive, prevents TCP drop)
         if (data.mode === 'parent') {
-          NativeModules.UsageStatsModule?.startParentService?.()
+          if (isAndroid) {
+            NativeModules.UsageStatsModule?.startParentService?.()
+          } else {
+            // Background sync scheduling happens in AppDelegate on launch.
+            // Check if a pending background task woke us - if so, trigger reconnect.
+            PearGuardBGSync?.checkPendingBGSync?.().then((pending: boolean) => {
+              if (pending) sendToWorklet({ method: 'swarm:reconnect' })
+            }).catch?.(() => {})
+          }
         }
 
         // Force-stop and background-bypass detection (child only).
@@ -798,6 +872,24 @@ export default function Root () {
                 'window.__pearEvent("navigate:child:requests",{});true;'
               )
             }, 200)
+          }
+          // iOS: check for pending notification navigation from LinkModule
+          if (!isAndroid) {
+            PearGuardLink?.getPendingNav?.().then((nav: { childPublicKey: string; tab: string } | null) => {
+              if (nav) {
+                webViewRef.current?.injectJavaScript(`window.__pendingAlertsNav=${JSON.stringify(nav)};true;`)
+                setTimeout(() => {
+                  webViewRef.current?.injectJavaScript(
+                    'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
+                  )
+                }, 200)
+              }
+            }).catch?.(() => {})
+            PearGuardLink?.getPendingLink?.().then((url: string | null) => {
+              if (url && url.includes('/join')) {
+                sendToWorklet({ method: url.includes('/coparent?') ? 'coparent:acceptInvite' : 'acceptInvite', args: [url] })
+              }
+            }).catch?.(() => {})
           }
         }}
         javaScriptEnabled

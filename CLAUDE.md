@@ -42,6 +42,24 @@ cd android && ./gradlew assembleDebug && cd ..
 adb install -r /home/tim/peerloomllc/pearguard/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### iOS Build (parent-only)
+
+**UI-only changes** (`src/ui/`):
+```bash
+npm run build:ui
+cd ios && xcodebuild -workspace PearGuard.xcworkspace -scheme PearGuard -sdk iphoneos -configuration Debug build && cd ..
+```
+
+Or open `ios/PearGuard.xcworkspace` in Xcode and build from there.
+
+**bare.js changes** require rebuilding both Android and iOS bare bundles:
+```bash
+npm run build:bare          # Android
+npm run build:bare:ios      # iOS device
+npm run build:bare:ios-sim  # iOS simulator
+npm run build:ui
+```
+
 ## Architecture
 
 ### Three-Layer Runtime

@@ -18465,15 +18465,19 @@
       backgroundColor: colors.surface.base,
       display: "flex",
       alignItems: "center",
-      justifyContent: "center",
-      padding: `${spacing2.xl}px`
+      justifyContent: "flex-start",
+      padding: `${spacing2.xl}px`,
+      paddingTop: "15vh",
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch"
     }, children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { style: {
       backgroundColor: colors.surface.card,
       border: `1px solid ${colors.border}`,
       borderRadius: `${radius2.xl}px`,
       padding: `${spacing2.xxl}px`,
       width: "100%",
-      maxWidth: "360px"
+      maxWidth: "360px",
+      marginBottom: `${spacing2.xxl}px`
     }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.sm}px`, marginTop: 0 }, children: "Set Override PIN" }),
       /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: `${spacing2.xl}px`, marginTop: 0 }, children: "Children enter this PIN on the block screen to request temporary access." }),

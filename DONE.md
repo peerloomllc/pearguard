@@ -4,6 +4,25 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-08
+
+### [x] iOS notification tap doesn't navigate to child's Activity tab (#124) - completed 2026-04-09
+Made LinkModule an RCTEventEmitter so notification taps fire a JS event immediately (handles foreground, background, and cold start). Fixed tab='requests' in showNotification to tab='activity' to match Android behavior - ChildDetail has no 'requests' tab so it was falling back to UsageTab. Added event handler retry in Dashboard to buffer nav when children aren't loaded yet.
+
+### [x] Donate BTC button not working on iOS without Lightning wallet (#119) - completed 2026-04-08
+Added canOpenURL IPC handler in RN shell. AboutTab now checks if a Lightning wallet is installed before opening the lightning: URI. If none found, shows a modal with wallet suggestions (Strike, Cash App, Wallet of Satoshi, Phoenix). Added LSApplicationQueriesSchemes to iOS config for the lightning scheme.
+
+### [x] iOS parent-only version (#102) - completed 2026-04-08
+Added iOS support as parent-only device. Five Swift native modules (notifications, haptics, background sync, share, deep links) ported from PearCal. Platform.OS branching in index.tsx. Background fetch for P2P sync. Tested on iPhone SE - launch, setup, dashboard, invite links all working. PR #58.
+
+### [x] Android back gestures (#113) - completed 2026-04-08
+Implemented WebView navigation and tab-level back handling for Android gesture nav.
+
+### [x] Adapt PearCal release script to PearGuard (#103) - completed 2026-04-08
+Covered by release pre-work items #104-#111.
+
+---
+
 ## Added 2026-04-07
 
 ### [x] Usage stats only updating sometimes (#114) - completed 2026-04-07

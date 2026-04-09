@@ -1,10 +1,37 @@
 import Foundation
+import React
 
 @objc(PearGuardLink)
-class LinkModule: NSObject {
+class LinkModule: RCTEventEmitter {
   static var pendingLink: String? = nil
   static var pendingChildPublicKey: String? = nil
   static var pendingTab: String? = nil
+  private static weak var shared: LinkModule? = nil
+  private var hasListeners = false
+
+  override init() {
+    super.init()
+    LinkModule.shared = self
+  }
+
+  @objc override func supportedEvents() -> [String] {
+    return ["notificationTapped"]
+  }
+
+  override func startObserving() { hasListeners = true }
+  override func stopObserving() { hasListeners = false }
+
+  static func emitNotificationTapped(childPublicKey: String, tab: String?) {
+    shared?.emitIfListening(childPublicKey: childPublicKey, tab: tab)
+  }
+
+  private func emitIfListening(childPublicKey: String, tab: String?) {
+    guard hasListeners else { return }
+    sendEvent(withName: "notificationTapped", body: [
+      "childPublicKey": childPublicKey,
+      "tab": tab ?? ""
+    ])
+  }
 
   @objc func getPendingLink(
     _ resolve: @escaping RCTPromiseResolveBlock,
@@ -30,5 +57,5 @@ class LinkModule: NSObject {
     }
   }
 
-  @objc static func requiresMainQueueSetup() -> Bool { return false }
+  @objc override static func requiresMainQueueSetup() -> Bool { return false }
 }

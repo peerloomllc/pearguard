@@ -60,6 +60,9 @@ export default forwardRef(function Dashboard(_props, ref) {
       if (child) {
         setSelectedChild(child);
         setSelectedTab(data.tab || 'activity');
+      } else {
+        // Children not loaded yet (cold start) - store for retry in [children] effect
+        window.__pendingAlertsNav = { childPublicKey: key, tab: data.tab || 'activity' };
       }
     }
     const unsub1 = window.onBareEvent('navigate:child:alerts', handleNav);

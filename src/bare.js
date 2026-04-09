@@ -412,6 +412,20 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'request:resolved':
       await handleRequestResolved(msg.payload, db, send)
       break
+    case 'requests:syncResolved': {
+      // Parent is asking for resolved request statuses (#122 pull-based sync).
+      // Send all non-pending requests from the last 7 days back to the requesting parent.
+      const resolvedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+      for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+        if (!value || value.status === 'pending') continue
+        if (value.requestedAt < resolvedCutoff) continue
+        sendToPeer(remoteKeyHex, {
+          type: 'request:resolved',
+          payload: { requestId: value.id, status: value.status, packageName: value.packageName, resolvedAt: value.expiresAt || Date.now() },
+        })
+      }
+      break
+    }
     case 'app:installed':
       await handleIncomingAppInstalled(msg.payload, msg.from, db, send, sendToPeer)
       break

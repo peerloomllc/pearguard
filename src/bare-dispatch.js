@@ -1301,6 +1301,21 @@ function createDispatch (ctx) {
         }
 
         results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+
+        // If there are pending requests, ask the child for resolution updates (#122).
+        // iOS may drop P2P messages when backgrounded; this pull-based sync ensures the
+        // parent eventually gets updated statuses when the user opens the Activity tab.
+        const hasPending = results.some(r => r.type === 'time_request' && !r.resolved)
+        if (hasPending && ctx.getMode() === 'parent') {
+          try {
+            const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+            const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+            if (noiseKey) {
+              ctx.sendToPeer(noiseKey, { type: 'requests:syncResolved', payload: { childPublicKey } })
+            }
+          } catch (_e) { /* child offline */ }
+        }
+
         return results
       }
 

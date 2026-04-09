@@ -1732,4 +1732,23 @@ async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) 
   send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName, childPublicKey, childDisplayName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }
+/**
+ * Handle a `request:resolved` P2P message from a child peer.
+ * Updates the parent's local request entry so the activity list stays in sync (#122).
+ *
+ * @param {object} payload - { requestId, status, packageName, resolvedAt }
+ * @param {object} db - Hyperbee instance
+ * @param {function} send - bare->RN IPC send function
+ */
+async function handleRequestResolved (payload, db, send) {
+  const { requestId, status, packageName, resolvedAt } = payload
+  if (!requestId || !status) return
+
+  const existing = await db.get('request:' + requestId).catch(() => null)
+  if (!existing || existing.value.status !== 'pending') return
+
+  await db.put('request:' + requestId, { ...existing.value, status, resolvedAt })
+  send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName } })
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

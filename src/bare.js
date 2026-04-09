@@ -385,10 +385,10 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
   // Dispatch verified peer message by type
   switch (msg.type) {
     case 'policy:update':
-      await handlePolicyUpdate(msg.payload, db, send)
+      await handlePolicyUpdate(msg.payload, db, send, sendToAllParents)
       break
     case 'time:extend':
-      await handleTimeExtend(msg.payload, db, send)
+      await handleTimeExtend(msg.payload, db, send, sendToAllParents)
       break
     case 'request:denied': {
       // Parent denied an extra-time request — update the child-side req: entry and notify.
@@ -402,10 +402,12 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       send({ type: 'event', event: 'request:updated', data: { requestId, packageName, status: 'denied' } })
       // Trigger native notification (same channel as approval decisions)
       send({ method: 'native:showDecisionNotification', args: { appName: appName || packageName || 'the app', decision: 'denied' } })
+      // Broadcast resolution to all parents so co-parent activity lists update (#122)
+      sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'denied', packageName, resolvedAt: Date.now() } })
       break
     }
     case 'app:decision':
-      await handleAppDecision(msg.payload, db, send)
+      await handleAppDecision(msg.payload, db, send, sendToAllParents)
       break
     case 'app:installed':
       await handleIncomingAppInstalled(msg.payload, msg.from, db, send, sendToPeer)

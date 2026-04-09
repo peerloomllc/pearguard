@@ -1318,7 +1318,7 @@ function createDispatch (ctx) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handleAppDecision (payload, db, send) {
+async function handleAppDecision (payload, db, send, sendToAllParents) {
   const { packageName, decision } = payload
   if (!packageName || !['allowed', 'blocked'].includes(decision)) {
     console.warn('[bare] app:decision: malformed payload')
@@ -1337,7 +1337,7 @@ async function handleAppDecision (payload, db, send) {
   send({ type: 'event', event: 'policy:updated', data: policy })
 
   // Update any pending time requests for this package so the child's request
-  // list reflects the parent's decision ('allowed' → 'approved', 'blocked' → 'denied').
+  // list reflects the parent's decision ('allowed' -> 'approved', 'blocked' -> 'denied').
   const requestStatus = decision === 'allowed' ? 'approved' : 'denied'
   // Only emit request:updated (which triggers a child notification) when a
   // pending request actually exists. Proactive parent decisions (approve/deny
@@ -1347,6 +1347,10 @@ async function handleAppDecision (payload, db, send) {
       const updated = { ...value, status: requestStatus }
       await db.put(key, updated)
       send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
+      // Broadcast resolution to all parents so co-parent activity lists update (#122)
+      if (sendToAllParents) {
+        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: requestStatus, packageName: value.packageName, resolvedAt: Date.now() } })
+      }
     }
   }
 }
@@ -1359,7 +1363,7 @@ async function handleAppDecision (payload, db, send) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handlePolicyUpdate (payload, db, send) {
+async function handlePolicyUpdate (payload, db, send, sendToAllParents) {
   if (typeof payload.version !== 'number' || !payload.childPublicKey) {
     console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
     return
@@ -1395,6 +1399,10 @@ async function handlePolicyUpdate (payload, db, send) {
         requestId: value.id, status: newStatus,
         packageName: value.packageName, appName: value.appName || value.packageName,
       } })
+      // Broadcast resolution to all parents so co-parent activity lists update (#122)
+      if (sendToAllParents) {
+        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: newStatus, packageName: value.packageName, resolvedAt: Date.now() } })
+      }
     }
   }
 }
@@ -1407,7 +1415,7 @@ async function handlePolicyUpdate (payload, db, send) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handleTimeExtend (payload, db, send) {
+async function handleTimeExtend (payload, db, send, sendToAllParents) {
   const { requestId, packageName, extraSeconds } = payload
   if (!requestId || !packageName || typeof extraSeconds !== 'number') {
     console.warn('[bare] time:extend: malformed payload, dropping')
@@ -1439,6 +1447,11 @@ async function handleTimeExtend (payload, db, send) {
   // can show the real app name instead of "an app".
   send({ type: 'event', event: 'override:granted', data: grant })
   send({ type: 'event', event: 'request:updated', data: { requestId, packageName, appName, status: 'approved', expiresAt } })
+
+  // Broadcast resolution to all parents so co-parent activity lists update (#122)
+  if (sendToAllParents) {
+    sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'approved', packageName, resolvedAt: Date.now() } })
+  }
 }
 
 /**

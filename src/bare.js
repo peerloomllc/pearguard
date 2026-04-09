@@ -385,7 +385,7 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
   // Dispatch verified peer message by type
   switch (msg.type) {
     case 'policy:update':
-      await handlePolicyUpdate(msg.payload, db, send, sendToAllParents)
+      await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from)
       break
     case 'time:extend':
       await handleTimeExtend(msg.payload, db, send, sendToAllParents)

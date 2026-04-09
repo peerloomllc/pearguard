@@ -1363,13 +1363,18 @@ async function handleAppDecision (payload, db, send, sendToAllParents) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handlePolicyUpdate (payload, db, send, sendToAllParents) {
+async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKey) {
   if (typeof payload.version !== 'number' || !payload.childPublicKey) {
     console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
     return
   }
 
   // Merge pinHashes so that each parent's PIN survives the other parent's policy push.
+  // If the incoming payload has legacy pinHash but no pinHashes (sender running old code),
+  // convert it using the sender's identity key.
+  if (payload.pinHash && (!payload.pinHashes || Object.keys(payload.pinHashes).length === 0) && senderKey) {
+    payload.pinHashes = { [senderKey]: payload.pinHash }
+  }
   const existing = await db.get('policy').catch(() => null)
   const existingPinHashes = (existing && existing.value && existing.value.pinHashes) || {}
   const incomingPinHashes = payload.pinHashes || {}

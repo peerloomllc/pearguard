@@ -1363,25 +1363,40 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     /**
-     * Verifies the entered PIN against the BLAKE2b hex hash stored by bare-dispatch.js pin:set.
-     * pin:set uses crypto_generichash (BLAKE2b) and stores the result as a lowercase hex string.
+     * Verifies the entered PIN against BLAKE2b hex hashes stored by bare-dispatch.js pin:set.
+     * Checks all parent PIN hashes in the pinHashes map (per-parent PINs).
+     * Falls back to legacy single pinHash field for migration support.
      */
     private boolean verifyPin(String enteredPin) {
         JSONObject policy = loadPolicy();
         if (policy == null) return false;
-        String pinHash = policy.optString("pinHash", null);
-        if (pinHash == null || pinHash.isEmpty()) return false;
 
         try {
-            byte[] storedHash = hexToBytes(pinHash);
             byte[] passwordBytes = enteredPin.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-
             final int HASH_BYTES = 32; // crypto_generichash_BYTES
             byte[] computedHash = new byte[HASH_BYTES];
-            // Mirrors: sodium.crypto_generichash(out, in) with no key
             lazySodium.getSodium().crypto_generichash(
                     computedHash, HASH_BYTES, passwordBytes, passwordBytes.length, null, 0);
 
+            // Check per-parent pinHashes map
+            JSONObject pinHashes = policy.optJSONObject("pinHashes");
+            if (pinHashes != null && pinHashes.length() > 0) {
+                java.util.Iterator<String> keys = pinHashes.keys();
+                while (keys.hasNext()) {
+                    String parentKey = keys.next();
+                    String hashHex = pinHashes.optString(parentKey, null);
+                    if (hashHex != null && !hashHex.isEmpty()) {
+                        byte[] storedHash = hexToBytes(hashHex);
+                        if (Arrays.equals(computedHash, storedHash)) return true;
+                    }
+                }
+                return false;
+            }
+
+            // Fallback: legacy single pinHash field (migration support)
+            String pinHash = policy.optString("pinHash", null);
+            if (pinHash == null || pinHash.isEmpty()) return false;
+            byte[] storedHash = hexToBytes(pinHash);
             return Arrays.equals(computedHash, storedHash);
         } catch (Exception e) {
             return false;

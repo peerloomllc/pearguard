@@ -17,7 +17,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, queueMessage, flushMessageQueue } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -270,6 +270,12 @@ async function onPeerConnection (conn, info) {
     : null
 
   let peerBuf = ''
+  // Sequential message processing: use a promise chain so each message fully
+  // completes (including DB writes) before the next one starts. Without this,
+  // rapid messages (e.g. queued time:request followed by request:resolved
+  // backfill) race and the second message can't find DB entries written by the
+  // first (#122).
+  let msgChain = Promise.resolve()
   conn.on('data', chunk => {
     peerBuf += chunk.toString()
     const lines = peerBuf.split('\n')
@@ -278,7 +284,9 @@ async function onPeerConnection (conn, info) {
       if (!line.trim()) continue
       try {
         const msg = JSON.parse(line)
-        handlePeerMessage(msg, conn, remoteKeyHex)
+        msgChain = msgChain.then(() => handlePeerMessage(msg, conn, remoteKeyHex)).catch(e => {
+          console.error('[bare] peer message handler error:', e.message)
+        })
       } catch (e) {
         console.error('[bare] peer message parse error:', e.message)
       }
@@ -287,19 +295,38 @@ async function onPeerConnection (conn, info) {
 
   conn.on('error', e => {
     console.error('[bare] peer error:', e.message)
-    // Remove from parentPeers if this was a parent connection
+    // Remove from parentPeers only if this exact connection is still the active one.
+    // Hyperswarm dedup creates two connections with the same remoteKeyHex; if the
+    // surviving connection already updated parentPeers, we must not delete it (#122).
     if (mode === 'child') {
       for (const [ik, pp] of parentPeers) {
-        if (pp.remoteKeyHex === remoteKeyHex) { parentPeers.delete(ik); break }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) { parentPeers.delete(ik); break }
       }
     }
   })
   conn.on('close', () => {
-    peers.delete(remoteKeyHex)
-    // Remove from parentPeers if this was a parent connection
+    // Only remove from peers if this connection is still the active one.
+    // Hyperswarm dedup creates two connections with the same remoteKeyHex;
+    // if the surviving connection already overwrote the peers entry, deleting
+    // it would orphan the live connection and silently drop all messages (#122).
+    const currentPeer = peers.get(remoteKeyHex)
+    if (currentPeer && currentPeer.conn === conn) {
+      peers.delete(remoteKeyHex)
+    } else if (currentPeer) {
+      console.log('[bare] peers: keeping surviving conn for', remoteKeyHex.slice(0, 8), '(dedup closed stale)')
+    }
+    // Remove from parentPeers only if this exact connection is still the active one (#122).
     if (mode === 'child') {
       for (const [ik, pp] of parentPeers) {
-        if (pp.remoteKeyHex === remoteKeyHex) { parentPeers.delete(ik); break }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) {
+          console.log('[bare] parentPeers: removing closed conn for', ik.slice(0, 8))
+          parentPeers.delete(ik)
+          break
+        }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn !== conn) {
+          console.log('[bare] parentPeers: keeping surviving conn for', ik.slice(0, 8), '(dedup closed stale)')
+          break
+        }
       }
     }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
@@ -361,7 +388,10 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
 
   // Look up known peer — pairing handshake messages are handled before full verification
   const peer = peers.get(remoteKeyHex)
-  if (!peer) return
+  if (!peer) {
+    console.warn('[bare] dropped message: no peer entry for', remoteKeyHex.slice(0, 8), 'type:', msg.type)
+    return
+  }
 
   // For 'hello' messages (pairing handshake): we don't have the peer's pubkey yet —
   // but we DO know their Hyperswarm public key (NOISE key), which is different from their
@@ -385,10 +415,10 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
   // Dispatch verified peer message by type
   switch (msg.type) {
     case 'policy:update':
-      await handlePolicyUpdate(msg.payload, db, send)
+      await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from)
       break
     case 'time:extend':
-      await handleTimeExtend(msg.payload, db, send)
+      await handleTimeExtend(msg.payload, db, send, sendToAllParents)
       break
     case 'request:denied': {
       // Parent denied an extra-time request — update the child-side req: entry and notify.
@@ -402,11 +432,31 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       send({ type: 'event', event: 'request:updated', data: { requestId, packageName, status: 'denied' } })
       // Trigger native notification (same channel as approval decisions)
       send({ method: 'native:showDecisionNotification', args: { appName: appName || packageName || 'the app', decision: 'denied' } })
+      // Broadcast resolution to all parents so co-parent activity lists update (#122)
+      sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'denied', packageName, resolvedAt: Date.now() } })
       break
     }
     case 'app:decision':
-      await handleAppDecision(msg.payload, db, send)
+      await handleAppDecision(msg.payload, db, send, sendToAllParents)
       break
+    case 'request:resolved':
+      console.log('[bare] received request:resolved from', msg.from?.slice(0, 8), 'id:', msg.payload?.requestId?.slice(0, 20), 'status:', msg.payload?.status)
+      await handleRequestResolved(msg.payload, db, send, msg.from)
+      break
+    case 'requests:syncResolved': {
+      // Parent is asking for resolved request statuses (#122 pull-based sync).
+      console.log('[bare] received requests:syncResolved from', msg.from?.slice(0, 8))
+      const resolvedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+      for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+        if (!value || value.status === 'pending') continue
+        if (value.requestedAt < resolvedCutoff) continue
+        sendToPeer(remoteKeyHex, {
+          type: 'request:resolved',
+          payload: { requestId: value.id, status: value.status, packageName: value.packageName, resolvedAt: value.expiresAt || Date.now() },
+        })
+      }
+      break
+    }
     case 'app:installed':
       await handleIncomingAppInstalled(msg.payload, msg.from, db, send, sendToPeer)
       break
@@ -443,6 +493,12 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
         const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
         const policyApps = policyRaw?.value?.apps || {}
         currentAppIcon = policyApps[msg.payload.currentAppPackage]?.iconBase64 || null
+      }
+      // Process piggybacked resolved requests so co-parents see status updates (#122).
+      if (Array.isArray(msg.payload.resolvedRequests) && msg.payload.resolvedRequests.length > 0) {
+        for (const rr of msg.payload.resolvedRequests) {
+          await handleRequestResolved(rr, db, send, childPublicKey)
+        }
       }
       send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey, currentAppIcon } })
       break
@@ -667,6 +723,7 @@ function sendToPeer (remoteKeyHex, msg) {
  */
 async function sendToAllParents (message) {
   if (parentPeers.size === 0) {
+    console.log('[bare] sendToAllParents: no parents connected, queuing', message.type)
     await queueMessage(message, db)
     return
   }
@@ -676,12 +733,15 @@ async function sendToAllParents (message) {
   for (const [ik, pp] of parentPeers) {
     try {
       pp.conn.write(payload)
+      console.log('[bare] sendToAllParents:', message.type, 'sent to parent', ik.slice(0, 8))
       sentToAny = true
     } catch (e) {
+      console.warn('[bare] sendToAllParents: write failed for parent', ik.slice(0, 8), e.message)
       parentPeers.delete(ik)
     }
   }
   if (!sentToAny) {
+    console.log('[bare] sendToAllParents: all writes failed, queuing', message.type)
     await queueMessage(message, db)
   }
 }
@@ -837,9 +897,13 @@ async function handleHello (msg, conn, remoteKeyHex) {
     }
   }
 
-  // Send our own hello back (if we haven't already) — include real profile name + avatar
-  const alreadySentHello = peer?.sentHello
-  if (!alreadySentHello) {
+  // Send hello reply if we haven't already on THIS specific connection.
+  // Track per-connection (not per-peer) because Hyperswarm dedup creates
+  // multiple connections with the same remoteKeyHex. The peer entry in the
+  // peers map gets overwritten, so sentHello on the peer entry is unreliable.
+  // Using conn._sentHello ensures each connection gets exactly one reply (#122).
+  if (!conn._sentHello) {
+    conn._sentHello = true
     if (peer) peer.sentHello = true
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
     const profileRaw = await db.get('profile').catch(() => null)
@@ -902,6 +966,26 @@ async function handleHello (msg, conn, remoteKeyHex) {
       if (resent > 0) console.log('[bare] re-sent', resent, 'pending request(s) to parent on reconnect')
     } catch (e) {
       console.warn('[bare] pending request resend failed:', e.message)
+    }
+
+    // Backfill resolved requests so co-parents who were offline see updated statuses (#122).
+    // Send all non-pending requests from the last 7 days.
+    try {
+      const resolvedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+      let backfilled = 0
+      for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+        if (!value || value.status === 'pending') continue
+        if (value.requestedAt < resolvedCutoff) continue
+        const resolved = signMessage({
+          type: 'request:resolved',
+          payload: { requestId: value.id, status: value.status, packageName: value.packageName, resolvedAt: value.expiresAt || Date.now() },
+        }, identity)
+        conn.write(Buffer.from(JSON.stringify(resolved) + '\n'))
+        backfilled++
+      }
+      if (backfilled > 0) console.log('[bare] backfilled', backfilled, 'resolved request(s) to parent on reconnect')
+    } catch (e) {
+      console.warn('[bare] resolved request backfill failed:', e.message)
     }
 
     // Ask RN shell to scan installed apps and relay each as app:installed

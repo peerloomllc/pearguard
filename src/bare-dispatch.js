@@ -383,20 +383,24 @@ function createDispatch (ctx) {
         const hashStr = hashBuf.toString('hex')
         if (!hashStr) throw new Error('PIN hashing failed — crypto_generichash returned empty result')
 
-        // Store in parent's own policy key
+        // Store in parent's own policy key (unchanged - for local use)
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : {}
         policy.pinHash = hashStr
         await ctx.db.put('policy', policy)
 
-        // Propagate pinHash into every child's policy and push to connected children
+        // Propagate pinHashes into every child's policy and push to connected children
+        const myPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
         for await (const { value: peerRecord } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
           const childPK = peerRecord.publicKey
           const childPolicyRaw = await ctx.db.get('policy:' + childPK).catch(() => null)
           const childPolicy = childPolicyRaw
             ? childPolicyRaw.value
             : { apps: {}, childPublicKey: childPK, version: 0 }
-          childPolicy.pinHash = hashStr
+          // Write per-parent pinHash into pinHashes map; remove legacy field
+          if (!childPolicy.pinHashes) childPolicy.pinHashes = {}
+          childPolicy.pinHashes[myPublicKey] = hashStr
+          delete childPolicy.pinHash
           childPolicy.version = (childPolicy.version || 0) + 1
           await ctx.db.put('policy:' + childPK, childPolicy)
           try {
@@ -405,7 +409,7 @@ function createDispatch (ctx) {
               ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: childPolicy })
             }
           } catch (_e) {
-            // child offline — pinHash stored; will be pushed on next hello
+            // child offline — pinHashes stored; will be pushed on next hello
           }
         }
 
@@ -883,6 +887,21 @@ function createDispatch (ctx) {
           await ctx.db.put(sessionPrefix + now, sessions)
         }
 
+        // Piggyback resolved request statuses so co-parents get updates (#122).
+        // Collect all non-pending req: entries from child's Hyperbee.
+        const resolvedRequests = []
+        for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+          if (value.status && value.status !== 'pending') {
+            resolvedRequests.push({
+              requestId: value.id,
+              status: value.status,
+              packageName: value.packageName,
+              resolvedAt: value.resolvedAt || value.requestedAt,
+            })
+          }
+        }
+        if (resolvedRequests.length > 0) console.log('[bare] usage:flush piggyback:', resolvedRequests.length, 'resolved requests')
+
         const report = {
           type: 'usage:report',
           timestamp: now,
@@ -894,6 +913,7 @@ function createDispatch (ctx) {
           currentApp,
           currentAppPackage,
           todayScreenTimeSeconds,
+          resolvedRequests,
         }
 
         // Persist report to Hyperbee
@@ -1297,6 +1317,21 @@ function createDispatch (ctx) {
         }
 
         results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+
+        // Always ask the child for resolution updates when opening Activity tab (#122).
+        // iOS may drop P2P messages when backgrounded or during Hyperswarm dedup;
+        // this pull-based sync ensures the parent gets updated statuses.
+        if (ctx.getMode() === 'parent') {
+          try {
+            const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+            const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+            if (noiseKey) {
+              ctx.sendToPeer(noiseKey, { type: 'requests:syncResolved', payload: { childPublicKey } })
+              console.log('[bare] alerts:list triggered syncResolved for', childPublicKey?.slice(0, 8))
+            }
+          } catch (e) { console.warn('[bare] alerts:list syncResolved failed:', e.message) }
+        }
+
         return results
       }
 
@@ -1314,7 +1349,7 @@ function createDispatch (ctx) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handleAppDecision (payload, db, send) {
+async function handleAppDecision (payload, db, send, sendToAllParents) {
   const { packageName, decision } = payload
   if (!packageName || !['allowed', 'blocked'].includes(decision)) {
     console.warn('[bare] app:decision: malformed payload')
@@ -1333,7 +1368,7 @@ async function handleAppDecision (payload, db, send) {
   send({ type: 'event', event: 'policy:updated', data: policy })
 
   // Update any pending time requests for this package so the child's request
-  // list reflects the parent's decision ('allowed' → 'approved', 'blocked' → 'denied').
+  // list reflects the parent's decision ('allowed' -> 'approved', 'blocked' -> 'denied').
   const requestStatus = decision === 'allowed' ? 'approved' : 'denied'
   // Only emit request:updated (which triggers a child notification) when a
   // pending request actually exists. Proactive parent decisions (approve/deny
@@ -1343,6 +1378,10 @@ async function handleAppDecision (payload, db, send) {
       const updated = { ...value, status: requestStatus }
       await db.put(key, updated)
       send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
+      // Broadcast resolution to all parents so co-parent activity lists update (#122)
+      if (sendToAllParents) {
+        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: requestStatus, packageName: value.packageName, resolvedAt: Date.now() } })
+      }
     }
   }
 }
@@ -1355,11 +1394,24 @@ async function handleAppDecision (payload, db, send) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handlePolicyUpdate (payload, db, send) {
+async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKey) {
   if (typeof payload.version !== 'number' || !payload.childPublicKey) {
     console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
     return
   }
+
+  // Merge pinHashes so that each parent's PIN survives the other parent's policy push.
+  // If the incoming payload has legacy pinHash but no pinHashes (sender running old code),
+  // convert it using the sender's identity key.
+  if (payload.pinHash && (!payload.pinHashes || Object.keys(payload.pinHashes).length === 0) && senderKey) {
+    payload.pinHashes = { [senderKey]: payload.pinHash }
+  }
+  const existing = await db.get('policy').catch(() => null)
+  const existingPinHashes = (existing && existing.value && existing.value.pinHashes) || {}
+  const incomingPinHashes = payload.pinHashes || {}
+  payload.pinHashes = { ...existingPinHashes, ...incomingPinHashes }
+  delete payload.pinHash  // ensure legacy field is cleaned up
+
   await db.put('policy', payload)
   // Use method format (not event) so the RN shell routes this to
   // NativeModules.UsageStatsModule.setPolicy() via the msg.method === 'native:setPolicy' branch
@@ -1383,6 +1435,10 @@ async function handlePolicyUpdate (payload, db, send) {
         requestId: value.id, status: newStatus,
         packageName: value.packageName, appName: value.appName || value.packageName,
       } })
+      // Broadcast resolution to all parents so co-parent activity lists update (#122)
+      if (sendToAllParents) {
+        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: newStatus, packageName: value.packageName, resolvedAt: Date.now() } })
+      }
     }
   }
 }
@@ -1395,7 +1451,7 @@ async function handlePolicyUpdate (payload, db, send) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handleTimeExtend (payload, db, send) {
+async function handleTimeExtend (payload, db, send, sendToAllParents) {
   const { requestId, packageName, extraSeconds } = payload
   if (!requestId || !packageName || typeof extraSeconds !== 'number') {
     console.warn('[bare] time:extend: malformed payload, dropping')
@@ -1427,6 +1483,11 @@ async function handleTimeExtend (payload, db, send) {
   // can show the real app name instead of "an app".
   send({ type: 'event', event: 'override:granted', data: grant })
   send({ type: 'event', event: 'request:updated', data: { requestId, packageName, appName, status: 'approved', expiresAt } })
+
+  // Broadcast resolution to all parents so co-parent activity lists update (#122)
+  if (sendToAllParents) {
+    sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'approved', packageName, resolvedAt: Date.now() } })
+  }
 }
 
 /**
@@ -1707,4 +1768,46 @@ async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) 
   send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName, childPublicKey, childDisplayName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }
+/**
+ * Handle a `request:resolved` P2P message from a child peer.
+ * Updates the parent's local request entry so the activity list stays in sync (#122).
+ *
+ * @param {object} payload - { requestId, status, packageName, resolvedAt }
+ * @param {object} db - Hyperbee instance
+ * @param {function} send - bare->RN IPC send function
+ */
+async function handleRequestResolved (payload, db, send, childPublicKey) {
+  const { requestId, status, packageName, resolvedAt } = payload
+  if (!requestId || !status) return
+
+  const existing = await db.get('request:' + requestId).catch(() => null)
+
+  // If the request already has a non-pending status, nothing to update.
+  if (existing && existing.value.status !== 'pending') return
+
+  if (existing) {
+    // Normal path: update the existing pending entry.
+    await db.put('request:' + requestId, { ...existing.value, status, resolvedAt })
+  } else {
+    // Defence-in-depth: this parent never received the original time:request
+    // (e.g. was offline during submission and reconnect message ordering lost it).
+    // Create a minimal entry so the activity list shows the resolved request (#122).
+    // Include childPublicKey so alerts:list can filter by child.
+    const peerRecord = childPublicKey ? await db.get('peers:' + childPublicKey).catch(() => null) : null
+    const childDisplayName = peerRecord?.value?.displayName || 'Child'
+    console.log('[bare] request:resolved creating missing entry for', requestId, 'child:', childPublicKey?.slice(0, 8))
+    await db.put('request:' + requestId, {
+      id: requestId,
+      packageName: packageName || 'unknown',
+      status,
+      resolvedAt,
+      requestedAt: resolvedAt || Date.now(),
+      notified: true,
+      childPublicKey: childPublicKey || null,
+      childDisplayName,
+    })
+  }
+  send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName } })
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

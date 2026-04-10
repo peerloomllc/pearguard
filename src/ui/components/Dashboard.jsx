@@ -160,37 +160,23 @@ export default forwardRef(function Dashboard(_props, ref) {
           Dashboard
         </h2>
         {!inviteActive && !joinCoparentActive && !loading && children.length > 0 && (
-          <div style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'center' }}>
-            <button
-              onClick={() => { window.callBare('haptic:tap'); setJoinCoparentActive(true); }}
-              style={{
-                background: 'none', border: `1px solid ${colors.primary}`, cursor: 'pointer',
-                ...typography.caption, color: colors.primary, fontWeight: '600',
-                display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
-                padding: `${spacing.xs}px ${spacing.sm}px`, borderRadius: `${radius.md}px`,
-              }}
-            >
-              <Icon name="UserPlus" size={14} color={colors.primary} />
-              Join as Co-Parent
-            </button>
-            <button
-              onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                ...typography.body, color: colors.primary, fontWeight: '600',
-                display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
-              }}
-            >
-              <Icon name="Plus" size={16} color={colors.primary} />
-              Add Child
-            </button>
-          </div>
+          <button
+            onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              ...typography.body, color: colors.primary, fontWeight: '600',
+              display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
+            }}
+          >
+            <Icon name="Plus" size={16} color={colors.primary} />
+            Add Child
+          </button>
         )}
       </div>
 
       {loading && <p style={{ ...typography.body, color: colors.text.secondary }}>Loading...</p>}
 
-      {!loading && children.length === 0 && !inviteActive && (
+      {!loading && children.length === 0 && !inviteActive && !joinCoparentActive && (
         <div style={{ textAlign: 'center', padding: `${spacing.xxxl}px ${spacing.base}px` }}>
           <Icon name="Users" size={48} color={colors.text.muted} />
           <p style={{ ...typography.body, color: colors.text.secondary, marginTop: `${spacing.md}px` }}>
@@ -202,6 +188,11 @@ export default forwardRef(function Dashboard(_props, ref) {
           <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)}>
             Add Your First Child
           </Button>
+          <div style={{ marginTop: `${spacing.md}px` }}>
+            <Button variant="secondary" icon="UserPlus" onClick={() => { window.callBare('haptic:tap'); setJoinCoparentActive(true); }}>
+              Join as Co-Parent
+            </Button>
+          </div>
         </div>
       )}
 

@@ -6,6 +6,7 @@ import Button from './primitives/Button.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 import InviteCard from './InviteCard.jsx';
+import JoinCoparentCard from './JoinCoparentCard.jsx';
 
 export default forwardRef(function Dashboard(_props, ref) {
   const { colors, typography, spacing } = useTheme();
@@ -14,6 +15,7 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [selectedChild, setSelectedChild] = useState(null);
   const [selectedTab, setSelectedTab] = useState(null);
   const [inviteActive, setInviteActive] = useState(false);
+  const [joinCoparentActive, setJoinCoparentActive] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
   const childrenRef = useRef(children);
   childrenRef.current = children;
@@ -89,7 +91,7 @@ export default forwardRef(function Dashboard(_props, ref) {
           c.publicKey === data.childPublicKey ? { ...c, bypassAlerts: c.bypassAlerts + 1 } : c
         ));
       }),
-      window.onBareEvent('child:connected', () => { loadChildren(); setInviteActive(false); }),
+      window.onBareEvent('child:connected', () => { loadChildren(); setInviteActive(false); setJoinCoparentActive(false); }),
       window.onBareEvent('child:unpaired', (data) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
       }),
@@ -157,18 +159,32 @@ export default forwardRef(function Dashboard(_props, ref) {
         <h2 style={{ ...typography.heading, color: colors.text.primary, margin: 0 }}>
           Dashboard
         </h2>
-        {!inviteActive && !loading && children.length > 0 && (
-          <button
-            onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              ...typography.body, color: colors.primary, fontWeight: '600',
-              display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
-            }}
-          >
-            <Icon name="Plus" size={16} color={colors.primary} />
-            Add Child
-          </button>
+        {!inviteActive && !joinCoparentActive && !loading && children.length > 0 && (
+          <div style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'center' }}>
+            <button
+              onClick={() => { window.callBare('haptic:tap'); setJoinCoparentActive(true); }}
+              style={{
+                background: 'none', border: `1px solid ${colors.primary}`, cursor: 'pointer',
+                ...typography.caption, color: colors.primary, fontWeight: '600',
+                display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
+                padding: `${spacing.xs}px ${spacing.sm}px`, borderRadius: `${radius.md}px`,
+              }}
+            >
+              <Icon name="UserPlus" size={14} color={colors.primary} />
+              Join as Co-Parent
+            </button>
+            <button
+              onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                ...typography.body, color: colors.primary, fontWeight: '600',
+                display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
+              }}
+            >
+              <Icon name="Plus" size={16} color={colors.primary} />
+              Add Child
+            </button>
+          </div>
         )}
       </div>
 
@@ -193,6 +209,13 @@ export default forwardRef(function Dashboard(_props, ref) {
         <InviteCard
           onConnected={() => { setInviteActive(false); loadChildren(); }}
           onDismiss={() => setInviteActive(false)}
+        />
+      )}
+
+      {joinCoparentActive && (
+        <JoinCoparentCard
+          onConnected={() => { setJoinCoparentActive(false); loadChildren(); }}
+          onDismiss={() => setJoinCoparentActive(false)}
         />
       )}
 

@@ -7,7 +7,7 @@
 // Child path: calls setMode then navigates directly to /child-setup.
 
 import { useState, useRef } from 'react'
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from 'react-native'
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
 import { useRouter } from 'expo-router'
 import NativeIcon from './NativeIcon'
 
@@ -119,53 +119,55 @@ export default function SetupScreen () {
 
   if (step === 'pin') {
     return (
-      <View style={styles.container}>
-        <View style={[styles.iconCircle, styles.iconCircleGreen]}>
-          <NativeIcon name="LockSimple" size={32} color="#81C784" />
-        </View>
-        <Text style={styles.title}>Set Override PIN</Text>
-        <Text style={styles.subtitle}>
-          Children enter this PIN on the block screen to request temporary access.
-          You can change it later in Settings.
-        </Text>
-
-        {error && <Text style={styles.error}>{error}</Text>}
-
-        {loading ? (
-          <ActivityIndicator color="#4CAF50" size="large" />
-        ) : (
-          <View style={styles.form}>
-            <Text style={styles.label}>PIN (4+ digits)</Text>
-            <TextInput
-              style={styles.input}
-              value={pin}
-              onChangeText={(v) => {
-                setPin(v);
-                setError(null);
-                if (v.length === 4) confirmPinRef.current?.focus();
-              }}
-              placeholder="e.g. 1234"
-              keyboardType="numeric"
-              secureTextEntry
-              maxLength={4}
-            />
-            <Text style={styles.label}>Confirm PIN</Text>
-            <TextInput
-              ref={confirmPinRef}
-              style={styles.input}
-              value={confirmPin}
-              onChangeText={(v) => { setConfirmPin(v); setError(null) }}
-              placeholder="Repeat PIN"
-              keyboardType="numeric"
-              secureTextEntry
-              maxLength={4}
-            />
-            <TouchableOpacity style={styles.btnSave} onPress={handleSetPin}>
-              <Text style={styles.btnSaveText}>Save PIN</Text>
-            </TouchableOpacity>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={[styles.container, { justifyContent: 'flex-start', paddingTop: 60 }]} keyboardShouldPersistTaps="handled">
+          <View style={[styles.iconCircle, styles.iconCircleGreen]}>
+            <NativeIcon name="LockSimple" size={32} color="#81C784" />
           </View>
-        )}
-      </View>
+          <Text style={styles.title}>Set Override PIN</Text>
+          <Text style={styles.subtitle}>
+            Children enter this PIN on the block screen to request temporary access.
+            You can change it later in Settings.
+          </Text>
+
+          {error && <Text style={styles.error}>{error}</Text>}
+
+          {loading ? (
+            <ActivityIndicator color="#4CAF50" size="large" />
+          ) : (
+            <View style={styles.form}>
+              <Text style={styles.label}>PIN (4+ digits)</Text>
+              <TextInput
+                style={styles.input}
+                value={pin}
+                onChangeText={(v) => {
+                  setPin(v);
+                  setError(null);
+                  if (v.length === 4) confirmPinRef.current?.focus();
+                }}
+                placeholder="e.g. 1234"
+                keyboardType="numeric"
+                secureTextEntry
+                maxLength={4}
+              />
+              <Text style={styles.label}>Confirm PIN</Text>
+              <TextInput
+                ref={confirmPinRef}
+                style={styles.input}
+                value={confirmPin}
+                onChangeText={(v) => { setConfirmPin(v); setError(null) }}
+                placeholder="Repeat PIN"
+                keyboardType="numeric"
+                secureTextEntry
+                maxLength={4}
+              />
+              <TouchableOpacity style={styles.btnSave} onPress={handleSetPin}>
+                <Text style={styles.btnSaveText}>Save PIN</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     )
   }
 

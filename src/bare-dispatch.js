@@ -887,6 +887,21 @@ function createDispatch (ctx) {
           await ctx.db.put(sessionPrefix + now, sessions)
         }
 
+        // Piggyback resolved request statuses so co-parents get updates (#122).
+        // Collect all non-pending req: entries from child's Hyperbee.
+        const resolvedRequests = []
+        for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+          if (value.status && value.status !== 'pending') {
+            resolvedRequests.push({
+              requestId: value.id,
+              status: value.status,
+              packageName: value.packageName,
+              resolvedAt: value.resolvedAt || value.requestedAt,
+            })
+          }
+        }
+        if (resolvedRequests.length > 0) console.log('[bare] usage:flush piggyback:', resolvedRequests.length, 'resolved requests')
+
         const report = {
           type: 'usage:report',
           timestamp: now,
@@ -898,6 +913,7 @@ function createDispatch (ctx) {
           currentApp,
           currentAppPackage,
           todayScreenTimeSeconds,
+          resolvedRequests,
         }
 
         // Persist report to Hyperbee
@@ -1302,18 +1318,18 @@ function createDispatch (ctx) {
 
         results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
 
-        // If there are pending requests, ask the child for resolution updates (#122).
-        // iOS may drop P2P messages when backgrounded; this pull-based sync ensures the
-        // parent eventually gets updated statuses when the user opens the Activity tab.
-        const hasPending = results.some(r => r.type === 'time_request' && !r.resolved)
-        if (hasPending && ctx.getMode() === 'parent') {
+        // Always ask the child for resolution updates when opening Activity tab (#122).
+        // iOS may drop P2P messages when backgrounded or during Hyperswarm dedup;
+        // this pull-based sync ensures the parent gets updated statuses.
+        if (ctx.getMode() === 'parent') {
           try {
             const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
             const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
             if (noiseKey) {
               ctx.sendToPeer(noiseKey, { type: 'requests:syncResolved', payload: { childPublicKey } })
+              console.log('[bare] alerts:list triggered syncResolved for', childPublicKey?.slice(0, 8))
             }
-          } catch (_e) { /* child offline */ }
+          } catch (e) { console.warn('[bare] alerts:list syncResolved failed:', e.message) }
         }
 
         return results
@@ -1760,7 +1776,7 @@ async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) 
  * @param {object} db - Hyperbee instance
  * @param {function} send - bare->RN IPC send function
  */
-async function handleRequestResolved (payload, db, send) {
+async function handleRequestResolved (payload, db, send, childPublicKey) {
   const { requestId, status, packageName, resolvedAt } = payload
   if (!requestId || !status) return
 
@@ -1776,7 +1792,10 @@ async function handleRequestResolved (payload, db, send) {
     // Defence-in-depth: this parent never received the original time:request
     // (e.g. was offline during submission and reconnect message ordering lost it).
     // Create a minimal entry so the activity list shows the resolved request (#122).
-    console.log('[bare] request:resolved creating missing entry for', requestId)
+    // Include childPublicKey so alerts:list can filter by child.
+    const peerRecord = childPublicKey ? await db.get('peers:' + childPublicKey).catch(() => null) : null
+    const childDisplayName = peerRecord?.value?.displayName || 'Child'
+    console.log('[bare] request:resolved creating missing entry for', requestId, 'child:', childPublicKey?.slice(0, 8))
     await db.put('request:' + requestId, {
       id: requestId,
       packageName: packageName || 'unknown',
@@ -1784,6 +1803,8 @@ async function handleRequestResolved (payload, db, send) {
       resolvedAt,
       requestedAt: resolvedAt || Date.now(),
       notified: true,
+      childPublicKey: childPublicKey || null,
+      childDisplayName,
     })
   }
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName } })

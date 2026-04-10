@@ -295,19 +295,38 @@ async function onPeerConnection (conn, info) {
 
   conn.on('error', e => {
     console.error('[bare] peer error:', e.message)
-    // Remove from parentPeers if this was a parent connection
+    // Remove from parentPeers only if this exact connection is still the active one.
+    // Hyperswarm dedup creates two connections with the same remoteKeyHex; if the
+    // surviving connection already updated parentPeers, we must not delete it (#122).
     if (mode === 'child') {
       for (const [ik, pp] of parentPeers) {
-        if (pp.remoteKeyHex === remoteKeyHex) { parentPeers.delete(ik); break }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) { parentPeers.delete(ik); break }
       }
     }
   })
   conn.on('close', () => {
-    peers.delete(remoteKeyHex)
-    // Remove from parentPeers if this was a parent connection
+    // Only remove from peers if this connection is still the active one.
+    // Hyperswarm dedup creates two connections with the same remoteKeyHex;
+    // if the surviving connection already overwrote the peers entry, deleting
+    // it would orphan the live connection and silently drop all messages (#122).
+    const currentPeer = peers.get(remoteKeyHex)
+    if (currentPeer && currentPeer.conn === conn) {
+      peers.delete(remoteKeyHex)
+    } else if (currentPeer) {
+      console.log('[bare] peers: keeping surviving conn for', remoteKeyHex.slice(0, 8), '(dedup closed stale)')
+    }
+    // Remove from parentPeers only if this exact connection is still the active one (#122).
     if (mode === 'child') {
       for (const [ik, pp] of parentPeers) {
-        if (pp.remoteKeyHex === remoteKeyHex) { parentPeers.delete(ik); break }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) {
+          console.log('[bare] parentPeers: removing closed conn for', ik.slice(0, 8))
+          parentPeers.delete(ik)
+          break
+        }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn !== conn) {
+          console.log('[bare] parentPeers: keeping surviving conn for', ik.slice(0, 8), '(dedup closed stale)')
+          break
+        }
       }
     }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
@@ -369,7 +388,10 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
 
   // Look up known peer — pairing handshake messages are handled before full verification
   const peer = peers.get(remoteKeyHex)
-  if (!peer) return
+  if (!peer) {
+    console.warn('[bare] dropped message: no peer entry for', remoteKeyHex.slice(0, 8), 'type:', msg.type)
+    return
+  }
 
   // For 'hello' messages (pairing handshake): we don't have the peer's pubkey yet —
   // but we DO know their Hyperswarm public key (NOISE key), which is different from their
@@ -419,11 +441,11 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       break
     case 'request:resolved':
       console.log('[bare] received request:resolved from', msg.from?.slice(0, 8), 'id:', msg.payload?.requestId?.slice(0, 20), 'status:', msg.payload?.status)
-      await handleRequestResolved(msg.payload, db, send)
+      await handleRequestResolved(msg.payload, db, send, msg.from)
       break
     case 'requests:syncResolved': {
       // Parent is asking for resolved request statuses (#122 pull-based sync).
-      // Send all non-pending requests from the last 7 days back to the requesting parent.
+      console.log('[bare] received requests:syncResolved from', msg.from?.slice(0, 8))
       const resolvedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
       for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
         if (!value || value.status === 'pending') continue
@@ -471,6 +493,12 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
         const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
         const policyApps = policyRaw?.value?.apps || {}
         currentAppIcon = policyApps[msg.payload.currentAppPackage]?.iconBase64 || null
+      }
+      // Process piggybacked resolved requests so co-parents see status updates (#122).
+      if (Array.isArray(msg.payload.resolvedRequests) && msg.payload.resolvedRequests.length > 0) {
+        for (const rr of msg.payload.resolvedRequests) {
+          await handleRequestResolved(rr, db, send, childPublicKey)
+        }
       }
       send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey, currentAppIcon } })
       break

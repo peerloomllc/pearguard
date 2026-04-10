@@ -9,7 +9,7 @@ import InviteCard from './InviteCard.jsx';
 import JoinCoparentCard from './JoinCoparentCard.jsx';
 
 export default forwardRef(function Dashboard(_props, ref) {
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography, spacing, radius } = useTheme();
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedChild, setSelectedChild] = useState(null);

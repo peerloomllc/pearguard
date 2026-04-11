@@ -36,6 +36,11 @@ const peers = new Map()
 // Parent connections (child mode only) — Map<identityKeyHex, { conn, remoteKeyHex, displayName, topicHex }>
 const parentPeers = new Map()
 
+// Known peer identity keys that have been stored via db.put('peers:' + key).
+// Used as a fallback in children:list when Hyperbee's createReadStream misses
+// recently-written records due to B-tree snapshot timing.
+const knownPeerKeys = new Set()
+
 // ── IPC helpers ───────────────────────────────────────────────────────────────
 
 const send = (msg) => BareKit.IPC.write(Buffer.from(JSON.stringify(msg) + '\n'))
@@ -125,7 +130,7 @@ async function init (dataDir, attempt = 0) {
 
   // Build dispatch with live context
   dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
-    joinTopic, sendToPeer, sendToAllParents, sodium,
+    joinTopic, sendToPeer, sendToAllParents, sodium, knownPeerKeys,
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
     resetParentConnection: (identityKey) => {
@@ -143,6 +148,7 @@ async function init (dataDir, attempt = 0) {
   // we may be mid-invite and shouldn't touch the topic.
   const activePeerTopics = new Set()
   for await (const { value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+    if (value && value.publicKey) knownPeerKeys.add(value.publicKey)
     if (value && value.swarmTopic) activePeerTopics.add(value.swarmTopic)
   }
   const topicHexes = []
@@ -300,33 +306,35 @@ async function onPeerConnection (conn, info) {
     // surviving connection already updated parentPeers, we must not delete it (#122).
     if (mode === 'child') {
       for (const [ik, pp] of parentPeers) {
-        if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) { parentPeers.delete(ik); break }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) {
+          const survivingPeer = peers.get(remoteKeyHex)
+          if (survivingPeer && survivingPeer.conn !== conn) {
+            parentPeers.set(ik, { ...pp, conn: survivingPeer.conn })
+          } else {
+            parentPeers.delete(ik)
+          }
+          break
+        }
       }
     }
   })
   conn.on('close', () => {
-    // Only remove from peers if this connection is still the active one.
-    // Hyperswarm dedup creates two connections with the same remoteKeyHex;
-    // if the surviving connection already overwrote the peers entry, deleting
-    // it would orphan the live connection and silently drop all messages (#122).
     const currentPeer = peers.get(remoteKeyHex)
     if (currentPeer && currentPeer.conn === conn) {
       peers.delete(remoteKeyHex)
-    } else if (currentPeer) {
-      console.log('[bare] peers: keeping surviving conn for', remoteKeyHex.slice(0, 8), '(dedup closed stale)')
     }
-    // Remove from parentPeers only if this exact connection is still the active one (#122).
     if (mode === 'child') {
       for (const [ik, pp] of parentPeers) {
         if (pp.remoteKeyHex === remoteKeyHex && pp.conn === conn) {
-          console.log('[bare] parentPeers: removing closed conn for', ik.slice(0, 8))
-          parentPeers.delete(ik)
+          const survivingPeer = peers.get(remoteKeyHex)
+          if (survivingPeer && survivingPeer.conn !== conn) {
+            parentPeers.set(ik, { ...pp, conn: survivingPeer.conn })
+          } else {
+            parentPeers.delete(ik)
+          }
           break
         }
-        if (pp.remoteKeyHex === remoteKeyHex && pp.conn !== conn) {
-          console.log('[bare] parentPeers: keeping surviving conn for', ik.slice(0, 8), '(dedup closed stale)')
-          break
-        }
+        if (pp.remoteKeyHex === remoteKeyHex && pp.conn !== conn) break
       }
     }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
@@ -351,27 +359,10 @@ async function onPeerConnection (conn, info) {
       : null
     const hello = signMessage({
       type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName, avatarThumb },
+      payload: { publicKey: myIdentityHex, displayName, avatarThumb, mode: 'child' },
     }, identity)
     peers.get(remoteKeyHex).sentHello = true
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
-  }
-
-  // Parent B sends coparent:hello if we have a pending coparent handshake
-  if (mode === 'parent') {
-    const pendingCp = await db.get('pendingCoparent').catch(() => null)
-    if (pendingCp && pendingCp.value) {
-      const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
-      const coparentHello = signMessage({
-        type: 'coparent:hello',
-        payload: {
-          publicKey: myIdentityHex,
-          childPublicKey: pendingCp.value.childPublicKey,
-        },
-      }, identity)
-      peers.get(remoteKeyHex).sentHello = true
-      conn.write(Buffer.from(JSON.stringify(coparentHello) + '\n'))
-    }
   }
 }
 
@@ -401,9 +392,12 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     return
   }
 
-  // For all other messages: verify signature against stored identity key
+  // Verify signature against stored identity key.
+  // Hyperbee's B-tree can return null from db.get shortly after db.put (eventual
+  // consistency under concurrent reads/writes). Fall back to knownPeerKeys which
+  // is updated synchronously on every db.put('peers:...') call.
   const storedPeer = await db.get('peers:' + msg.from).catch(() => null)
-  if (!storedPeer) {
+  if (!storedPeer && !knownPeerKeys.has(msg.from)) {
     console.warn('[bare] dropped message: unknown peer', msg.from.slice(0, 12))
     return
   }
@@ -415,7 +409,17 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
   // Dispatch verified peer message by type
   switch (msg.type) {
     case 'policy:update':
-      await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from)
+      if (mode === 'parent') {
+        // Parent receiving a relayed policy from the child — store under parent-mode key
+        const cpk = msg.payload?.childPublicKey
+        if (cpk) {
+          await db.put('policy:' + cpk, msg.payload)
+          send({ type: 'event', event: 'policy:updated', data: msg.payload })
+          console.log('[bare] parent stored relayed policy for child', cpk.slice(0, 8), 'v' + msg.payload.version)
+        }
+      } else {
+        await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from)
+      }
       break
     case 'time:extend':
       await handleTimeExtend(msg.payload, db, send, sendToAllParents)
@@ -570,6 +574,7 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
         const peerRecord = await db.get('peers:' + senderIdentityKey).catch(() => null)
         const parentTopic = peerRecord?.value?.swarmTopic
         await db.del('peers:' + senderIdentityKey).catch(() => {})
+        knownPeerKeys.delete(senderIdentityKey)
         await db.del('pendingParent:' + senderIdentityKey).catch(() => {})
         parentPeers.delete(senderIdentityKey)
 
@@ -630,70 +635,6 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       }
       break
     }
-    case 'coparent:hello': {
-      // Parent B has connected on our parent-to-parent topic.
-      // We are Parent A. Generate a new swarm topic for Parent B <-> Child,
-      // then relay it to both the child and Parent B.
-      if (mode !== 'parent') break
-      const parentBIdentityKey = msg.payload?.publicKey
-      if (!parentBIdentityKey) break
-      const childPublicKey = msg.payload?.childPublicKey
-      if (!childPublicKey) break
-
-      // Generate a new topic for Parent B <-> Child
-      const topicBuf = Buffer.allocUnsafe(32)
-      sodium.randombytes_buf(topicBuf)
-      const newTopicHex = b4a.toString(topicBuf, 'hex')
-
-      // Tell the child to join this new topic for Parent B
-      let childNoiseKey = null
-      for (const [noiseKey, p] of peers) {
-        if (p.identityKey === childPublicKey) { childNoiseKey = noiseKey; break }
-      }
-      if (childNoiseKey) {
-        sendToPeer(childNoiseKey, {
-          type: 'coparent:relay',
-          payload: { swarmTopic: newTopicHex, parentPublicKey: parentBIdentityKey },
-        })
-      }
-
-      // Tell Parent B which topic to join for the child connection
-      sendToPeer(remoteKeyHex, {
-        type: 'coparent:childTopic',
-        payload: { swarmTopic: newTopicHex, childPublicKey },
-      })
-
-      console.log('[bare] relayed co-parent topic to child and parent B:', newTopicHex.slice(0, 12))
-      break
-    }
-    case 'coparent:relay': {
-      // Parent A is telling us (child) to join a new topic for Parent B.
-      if (mode !== 'child') break
-      const { swarmTopic: newTopic, parentPublicKey: parentBKey } = msg.payload ?? {}
-      if (!newTopic || !parentBKey) break
-
-      // Store Parent B as pending and join the new topic
-      await db.put('pendingParent:' + parentBKey, { publicKey: parentBKey, ts: Date.now() })
-      await joinTopic(newTopic)
-      console.log('[bare] joining co-parent topic for parent B:', parentBKey.slice(0, 12))
-      break
-    }
-    case 'coparent:childTopic': {
-      // Parent A is telling us (Parent B) which topic to join for the child.
-      if (mode !== 'parent') break
-      const { swarmTopic: childTopic, childPublicKey: cpChildKey } = msg.payload ?? {}
-      if (!childTopic || !cpChildKey) break
-
-      // Join the child's topic - normal hello handshake will follow
-      await joinTopic(childTopic)
-
-      // Clean up the pending coparent state
-      await db.del('pendingCoparent').catch(() => {})
-
-      console.log('[bare] joining child topic as co-parent:', childTopic.slice(0, 12))
-      send({ type: 'event', event: 'coparent:joined', data: { childPublicKey: cpChildKey, swarmTopic: childTopic } })
-      break
-    }
     default:
       send({ type: 'event', event: 'peer:message', data: msg })
       break
@@ -720,8 +661,9 @@ function sendToPeer (remoteKeyHex, msg) {
  * - If no parents connected (or all sends fail): queue for reconnect delivery.
  * Child mode only.
  * @param {{ type: string, payload: object }} message
+ * @param {string} [excludeKey] — optional identity key to skip (e.g. the sender during policy relay)
  */
-async function sendToAllParents (message) {
+async function sendToAllParents (message, excludeKey) {
   if (parentPeers.size === 0) {
     console.log('[bare] sendToAllParents: no parents connected, queuing', message.type)
     await queueMessage(message, db)
@@ -731,6 +673,7 @@ async function sendToAllParents (message) {
   const payload = Buffer.from(JSON.stringify(signed) + '\n')
   let sentToAny = false
   for (const [ik, pp] of parentPeers) {
+    if (excludeKey && ik === excludeKey) continue
     try {
       pp.conn.write(payload)
       console.log('[bare] sendToAllParents:', message.type, 'sent to parent', ik.slice(0, 8))
@@ -740,7 +683,7 @@ async function sendToAllParents (message) {
       parentPeers.delete(ik)
     }
   }
-  if (!sentToAny) {
+  if (!sentToAny && !excludeKey) {
     console.log('[bare] sendToAllParents: all writes failed, queuing', message.type)
     await queueMessage(message, db)
   }
@@ -801,6 +744,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
       if (value && value.noiseKey === remoteKeyHex && value.publicKey !== peerIdentityKeyHex) {
         console.log('[bare] removing stale peer entry that claimed this noise key:', value.publicKey?.slice(0, 8))
         await db.del(key).catch(() => {})
+        if (value.publicKey) knownPeerKeys.delete(value.publicKey)
       }
     }
   }
@@ -817,6 +761,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
     ...(inMemoryPeer && inMemoryPeer.topicHex ? { swarmTopic: inMemoryPeer.topicHex } : {}),
   }
   await db.put('peers:' + peerIdentityKeyHex, peerRecord)
+  knownPeerKeys.add(peerIdentityKeyHex)
 
   // Re-check blocked status after writing — a concurrent child:unpair could have written
   // blocked: after our initial check above but before we stored the peer. If so, undo
@@ -825,6 +770,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
   if (laterBlock) {
     console.warn('[bare] peer blocked during hello handshake, re-unpairing:', peerIdentityKeyHex.slice(0, 8))
     await db.del('peers:' + peerIdentityKeyHex).catch(() => {})
+    knownPeerKeys.delete(peerIdentityKeyHex)
     try {
       const signed = signMessage({ type: 'unpair', payload: {} }, identity)
       conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
@@ -857,6 +803,13 @@ async function handleHello (msg, conn, remoteKeyHex) {
 
   // Notify the parent UI that a child has connected
   if (mode === 'parent') {
+    // Both parents share the child's swarm topic. Skip pairing if the incoming
+    // peer is another parent - only pair with children.
+    if (msg.payload?.mode === 'parent') {
+      console.log('[bare] ignoring hello from fellow parent:', peerIdentityKeyHex.slice(0, 12))
+      return
+    }
+
     // Emit child:connected only for first-time pairings; child:reconnected for subsequent reconnects
     const eventName = isFirstPairing ? 'child:connected' : 'child:reconnected'
     send({ type: 'event', event: eventName, data: peerRecord })
@@ -916,7 +869,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
       : null
     const hello = signMessage({
       type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName: myDisplayName, avatarThumb: myAvatarThumb },
+      payload: { publicKey: myIdentityHex, displayName: myDisplayName, avatarThumb: myAvatarThumb, mode },
     }, identity)
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
   }
@@ -928,13 +881,19 @@ async function handleHello (msg, conn, remoteKeyHex) {
       await db.del('pendingParent:' + peerIdentityKeyHex).catch(() => {})
     }
 
-    // Track this parent connection
+    // Track this parent connection using the conn that delivered the hello message.
+    // Hyperswarm dedup may have overwritten peers Map with a different conn; using
+    // the hello conn guarantees we reference a known-working connection.
     const peerEntry = peers.get(remoteKeyHex)
+    const topicHex = peerEntry ? peerEntry.topicHex : null
+    if (peerEntry && peerEntry.conn !== conn) {
+      peers.set(remoteKeyHex, { ...peerEntry, conn })
+    }
     parentPeers.set(peerIdentityKeyHex, {
-      conn: peerEntry.conn,
+      conn,
       remoteKeyHex,
       displayName: displayName ?? 'Parent',
-      topicHex: peerEntry.topicHex,
+      topicHex,
     })
     await flushPendingMessages(conn)
 

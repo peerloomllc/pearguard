@@ -382,8 +382,11 @@ export default function AppsTab({ childPublicKey }) {
       if (data.childPublicKey === childPublicKey) { loadPolicy(); loadOverrides(); }
     });
     const unsub2 = window.onBareEvent('request:updated', loadOverrides);
+    const unsub3 = window.onBareEvent('policy:updated', (data) => {
+      if (data.childPublicKey === childPublicKey) { loadPolicy(); loadOverrides(); }
+    });
     const timer = setInterval(loadOverrides, 30000);
-    return () => { unsub(); unsub2(); clearInterval(timer); };
+    return () => { unsub(); unsub2(); unsub3(); clearInterval(timer); };
   }, [childPublicKey, loadPolicy, loadOverrides]);
 
   useEffect(() => {

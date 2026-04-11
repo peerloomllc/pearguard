@@ -6,7 +6,6 @@ import Button from './primitives/Button.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 import InviteCard from './InviteCard.jsx';
-import JoinCoparentCard from './JoinCoparentCard.jsx';
 
 export default forwardRef(function Dashboard(_props, ref) {
   const { colors, typography, spacing, radius } = useTheme();
@@ -15,7 +14,6 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [selectedChild, setSelectedChild] = useState(null);
   const [selectedTab, setSelectedTab] = useState(null);
   const [inviteActive, setInviteActive] = useState(false);
-  const [joinCoparentActive, setJoinCoparentActive] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
   const childrenRef = useRef(children);
   childrenRef.current = children;
@@ -91,7 +89,25 @@ export default forwardRef(function Dashboard(_props, ref) {
           c.publicKey === data.childPublicKey ? { ...c, bypassAlerts: c.bypassAlerts + 1 } : c
         ));
       }),
-      window.onBareEvent('child:connected', () => { loadChildren(); setInviteActive(false); setJoinCoparentActive(false); }),
+      window.onBareEvent('child:connected', (data) => {
+        // Add child directly from event data so the card appears immediately.
+        // children:list (createReadStream) may not find the record immediately after
+        // a brokered co-parent pairing, so we inject from event data and skip loadChildren.
+        if (data && data.publicKey) {
+          setChildren((prev) => {
+            const exists = prev.some((c) => c.publicKey === data.publicKey);
+            if (exists) return prev;
+            return [...prev, {
+              ...data,
+              bypassAlerts: 0, pendingApprovals: 0, pendingTimeRequests: 0,
+              todayScreenTimeSeconds: 0, currentApp: null, locked: false, isOnline: false,
+            }];
+          });
+        } else {
+          loadChildren();
+        }
+        setInviteActive(false);
+              }),
       window.onBareEvent('child:unpaired', (data) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
       }),
@@ -159,7 +175,7 @@ export default forwardRef(function Dashboard(_props, ref) {
         <h2 style={{ ...typography.heading, color: colors.text.primary, margin: 0 }}>
           Dashboard
         </h2>
-        {!inviteActive && !joinCoparentActive && !loading && children.length > 0 && (
+        {!inviteActive && !loading && children.length > 0 && (
           <button
             onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
             style={{
@@ -176,7 +192,7 @@ export default forwardRef(function Dashboard(_props, ref) {
 
       {loading && <p style={{ ...typography.body, color: colors.text.secondary }}>Loading...</p>}
 
-      {!loading && children.length === 0 && !inviteActive && !joinCoparentActive && (
+      {!loading && children.length === 0 && !inviteActive && (
         <div style={{ textAlign: 'center', padding: `${spacing.xxxl}px ${spacing.base}px` }}>
           <Icon name="Users" size={48} color={colors.text.muted} />
           <p style={{ ...typography.body, color: colors.text.secondary, marginTop: `${spacing.md}px` }}>
@@ -185,14 +201,9 @@ export default forwardRef(function Dashboard(_props, ref) {
           <p style={{ ...typography.caption, color: colors.text.muted, marginBottom: `${spacing.xl}px` }}>
             Add your first child to get started
           </p>
-          <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)}>
-            Add Your First Child
+          <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)} style={{ width: '220px' }}>
+            Add Child
           </Button>
-          <div style={{ marginTop: `${spacing.md}px` }}>
-            <Button variant="secondary" icon="UserPlus" onClick={() => { window.callBare('haptic:tap'); setJoinCoparentActive(true); }}>
-              Join as Co-Parent
-            </Button>
-          </div>
         </div>
       )}
 
@@ -200,13 +211,6 @@ export default forwardRef(function Dashboard(_props, ref) {
         <InviteCard
           onConnected={() => { setInviteActive(false); loadChildren(); }}
           onDismiss={() => setInviteActive(false)}
-        />
-      )}
-
-      {joinCoparentActive && (
-        <JoinCoparentCard
-          onConnected={() => { setJoinCoparentActive(false); loadChildren(); }}
-          onDismiss={() => setJoinCoparentActive(false)}
         />
       )}
 

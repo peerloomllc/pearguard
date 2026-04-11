@@ -31,6 +31,10 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
@@ -215,6 +219,134 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             }
         }
         promise.resolve(result);
+    }
+
+    /**
+     * Collect daily per-app usage as a JSONArray.
+     * Callable from EnforcementService without needing the RN bridge.
+     * Returns: [ { "packageName": "...", "appName": "...", "secondsToday": N }, ... ]
+     */
+    public static JSONArray collectDailyUsageNative(Context context) {
+        JSONArray result = new JSONArray();
+        try {
+            UsageStatsManager usm = (UsageStatsManager)
+                    context.getSystemService(Context.USAGE_STATS_SERVICE);
+            android.content.pm.PackageManager pm = context.getPackageManager();
+
+            Calendar cal = Calendar.getInstance();
+            cal.set(Calendar.HOUR_OF_DAY, 0);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+            long startOfDay = cal.getTimeInMillis();
+            long now = System.currentTimeMillis();
+
+            // Build launcher-visible set
+            java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            java.util.List<android.content.pm.ResolveInfo> resolveInfos =
+                    pm.queryIntentActivities(launcherIntent, 0);
+            if (resolveInfos != null) {
+                for (android.content.pm.ResolveInfo ri : resolveInfos) {
+                    launcherPackages.add(ri.activityInfo.packageName);
+                }
+            }
+
+            final long MERGE_GAP_MS = 3000;
+            java.util.Map<String, Long> totalMs = new java.util.HashMap<>();
+            java.util.Map<String, Long> sessionStarts = new java.util.HashMap<>();
+            java.util.Map<String, Long> recentPauses = new java.util.HashMap<>();
+
+            UsageEvents events = usm.queryEvents(startOfDay, now);
+            if (events != null) {
+                UsageEvents.Event event = new UsageEvents.Event();
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event);
+                    String pkg = event.getPackageName();
+                    int type = event.getEventType();
+                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {
+                        Long pausedAt = recentPauses.remove(pkg);
+                        if (pausedAt != null && (event.getTimeStamp() - pausedAt) <= MERGE_GAP_MS) {
+                            // Short gap - merge
+                        } else {
+                            if (pausedAt != null) {
+                                Long start = sessionStarts.remove(pkg);
+                                if (start != null) {
+                                    long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                                    totalMs.put(pkg, prev + (pausedAt - start));
+                                }
+                            }
+                            sessionStarts.put(pkg, event.getTimeStamp());
+                        }
+                    } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND || type == UsageEvents.Event.ACTIVITY_PAUSED) {
+                        if (sessionStarts.containsKey(pkg)) {
+                            recentPauses.put(pkg, event.getTimeStamp());
+                        }
+                    }
+                }
+            }
+
+            // Flush remaining pauses
+            for (java.util.Map.Entry<String, Long> entry : recentPauses.entrySet()) {
+                String pkg = entry.getKey();
+                Long start = sessionStarts.remove(pkg);
+                if (start != null) {
+                    long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                    totalMs.put(pkg, prev + (entry.getValue() - start));
+                }
+            }
+
+            // Add elapsed time for apps still in foreground
+            for (java.util.Map.Entry<String, Long> entry : sessionStarts.entrySet()) {
+                String pkg = entry.getKey();
+                long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
+                totalMs.put(pkg, prev + (now - entry.getValue()));
+            }
+
+            String ownPackage = context.getPackageName();
+            for (java.util.Map.Entry<String, Long> entry : totalMs.entrySet()) {
+                long ms = entry.getValue();
+                if (ms <= 0) continue;
+                if (!launcherPackages.contains(entry.getKey())) continue;
+                if (entry.getKey().equals(ownPackage)) continue;
+
+                String label = entry.getKey();
+                try {
+                    android.content.pm.ApplicationInfo info = pm.getApplicationInfo(entry.getKey(), 0);
+                    label = pm.getApplicationLabel(info).toString();
+                } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {}
+
+                try {
+                    JSONObject item = new JSONObject();
+                    item.put("packageName", entry.getKey());
+                    item.put("appName", label);
+                    item.put("secondsToday", (int)(ms / 1000));
+                    result.put(item);
+                } catch (JSONException ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return result;
+    }
+
+    @ReactMethod
+    public void getQueuedReports(Promise promise) {
+        try {
+            String json = UsageQueueHelper.dequeue(reactContext);
+            promise.resolve(json);
+        } catch (Exception e) {
+            promise.resolve("[]");
+        }
+    }
+
+    @ReactMethod
+    public void clearQueuedReports(Promise promise) {
+        try {
+            UsageQueueHelper.clear(reactContext);
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.resolve(false);
+        }
     }
 
     /**

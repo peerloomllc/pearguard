@@ -16,6 +16,8 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 
+import org.json.JSONArray;
+
 import androidx.core.app.NotificationCompat;
 
 import com.facebook.react.bridge.Arguments;
@@ -135,9 +137,9 @@ public class EnforcementService extends Service {
     }
 
     /**
-     * Every 5 minutes: emit onUsageFlush to RN so the bare worklet can
-     * gather usage stats (via UsageStatsModule.getDailyUsageAll()) and
-     * send a usage:report to the parent.
+     * Every 60 seconds: if RN bridge is active, emit onUsageFlush so the
+     * bare worklet can send a full usage report to parents.
+     * If bridge is dead, collect stats natively and queue for later delivery.
      */
     private void maybeFlushUsageStats() {
         long now = System.currentTimeMillis();
@@ -152,9 +154,11 @@ public class EnforcementService extends Service {
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                 .emit("onUsageFlush", params);
         } else {
-            // RN bridge is not active (app backgrounded/killed) — reset so we
-            // retry on the next loop iteration rather than waiting a full 5 minutes
-            lastUsageFlushTime = 0;
+            // RN bridge is dead — collect usage natively and queue
+            JSONArray usage = UsageStatsModule.collectDailyUsageNative(this);
+            if (usage.length() > 0) {
+                UsageQueueHelper.enqueue(this, usage);
+            }
         }
     }
 

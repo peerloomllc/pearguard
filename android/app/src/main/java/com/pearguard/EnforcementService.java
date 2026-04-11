@@ -19,6 +19,9 @@ import android.text.TextUtils;
 import org.json.JSONArray;
 
 import androidx.core.app.NotificationCompat;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactContext;
@@ -29,6 +32,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Calendar;
+import java.util.concurrent.TimeUnit;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -57,6 +61,15 @@ public class EnforcementService extends Service {
         startForeground(NOTIFICATION_ID, buildNotification());
         lastAccessibilityState = isAccessibilityServiceEnabled();
         handler.post(enforcementLoop);
+
+        // Schedule periodic WorkManager task to wake app and flush queued usage reports
+        PeriodicWorkRequest flushWork = new PeriodicWorkRequest.Builder(
+                UsageFlushWorker.class, 15, TimeUnit.MINUTES)
+                .build();
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "usage_flush",
+                ExistingPeriodicWorkPolicy.KEEP,
+                flushWork);
     }
 
     @Override

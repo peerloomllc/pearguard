@@ -82,6 +82,15 @@
       </intent-filter>
     </activity>
 
+    <!-- Transparent wake-up Activity for WorkManager usage flush -->
+    <activity
+        android:name=".UsageFlushActivity"
+        android:enabled="true"
+        android:exported="false"
+        android:excludeFromRecents="true"
+        android:taskAffinity=""
+        android:theme="@style/Theme.Transparent" />
+
     <!-- EnforcementService: foreground service orchestrator (child device) -->
     <service
         android:name=".EnforcementService"

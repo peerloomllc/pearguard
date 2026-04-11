@@ -15,7 +15,8 @@ export default function JoinRoute () {
   useEffect(() => {
     const t = params.t
     if (t) {
-      const inviteUrl = `pear://pearguard/join?t=${t}`
+      const decoded = decodeURIComponent(t)
+      const inviteUrl = `pear://pearguard/join?t=${decoded}`
       console.log('[join] forwarding invite:', inviteUrl)
       // Delay slightly to ensure the main screen worklet is ready
       setTimeout(() => {

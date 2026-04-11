@@ -8,7 +8,7 @@ import ChildDetail from './ChildDetail.jsx';
 import InviteCard from './InviteCard.jsx';
 
 export default forwardRef(function Dashboard(_props, ref) {
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography, spacing, radius } = useTheme();
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedChild, setSelectedChild] = useState(null);
@@ -89,7 +89,25 @@ export default forwardRef(function Dashboard(_props, ref) {
           c.publicKey === data.childPublicKey ? { ...c, bypassAlerts: c.bypassAlerts + 1 } : c
         ));
       }),
-      window.onBareEvent('child:connected', () => { loadChildren(); setInviteActive(false); }),
+      window.onBareEvent('child:connected', (data) => {
+        // Add child directly from event data so the card appears immediately.
+        // children:list (createReadStream) may not find the record immediately after
+        // a brokered co-parent pairing, so we inject from event data and skip loadChildren.
+        if (data && data.publicKey) {
+          setChildren((prev) => {
+            const exists = prev.some((c) => c.publicKey === data.publicKey);
+            if (exists) return prev;
+            return [...prev, {
+              ...data,
+              bypassAlerts: 0, pendingApprovals: 0, pendingTimeRequests: 0,
+              todayScreenTimeSeconds: 0, currentApp: null, locked: false, isOnline: false,
+            }];
+          });
+        } else {
+          loadChildren();
+        }
+        setInviteActive(false);
+              }),
       window.onBareEvent('child:unpaired', (data) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
       }),
@@ -183,8 +201,8 @@ export default forwardRef(function Dashboard(_props, ref) {
           <p style={{ ...typography.caption, color: colors.text.muted, marginBottom: `${spacing.xl}px` }}>
             Add your first child to get started
           </p>
-          <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)}>
-            Add Your First Child
+          <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)} style={{ width: '220px' }}>
+            Add Child
           </Button>
         </div>
       )}

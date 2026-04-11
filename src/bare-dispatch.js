@@ -75,8 +75,11 @@ function createDispatch (ctx) {
 
       case 'children:list': {
         const children = []
+        const seenKeys = new Set()
         const seenNoiseKeys = new Set()
+        let streamCount = 0
         for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          streamCount++
           // Skip any peer that also has a blocked: entry — stale record from a race
           // between handleHello and child:unpair.
           const isBlocked = await ctx.db.get('blocked:' + value.publicKey).catch(() => null)
@@ -110,7 +113,28 @@ function createDispatch (ctx) {
               todayScreenTimeSeconds: report.todayScreenTimeSeconds || 0,
             }
           }
+          seenKeys.add(value.publicKey)
           children.push({ ...value, isOnline, ...usageFields })
+        }
+        // Fallback: Hyperbee createReadStream range queries can miss recently-stored
+        // records due to B-tree snapshot timing. Use db.get for any known peer keys
+        // that the range scan missed.
+        if (ctx.knownPeerKeys) {
+          for (const key of ctx.knownPeerKeys) {
+            if (seenKeys.has(key)) continue
+            const record = await ctx.db.get('peers:' + key).catch(() => null)
+            console.log('[bare] children:list fallback for', key.slice(0, 12), ':', record ? 'FOUND' : 'NOT FOUND',
+              'streamCount=' + streamCount, 'knownKeys=' + ctx.knownPeerKeys.size)
+            if (!record) { ctx.knownPeerKeys.delete(key); continue }
+            const isBlocked = await ctx.db.get('blocked:' + key).catch(() => null)
+            if (isBlocked) continue
+            const value = record.value
+            const isOnline = value.noiseKey ? ctx.peers.has(value.noiseKey) : false
+            children.push({ ...value, isOnline })
+          }
+        }
+        if (children.length === 0 && ctx.knownPeerKeys && ctx.knownPeerKeys.size > 0) {
+          console.log('[bare] children:list returned 0 but knownPeerKeys has', ctx.knownPeerKeys.size, 'keys:', [...ctx.knownPeerKeys].map(k => k.slice(0, 12)).join(', '))
         }
         return children
       }
@@ -139,6 +163,7 @@ function createDispatch (ctx) {
         // Collect keys first, then delete — avoids deadlocking Hyperbee's internal lock
         // (createReadStream + del cannot interleave).
         await ctx.db.del('peers:' + childPublicKey).catch(() => {})
+        if (ctx.knownPeerKeys) ctx.knownPeerKeys.delete(childPublicKey)
         await ctx.db.del('policy:' + childPublicKey).catch(() => {})
         const alertKeys = []
         for await (const { key } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
@@ -244,57 +269,6 @@ function createDispatch (ctx) {
         const inviteLink = buildInviteLink({ parentPublicKey, swarmTopic: topicHex })
 
         return { inviteLink, inviteString: inviteLink, qrData: inviteLink, swarmTopic: topicHex, parentPublicKey }
-      }
-
-      case 'coparent:generateInvite': {
-        // args.childPublicKey: which child the co-parent will pair with
-        const { childPublicKey } = args
-        if (!childPublicKey) throw new Error('coparent:generateInvite requires childPublicKey')
-
-        // Verify this child is actually paired with us
-        const childRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
-        if (!childRecord) throw new Error('child not paired: ' + childPublicKey.slice(0, 12))
-
-        // Generate a random swarm topic for the parent-to-parent handshake
-        const topicBuf = Buffer.allocUnsafe(32)
-        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-          crypto.getRandomValues(topicBuf)
-        } else {
-          require('sodium-native').randombytes_buf(topicBuf)
-        }
-        const topicHex = topicBuf.toString('hex')
-        const parentPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
-
-        // Join the topic so we can handshake with Parent B
-        await ctx.joinTopic(topicHex)
-
-        // Build the co-parent invite link
-        const { buildCoparentLink } = require('./invite')
-        const inviteLink = buildCoparentLink({ parentPublicKey, swarmTopic: topicHex, childPublicKey })
-
-        return { inviteLink, qrData: inviteLink, swarmTopic: topicHex, childPublicKey }
-      }
-
-      case 'coparent:acceptInvite': {
-        // args[0]: full pear://pearguard/coparent?t=... URL
-        const { parseCoparentLink } = require('./invite')
-        const parsed = parseCoparentLink(args[0])
-        if (!parsed.ok) throw new Error('invalid coparent invite: ' + parsed.error)
-
-        const { parentPublicKey: parentAKey, swarmTopic, childPublicKey } = parsed
-
-        // Store Parent A's key so we can recognize the coparent:hello response
-        await ctx.db.put('pendingCoparent', {
-          parentAKey,
-          childPublicKey,
-          swarmTopic,
-          ts: Date.now(),
-        })
-
-        // Join the parent-to-parent topic
-        await ctx.joinTopic(swarmTopic)
-
-        return { ok: true, swarmTopic, parentAKey, childPublicKey }
       }
 
       case 'acceptInvite': {
@@ -1367,6 +1341,11 @@ async function handleAppDecision (payload, db, send, sendToAllParents) {
   send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
   send({ type: 'event', event: 'policy:updated', data: policy })
 
+  // Relay the updated policy to all OTHER parents so co-parents stay in sync.
+  if (sendToAllParents) {
+    sendToAllParents({ type: 'policy:update', payload: policy })
+  }
+
   // Update any pending time requests for this package so the child's request
   // list reflects the parent's decision ('allowed' -> 'approved', 'blocked' -> 'denied').
   const requestStatus = decision === 'allowed' ? 'approved' : 'denied'
@@ -1419,6 +1398,13 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
   // Sending as a type:'event' would only forward it to the WebView, never to the native module.
   send({ method: 'native:setPolicy', args: { json: JSON.stringify(payload) } })
   send({ type: 'event', event: 'policy:updated', data: payload })
+
+  // Relay the policy to all OTHER parents so co-parents stay in sync.
+  // The child is the policy sync hub - when any parent pushes a policy, the
+  // child stores it, enforces it, and relays it to the other parent(s).
+  if (sendToAllParents && senderKey) {
+    sendToAllParents({ type: 'policy:update', payload }, senderKey)
+  }
 
   // Sync pending req:* entries with the new policy so ChildRequests shows the correct status.
   // This handles the case where app:decision was not delivered directly (e.g., child was offline

@@ -4,7 +4,7 @@
 // Same pattern as join.tsx but for co-parent invites.
 
 import { useEffect } from 'react'
-import { View, Text, StyleSheet, DeviceEventEmitter } from 'react-native'
+import { View, Text, StyleSheet, DeviceEventEmitter, Linking } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 
 export default function CoparentRoute () {
@@ -12,15 +12,29 @@ export default function CoparentRoute () {
   const router = useRouter()
 
   useEffect(() => {
-    const t = params.t
-    if (t) {
-      const inviteUrl = `pear://pearguard/coparent?t=${t}`
+    let inviteUrl: string | null = null
+
+    // Primary: use search param from Expo Router
+    if (params.t) {
+      const decoded = decodeURIComponent(params.t)
+      inviteUrl = `pear://pearguard/coparent?t=${decoded}`
+    }
+
+    if (inviteUrl) {
       console.log('[coparent] forwarding invite:', inviteUrl)
       setTimeout(() => {
         DeviceEventEmitter.emit('pearguardLink', inviteUrl)
       }, 1500)
     } else {
-      console.warn('[coparent] no invite param found in URL')
+      // Fallback: read the raw URL from Linking API
+      Linking.getInitialURL().then((rawUrl) => {
+        if (rawUrl && rawUrl.includes('/coparent')) {
+          console.log('[coparent] forwarding raw URL:', rawUrl)
+          DeviceEventEmitter.emit('pearguardLink', rawUrl)
+        } else {
+          console.warn('[coparent] no invite param found in URL')
+        }
+      })
     }
 
     setTimeout(() => router.replace('/'), 2000)

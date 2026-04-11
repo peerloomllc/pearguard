@@ -85,14 +85,14 @@ function PinSetupOverlay({ onDone }) {
 
   return (
     <div style={{
-      position: 'fixed',
+      position: 'absolute',
       top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: colors.surface.base,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'flex-start',
       padding: `${spacing.xl}px`,
-      paddingTop: '15vh',
+      paddingTop: '10vh',
       overflowY: 'auto',
       WebkitOverflowScrolling: 'touch',
     }}>

@@ -40,6 +40,17 @@ function createDispatch (ctx) {
       case 'ping':
         return 'pong'
 
+      case 'pref:set': {
+        const { key, value } = args
+        await ctx.db.put('pref:' + key, value)
+        return { ok: true }
+      }
+
+      case 'pref:get': {
+        const entry = await ctx.db.get('pref:' + args.key)
+        return entry ? entry.value : null
+      }
+
       case 'setMode': {
         const newMode = args[0]
         if (newMode !== 'parent' && newMode !== 'child') {

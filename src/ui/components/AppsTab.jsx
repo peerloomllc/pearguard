@@ -378,6 +378,12 @@ export default function AppsTab({ childPublicKey }) {
   useEffect(() => { loadPolicy(); loadOverrides(); }, [loadPolicy, loadOverrides]);
 
   useEffect(() => {
+    window.callBare('pref:get', { key: 'appsTab:viewMode' })
+      .then(v => { if (v) setViewMode(v); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     const unsub = window.onBareEvent('apps:synced', (data) => {
       if (data.childPublicKey === childPublicKey) { loadPolicy(); loadOverrides(); }
     });
@@ -571,7 +577,11 @@ export default function AppsTab({ childPublicKey }) {
             color: viewMode === 'category' ? colors.primary : colors.text.secondary,
             whiteSpace: 'nowrap',
           }}
-          onClick={() => setViewMode(v => v === 'status' ? 'category' : 'status')}
+          onClick={() => setViewMode(v => {
+            const next = v === 'status' ? 'category' : 'status';
+            window.callBare('pref:set', { key: 'appsTab:viewMode', value: next }).catch(() => {});
+            return next;
+          })}
           aria-label="Toggle view mode"
         >
           {viewMode === 'status' ? 'By Status' : 'By Category'}

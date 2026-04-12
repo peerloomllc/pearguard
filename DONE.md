@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-12
 
+### [x] Onboarding design to match rest of app (#134) - closed 2026-04-12
+Added shared RN theme module (`src/rn-theme.ts`) mirroring the WebView tokens (colors, spacing, radius, typography) so native onboarding screens can't drift from the main UI. Registered Nunito (`@expo-google-fonts/nunito` + `expo-font` + `expo-splash-screen`) in `app/_layout.tsx`, holding the splash until the fonts load. Refactored `app/setup.tsx` and `app/child-setup.tsx` to consume shared tokens and Nunito weights (Light/Regular/SemiBold/Bold) instead of hardcoded hex and system fonts. PIN inputs on iOS now have an `InputAccessoryView` with a Done button so the numeric keyboard is dismissable on small screens (iPhone SE).
+
 ### [x] Show current PIN on Settings page (#141) - closed 2026-04-12
 Added a "Current PIN: ••••" row at the top of Settings → Override PIN with an Eye/EyeSlash toggle that reveals the parent's PIN. PIN plaintext is now stored locally in the parent's `policy` Hyperbee record (new `pinPlain` field) alongside the existing `pinHash`; plaintext is never placed in per-child policies or sent over the wire. New `pin:get` dispatch returns the stored plaintext. Revealed PIN auto-hides when the Override PIN section collapses. Existing PINs set before this change will appear as "••••" until re-saved.
 

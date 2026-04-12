@@ -121,7 +121,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
 
       {/* Sub-tabs */}
       <div style={{
-        display: 'flex', overflowX: 'auto',
+        display: 'flex', overflowX: 'auto', justifyContent: 'center',
         borderBottom: `1px solid ${colors.border}`,
         backgroundColor: colors.surface.card,
       }}>
@@ -150,7 +150,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
         {tab === 'usage' ? (
           <UsageTab childPublicKey={child.publicKey} onShowReports={() => setShowReports(true)} />
         ) : (

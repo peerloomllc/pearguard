@@ -16,15 +16,14 @@ Open items only. Completed items are in `DONE.md`.
 | # | Title | Where |
 |---|-------|-------|
 | ~~125~~ | ~~Camera/Gallery picker for iOS~~ | Closed - PR #64 |
-| 130 | Global/category time limits | Allow parents to set daily time limits per app category or globally |
+| ~~130~~ | ~~Global/category time limits~~ | Closed - PR #67 |
 | 133 | Chore list to earn time | Child dashboard shows parent-assigned chores; completing them earns extra screen time |
 | 134 | Onboarding design to match rest of app | Update onboarding theme, colors, and styling to be consistent with the main app design |
 | 135 | Investigate app storage usage | Check what's consuming storage and optimize if needed |
 | 136 | Remove redundant Camera button on Android | Gallery picker already includes camera and files. Remove separate Camera button, rename Gallery to something generic (e.g. "Photo"). Apply same change to PearCal. |
 | 137 | Export/import child settings | Allow parent to export a child's settings (policy, overrides, limits) and import them onto another child or device |
-| 138 | Center tabs on child detail | Tab bar on child detail view should be centered |
 | 139 | Optional message for global lock | Let parent attach an optional message shown to the child when global lock is applied |
-| 142 | Clear/apply time limits per category | Add controls to clear or apply time limits on a per-category basis |
+| ~~142~~ | ~~Clear/apply time limits per category~~ | Closed - PR #67 |
 
 ## Release Pre-work (before first release)
 
@@ -40,3 +39,4 @@ Open items only. Completed items are in `DONE.md`.
 | 109 | Set up Google Play app listing | Create PearGuard app in Google Play Console, set up internal test track, configure service account or gcloud auth. |
 | 110 | Review app.conf values | Check APP_TAGLINE, APP_WEBSITE, NOSTR_HASHTAGS in scripts/app.conf before first Nostr announcement. |
 | 111 | Create metadata/ios/ directory | Only needed if/when iOS parent-only version ships (see #102). |
+| 143 | Port screenshot automation from PearCal | Adapt PearCal's iOS simulator screenshot system (`scripts/screenshots.sh` + `scripts/ios-screenshots.sh` + `ios/*/ScreenshotModule.{swift,m}` + `src/ui/screenshot-fixtures.js`). Shell scripts are already parameterized via `scripts/app.conf`. Required per-app work: (1) copy ScreenshotModule and rename `@objc(PearCalScreenshot)` → `@objc(PearGuardScreenshot)`; (2) update `app/index.tsx` native-module reference; (3) author PearGuard-specific fixtures module with canned profile/children/rules/policies + scene configs; (4) register the new Swift/.m in `PearGuard.xcodeproj` via `scripts/add-ios-sources.rb`. Prereq: iOS port (#102). |

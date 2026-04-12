@@ -17095,17 +17095,29 @@
     }, []);
     const [showReports, setShowReports] = (0, import_react9.useState)(false);
     const [confirmRemove, setConfirmRemove] = (0, import_react9.useState)(false);
+    const [confirmLock, setConfirmLock] = (0, import_react9.useState)(false);
     const [locked, setLocked] = (0, import_react9.useState)(child.locked || false);
     async function handleRemove() {
       window.callBare("haptic:tap");
       await window.callBare("child:unpair", { childPublicKey: child.publicKey });
       onBack();
     }
-    async function handleLockToggle() {
+    function onLockButtonClick() {
       window.callBare("haptic:tap");
-      const newLocked = !locked;
+      if (locked) {
+        applyLock(false);
+      } else {
+        setConfirmLock(true);
+      }
+    }
+    async function applyLock(newLocked) {
       await window.callBare("policy:setLock", { childPublicKey: child.publicKey, locked: newLocked });
       setLocked(newLocked);
+    }
+    async function handleConfirmLock() {
+      window.callBare("haptic:tap");
+      setConfirmLock(false);
+      await applyLock(true);
     }
     const backHandler = (0, import_react9.useCallback)(() => {
       if (showReports) {
@@ -17143,7 +17155,7 @@
         /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
           "button",
           {
-            onClick: handleLockToggle,
+            onClick: onLockButtonClick,
             style: { background: "none", border: "none", cursor: "pointer", padding: `${spacing2.xs}px` },
             "aria-label": locked ? "Unlock device" : "Lock device",
             children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Icon, { name: locked ? "LockSimple" : "LockSimpleOpen", size: 20, color: locked ? colors.error : colors.text.muted })
@@ -17218,6 +17230,26 @@
             child.displayName,
             " from your dashboard. You'll need to re-pair to monitor this device again."
           ]
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        Modal,
+        {
+          visible: confirmLock,
+          onClose: () => setConfirmLock(false),
+          title: `Lock ${child.displayName}'s device?`,
+          footer: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Button, { variant: "secondary", onClick: () => {
+              window.callBare("haptic:tap");
+              setConfirmLock(false);
+            }, style: { flex: 1 }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Button, { variant: "danger", icon: "LockSimple", onClick: handleConfirmLock, style: { flex: 1 }, children: "Lock" })
+          ] }),
+          children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: { textAlign: "center" }, children: [
+            "This will immediately block all apps on ",
+            child.displayName,
+            "'s device until you unlock it."
+          ] })
         }
       )
     ] });
@@ -17534,10 +17566,20 @@
           onClose: () => setLockTarget(null),
           title: `Lock ${lockTarget?.displayName}'s device?`,
           footer: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Button, { variant: "secondary", onClick: () => setLockTarget(null), children: "Cancel" }),
-            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Button, { variant: "primary", icon: "LockSimple", onClick: confirmLock, children: "Lock" })
+            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Button, { variant: "secondary", onClick: () => {
+              window.callBare("haptic:tap");
+              setLockTarget(null);
+            }, style: { flex: 1 }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Button, { variant: "danger", icon: "LockSimple", onClick: () => {
+              window.callBare("haptic:tap");
+              confirmLock();
+            }, style: { flex: 1 }, children: "Lock" })
           ] }),
-          children: "All apps will be blocked until you unlock."
+          children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { textAlign: "center" }, children: [
+            "This will immediately block all apps on ",
+            lockTarget?.displayName,
+            "'s device until you unlock it."
+          ] })
         }
       )
     ] });

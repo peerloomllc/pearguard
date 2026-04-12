@@ -844,6 +844,19 @@ export default function Root () {
               }
             })
             .catch(() => {})
+
+          // Flush any usage reports queued while the RN bridge was dead
+          NativeModules.UsageStatsModule?.getQueuedReports?.()
+            .then((json: string) => {
+              const reports = JSON.parse(json || '[]')
+              if (reports.length === 0) return
+              console.log('[PearGuard] Flushing', reports.length, 'queued usage reports')
+              for (const report of reports) {
+                sendToWorklet({ method: 'usage:flush', args: { usage: report.usage, queued: true } })
+              }
+              NativeModules.UsageStatsModule?.clearQueuedReports?.()
+            })
+            .catch((e: unknown) => console.warn('[PearGuard] Queue flush failed:', e))
         }
       })
 

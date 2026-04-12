@@ -3,6 +3,11 @@ package com.pearguard
 import android.app.Application
 import android.content.res.Configuration
 
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequest
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
+
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
@@ -46,6 +51,16 @@ class MainApplication : Application(), ReactApplication {
     }
     loadReactNative(this)
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
+
+    // Schedule periodic WorkManager task to wake app and flush queued usage reports.
+    // Registered here (not in EnforcementService) so it survives service restarts.
+    val flushWork = PeriodicWorkRequest.Builder(
+        UsageFlushWorker::class.java, 15, TimeUnit.MINUTES)
+        .build()
+    WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+        "usage_flush",
+        ExistingPeriodicWorkPolicy.KEEP,
+        flushWork)
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {

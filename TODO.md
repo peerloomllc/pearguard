@@ -8,19 +8,19 @@ Open items only. Completed items are in `DONE.md`.
 |---|-------|-------|
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
 | 98 | Investigate Tailscale VPN compatibility | Tailscale breaks Hyperswarm P2P connections; need to investigate split tunneling or relay options |
-| 112 | Frequent "Child device has not checked in" notifications | Parent device getting too many false/noisy check-in alerts |
-| 120 | Multi-parent PIN conflict - last sync wins | Two parents with different PINs overwrite each other; child stores one pinHash in policy. Should accept either parent's PIN. |
-| 121 | Second parent using regular invite instead of Add Parent | Works but parents operate independently with separate policies. Consider detecting and warning, or auto-promoting to coparent flow. |
-| 122 | Co-parent request approval/denial not syncing to other parent | When one parent approves/denies a request, the other parent's activity list should update to show it as completed |
-| 123 | Apps tab should remember last active filter | Defaults to "By Category" every time; should persist the last-used filter selection |
 | 124 | Android cold start notification tap goes to Dashboard instead of Activity tab | Warm open works correctly; cold start doesn't navigate to child. Rare edge case, non-blocking. |
-| 126 | Quickly foregrounding/backgrounding app can dismiss overlay from blocked app | Rapid fg/bg cycling eventually dismisses the block overlay on the child device |
+| 131 | Not consistently receiving usage stats from Child | Background service may stop running; had to foreground PearGuard after ~24 hours for it to check in and update stats. Check background service activity. |
 
 ## Features
 
 | # | Title | Where |
 |---|-------|-------|
 | 125 | Camera/Gallery picker for iOS | Use same approach as PearCal's Profile page Avatar customization (camera/gallery picker) |
+| 130 | Global/category time limits | Allow parents to set daily time limits per app category or globally |
+| 132 | Co-parent unpair leaves stale parent record on child | When a co-parent unpairs, the child still shows the departed parent as "Offline" indefinitely. No notification to the remaining co-parent either. |
+| 133 | Chore list to earn time | Child dashboard shows parent-assigned chores; completing them earns extra screen time |
+| 134 | Onboarding design to match rest of app | Update onboarding theme, colors, and styling to be consistent with the main app design |
+| 135 | Investigate app storage usage | Check what's consuming storage and optimize if needed |
 
 ## Release Pre-work (before first release)
 

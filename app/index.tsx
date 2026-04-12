@@ -22,7 +22,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import Constants from 'expo-constants'
 
 const isAndroid = Platform.OS === 'android'
-const { PearGuardNotifications, PearGuardHaptic, PearGuardBGSync, PearGuardLink } = NativeModules
+const { PearGuardNotifications, PearGuardHaptic, PearGuardBGSync, PearGuardLink, PearGuardCamera } = NativeModules
 
 // ── Worklet singleton ─────────────────────────────────────────────────────────
 // The worklet must survive re-renders and navigation — keep it in module scope.
@@ -333,6 +333,23 @@ export default function Root () {
         const msgId = msg.id
         ;(async () => {
           try {
+            // iOS: native camera module shows action sheet (Take Photo / Choose from Library)
+            if (!isAndroid && PearGuardCamera?.capture) {
+              const dataUrl: string = await PearGuardCamera.capture()
+              // dataUrl is "data:<mime>;base64,<data>"
+              const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/)
+              if (!match) {
+                webViewRef.current?.injectJavaScript(
+                  'window.__pearResponse(' + msgId + ', null, "no data");true;'
+                )
+              } else {
+                webViewRef.current?.injectJavaScript(
+                  'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64: match[2], mime: match[1] }) + ', null);true;'
+                )
+              }
+              return
+            }
+            // Android: use expo-image-picker with separate camera/gallery launchers
             const launch = msg.method === 'avatar:pickCamera'
               ? ImagePicker.launchCameraAsync
               : ImagePicker.launchImageLibraryAsync
@@ -885,6 +902,8 @@ export default function Root () {
         onLoad={() => {
           _webViewLoaded = true
           setWebViewReady(true)
+          // Expose platform to WebView UI (used by AvatarPicker to show single Camera button on iOS)
+          webViewRef.current?.injectJavaScript('window.__pearPlatform=' + JSON.stringify(Platform.OS) + ';true;')
           // Replay events that fired before the WebView was ready (e.g. peer:paired
           // from bare's startup topic-rejoin running before the WebView finishes loading)
           const queued = _pendingWebViewEvents.splice(0)

@@ -6,8 +6,15 @@
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __esm = (fn, res) => function __init() {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  };
   var __commonJS = (cb, mod) => function __require() {
     return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  };
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
   };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
@@ -14370,6 +14377,76 @@
     }
   });
 
+  // src/ui/components/avatarUtils.js
+  var avatarUtils_exports = {};
+  __export(avatarUtils_exports, {
+    pickCameraPhoto: () => pickCameraPhoto,
+    processFileForAvatar: () => processFileForAvatar,
+    readFileAsBase64: () => readFileAsBase64
+  });
+  function compressImage(base64, size, quality, sourceMime) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl.split(",")[1]);
+      };
+      img.src = "data:" + (sourceMime || "image/jpeg") + ";base64," + base64;
+    });
+  }
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        resolve(dataUrl.split(",")[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  async function pickCameraPhoto() {
+    const result = await window.callBare("avatar:pickCamera");
+    if (!result || !result.base64) return null;
+    const mime = result.mime || "image/jpeg";
+    const isAnimated = ANIMATED_MIMES.includes(mime);
+    if (isAnimated && result.base64.length <= MAX_ANIMATED_BASE64) {
+      const thumb642 = await compressImage(result.base64, 48, 0.6, mime);
+      return { type: "custom", base64: result.base64, thumb64: thumb642, mime };
+    }
+    const base64 = await compressImage(result.base64, 256, 0.8, mime);
+    const thumb64 = await compressImage(result.base64, 48, 0.6, mime);
+    return { type: "custom", base64, thumb64 };
+  }
+  async function processFileForAvatar(file) {
+    const mime = file.type || "image/jpeg";
+    const isAnimated = ANIMATED_MIMES.includes(mime);
+    const raw = await readFileAsBase64(file);
+    if (isAnimated && raw.length <= MAX_ANIMATED_BASE64) {
+      const thumb642 = await compressImage(raw, 48, 0.6, mime);
+      return { type: "custom", base64: raw, thumb64: thumb642, mime };
+    }
+    const base64 = await compressImage(raw, 256, 0.8, mime);
+    const thumb64 = await compressImage(raw, 48, 0.6, mime);
+    return { type: "custom", base64, thumb64 };
+  }
+  var ANIMATED_MIMES, MAX_ANIMATED_BASE64;
+  var init_avatarUtils = __esm({
+    "src/ui/components/avatarUtils.js"() {
+      "use strict";
+      ANIMATED_MIMES = ["image/gif", "image/webp"];
+      MAX_ANIMATED_BASE64 = 5e5;
+    }
+  });
+
   // src/ui/main.jsx
   var import_react22 = __toESM(require_react());
   var import_client = __toESM(require_client());
@@ -14551,7 +14628,9 @@
     ShareNetwork: "M176,160a39.89,39.89,0,0,0-28.62,12.09l-46.1-29.63a39.8,39.8,0,0,0,0-28.92l46.1-29.63a40,40,0,1,0-8.66-13.45l-46.1,29.63a40,40,0,1,0,0,55.82l46.1,29.63A40,40,0,1,0,176,160Zm0-128a24,24,0,1,1-24,24A24,24,0,0,1,176,32ZM64,152a24,24,0,1,1,24-24A24,24,0,0,1,64,152Zm112,72a24,24,0,1,1,24-24A24,24,0,0,1,176,224Z",
     EnvelopeSimple: "M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM203.43,64,128,133.15,52.57,64ZM216,192H40V74.19l82.59,75.71a8,8,0,0,0,10.82,0L216,74.19V192Z",
     Bug: "M144,92a12,12,0,1,1,12,12A12,12,0,0,1,144,92ZM100,80a12,12,0,1,0,12,12A12,12,0,0,0,100,80Zm116,64A87.76,87.76,0,0,1,213,167l22.24,9.72A8,8,0,0,1,232,192a7.89,7.89,0,0,1-3.2-.67L207.38,182a88,88,0,0,1-158.76,0L27.2,191.33A7.89,7.89,0,0,1,24,192a8,8,0,0,1-3.2-15.33L43,167A87.76,87.76,0,0,1,40,144v-8H16a8,8,0,0,1,0-16H40v-8a87.76,87.76,0,0,1,3-23L20.8,79.33a8,8,0,1,1,6.4-14.66L48.62,74a88,88,0,0,1,158.76,0l21.42-9.36a8,8,0,0,1,6.4,14.66L213,89.05a87.76,87.76,0,0,1,3,23v8h24a8,8,0,0,1,0,16H216ZM56,120H200v-8a72,72,0,0,0-144,0Zm64,95.54V136H56v8A72.08,72.08,0,0,0,120,215.54ZM200,144v-8H136v79.54A72.08,72.08,0,0,0,200,144Z",
-    ArrowSquareOut: "M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"
+    ArrowSquareOut: "M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z",
+    Camera: "M208,56H180.28L166.65,35.56A8,8,0,0,0,160,32H96a8,8,0,0,0-6.65,3.56L75.71,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.56L100.28,48h55.43l13.63,20.44A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,88Zm0,72a28,28,0,1,1,28-28A28,28,0,0,1,128,160Z",
+    ImageSquare: "M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V158.75l-26.07-26.06a16,16,0,0,0-22.63,0l-20,20-44-44a16,16,0,0,0-22.62,0L40,149.37V56ZM40,172l52-52,80,80H40Zm176,28H194.63l-36-36,20-20L216,181.38V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Z"
   };
   function Icon({ name, size = 24, color = "currentColor", weight = "regular" }) {
     const key = weight === "fill" ? name + "Fill" : name;
@@ -15354,6 +15433,12 @@
       loadOverrides();
     }, [loadPolicy, loadOverrides]);
     (0, import_react5.useEffect)(() => {
+      window.callBare("pref:get", { key: "appsTab:viewMode" }).then((v) => {
+        if (v) setViewMode(v);
+      }).catch(() => {
+      });
+    }, []);
+    (0, import_react5.useEffect)(() => {
       const unsub = window.onBareEvent("apps:synced", (data) => {
         if (data.childPublicKey === childPublicKey) {
           loadPolicy();
@@ -15544,7 +15629,12 @@
               color: viewMode === "category" ? colors.primary : colors.text.secondary,
               whiteSpace: "nowrap"
             },
-            onClick: () => setViewMode((v) => v === "status" ? "category" : "status"),
+            onClick: () => setViewMode((v) => {
+              const next = v === "status" ? "category" : "status";
+              window.callBare("pref:set", { key: "appsTab:viewMode", value: next }).catch(() => {
+              });
+              return next;
+            }),
             "aria-label": "Toggle view mode",
             children: viewMode === "status" ? "By Status" : "By Category"
           }
@@ -17508,86 +17598,9 @@
   // src/ui/components/AvatarPicker.jsx
   var import_react12 = __toESM(require_react());
   var import_jsx_runtime17 = __toESM(require_jsx_runtime());
-  function compressImage(base64, size, quality, sourceMime) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        const min = Math.min(img.width, img.height);
-        const sx = (img.width - min) / 2;
-        const sy = (img.height - min) / 2;
-        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        resolve(dataUrl.split(",")[1]);
-      };
-      img.src = "data:" + (sourceMime || "image/jpeg") + ";base64," + base64;
-    });
-  }
-  var ANIMATED_MIMES = ["image/gif", "image/webp"];
-  var MAX_ANIMATED_BASE64 = 5e5;
-  function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target.result;
-        resolve(dataUrl.split(",")[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
   function AvatarPicker({ currentAvatar, name, onSave, onCancel }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const [selected, setSelected] = (0, import_react12.useState)(currentAvatar);
-    const [customPreview, setCustomPreview] = (0, import_react12.useState)(
-      currentAvatar && currentAvatar.type === "custom" ? currentAvatar : null
-    );
-    const [loading, setLoading] = (0, import_react12.useState)(false);
-    const fileInputRef = import_react12.default.useRef(null);
-    async function pickCamera() {
-      setLoading(true);
-      try {
-        const result = await window.callBare("avatar:pickCamera");
-        if (!result || !result.base64) {
-          setLoading(false);
-          return;
-        }
-        const base64 = await compressImage(result.base64, 256, 0.8, result.mime);
-        const thumb64 = await compressImage(result.base64, 48, 0.6, result.mime);
-        const avatar = { type: "custom", base64, thumb64 };
-        setCustomPreview(avatar);
-        setSelected(avatar);
-      } catch (e) {
-      }
-      setLoading(false);
-    }
-    async function handleFileInput(e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setLoading(true);
-      try {
-        const mime = file.type || "image/jpeg";
-        const isAnimated = ANIMATED_MIMES.includes(mime);
-        const raw = await readFileAsBase64(file);
-        let avatar;
-        if (isAnimated && raw.length <= MAX_ANIMATED_BASE64) {
-          const thumb64 = await compressImage(raw, 48, 0.6, mime);
-          avatar = { type: "custom", base64: raw, thumb64, mime };
-        } else {
-          const base64 = await compressImage(raw, 256, 0.8, mime);
-          const thumb64 = await compressImage(raw, 48, 0.6, mime);
-          avatar = { type: "custom", base64, thumb64 };
-        }
-        setCustomPreview(avatar);
-        setSelected(avatar);
-      } catch (e2) {
-      }
-      setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
     function selectPreset(id) {
       setSelected({ type: "preset", id });
     }
@@ -17628,7 +17641,6 @@
         )
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Avatar, { avatar: selected, name, size: 80 }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { fontSize: "13px", fontWeight: "600", color: colors.text.secondary, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: `${spacing2.sm}px` }, children: "Presets" }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: `${spacing2.sm}px`, marginBottom: `${spacing2.base}px`, justifyItems: "center" }, children: PRESET_IDS.map((id) => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
         "div",
         {
@@ -17646,55 +17658,6 @@
         },
         id
       )) }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { fontSize: "13px", fontWeight: "600", color: colors.text.secondary, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: `${spacing2.sm}px` }, children: "Custom Photo" }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, marginBottom: `${spacing2.sm}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
-          "button",
-          {
-            style: { flex: 1, padding: "10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.md}px`, backgroundColor: colors.surface.elevated, fontSize: "13px", fontWeight: "600", color: colors.text.primary, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1 },
-            onClick: pickCamera,
-            disabled: loading,
-            children: "Take Photo"
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
-          "button",
-          {
-            style: { flex: 1, padding: "10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.md}px`, backgroundColor: colors.surface.elevated, fontSize: "13px", fontWeight: "600", color: colors.text.primary, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1 },
-            onClick: () => fileInputRef.current?.click(),
-            disabled: loading,
-            children: "Choose from Gallery"
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
-          "input",
-          {
-            ref: fileInputRef,
-            type: "file",
-            accept: "image/*",
-            style: { display: "none" },
-            onChange: handleFileInput
-          }
-        )
-      ] }),
-      customPreview && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
-        "div",
-        {
-          style: {
-            cursor: "pointer",
-            padding: "2px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            border: selected === customPreview ? `3px solid ${colors.primary}` : "3px solid transparent",
-            borderRadius: "50%",
-            marginTop: `${spacing2.sm}px`,
-            alignSelf: "center"
-          },
-          onClick: () => setSelected(customPreview),
-          children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Avatar, { avatar: customPreview, name: "", size: 64 })
-        }
-      ),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, marginTop: `${spacing2.base}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
           "button",
@@ -17718,6 +17681,7 @@
   }
 
   // src/ui/components/Settings.jsx
+  init_avatarUtils();
   var import_jsx_runtime18 = __toESM(require_jsx_runtime());
   var DEFAULT_TIME_OPTIONS = [15, 30, 60, 120];
   var DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
@@ -17807,6 +17771,8 @@
     const [showPicker, setShowPicker] = (0, import_react13.useState)(false);
     const [savingName, setSavingName] = (0, import_react13.useState)(false);
     const [nameStatus, setNameStatus] = (0, import_react13.useState)(null);
+    const [photoLoading, setPhotoLoading] = (0, import_react13.useState)(false);
+    const fileInputRef = (0, import_react13.useRef)(null);
     const [newPin, setNewPin] = (0, import_react13.useState)("");
     const [confirmPin, setConfirmPin] = (0, import_react13.useState)("");
     const [pinStatus, setPinStatus] = (0, import_react13.useState)(null);
@@ -17851,6 +17817,42 @@
         setAvatar(newAvatar);
       } catch {
       }
+    }
+    async function handlePickCamera() {
+      setPhotoLoading(true);
+      try {
+        const av = await pickCameraPhoto();
+        if (av) {
+          await window.callBare("identity:setAvatar", { avatar: av });
+          setAvatar(av);
+        }
+      } catch {
+      }
+      setPhotoLoading(false);
+    }
+    async function handleFileInput(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setPhotoLoading(true);
+      try {
+        const av = await processFileForAvatar(file);
+        if (av) {
+          await window.callBare("identity:setAvatar", { avatar: av });
+          setAvatar(av);
+        }
+      } catch {
+      }
+      setPhotoLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+    async function handleRemovePhoto() {
+      setPhotoLoading(true);
+      try {
+        await window.callBare("identity:setAvatar", { avatar: null });
+        setAvatar(null);
+      } catch {
+      }
+      setPhotoLoading(false);
     }
     function handlePinSubmit(e) {
       e.preventDefault();
@@ -17907,33 +17909,70 @@
       /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.lg}px` }, children: "Settings" }),
       /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("section", { style: { marginBottom: `${spacing2.xxl}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { style: { fontSize: "16px", fontWeight: "700", marginBottom: `${spacing2.sm}px`, color: colors.text.primary }, children: "Profile" }),
-        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.lg}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: { position: "relative", display: "inline-block" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.lg}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
-          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
-            "div",
-            {
-              style: {
-                position: "absolute",
-                bottom: "0",
-                right: "0",
-                width: "26px",
-                height: "26px",
-                borderRadius: "50%",
-                backgroundColor: colors.primary,
-                border: "2px solid #FFF",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer"
-              },
-              onClick: () => {
-                window.callBare("haptic:tap");
-                setShowPicker(true);
-              },
-              children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Icon, { name: "PencilSimple", size: 13, color: "#FFFFFF" })
-            }
-          )
-        ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
+            window.__pearPlatform === "ios" ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(
+              "button",
+              {
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  handlePickCamera();
+                },
+                disabled: photoLoading,
+                style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
+                  " Camera"
+                ]
+              }
+            ) : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(
+                "button",
+                {
+                  onClick: () => {
+                    window.callBare("haptic:tap");
+                    handlePickCamera();
+                  },
+                  disabled: photoLoading,
+                  style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
+                    " Camera"
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(
+                "button",
+                {
+                  onClick: () => {
+                    window.callBare("haptic:tap");
+                    fileInputRef.current?.click();
+                  },
+                  disabled: photoLoading,
+                  style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
+                    " Gallery"
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { ref: fileInputRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFileInput })
+            ] }),
+            avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+              "button",
+              {
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  handleRemovePhoto();
+                },
+                disabled: photoLoading,
+                style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: "1px solid #D45F7A", background: "transparent", color: "#D45F7A", cursor: photoLoading ? "wait" : "pointer", opacity: photoLoading ? 0.5 : 1 },
+                children: "Remove"
+              }
+            )
+          ] })
+        ] }),
         showPicker && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
           AvatarPicker,
           {
@@ -18763,6 +18802,7 @@
 
   // src/ui/components/Profile.jsx
   var import_react19 = __toESM(require_react());
+  init_avatarUtils();
   var import_jsx_runtime26 = __toESM(require_jsx_runtime());
   function Profile({ mode }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
@@ -18771,6 +18811,8 @@
     const [avatar, setAvatar] = (0, import_react19.useState)(null);
     const [showPicker, setShowPicker] = (0, import_react19.useState)(false);
     const [saving, setSaving] = (0, import_react19.useState)(false);
+    const [photoLoading, setPhotoLoading] = (0, import_react19.useState)(false);
+    const fileInputRef = (0, import_react19.useRef)(null);
     const [status, setStatus] = (0, import_react19.useState)(null);
     const [pairState, setPairState] = (0, import_react19.useState)("idle");
     const [pairError, setPairError] = (0, import_react19.useState)(null);
@@ -18823,6 +18865,43 @@
       } catch {
       }
     }
+    async function handlePickCamera() {
+      setPhotoLoading(true);
+      try {
+        const av = await pickCameraPhoto();
+        if (av) {
+          await window.callBare("identity:setAvatar", { avatar: av });
+          setAvatar(av);
+        }
+      } catch {
+      }
+      setPhotoLoading(false);
+    }
+    async function handleFileInput(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setPhotoLoading(true);
+      try {
+        const { processFileForAvatar: processFileForAvatar2 } = await Promise.resolve().then(() => (init_avatarUtils(), avatarUtils_exports));
+        const av = await processFileForAvatar2(file);
+        if (av) {
+          await window.callBare("identity:setAvatar", { avatar: av });
+          setAvatar(av);
+        }
+      } catch {
+      }
+      setPhotoLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+    async function handleRemovePhoto() {
+      setPhotoLoading(true);
+      try {
+        await window.callBare("identity:setAvatar", { avatar: null });
+        setAvatar(null);
+      } catch {
+      }
+      setPhotoLoading(false);
+    }
     async function handlePair() {
       pairDoneRef.current = false;
       setPairError(null);
@@ -18867,33 +18946,70 @@
     };
     return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.xl}px` }, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.xl}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { style: { position: "relative", display: "inline-block" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.xl}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
-        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
-          "div",
-          {
-            style: {
-              position: "absolute",
-              bottom: "0",
-              right: "0",
-              width: "26px",
-              height: "26px",
-              borderRadius: "50%",
-              backgroundColor: colors.primary,
-              border: "2px solid #FFF",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer"
-            },
-            onClick: () => {
-              window.callBare("haptic:tap");
-              setShowPicker(true);
-            },
-            children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Icon, { name: "PencilSimple", size: 13, color: "#FFFFFF" })
-          }
-        )
-      ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
+          window.__pearPlatform === "ios" ? /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+            "button",
+            {
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handlePickCamera();
+              },
+              disabled: photoLoading,
+              style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
+                " Camera"
+              ]
+            }
+          ) : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+              "button",
+              {
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  handlePickCamera();
+                },
+                disabled: photoLoading,
+                style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
+                  " Camera"
+                ]
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+              "button",
+              {
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  fileInputRef.current?.click();
+                },
+                disabled: photoLoading,
+                style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
+                  " Gallery"
+                ]
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("input", { ref: fileInputRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFileInput })
+          ] }),
+          avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+            "button",
+            {
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handleRemovePhoto();
+              },
+              disabled: photoLoading,
+              style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: "1px solid #D45F7A", background: "transparent", color: "#D45F7A", cursor: photoLoading ? "wait" : "pointer", opacity: photoLoading ? 0.5 : 1 },
+              children: "Remove"
+            }
+          )
+        ] })
+      ] }),
       showPicker && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
         AvatarPicker,
         {

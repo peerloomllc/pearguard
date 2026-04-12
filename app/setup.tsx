@@ -7,15 +7,13 @@
 // Child path: calls setMode then navigates directly to /child-setup.
 
 import { useState, useRef } from 'react'
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, InputAccessoryView, Keyboard } from 'react-native'
 import { useRouter } from 'expo-router'
 import NativeIcon from './NativeIcon'
+import { colors, spacing, radius, typography, fontFamily } from '../src/rn-theme'
 
 let _callBare: ((method: string, args: any) => Promise<any>) | null = null
 
-/**
- * Called by app/index.tsx to inject the IPC caller into this screen.
- */
 export function setBareCaller (fn: (method: string, args: any) => Promise<any>) {
   _callBare = fn
 }
@@ -32,6 +30,7 @@ export default function SetupScreen () {
   const [confirmPin, setConfirmPin]   = useState('')
   const confirmPinRef                 = useRef<TextInput>(null)
   const router = useRouter()
+  const pinAccessoryID = 'pinAccessoryDone'
 
   async function selectMode (mode: 'parent' | 'child') {
     if (!_callBare) { setError('App not ready — please wait'); return }
@@ -86,7 +85,7 @@ export default function SetupScreen () {
     return (
       <View style={styles.container}>
         <View style={[styles.iconCircle, styles.iconCircleGreen]}>
-          <NativeIcon name="User" size={32} color="#81C784" />
+          <NativeIcon name="User" size={32} color={colors.primaryLight} />
         </View>
         <Text style={styles.title}>What's your name?</Text>
         <Text style={styles.subtitle}>
@@ -96,7 +95,7 @@ export default function SetupScreen () {
         {error && <Text style={styles.error}>{error}</Text>}
 
         {loading ? (
-          <ActivityIndicator color="#4CAF50" size="large" />
+          <ActivityIndicator color={colors.primary} size="large" />
         ) : (
           <View style={styles.form}>
             <Text style={styles.label}>Your name</Text>
@@ -105,6 +104,7 @@ export default function SetupScreen () {
               value={name}
               onChangeText={(v) => { setName(v); setError(null) }}
               placeholder="Your name"
+              placeholderTextColor={colors.text.muted}
               maxLength={30}
               autoFocus
             />
@@ -119,10 +119,10 @@ export default function SetupScreen () {
 
   if (step === 'pin') {
     return (
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface.base }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={[styles.container, { justifyContent: 'flex-start', paddingTop: 60 }]} keyboardShouldPersistTaps="handled">
           <View style={[styles.iconCircle, styles.iconCircleGreen]}>
-            <NativeIcon name="LockSimple" size={32} color="#81C784" />
+            <NativeIcon name="LockSimple" size={32} color={colors.primaryLight} />
           </View>
           <Text style={styles.title}>Set Override PIN</Text>
           <Text style={styles.subtitle}>
@@ -133,7 +133,7 @@ export default function SetupScreen () {
           {error && <Text style={styles.error}>{error}</Text>}
 
           {loading ? (
-            <ActivityIndicator color="#4CAF50" size="large" />
+            <ActivityIndicator color={colors.primary} size="large" />
           ) : (
             <View style={styles.form}>
               <Text style={styles.label}>PIN (4+ digits)</Text>
@@ -146,9 +146,11 @@ export default function SetupScreen () {
                   if (v.length === 4) confirmPinRef.current?.focus();
                 }}
                 placeholder="e.g. 1234"
+                placeholderTextColor={colors.text.muted}
                 keyboardType="numeric"
                 secureTextEntry
                 maxLength={4}
+                inputAccessoryViewID={Platform.OS === 'ios' ? pinAccessoryID : undefined}
               />
               <Text style={styles.label}>Confirm PIN</Text>
               <TextInput
@@ -157,9 +159,11 @@ export default function SetupScreen () {
                 value={confirmPin}
                 onChangeText={(v) => { setConfirmPin(v); setError(null) }}
                 placeholder="Repeat PIN"
+                placeholderTextColor={colors.text.muted}
                 keyboardType="numeric"
                 secureTextEntry
                 maxLength={4}
+                inputAccessoryViewID={Platform.OS === 'ios' ? pinAccessoryID : undefined}
               />
               <TouchableOpacity style={styles.btnSave} onPress={handleSetPin}>
                 <Text style={styles.btnSaveText}>Save PIN</Text>
@@ -167,6 +171,15 @@ export default function SetupScreen () {
             </View>
           )}
         </ScrollView>
+        {Platform.OS === 'ios' && (
+          <InputAccessoryView nativeID={pinAccessoryID}>
+            <View style={styles.accessoryBar}>
+              <TouchableOpacity onPress={() => Keyboard.dismiss()} style={styles.accessoryBtn}>
+                <Text style={styles.accessoryBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </InputAccessoryView>
+        )}
       </KeyboardAvoidingView>
     )
   }
@@ -179,17 +192,17 @@ export default function SetupScreen () {
       {error && <Text style={styles.error}>{error}</Text>}
 
       {loading ? (
-        <ActivityIndicator color="#4CAF50" size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       ) : (
         <View style={styles.buttons}>
           <TouchableOpacity style={[styles.btn, styles.btnParent]} onPress={() => selectMode('parent')}>
-            <NativeIcon name="Shield" size={36} color="#4CAF50" />
+            <NativeIcon name="Shield" size={36} color={colors.primary} />
             <Text style={styles.btnTitle}>I'm a Parent</Text>
             <Text style={styles.btnSub}>Monitor and manage your child's device</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.btn, styles.btnChild]} onPress={() => selectMode('child')}>
-            <NativeIcon name="User" size={36} color="#7B9FEB" />
+            <NativeIcon name="User" size={36} color={colors.accent} />
             <Text style={styles.btnTitle}>I'm a Child</Text>
             <Text style={styles.btnSub}>This device will be monitored by a parent</Text>
           </TouchableOpacity>
@@ -200,21 +213,24 @@ export default function SetupScreen () {
 }
 
 const styles = StyleSheet.create({
-  container:   { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  title:       { color: '#EAEAEA', fontSize: 26, fontWeight: '300', marginBottom: 8, textAlign: 'center' },
-  subtitle:    { color: '#B0B0B0', fontSize: 16, marginBottom: 40, textAlign: 'center' },
-  error:       { color: '#EF5350', fontSize: 14, marginBottom: 16, textAlign: 'center' },
-  buttons:     { width: '100%', gap: 16 },
-  btn:         { borderRadius: 16, padding: 24, alignItems: 'center', gap: 10 },
-  iconCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  iconCircleGreen: { backgroundColor: '#1A2E1A', borderWidth: 2, borderColor: '#4CAF50' },
-  btnParent:   { backgroundColor: '#1A2E1A', borderWidth: 1, borderColor: '#4CAF50' },
-  btnChild:    { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB' },
-  btnTitle:    { color: '#EAEAEA', fontSize: 18, fontWeight: '600' },
-  btnSub:      { color: '#707070', fontSize: 13, textAlign: 'center' },
-  form:        { width: '100%', gap: 12 },
-  label:       { color: '#B0B0B0', fontSize: 14, marginBottom: 2 },
-  input:       { backgroundColor: '#2A2A2A', color: '#EAEAEA', borderRadius: 10, padding: 14, fontSize: 16, borderWidth: 1, borderColor: '#333333', width: '100%' },
-  btnSave:     { backgroundColor: '#4CAF50', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
-  btnSaveText: { color: '#0D0D0D', fontSize: 17, fontWeight: '700' },
+  container:   { flex: 1, backgroundColor: colors.surface.base, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl },
+  title:       { color: colors.text.primary, fontSize: 26, fontFamily: fontFamily.light, marginBottom: spacing.sm, textAlign: 'center' },
+  subtitle:    { color: colors.text.secondary, fontSize: typography.subheading.fontSize, fontFamily: fontFamily.regular, marginBottom: spacing.xxxl - 8, textAlign: 'center' },
+  error:       { color: colors.error, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, marginBottom: spacing.base, textAlign: 'center' },
+  buttons:     { width: '100%', gap: spacing.base },
+  btn:         { borderRadius: radius.xl, padding: spacing.xl, alignItems: 'center', gap: spacing.md - 2 },
+  iconCircle:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.base },
+  iconCircleGreen: { backgroundColor: colors.surface.tintedGreen, borderWidth: 2, borderColor: colors.primary },
+  btnParent:   { backgroundColor: colors.surface.tintedGreen, borderWidth: 1, borderColor: colors.primary },
+  btnChild:    { backgroundColor: colors.surface.tintedBlue, borderWidth: 1, borderColor: colors.accent },
+  btnTitle:    { color: colors.text.primary, fontSize: 18, fontFamily: fontFamily.semibold },
+  btnSub:      { color: colors.text.muted, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center' },
+  form:        { width: '100%', gap: spacing.md },
+  label:       { color: colors.text.secondary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, marginBottom: 2 },
+  input:       { backgroundColor: colors.surface.input, color: colors.text.primary, borderRadius: radius.md, padding: 14, fontSize: typography.subheading.fontSize, fontFamily: fontFamily.regular, borderWidth: 1, borderColor: colors.border, width: '100%' },
+  btnSave:     { backgroundColor: colors.primary, borderRadius: radius.lg, padding: spacing.base, alignItems: 'center', marginTop: spacing.sm },
+  btnSaveText: { color: colors.primaryOn, fontSize: 17, fontFamily: fontFamily.bold },
+  accessoryBar: { backgroundColor: colors.surface.card, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: spacing.base, paddingVertical: spacing.sm },
+  accessoryBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  accessoryBtnText: { color: colors.primary, fontSize: 16, fontFamily: fontFamily.semibold },
 })

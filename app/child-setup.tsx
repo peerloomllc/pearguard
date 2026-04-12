@@ -13,27 +13,28 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { getBareCaller } from './setup'
 import NativeIcon from './NativeIcon'
+import { colors, spacing, radius, typography, fontFamily } from '../src/rn-theme'
 
 type Permissions = { accessibility: boolean; usageStats: boolean }
 
 function IconAccessibility() {
   return (
     <View style={styles.iconCircle}>
-      <NativeIcon name="GearSix" size={32} color="#81C784" />
+      <NativeIcon name="GearSix" size={32} color={colors.primaryLight} />
     </View>
   )
 }
 function IconUsage() {
   return (
     <View style={styles.iconCircle}>
-      <NativeIcon name="ChartBar" size={32} color="#81C784" />
+      <NativeIcon name="ChartBar" size={32} color={colors.primaryLight} />
     </View>
   )
 }
 function IconPair() {
   return (
     <View style={[styles.iconCircle, styles.iconCirclePair]}>
-      <NativeIcon name="QrCode" size={32} color="#7B9FEB" />
+      <NativeIcon name="QrCode" size={32} color={colors.accent} />
     </View>
   )
 }
@@ -68,8 +69,6 @@ const PERMISSION_STEPS = {
     settingsAction: 'android.settings.USAGE_ACCESS_SETTINGS',
   },
 } as const
-
-// ── QR scanner modal ─────────────────────────────────────────────────────────
 
 function ScannerModal({
   visible,
@@ -113,8 +112,8 @@ function ScannerModal({
         </CameraView>
       ) : (
         <View style={scannerStyles.waiting}>
-          <ActivityIndicator color="#7B9FEB" size="large" />
-          <Text style={{ color: '#fff', marginTop: 16 }}>Requesting camera permission…</Text>
+          <ActivityIndicator color={colors.accent} size="large" />
+          <Text style={scannerStyles.waitingText}>Requesting camera permission…</Text>
         </View>
       )}
     </Modal>
@@ -122,13 +121,12 @@ function ScannerModal({
 }
 
 const scannerStyles = StyleSheet.create({
-  overlay:    { flex: 1, justifyContent: 'flex-end', padding: 32 },
-  cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderRadius: 8, alignItems: 'center' },
-  cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0D0D0D' },
+  overlay:    { flex: 1, justifyContent: 'flex-end', padding: spacing.xxl },
+  cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: spacing.base, borderRadius: radius.md, alignItems: 'center' },
+  cancelText: { color: '#fff', fontSize: typography.subheading.fontSize, fontFamily: fontFamily.semibold },
+  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.base },
+  waitingText:{ color: '#fff', marginTop: spacing.base, fontFamily: fontFamily.regular },
 })
-
-// ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function ChildSetupScreen() {
   const router = useRouter()
@@ -143,7 +141,6 @@ export default function ChildSetupScreen() {
   const [pasteLink, setPasteLink] = useState('')
   const isBypassRecovery = source === 'bypass_recovery'
 
-  // Regression guard: whenever step reaches 2, verify step 1 is still satisfied.
   useEffect(() => {
     if (step !== 2) return
     NativeModules.UsageStatsModule?.checkChildPermissions?.()
@@ -151,9 +148,8 @@ export default function ChildSetupScreen() {
       .catch(() => {})
   }, [step])
 
-  // Polling loop: check permissions every 1.5 s and auto-advance.
   useEffect(() => {
-    if (step === 3) return  // step 3 is driven by QR scan, not polling
+    if (step === 3) return
     const timerId = setInterval(async () => {
       try {
         const p: Permissions = await NativeModules.UsageStatsModule?.checkChildPermissions?.()
@@ -175,7 +171,6 @@ export default function ChildSetupScreen() {
   async function advanceFromStep2() {
     const callBare = getBareCaller()
     if (!callBare) {
-      // Worklet not ready yet — go straight to main screen
       router.replace('/')
       return
     }
@@ -188,7 +183,6 @@ export default function ChildSetupScreen() {
         setStep(3)
       }
     } catch (_e) {
-      // If check fails, go to main screen rather than blocking the user
       router.replace('/')
     }
   }
@@ -214,7 +208,6 @@ export default function ChildSetupScreen() {
       setPairError(e.message || 'Failed to process invite. Please try again.')
       return
     }
-    // Poll peers:hasParent until the P2P handshake completes
     const pollId = setInterval(async () => {
       try {
         const r = await callBare('peers:hasParent', {})
@@ -242,8 +235,6 @@ export default function ChildSetupScreen() {
     })
   }
 
-  // ── Step 3: Pair with parent ─────────────────────────────────────────────
-
   if (step === 3) {
     return (
       <View style={styles.container}>
@@ -264,7 +255,7 @@ export default function ChildSetupScreen() {
 
         {pairState === 'connecting' ? (
           <View style={styles.connectingBox}>
-            <ActivityIndicator size="large" color="#7B9FEB" />
+            <ActivityIndicator size="large" color={colors.accent} />
             <Text style={styles.connectingText}>Connecting to parent...</Text>
             <Text style={styles.connectingSubText}>This may take up to 30 seconds.</Text>
           </View>
@@ -285,7 +276,7 @@ export default function ChildSetupScreen() {
                   value={pasteLink}
                   onChangeText={setPasteLink}
                   placeholder="Paste invite link here"
-                  placeholderTextColor="#707070"
+                  placeholderTextColor={colors.text.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -328,8 +319,6 @@ export default function ChildSetupScreen() {
     )
   }
 
-  // ── Steps 1 & 2: Permissions ─────────────────────────────────────────────
-
   const config = PERMISSION_STEPS[step as 1 | 2]
 
   return (
@@ -362,7 +351,7 @@ export default function ChildSetupScreen() {
 
       {polling ? (
         <View style={styles.waitingRow}>
-          <ActivityIndicator size="small" color="#555" />
+          <ActivityIndicator size="small" color={colors.text.muted} />
           <Text style={styles.waitingText}>Waiting for permission…</Text>
         </View>
       ) : (
@@ -373,37 +362,37 @@ export default function ChildSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  stepLabel:        { color: '#707070', fontSize: 13, marginBottom: 24, textTransform: 'uppercase', letterSpacing: 1 },
-  iconCircle:       { width: 72, height: 72, borderRadius: 36, backgroundColor: '#1A2E1A', borderWidth: 2, borderColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  iconCirclePair:   { backgroundColor: '#1a1a2e', borderColor: '#7B9FEB' },
-  title:            { color: '#EAEAEA', fontSize: 20, fontWeight: '300', textAlign: 'center', marginBottom: 12 },
-  description:      { color: '#B0B0B0', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  instructions:     { backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333333', borderRadius: 12, padding: 16, width: '100%', marginBottom: 32 },
-  instructionsLabel:{ color: '#707070', fontSize: 11, letterSpacing: 0.5, marginBottom: 10 },
-  instructionLine:  { color: '#B0B0B0', fontSize: 14, lineHeight: 26 },
-  button:           { backgroundColor: '#1A2E1A', borderWidth: 1, borderColor: '#4CAF50', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
-  buttonText:       { color: '#4CAF50', fontSize: 15, fontWeight: '600' },
-  buttonPair:       { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, width: '100%', alignItems: 'center', marginBottom: 16 },
-  buttonPairText:   { color: '#7B9FEB', fontSize: 15, fontWeight: '600' },
-  waitingRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  waitingText:      { color: '#707070', fontSize: 13 },
-  connectingBox:    { alignItems: 'center', gap: 12, marginBottom: 16 },
-  connectingText:   { color: '#7B9FEB', fontSize: 15, fontWeight: '600' },
-  connectingSubText:{ color: '#707070', fontSize: 13 },
-  notifyBanner:     { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#EF5350', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
-  notifyText:       { color: '#EF5350', fontSize: 13, textAlign: 'center' },
-  errorBanner:      { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: '#EF5350', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14, marginBottom: 20, width: '100%' },
-  errorText:        { color: '#EF5350', fontSize: 13, textAlign: 'center' },
-  pasteToggle:      { marginTop: 4, padding: 8 },
-  pasteToggleText:  { color: '#707070', fontSize: 13, textAlign: 'center', textDecorationLine: 'underline' },
-  pasteBox:         { backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333333', borderRadius: 12, padding: 16, width: '100%', marginTop: 4 },
-  pasteInput:       { backgroundColor: '#0D0D0D', borderWidth: 1, borderColor: '#444444', borderRadius: 8, padding: 12, color: '#EAEAEA', fontSize: 14, marginBottom: 12 },
-  pasteButtons:     { flexDirection: 'row', gap: 8 },
-  pasteBtn:         { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  pasteBtnConnect:  { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#7B9FEB' },
-  pasteBtnConnectText: { color: '#7B9FEB', fontSize: 14, fontWeight: '600' },
+  container:        { flex: 1, backgroundColor: colors.surface.base, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl },
+  stepLabel:        { color: colors.text.muted, fontSize: 13, fontFamily: fontFamily.semibold, marginBottom: spacing.xl, textTransform: 'uppercase', letterSpacing: 1 },
+  iconCircle:       { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.surface.tintedGreen, borderWidth: 2, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
+  iconCirclePair:   { backgroundColor: colors.surface.tintedBlue, borderColor: colors.accent },
+  title:            { color: colors.text.primary, fontSize: typography.heading.fontSize, fontFamily: fontFamily.light, textAlign: 'center', marginBottom: spacing.md },
+  description:      { color: colors.text.secondary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  instructions:     { backgroundColor: colors.surface.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.base, width: '100%', marginBottom: spacing.xxl },
+  instructionsLabel:{ color: colors.text.muted, fontSize: 11, fontFamily: fontFamily.semibold, letterSpacing: 0.5, marginBottom: spacing.md - 2 },
+  instructionLine:  { color: colors.text.secondary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, lineHeight: 26 },
+  button:           { backgroundColor: colors.surface.tintedGreen, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: spacing.lg, width: '100%', alignItems: 'center', marginBottom: spacing.base },
+  buttonText:       { color: colors.primary, fontSize: 15, fontFamily: fontFamily.semibold },
+  buttonPair:       { backgroundColor: colors.surface.tintedBlue, borderWidth: 1, borderColor: colors.accent, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: spacing.lg, width: '100%', alignItems: 'center', marginBottom: spacing.base },
+  buttonPairText:   { color: colors.accent, fontSize: 15, fontFamily: fontFamily.semibold },
+  waitingRow:       { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  waitingText:      { color: colors.text.muted, fontSize: 13, fontFamily: fontFamily.regular },
+  connectingBox:    { alignItems: 'center', gap: spacing.md, marginBottom: spacing.base },
+  connectingText:   { color: colors.accent, fontSize: 15, fontFamily: fontFamily.semibold },
+  connectingSubText:{ color: colors.text.muted, fontSize: 13, fontFamily: fontFamily.regular },
+  notifyBanner:     { backgroundColor: colors.surface.tintedRed, borderWidth: 1, borderColor: colors.error, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: 14, marginBottom: spacing.lg, width: '100%' },
+  notifyText:       { color: colors.error, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center' },
+  errorBanner:      { backgroundColor: colors.surface.tintedRed, borderWidth: 1, borderColor: colors.error, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: 14, marginBottom: spacing.lg, width: '100%' },
+  errorText:        { color: colors.error, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center' },
+  pasteToggle:      { marginTop: spacing.xs, padding: spacing.sm },
+  pasteToggleText:  { color: colors.text.muted, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center', textDecorationLine: 'underline' },
+  pasteBox:         { backgroundColor: colors.surface.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.base, width: '100%', marginTop: spacing.xs },
+  pasteInput:       { backgroundColor: colors.surface.base, borderWidth: 1, borderColor: '#444444', borderRadius: radius.md, padding: spacing.md, color: colors.text.primary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, marginBottom: spacing.md },
+  pasteButtons:     { flexDirection: 'row', gap: spacing.sm },
+  pasteBtn:         { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center' },
+  pasteBtnConnect:  { backgroundColor: colors.surface.tintedBlue, borderWidth: 1, borderColor: colors.accent },
+  pasteBtnConnectText: { color: colors.accent, fontSize: 14, fontFamily: fontFamily.semibold },
   pasteBtnDisabled: { opacity: 0.4 },
-  pasteBtnCancel:   { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#333333' },
-  pasteBtnCancelText: { color: '#707070', fontSize: 14 },
+  pasteBtnCancel:   { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border },
+  pasteBtnCancelText: { color: colors.text.muted, fontSize: 14, fontFamily: fontFamily.regular },
 })

@@ -6,6 +6,9 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-12
 
+### [x] Onboarding design to match rest of app (#134) - closed 2026-04-12
+Added shared RN theme module (`src/rn-theme.ts`) mirroring the WebView tokens (colors, spacing, radius, typography) so native onboarding screens can't drift from the main UI. Registered Nunito (`@expo-google-fonts/nunito` + `expo-font` + `expo-splash-screen`) in `app/_layout.tsx`, holding the splash until the fonts load. Refactored `app/setup.tsx` and `app/child-setup.tsx` to consume shared tokens and Nunito weights (Light/Regular/SemiBold/Bold) instead of hardcoded hex and system fonts. PIN inputs on iOS now have an `InputAccessoryView` with a Done button so the numeric keyboard is dismissable on small screens (iPhone SE).
+
 ### [x] Center tabs on child detail (#138) - closed 2026-04-12
 Sub-tab row on ChildDetail now centers via `justifyContent: 'center'`. Also added `overflowX: 'hidden'` to the tab content scroll container to prevent horizontal scroll/bounce on iOS in the Rules tab.
 

@@ -19,6 +19,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@expo-google-fonts/nunito": "^0.4.2",
     "@react-native-clipboard/clipboard": "^1.16.3",
     "b4a": "^1.8.0",
     "expo": "^54.0.10",
@@ -26,9 +27,11 @@
     "expo-camera": "~17.0.10",
     "expo-constants": "^18.0.9",
     "expo-file-system": "~19.0.21",
+    "expo-font": "^55.0.6",
     "expo-image-picker": "~17.0.10",
     "expo-linking": "^8.0.8",
     "expo-router": "^6.0.8",
+    "expo-splash-screen": "^55.0.17",
     "expo-system-ui": "^6.0.7",
     "hyperbee": "^2.27.3",
     "hypercore": "^11.26.0",

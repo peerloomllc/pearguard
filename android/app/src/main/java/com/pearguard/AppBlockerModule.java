@@ -513,7 +513,8 @@ public class AppBlockerModule extends AccessibilityService {
                     return "Needs parent approval.";
                 }
 
-                // Step 4: Daily limit exceeded.
+                // Step 4: Daily limit exceeded. Per-app limit wins; category
+                // limit is the fallback only when no per-app limit is set.
                 int limitSeconds = appPolicy.optInt("dailyLimitSeconds", -1);
                 if (limitSeconds > 0) {
                     int usedSeconds = getDailyUsageSeconds(packageName);
@@ -521,6 +522,9 @@ public class AppBlockerModule extends AccessibilityService {
                         int minutes = limitSeconds / 60;
                         return "Daily limit reached (" + minutes + " min/day).";
                     }
+                } else {
+                    String categoryReason = getCategoryLimitBlockReason(policy, apps, appPolicy);
+                    if (categoryReason != null) return categoryReason;
                 }
             }
 
@@ -641,6 +645,42 @@ public class AppBlockerModule extends AccessibilityService {
             }
             return 0;
         }
+    }
+
+    /**
+     * Category-limit fallback. Only called when the app has no per-app
+     * dailyLimitSeconds of its own. Sums foreground seconds across every app
+     * in the same category and compares to the category's daily budget.
+     */
+    private String getCategoryLimitBlockReason(JSONObject policy, JSONObject apps, JSONObject appPolicy) {
+        try {
+            String category = appPolicy.optString("category", null);
+            if (category == null || category.isEmpty()) return null;
+            JSONObject categories = policy.optJSONObject("categories");
+            if (categories == null) return null;
+            JSONObject categoryPolicy = categories.optJSONObject(category);
+            if (categoryPolicy == null) return null;
+            int limitSeconds = categoryPolicy.optInt("dailyLimitSeconds", -1);
+            if (limitSeconds <= 0) return null;
+
+            int totalUsed = 0;
+            java.util.Iterator<String> it = apps.keys();
+            while (it.hasNext()) {
+                String pkg = it.next();
+                JSONObject other = apps.optJSONObject(pkg);
+                if (other == null) continue;
+                if (!category.equals(other.optString("category", ""))) continue;
+                totalUsed += getDailyUsageSeconds(pkg);
+                if (totalUsed >= limitSeconds) break;
+            }
+            if (totalUsed >= limitSeconds) {
+                int minutes = limitSeconds / 60;
+                return category + " limit reached (" + minutes + " min/day).";
+            }
+        } catch (Exception e) {
+            // Fail open
+        }
+        return null;
     }
 
     private JSONObject loadPolicy() {

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../theme.js';
+import Modal from './primitives/Modal.jsx';
+import Button from './primitives/Button.jsx';
 
 const ANIMATION_STYLES = `
 @keyframes pgFadeSlideOut {
@@ -53,11 +55,22 @@ function timeRemaining(expiresAt) {
   return mins + 'm';
 }
 
-function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override, animationStyle }) {
+function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override, animationStyle, categoryLimitSeconds }) {
   const { colors, spacing, radius } = useTheme();
-  const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : '';
+  const hasOwnLimit = typeof appData.dailyLimitSeconds === 'number';
+  const inherits = !hasOwnLimit && typeof categoryLimitSeconds === 'number';
+  const savedMinutes = hasOwnLimit ? String(Math.round(appData.dailyLimitSeconds / 60)) : '';
   const [limitInput, setLimitInput] = useState(savedMinutes);
+  const [editingLimit, setEditingLimit] = useState(false);
   const limitDirty = limitInput !== savedMinutes;
+
+  useEffect(() => { setLimitInput(savedMinutes); }, [savedMinutes]);
+  useEffect(() => { if (hasOwnLimit) setEditingLimit(false); }, [hasOwnLimit]);
+
+  function revertToCategory() {
+    const { dailyLimitSeconds, ...rest } = appData;
+    onUpdate(packageName, rest);
+  }
 
   function setStatus(newStatus) {
     onUpdate(packageName, { ...appData, status: newStatus });
@@ -75,11 +88,13 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
   }
 
   function handleApprove() {
+    window.callBare('haptic:tap');
     window.callBare('app:decide', { childPublicKey, packageName, decision: 'approve' });
     onDecide(packageName, 'allowed');
   }
 
   function handleDeny() {
+    window.callBare('haptic:tap');
     window.callBare('app:decide', { childPublicKey, packageName, decision: 'deny' });
     onDecide(packageName, 'blocked');
   }
@@ -168,33 +183,55 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
             <input
               type="checkbox"
               checked={appData.status === 'allowed'}
-              onChange={(e) => setStatus(e.target.checked ? 'allowed' : 'blocked')}
+              onChange={(e) => { window.callBare('haptic:tap'); setStatus(e.target.checked ? 'allowed' : 'blocked'); }}
               aria-label={`Toggle ${appData.appName || packageName}`}
             />
             <span style={{ marginLeft: '4px' }}>{appData.status === 'allowed' ? 'Allowed' : 'Blocked'}</span>
           </label>
-          <label style={{ fontSize: '13px', color: colors.text.secondary, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            Limit:
-            <input
-              type="number"
-              min="0"
-              value={limitInput}
-              onChange={(e) => setLimitInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') saveLimit(); }}
-              style={{ width: '60px', padding: '4px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, fontSize: '13px', backgroundColor: colors.surface.input, color: colors.text.primary }}
-              aria-label={`Daily limit for ${appData.appName || packageName} in minutes`}
-              placeholder="&#8734;"
-            />
-            min/day
-            {limitDirty && (
+          {inherits && !editingLimit ? (
+            <span style={{ fontSize: '13px', color: colors.text.secondary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              Inherits: {Math.round(categoryLimitSeconds / 60)} min/day
               <button
-                style={{ padding: '3px 10px', border: 'none', borderRadius: `${radius.sm}px`, backgroundColor: colors.primary, color: '#FFFFFF', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
-                onClick={saveLimit}
+                style={{ padding: '3px 8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, background: 'none', color: colors.primary, cursor: 'pointer', fontSize: '12px' }}
+                onClick={() => { window.callBare('haptic:tap'); setEditingLimit(true); }}
               >
-                Save
+                Override
               </button>
-            )}
-          </label>
+            </span>
+          ) : (
+            <label style={{ fontSize: '13px', color: colors.text.secondary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              Limit:
+              <input
+                type="number"
+                min="0"
+                value={limitInput}
+                onChange={(e) => setLimitInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveLimit(); }}
+                style={{ width: '60px', padding: '4px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, fontSize: '13px', backgroundColor: colors.surface.input, color: colors.text.primary }}
+                aria-label={`Daily limit for ${appData.appName || packageName} in minutes`}
+                placeholder="&#8734;"
+                autoFocus={editingLimit && !hasOwnLimit}
+              />
+              min/day
+              {limitDirty && (
+                <button
+                  style={{ padding: '3px 10px', border: 'none', borderRadius: `${radius.sm}px`, backgroundColor: colors.primary, color: '#FFFFFF', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                  onClick={() => { window.callBare('haptic:tap'); saveLimit(); }}
+                >
+                  Save
+                </button>
+              )}
+              {hasOwnLimit && typeof categoryLimitSeconds === 'number' && !limitDirty && (
+                <button
+                  style={{ padding: '3px 8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, background: 'none', color: colors.text.muted, cursor: 'pointer', fontSize: '12px' }}
+                  onClick={() => { window.callBare('haptic:tap'); revertToCategory(); }}
+                  title={`Revert to category limit (${Math.round(categoryLimitSeconds / 60)} min/day)`}
+                >
+                  Revert
+                </button>
+              )}
+            </label>
+          )}
         </div>
       )}
     </div>
@@ -234,7 +271,7 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
           textAlign: 'left',
           marginBottom: '4px',
         }}
-        onClick={onToggle}
+        onClick={() => { window.callBare('haptic:tap'); onToggle(); }}
         aria-expanded={!collapsed}
       >
         <span style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: colors.text.primary }}>{category.label}</span>
@@ -247,7 +284,7 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
             <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
               <button
                 style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: batchAction === 'approve' ? colors.success : colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
-                onClick={handleBatchAll}
+                onClick={() => { window.callBare('haptic:tap'); handleBatchAll(); }}
               >
                 {batchAction === 'approve' ? 'Approve All' : 'Deny All'}
               </button>
@@ -271,20 +308,82 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
   );
 }
 
-function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
+function CategoryLimitControls({ categoryName, savedSeconds, onSave, onApplyToAll, onClear }) {
+  const { colors, spacing, radius } = useTheme();
+  const savedMinutes = typeof savedSeconds === 'number' ? String(Math.round(savedSeconds / 60)) : '';
+  const [input, setInput] = useState(savedMinutes);
+  const dirty = input !== savedMinutes;
+
+  useEffect(() => { setInput(savedMinutes); }, [savedMinutes]);
+
+  function commit() {
+    const mins = parseInt(input, 10);
+    if (!isNaN(mins) && mins > 0) onSave(mins * 60);
+    else { setInput(''); onSave(null); }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.sm}px` }}>
+        <label style={{ fontSize: '13px', color: colors.text.secondary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {categoryName} limit:
+          <input
+            type="number"
+            min="0"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+            style={{ width: '60px', padding: '4px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, fontSize: '13px', backgroundColor: colors.surface.input, color: colors.text.primary }}
+            placeholder="&#8734;"
+            aria-label={`Daily limit for ${categoryName} category in minutes`}
+          />
+          min/day
+        </label>
+        {dirty && (
+          <button
+            style={{ padding: '4px 12px', border: 'none', borderRadius: `${radius.sm}px`, backgroundColor: colors.primary, color: '#FFFFFF', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+            onClick={() => { window.callBare('haptic:tap'); commit(); }}
+          >
+            Save
+          </button>
+        )}
+      </div>
+      {typeof savedSeconds === 'number' && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '6px' }}>
+          <button
+            style={{ flex: 1, maxWidth: '140px', padding: '4px 10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, background: colors.surface.elevated, color: colors.text.secondary, cursor: 'pointer', fontSize: '12px' }}
+            onClick={() => { window.callBare('haptic:tap'); onApplyToAll(); }}
+            title="Copy this limit onto every app in the category"
+          >
+            Apply to All
+          </button>
+          <button
+            style={{ flex: 1, maxWidth: '140px', padding: '4px 10px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, background: colors.surface.elevated, color: colors.text.secondary, cursor: 'pointer', fontSize: '12px' }}
+            onClick={() => { window.callBare('haptic:tap'); onClear(); }}
+            title="Remove category limit and clear per-app limits in this category"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, onCategoryLimit, onCategoryApply, onCategoryClear, categoryLimitSeconds, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
   const { colors, spacing, radius } = useTheme();
   const color = CATEGORY_COLORS[categoryName] || '#aaa';
   const pendingCount = entries.filter(([, d]) => d.status === 'pending').length;
   const allowedCount = entries.filter(([, d]) => d.status === 'allowed').length;
   const blockedCount = entries.filter(([, d]) => d.status !== 'pending' && d.status !== 'allowed').length;
 
-  function handleApproveAll() {
-    const pkgs = entries.map(([pkg]) => pkg);
+  function handleApprovePending() {
+    const pkgs = entries.filter(([, d]) => d.status === 'pending').map(([pkg]) => pkg);
     onBatchDecide(pkgs, 'approve');
   }
 
-  function handleDenyAll() {
-    const pkgs = entries.map(([pkg]) => pkg);
+  function handleDenyPending() {
+    const pkgs = entries.filter(([, d]) => d.status === 'pending').map(([pkg]) => pkg);
     onBatchDecide(pkgs, 'deny');
   }
 
@@ -305,33 +404,41 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
           textAlign: 'left',
           marginBottom: '4px',
         }}
-        onClick={onToggle}
+        onClick={() => { window.callBare('haptic:tap'); onToggle(); }}
         aria-expanded={!collapsed}
       >
         <span style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: colors.text.primary }}>{categoryName}</span>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: '#f59e0b' }}>{pendingCount}</span>}
-          <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.success }}>{allowedCount}</span>
-          <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: colors.error }}>{blockedCount}</span>
-        </div>
+        <span style={{ fontSize: '12px', color: colors.text.muted }}>{entries.length}</span>
+        {pendingCount > 0 && (
+          <span style={{ fontSize: '11px', color: '#FFFFFF', borderRadius: '10px', padding: '1px 7px', fontWeight: '700', backgroundColor: '#f59e0b' }}>{pendingCount}</span>
+        )}
         <span style={{ fontSize: '16px', color: colors.text.muted, lineHeight: 1 }}>{collapsed ? '›' : '⌄'}</span>
       </button>
       {!collapsed && (
         <div style={batchAnimationStyle}>
-          <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
-            <button
-              style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.success, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
-              onClick={handleApproveAll}
-            >
-              Approve All
-            </button>
-            <button
-              style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
-              onClick={handleDenyAll}
-            >
-              Deny All
-            </button>
-          </div>
+          {pendingCount > 0 && (
+            <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
+              <button
+                style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.success, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                onClick={() => { window.callBare('haptic:tap'); handleApprovePending(); }}
+              >
+                Approve all {pendingCount} pending
+              </button>
+              <button
+                style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                onClick={() => { window.callBare('haptic:tap'); handleDenyPending(); }}
+              >
+                Deny all {pendingCount} pending
+              </button>
+            </div>
+          )}
+          <CategoryLimitControls
+            categoryName={categoryName}
+            savedSeconds={categoryLimitSeconds}
+            onSave={(seconds) => onCategoryLimit(categoryName, seconds)}
+            onApplyToAll={() => onCategoryApply(categoryName)}
+            onClear={() => onCategoryClear(categoryName)}
+          />
           {entries.map(([pkg, data]) => (
             <AppRow
               key={pkg}
@@ -342,6 +449,7 @@ function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDe
               onDecide={onDecide}
               override={overrideMap[pkg]}
               animationStyle={animatingItems?.[pkg]}
+              categoryLimitSeconds={categoryLimitSeconds}
             />
           ))}
         </div>
@@ -361,6 +469,7 @@ export default function AppsTab({ childPublicKey }) {
   const [overrides, setOverrides] = useState([]);
   const [animatingItems, setAnimatingItems] = useState({});
   const [animatingSection, setAnimatingSection] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { kind, categoryName, message, action }
   const timersRef = useRef([]);
 
   const loadPolicy = useCallback(() => {
@@ -494,6 +603,84 @@ export default function AppsTab({ childPublicKey }) {
     }
   }
 
+  function persistPolicy(updater) {
+    setPolicy(prev => {
+      const next = updater(prev);
+      window.callBare('policy:update', { childPublicKey, policy: next });
+      return next;
+    });
+  }
+
+  function handleCategoryLimit(categoryName, seconds) {
+    persistPolicy(prev => {
+      const categories = { ...(prev.categories || {}) };
+      if (seconds == null) {
+        delete categories[categoryName];
+      } else {
+        categories[categoryName] = { ...(categories[categoryName] || {}), dailyLimitSeconds: seconds };
+      }
+      return { ...prev, categories };
+    });
+  }
+
+  function handleCategoryApply(categoryName) {
+    const catLimit = policy.categories && policy.categories[categoryName];
+    if (!catLimit || typeof catLimit.dailyLimitSeconds !== 'number') return;
+    const affected = Object.values(policy.apps).filter(a => (a.category || 'Other') === categoryName).length;
+    const mins = Math.round(catLimit.dailyLimitSeconds / 60);
+    setConfirmDialog({
+      kind: 'apply',
+      categoryName,
+      title: `Apply ${mins} min/day to ${categoryName}?`,
+      message: `This will overwrite per-app limits on ${affected} app${affected === 1 ? '' : 's'} in the ${categoryName} category.`,
+      confirmLabel: 'Apply',
+      action: () => {
+        persistPolicy(prev => {
+          const seconds = catLimit.dailyLimitSeconds;
+          const apps = { ...prev.apps };
+          for (const pkg of Object.keys(apps)) {
+            if ((apps[pkg].category || 'Other') === categoryName) {
+              apps[pkg] = { ...apps[pkg], dailyLimitSeconds: seconds };
+            }
+          }
+          return { ...prev, apps };
+        });
+      },
+    });
+  }
+
+  function handleCategoryClear(categoryName) {
+    const affected = Object.entries(policy.apps).filter(([, a]) => (a.category || 'Other') === categoryName && typeof a.dailyLimitSeconds === 'number').length;
+    setConfirmDialog({
+      kind: 'clear',
+      categoryName,
+      title: `Clear ${categoryName} limits?`,
+      message: affected > 0
+        ? `This removes the category limit and clears limits on ${affected} app${affected === 1 ? '' : 's'}.`
+        : `This removes the ${categoryName} category limit.`,
+      confirmLabel: 'Clear',
+      action: () => {
+        persistPolicy(prev => {
+          const categories = { ...(prev.categories || {}) };
+          delete categories[categoryName];
+          const apps = { ...prev.apps };
+          for (const pkg of Object.keys(apps)) {
+            if ((apps[pkg].category || 'Other') === categoryName && 'dailyLimitSeconds' in apps[pkg]) {
+              const { dailyLimitSeconds, ...rest } = apps[pkg];
+              apps[pkg] = rest;
+            }
+          }
+          return { ...prev, categories, apps };
+        });
+      },
+    });
+  }
+
+  function runConfirm() {
+    if (confirmDialog) confirmDialog.action();
+    setConfirmDialog(null);
+  }
+
   function toggleSection(key) {
     setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }
@@ -532,14 +719,14 @@ export default function AppsTab({ childPublicKey }) {
   return (
     <div style={{ padding: `0 ${spacing.base}px ${spacing.base}px` }}>
       <style>{ANIMATION_STYLES}</style>
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: colors.surface.base, paddingTop: `${spacing.base}px`, paddingBottom: `${spacing.sm}px`, display: 'flex', gap: `${spacing.sm}px`, alignItems: 'center' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: colors.surface.base, paddingTop: `${spacing.base}px`, paddingBottom: `${spacing.sm}px`, display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search apps..."
           style={{
-            flex: 1,
+            width: '100%',
             padding: '7px 10px',
             fontSize: '13px',
             border: `1px solid ${colors.border}`,
@@ -547,45 +734,61 @@ export default function AppsTab({ childPublicKey }) {
             outline: 'none',
             color: colors.text.primary,
             backgroundColor: colors.surface.input,
+            boxSizing: 'border-box',
           }}
           aria-label="Search apps"
         />
-        <button
-          style={{
-            padding: '6px 10px',
-            fontSize: '12px',
-            border: `1px solid ${colors.border}`,
-            borderRadius: `${radius.full}px`,
-            background: colors.surface.elevated,
-            cursor: 'pointer',
-            color: colors.text.secondary,
-            whiteSpace: 'nowrap',
-          }}
-          onClick={() => setSortOrder(s => s === 'alpha' ? 'date' : 'alpha')}
-          aria-label="Toggle sort order"
-        >
-          {sortOrder === 'alpha' ? 'A-Z' : 'Date'}
-        </button>
-        <button
-          style={{
-            padding: '6px 10px',
-            fontSize: '12px',
-            border: `1px solid ${viewMode === 'category' ? colors.primary : colors.border}`,
-            borderRadius: `${radius.full}px`,
-            background: viewMode === 'category' ? `${colors.primary}22` : colors.surface.elevated,
-            cursor: 'pointer',
-            color: viewMode === 'category' ? colors.primary : colors.text.secondary,
-            whiteSpace: 'nowrap',
-          }}
-          onClick={() => setViewMode(v => {
-            const next = v === 'status' ? 'category' : 'status';
-            window.callBare('pref:set', { key: 'appsTab:viewMode', value: next }).catch(() => {});
-            return next;
-          })}
-          aria-label="Toggle view mode"
-        >
-          {viewMode === 'status' ? 'By Status' : 'By Category'}
-        </button>
+        <div style={{ display: 'flex', gap: `${spacing.md}px`, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: colors.text.muted }}>
+            Sort by:
+            <button
+              style={{
+                width: '100px',
+                padding: '6px 10px',
+                fontSize: '12px',
+                border: `1px solid ${colors.border}`,
+                borderRadius: `${radius.full}px`,
+                background: colors.surface.elevated,
+                cursor: 'pointer',
+                color: colors.text.secondary,
+                whiteSpace: 'nowrap',
+                textAlign: 'center',
+              }}
+              onClick={() => { window.callBare('haptic:tap'); setSortOrder(s => s === 'alpha' ? 'date' : 'alpha'); }}
+              aria-label="Toggle sort order"
+            >
+              {sortOrder === 'alpha' ? 'Name' : 'Install Date'}
+            </button>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: colors.text.muted }}>
+            Filter by:
+            <button
+              style={{
+                width: '100px',
+                padding: '6px 10px',
+                fontSize: '12px',
+                border: `1px solid ${colors.border}`,
+                borderRadius: `${radius.full}px`,
+                background: colors.surface.elevated,
+                cursor: 'pointer',
+                color: colors.text.secondary,
+                whiteSpace: 'nowrap',
+                textAlign: 'center',
+              }}
+              onClick={() => {
+                window.callBare('haptic:tap');
+                setViewMode(v => {
+                  const next = v === 'status' ? 'category' : 'status';
+                  window.callBare('pref:set', { key: 'appsTab:viewMode', value: next }).catch(() => {});
+                  return next;
+                });
+              }}
+              aria-label="Toggle view mode"
+            >
+              {viewMode === 'status' ? 'Status' : 'Category'}
+            </button>
+          </label>
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
         <span style={{ fontSize: '13px', color: colors.text.muted }}>
@@ -594,7 +797,7 @@ export default function AppsTab({ childPublicKey }) {
         {q && (
           <button
             style={{ fontSize: '12px', padding: '2px 8px', border: `1px solid ${colors.border}`, borderRadius: '10px', background: 'none', cursor: 'pointer', color: colors.text.secondary }}
-            onClick={() => setSearch('')}
+            onClick={() => { window.callBare('haptic:tap'); setSearch(''); }}
           >
             Clear
           </button>
@@ -636,6 +839,10 @@ export default function AppsTab({ childPublicKey }) {
               onUpdate={handleUpdate}
               onDecide={handleDecide}
               onBatchDecide={handleBatchDecide}
+              onCategoryLimit={handleCategoryLimit}
+              onCategoryApply={handleCategoryApply}
+              onCategoryClear={handleCategoryClear}
+              categoryLimitSeconds={policy.categories && policy.categories[catName] && policy.categories[catName].dailyLimitSeconds}
               overrideMap={overrideMap}
               collapsed={q ? false : (collapsed[catName] ?? true)}
               onToggle={() => toggleSection(catName)}
@@ -645,6 +852,17 @@ export default function AppsTab({ childPublicKey }) {
           );
         })
       )}
+      <Modal
+        visible={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        title={confirmDialog?.title || ''}
+        footer={<>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setConfirmDialog(null); }} style={{ flex: 1 }}>Cancel</Button>
+          <Button variant="danger" onClick={() => { window.callBare('haptic:tap'); runConfirm(); }} style={{ flex: 1 }}>{confirmDialog?.confirmLabel || 'Confirm'}</Button>
+        </>}
+      >
+        <div style={{ textAlign: 'center' }}>{confirmDialog?.message}</div>
+      </Modal>
     </div>
   );
 }

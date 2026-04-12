@@ -53,6 +53,32 @@ function hasExceededLimit(packageName, policy, usageStats) {
   return stats.dailySeconds >= appPolicy.dailyLimitSeconds
 }
 
+// Per-app limit wins: only consult category limit when the app has no
+// dailyLimitSeconds of its own.
+function hasExceededCategoryLimit(packageName, policy, usageStats) {
+  if (!policy || !policy.apps || !policy.categories) return false
+  const appPolicy = policy.apps[packageName]
+  if (!appPolicy) return false
+  if (typeof appPolicy.dailyLimitSeconds === 'number') return false
+
+  const category = appPolicy.category
+  if (!category) return false
+  const categoryPolicy = policy.categories[category]
+  if (!categoryPolicy || typeof categoryPolicy.dailyLimitSeconds !== 'number') {
+    return false
+  }
+
+  let total = 0
+  for (const pkg of Object.keys(policy.apps)) {
+    if (policy.apps[pkg].category !== category) continue
+    const stats = usageStats && usageStats[pkg]
+    if (stats && typeof stats.dailySeconds === 'number') {
+      total += stats.dailySeconds
+    }
+  }
+  return total >= categoryPolicy.dailyLimitSeconds
+}
+
 function isSmsCallException(packageName, contactPhone, policy) {
   if (!isPhoneOrMessagingApp(packageName)) return false
   if (!policy || !policy.allowedContacts) return false
@@ -91,6 +117,7 @@ function isAppBlocked(packageName, policy, usageStats, now) {
   }
 
   if (hasExceededLimit(packageName, policy, usageStats)) return true
+  if (hasExceededCategoryLimit(packageName, policy, usageStats)) return true
 
   return false
 }
@@ -99,5 +126,6 @@ module.exports = {
   isAppBlocked,
   isScheduleActive,
   hasExceededLimit,
+  hasExceededCategoryLimit,
   isSmsCallException,
 }

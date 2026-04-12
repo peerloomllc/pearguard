@@ -108,6 +108,8 @@ export default function Settings() {
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinStatus, setPinStatus] = useState(null);
+  const [currentPin, setCurrentPin] = useState(null);
+  const [pinRevealed, setPinRevealed] = useState(false);
   const confirmPinRef = useRef(null);
 
   // Settings state
@@ -133,7 +135,16 @@ export default function Settings() {
         setSettingsLoaded(true);
       })
       .catch(() => setSettingsLoaded(true));
+
+    window.callBare('pin:get')
+      .then(({ pin }) => { if (pin) setCurrentPin(pin); })
+      .catch(() => {});
   }, []);
+
+  // Auto-hide revealed PIN when Override PIN section collapses.
+  useEffect(() => {
+    if (!pinOpen) setPinRevealed(false);
+  }, [pinOpen]);
 
   async function handleNameSave() {
     const trimmed = name.trim();
@@ -217,6 +228,7 @@ export default function Settings() {
         setPinStatus('success');
         setNewPin('');
         setConfirmPin('');
+        setCurrentPin(newPin);
       })
       .catch((err) => {
         setPinStatus(err.message || 'Failed to set PIN. Please try again.');
@@ -342,6 +354,22 @@ export default function Settings() {
         <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
           Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device.
         </p>
+        {currentPin && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: `${spacing.sm}px`, padding: `${spacing.sm}px ${spacing.md}px`, backgroundColor: colors.surface.base, borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px` }}>
+            <span style={{ fontSize: '14px', color: colors.text.secondary }}>
+              Current PIN: <span style={{ fontFamily: 'monospace', fontSize: '16px', color: colors.text.primary, letterSpacing: '2px' }}>{pinRevealed ? currentPin : '••••'}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => { window.callBare('haptic:tap'); setPinRevealed(v => !v); }}
+              style={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`, background: 'none', border: 'none', padding: `${spacing.xs}px`, cursor: 'pointer', color: colors.text.muted, fontSize: '13px' }}
+              aria-label={pinRevealed ? 'Hide current PIN' : 'Show current PIN'}
+            >
+              <Icon name={pinRevealed ? 'EyeSlash' : 'Eye'} size={18} color={colors.text.muted} />
+              {pinRevealed ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        )}
         <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.md}px` }} aria-label="Change PIN form">
           <label style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px`, fontSize: '14px', color: colors.text.secondary }}>
             New PIN

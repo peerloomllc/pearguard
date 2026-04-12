@@ -228,11 +228,13 @@ export default forwardRef(function Dashboard(_props, ref) {
         onClose={() => setLockTarget(null)}
         title={`Lock ${lockTarget?.displayName}'s device?`}
         footer={<>
-          <Button variant="secondary" onClick={() => setLockTarget(null)}>Cancel</Button>
-          <Button variant="primary" icon="LockSimple" onClick={confirmLock}>Lock</Button>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setLockTarget(null); }} style={{ flex: 1 }}>Cancel</Button>
+          <Button variant="danger" icon="LockSimple" onClick={() => { window.callBare('haptic:tap'); confirmLock(); }} style={{ flex: 1 }}>Lock</Button>
         </>}
       >
-        All apps will be blocked until you unlock.
+        <div style={{ textAlign: 'center' }}>
+          This will immediately block all apps on {lockTarget?.displayName}'s device until you unlock it.
+        </div>
       </Modal>
     </div>
   );

@@ -32,6 +32,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   }, []);
   const [showReports, setShowReports] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmLock, setConfirmLock] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
 
   async function handleRemove() {
@@ -40,11 +41,24 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     onBack();
   }
 
-  async function handleLockToggle() {
+  function onLockButtonClick() {
     window.callBare('haptic:tap');
-    const newLocked = !locked;
+    if (locked) {
+      applyLock(false);
+    } else {
+      setConfirmLock(true);
+    }
+  }
+
+  async function applyLock(newLocked) {
     await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: newLocked });
     setLocked(newLocked);
+  }
+
+  async function handleConfirmLock() {
+    window.callBare('haptic:tap');
+    setConfirmLock(false);
+    await applyLock(true);
   }
 
   // Android back gesture: close UsageReports sub-view
@@ -89,7 +103,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
         }} />
 
         <button
-          onClick={handleLockToggle}
+          onClick={onLockButtonClick}
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}
           aria-label={locked ? 'Unlock device' : 'Lock device'}
         >
@@ -154,6 +168,20 @@ export default function ChildDetail({ child, initialTab, onBack }) {
         </>}
       >
         This will remove {child.displayName} from your dashboard. You'll need to re-pair to monitor this device again.
+      </Modal>
+
+      <Modal
+        visible={confirmLock}
+        onClose={() => setConfirmLock(false)}
+        title={`Lock ${child.displayName}'s device?`}
+        footer={<>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setConfirmLock(false); }} style={{ flex: 1 }}>Cancel</Button>
+          <Button variant="danger" icon="LockSimple" onClick={handleConfirmLock} style={{ flex: 1 }}>Lock</Button>
+        </>}
+      >
+        <div style={{ textAlign: 'center' }}>
+          This will immediately block all apps on {child.displayName}'s device until you unlock it.
+        </div>
       </Modal>
     </div>
   );

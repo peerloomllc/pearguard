@@ -4,6 +4,19 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-12
+
+### [x] Show current PIN on Settings page (#141) - closed 2026-04-12
+Added a "Current PIN: ••••" row at the top of Settings → Override PIN with an Eye/EyeSlash toggle that reveals the parent's PIN. PIN plaintext is now stored locally in the parent's `policy` Hyperbee record (new `pinPlain` field) alongside the existing `pinHash`; plaintext is never placed in per-child policies or sent over the wire. New `pin:get` dispatch returns the stored plaintext. Revealed PIN auto-hides when the Override PIN section collapses. Existing PINs set before this change will appear as "••••" until re-saved.
+
+### [x] Global lock now requires confirmation (#140) - closed 2026-04-12
+Tapping the padlock in ChildDetail top bar or a Dashboard child card now opens a confirmation modal before locking. Unlocking stays instant (single tap on the red padlock). Both modals share identical copy ("This will immediately block all apps on {name}'s device until you unlock it."), centered text, danger-variant Lock button, and flex-1 footer buttons.
+
+### [x] Co-parent unpair leaves stale parent record on child (#132) - closed 2026-04-12
+Obsolete. The co-parent concept/flow was removed in PR #127 (2026-04-11) in favor of direct pairing, where each parent pairs with the child independently via the standard "Add Child" flow and policies sync via child relay. There is no longer a "co-parent" relationship that can be unpaired, so the stale-record scenario no longer applies.
+
+---
+
 ## Added 2026-04-11
 
 ### [x] Not consistently receiving usage stats from Child (#131) - closed 2026-04-11

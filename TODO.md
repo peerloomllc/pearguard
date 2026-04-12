@@ -9,7 +9,7 @@ Open items only. Completed items are in `DONE.md`.
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
 | 98 | Investigate Tailscale VPN compatibility | Tailscale breaks Hyperswarm P2P connections; need to investigate split tunneling or relay options |
 | 124 | Android cold start notification tap goes to Dashboard instead of Activity tab | Warm open works correctly; cold start doesn't navigate to child. Rare edge case, non-blocking. |
-| 131 | Not consistently receiving usage stats from Child | Background service may stop running; had to foreground PearGuard after ~24 hours for it to check in and update stats. Check background service activity. |
+| ~~131~~ | ~~Not consistently receiving usage stats from Child~~ | Closed - PR #63 |
 
 ## Features
 

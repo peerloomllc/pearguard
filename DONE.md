@@ -4,6 +4,46 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ---
 
+## Added 2026-04-11
+
+### [x] Not consistently receiving usage stats from Child (#131) - closed 2026-04-11
+Native usage queue in SharedPreferences collects stats when the RN bridge is dead (app dismissed). EnforcementService queues every 60s, WorkManager backs up every 15 min. Queue flushes over P2P on app reopen. WorkManager wakes the app via MainActivity only when data is >30 min stale, with no-animation and 10s auto-background to minimize child disruption. PR #63.
+
+### [x] Apps tab should remember last active filter (#123) - closed 2026-04-11
+Added generic `pref:set`/`pref:get` Hyperbee dispatch cases for UI preferences. Apps tab viewMode is persisted on toggle and restored on mount. localStorage doesn't work in inline-HTML WebViews, so Hyperbee is used instead.
+
+### [x] Co-parent flow missing onboarding/dashboard entry point (#127) - closed 2026-04-11
+Replaced broken brokered co-parent pairing (Hyperswarm dedup issues) with direct pairing: Parent B uses "Add Child" to generate a fresh topic, Child scans via "Pair Another Parent" on Profile page. Added policy sync via child relay so app decisions propagate between co-parents in real-time. Removed ~640 lines of dead brokered flow code and orphaned UI components.
+
+### [x] Second parent using regular invite instead of Add Parent (#121) - closed 2026-04-11
+No longer an issue. The brokered co-parent flow has been removed. All parents now pair directly with the child using the standard "Add Child" flow, and policies are synced between parents via child relay.
+
+---
+
+## Added 2026-04-10
+
+### [x] Quickly foregrounding/backgrounding app can dismiss overlay (#126) - closed 2026-04-10
+Not a bug. The 800ms cooldown after overlay dismissal is intentional (prevents overlay flashing on home screen during activity destruction). Rapid fg/bg cycling can delay overlay reappearance by up to 5 seconds, but the EnforcementService polling loop always catches it. Timing gap, not a bypass.
+
+### [x] Frequent "Child device has not checked in" notifications (#112) - completed 2026-04-10
+Resolved - no longer a priority issue.
+
+### [x] Add Hyperswarm dedup resilience pattern to P2P wiki (#128) - completed 2026-04-10
+Documented the conn identity check pattern for Hyperswarm dedup in the P2P wiki. Covers close/error handler guards, per-connection state tracking, and cross-project applicability.
+
+### [x] Add piggyback sync pattern to P2P wiki (#129) - completed 2026-04-10
+Documented three complementary sync patterns (piggyback push, pull-based on UI open, reconnect backfill) for reliable P2P state convergence. Includes design rules for idempotency, dedup via Hyperbee keys, and bounded sync windows.
+
+### [x] Co-parent request approval/denial not syncing to other parent (#122) - completed 2026-04-10
+Root cause: Hyperswarm dedup closing live connections (peers/parentPeers close handlers deleted entries without checking conn identity), plus stale iOS bare-ios-sim.bundle being loaded on physical device. Fixed: (1) conn identity checks in close/error handlers, (2) piggyback resolved requests onto usage:report for reliable co-parent sync, (3) always trigger pull-based syncResolved on Activity tab open, (4) pass childPublicKey through handleRequestResolved for proper alerts:list filtering, (5) setup.tsx PIN screen ScrollView for small iOS screens. Branch: `bugfix/coparent-pin-and-request-sync`, PR #60.
+
+---
+
+## Added 2026-04-09
+
+### [x] Multi-parent PIN conflict - last sync wins (#120) - completed 2026-04-09
+Replaced single `pinHash` with per-parent `pinHashes: { [parentPublicKey]: hash }` map in child policy. Parent `pin:set` writes to `pinHashes[myKey]`. Child `handlePolicyUpdate` merges incoming pinHashes with existing ones so each parent's PIN survives the other's policy push. Added legacy `pinHash` -> `pinHashes[senderKey]` conversion for parents running old code. Native `verifyPin` (AppBlockerModule.java) iterates all pinHashes values with legacy pinHash fallback. Branch: `bugfix/coparent-pin-and-request-sync`.
+
 ## Added 2026-04-08
 
 ### [x] iOS notification tap doesn't navigate to child's Activity tab (#124) - completed 2026-04-09

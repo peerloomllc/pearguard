@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A1CAM0D1E5F7A8B00C4MSWF /* CameraModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */; };
+		0A1CAM0D1E5F7A8B00C4MOBF /* CameraModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */; };
 		08BCEDEAFE3AA065F097E219 /* BackgroundSyncModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D3DA3B0EBB2AED336B78BAA /* BackgroundSyncModule.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		16A6E35995F1BD287A53C7CF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F66802B5E7C5E0E2EC6A02AE /* PrivacyInfo.xcprivacy */; };
@@ -31,6 +33,8 @@
 		13B07F961A680F5B00A75B9A /* PearGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PearGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = PearGuard/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = PearGuard/Info.plist; sourceTree = "<group>"; };
+		0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CameraModule.swift; path = PearGuard/CameraModule.swift; sourceTree = "<group>"; };
+		0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CameraModule.m; path = PearGuard/CameraModule.m; sourceTree = "<group>"; };
 		19E6B85469A4888CD0928866 /* ShareModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ShareModule.m; path = PearGuard/ShareModule.m; sourceTree = "<group>"; };
 		30DAA9894CA0253B13590C9A /* NotificationsModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = NotificationsModule.m; path = PearGuard/NotificationsModule.m; sourceTree = "<group>"; };
 		3D3DA3B0EBB2AED336B78BAA /* BackgroundSyncModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackgroundSyncModule.swift; path = PearGuard/BackgroundSyncModule.swift; sourceTree = "<group>"; };
@@ -84,6 +88,8 @@
 				30DAA9894CA0253B13590C9A /* NotificationsModule.m */,
 				59E244D1CED58FCC2847A141 /* ShareModule.swift */,
 				19E6B85469A4888CD0928866 /* ShareModule.m */,
+				0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */,
+				0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */,
 			);
 			name = PearGuard;
 			sourceTree = "<group>";
@@ -399,6 +405,8 @@
 				561323C198E49185883C7D6D /* NotificationsModule.m in Sources */,
 				A6EFA3828EE775606E068FEF /* ShareModule.swift in Sources */,
 				F345F093D73F6A73DD1D5EDD /* ShareModule.m in Sources */,
+				0A1CAM0D1E5F7A8B00C4MSWF /* CameraModule.swift in Sources */,
+				0A1CAM0D1E5F7A8B00C4MOBF /* CameraModule.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

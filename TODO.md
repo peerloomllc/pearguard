@@ -24,7 +24,6 @@ Open items only. Completed items are in `DONE.md`.
 | 137 | Export/import child settings | Allow parent to export a child's settings (policy, overrides, limits) and import them onto another child or device |
 | 138 | Center tabs on child detail | Tab bar on child detail view should be centered |
 | 139 | Optional message for global lock | Let parent attach an optional message shown to the child when global lock is applied |
-| 141 | Show/hide PIN toggle on Settings page | Add a reveal toggle so parent can verify the PIN they entered on the Settings page |
 | 142 | Clear/apply time limits per category | Add controls to clear or apply time limits on a per-category basis |
 
 ## Release Pre-work (before first release)

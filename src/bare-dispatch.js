@@ -368,10 +368,14 @@ function createDispatch (ctx) {
         const hashStr = hashBuf.toString('hex')
         if (!hashStr) throw new Error('PIN hashing failed — crypto_generichash returned empty result')
 
-        // Store in parent's own policy key (unchanged - for local use)
+        // Store in parent's own policy key (unchanged - for local use).
+        // pinPlain is kept ONLY in the parent's local policy so the parent
+        // can reveal it on the Settings page if they forget. It is never
+        // placed into per-child policies or sent over the wire.
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : {}
         policy.pinHash = hashStr
+        policy.pinPlain = pin
         await ctx.db.put('policy', policy)
 
         // Propagate pinHashes into every child's policy and push to connected children
@@ -399,6 +403,15 @@ function createDispatch (ctx) {
         }
 
         return { ok: true }
+      }
+
+      case 'pin:get': {
+        // Returns the parent's own plaintext PIN (stored locally only) so
+        // they can reveal it on the Settings page. Returns null if unset
+        // or if this device was set before plaintext was stored.
+        const raw = await ctx.db.get('policy')
+        const policy = raw ? raw.value : null
+        return { pin: policy && policy.pinPlain ? policy.pinPlain : null }
       }
 
       case 'pin:verify': {

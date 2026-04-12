@@ -15115,11 +15115,24 @@
     if (mins >= 60) return Math.floor(mins / 60) + "h " + mins % 60 + "m";
     return mins + "m";
   }
-  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override, animationStyle }) {
+  function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, override, animationStyle, categoryLimitSeconds }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
-    const savedMinutes = appData.dailyLimitSeconds ? String(Math.round(appData.dailyLimitSeconds / 60)) : "";
+    const hasOwnLimit = typeof appData.dailyLimitSeconds === "number";
+    const inherits = !hasOwnLimit && typeof categoryLimitSeconds === "number";
+    const savedMinutes = hasOwnLimit ? String(Math.round(appData.dailyLimitSeconds / 60)) : "";
     const [limitInput, setLimitInput] = (0, import_react5.useState)(savedMinutes);
+    const [editingLimit, setEditingLimit] = (0, import_react5.useState)(false);
     const limitDirty = limitInput !== savedMinutes;
+    (0, import_react5.useEffect)(() => {
+      setLimitInput(savedMinutes);
+    }, [savedMinutes]);
+    (0, import_react5.useEffect)(() => {
+      if (hasOwnLimit) setEditingLimit(false);
+    }, [hasOwnLimit]);
+    function revertToCategory() {
+      const { dailyLimitSeconds, ...rest } = appData;
+      onUpdate(packageName, rest);
+    }
     function setStatus(newStatus) {
       onUpdate(packageName, { ...appData, status: newStatus });
     }
@@ -15134,10 +15147,12 @@
       }
     }
     function handleApprove() {
+      window.callBare("haptic:tap");
       window.callBare("app:decide", { childPublicKey, packageName, decision: "approve" });
       onDecide(packageName, "allowed");
     }
     function handleDeny() {
+      window.callBare("haptic:tap");
       window.callBare("app:decide", { childPublicKey, packageName, decision: "deny" });
       onDecide(packageName, "blocked");
     }
@@ -15227,13 +15242,31 @@
             {
               type: "checkbox",
               checked: appData.status === "allowed",
-              onChange: (e) => setStatus(e.target.checked ? "allowed" : "blocked"),
+              onChange: (e) => {
+                window.callBare("haptic:tap");
+                setStatus(e.target.checked ? "allowed" : "blocked");
+              },
               "aria-label": `Toggle ${appData.appName || packageName}`
             }
           ),
           /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { marginLeft: "4px" }, children: appData.status === "allowed" ? "Allowed" : "Blocked" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { style: { fontSize: "13px", color: colors.text.secondary, display: "flex", alignItems: "center", gap: "6px" }, children: [
+        inherits && !editingLimit ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: { fontSize: "13px", color: colors.text.secondary, display: "flex", alignItems: "center", gap: "6px" }, children: [
+          "Inherits: ",
+          Math.round(categoryLimitSeconds / 60),
+          " min/day",
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+            "button",
+            {
+              style: { padding: "3px 8px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.sm}px`, background: "none", color: colors.primary, cursor: "pointer", fontSize: "12px" },
+              onClick: () => {
+                window.callBare("haptic:tap");
+                setEditingLimit(true);
+              },
+              children: "Override"
+            }
+          )
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { style: { fontSize: "13px", color: colors.text.secondary, display: "flex", alignItems: "center", gap: "6px" }, children: [
           "Limit:",
           /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
             "input",
@@ -15247,7 +15280,8 @@
               },
               style: { width: "60px", padding: "4px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.sm}px`, fontSize: "13px", backgroundColor: colors.surface.input, color: colors.text.primary },
               "aria-label": `Daily limit for ${appData.appName || packageName} in minutes`,
-              placeholder: "\u221E"
+              placeholder: "\u221E",
+              autoFocus: editingLimit && !hasOwnLimit
             }
           ),
           "min/day",
@@ -15255,8 +15289,23 @@
             "button",
             {
               style: { padding: "3px 10px", border: "none", borderRadius: `${radius2.sm}px`, backgroundColor: colors.primary, color: "#FFFFFF", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
-              onClick: saveLimit,
+              onClick: () => {
+                window.callBare("haptic:tap");
+                saveLimit();
+              },
               children: "Save"
+            }
+          ),
+          hasOwnLimit && typeof categoryLimitSeconds === "number" && !limitDirty && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+            "button",
+            {
+              style: { padding: "3px 8px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.sm}px`, background: "none", color: colors.text.muted, cursor: "pointer", fontSize: "12px" },
+              onClick: () => {
+                window.callBare("haptic:tap");
+                revertToCategory();
+              },
+              title: `Revert to category limit (${Math.round(categoryLimitSeconds / 60)} min/day)`,
+              children: "Revert"
             }
           )
         ] })
@@ -15294,7 +15343,10 @@
             textAlign: "left",
             marginBottom: "4px"
           },
-          onClick: onToggle,
+          onClick: () => {
+            window.callBare("haptic:tap");
+            onToggle();
+          },
           "aria-expanded": !collapsed,
           children: [
             /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { flex: 1, fontSize: "13px", fontWeight: "600", color: colors.text.primary }, children: category.label }),
@@ -15308,7 +15360,10 @@
           "button",
           {
             style: { flex: 1, padding: `${spacing2.sm}px ${spacing2.md}px`, border: "none", borderRadius: `${radius2.md}px`, backgroundColor: batchAction === "approve" ? colors.success : colors.error, color: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
-            onClick: handleBatchAll,
+            onClick: () => {
+              window.callBare("haptic:tap");
+              handleBatchAll();
+            },
             children: batchAction === "approve" ? "Approve All" : "Deny All"
           }
         ) }),
@@ -15328,18 +15383,96 @@
       ] })
     ] });
   }
-  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
+  function CategoryLimitControls({ categoryName, savedSeconds, onSave, onApplyToAll, onClear }) {
+    const { colors, spacing: spacing2, radius: radius2 } = useTheme();
+    const savedMinutes = typeof savedSeconds === "number" ? String(Math.round(savedSeconds / 60)) : "";
+    const [input, setInput] = (0, import_react5.useState)(savedMinutes);
+    const dirty = input !== savedMinutes;
+    (0, import_react5.useEffect)(() => {
+      setInput(savedMinutes);
+    }, [savedMinutes]);
+    function commit() {
+      const mins = parseInt(input, 10);
+      if (!isNaN(mins) && mins > 0) onSave(mins * 60);
+      else {
+        setInput("");
+        onSave(null);
+      }
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { style: { fontSize: "13px", color: colors.text.secondary, display: "flex", alignItems: "center", gap: "6px" }, children: [
+          categoryName,
+          " limit:",
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+            "input",
+            {
+              type: "number",
+              min: "0",
+              value: input,
+              onChange: (e) => setInput(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter") commit();
+              },
+              style: { width: "60px", padding: "4px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.sm}px`, fontSize: "13px", backgroundColor: colors.surface.input, color: colors.text.primary },
+              placeholder: "\u221E",
+              "aria-label": `Daily limit for ${categoryName} category in minutes`
+            }
+          ),
+          "min/day"
+        ] }),
+        dirty && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          "button",
+          {
+            style: { padding: "4px 12px", border: "none", borderRadius: `${radius2.sm}px`, backgroundColor: colors.primary, color: "#FFFFFF", cursor: "pointer", fontSize: "12px", fontWeight: "600" },
+            onClick: () => {
+              window.callBare("haptic:tap");
+              commit();
+            },
+            children: "Save"
+          }
+        )
+      ] }),
+      typeof savedSeconds === "number" && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", justifyContent: "center", gap: "6px" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          "button",
+          {
+            style: { flex: 1, maxWidth: "140px", padding: "4px 10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.sm}px`, background: colors.surface.elevated, color: colors.text.secondary, cursor: "pointer", fontSize: "12px" },
+            onClick: () => {
+              window.callBare("haptic:tap");
+              onApplyToAll();
+            },
+            title: "Copy this limit onto every app in the category",
+            children: "Apply to All"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          "button",
+          {
+            style: { flex: 1, maxWidth: "140px", padding: "4px 10px", border: `1px solid ${colors.border}`, borderRadius: `${radius2.sm}px`, background: colors.surface.elevated, color: colors.text.secondary, cursor: "pointer", fontSize: "12px" },
+            onClick: () => {
+              window.callBare("haptic:tap");
+              onClear();
+            },
+            title: "Remove category limit and clear per-app limits in this category",
+            children: "Clear All"
+          }
+        )
+      ] })
+    ] });
+  }
+  function CategorySection({ categoryName, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, onCategoryLimit, onCategoryApply, onCategoryClear, categoryLimitSeconds, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const color = CATEGORY_COLORS[categoryName] || "#aaa";
     const pendingCount = entries.filter(([, d]) => d.status === "pending").length;
     const allowedCount = entries.filter(([, d]) => d.status === "allowed").length;
     const blockedCount = entries.filter(([, d]) => d.status !== "pending" && d.status !== "allowed").length;
-    function handleApproveAll() {
-      const pkgs = entries.map(([pkg]) => pkg);
+    function handleApprovePending() {
+      const pkgs = entries.filter(([, d]) => d.status === "pending").map(([pkg]) => pkg);
       onBatchDecide(pkgs, "approve");
     }
-    function handleDenyAll() {
-      const pkgs = entries.map(([pkg]) => pkg);
+    function handleDenyPending() {
+      const pkgs = entries.filter(([, d]) => d.status === "pending").map(([pkg]) => pkg);
       onBatchDecide(pkgs, "deny");
     }
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginBottom: `${spacing2.sm}px` }, children: [
@@ -15360,38 +15493,62 @@
             textAlign: "left",
             marginBottom: "4px"
           },
-          onClick: onToggle,
+          onClick: () => {
+            window.callBare("haptic:tap");
+            onToggle();
+          },
           "aria-expanded": !collapsed,
           children: [
             /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { flex: 1, fontSize: "13px", fontWeight: "600", color: colors.text.primary }, children: categoryName }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: "4px" }, children: [
-              pendingCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: "#f59e0b" }, children: pendingCount }),
-              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: colors.success }, children: allowedCount }),
-              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: colors.error }, children: blockedCount })
-            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "12px", color: colors.text.muted }, children: entries.length }),
+            pendingCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "11px", color: "#FFFFFF", borderRadius: "10px", padding: "1px 7px", fontWeight: "700", backgroundColor: "#f59e0b" }, children: pendingCount }),
             /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "16px", color: colors.text.muted, lineHeight: 1 }, children: collapsed ? "\u203A" : "\u2304" })
           ]
         }
       ),
       !collapsed && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: batchAnimationStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        pendingCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
             "button",
             {
               style: { flex: 1, padding: `${spacing2.sm}px ${spacing2.md}px`, border: "none", borderRadius: `${radius2.md}px`, backgroundColor: colors.success, color: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
-              onClick: handleApproveAll,
-              children: "Approve All"
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handleApprovePending();
+              },
+              children: [
+                "Approve all ",
+                pendingCount,
+                " pending"
+              ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
             "button",
             {
               style: { flex: 1, padding: `${spacing2.sm}px ${spacing2.md}px`, border: "none", borderRadius: `${radius2.md}px`, backgroundColor: colors.error, color: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
-              onClick: handleDenyAll,
-              children: "Deny All"
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handleDenyPending();
+              },
+              children: [
+                "Deny all ",
+                pendingCount,
+                " pending"
+              ]
             }
           )
         ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          CategoryLimitControls,
+          {
+            categoryName,
+            savedSeconds: categoryLimitSeconds,
+            onSave: (seconds) => onCategoryLimit(categoryName, seconds),
+            onApplyToAll: () => onCategoryApply(categoryName),
+            onClear: () => onCategoryClear(categoryName)
+          }
+        ),
         entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           AppRow,
           {
@@ -15401,7 +15558,8 @@
             onUpdate,
             onDecide,
             override: overrideMap[pkg],
-            animationStyle: animatingItems?.[pkg]
+            animationStyle: animatingItems?.[pkg],
+            categoryLimitSeconds
           },
           pkg
         ))
@@ -15419,6 +15577,7 @@
     const [overrides, setOverrides] = (0, import_react5.useState)([]);
     const [animatingItems, setAnimatingItems] = (0, import_react5.useState)({});
     const [animatingSection, setAnimatingSection] = (0, import_react5.useState)(null);
+    const [confirmDialog, setConfirmDialog] = (0, import_react5.useState)(null);
     const timersRef = (0, import_react5.useRef)([]);
     const loadPolicy = (0, import_react5.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
@@ -15552,6 +15711,77 @@
         window.callBare("apps:decideBatch", { childPublicKey, packageNames, decision });
       }
     }
+    function persistPolicy(updater) {
+      setPolicy((prev) => {
+        const next = updater(prev);
+        window.callBare("policy:update", { childPublicKey, policy: next });
+        return next;
+      });
+    }
+    function handleCategoryLimit(categoryName, seconds) {
+      persistPolicy((prev) => {
+        const categories = { ...prev.categories || {} };
+        if (seconds == null) {
+          delete categories[categoryName];
+        } else {
+          categories[categoryName] = { ...categories[categoryName] || {}, dailyLimitSeconds: seconds };
+        }
+        return { ...prev, categories };
+      });
+    }
+    function handleCategoryApply(categoryName) {
+      const catLimit = policy.categories && policy.categories[categoryName];
+      if (!catLimit || typeof catLimit.dailyLimitSeconds !== "number") return;
+      const affected = Object.values(policy.apps).filter((a) => (a.category || "Other") === categoryName).length;
+      const mins = Math.round(catLimit.dailyLimitSeconds / 60);
+      setConfirmDialog({
+        kind: "apply",
+        categoryName,
+        title: `Apply ${mins} min/day to ${categoryName}?`,
+        message: `This will overwrite per-app limits on ${affected} app${affected === 1 ? "" : "s"} in the ${categoryName} category.`,
+        confirmLabel: "Apply",
+        action: () => {
+          persistPolicy((prev) => {
+            const seconds = catLimit.dailyLimitSeconds;
+            const apps = { ...prev.apps };
+            for (const pkg of Object.keys(apps)) {
+              if ((apps[pkg].category || "Other") === categoryName) {
+                apps[pkg] = { ...apps[pkg], dailyLimitSeconds: seconds };
+              }
+            }
+            return { ...prev, apps };
+          });
+        }
+      });
+    }
+    function handleCategoryClear(categoryName) {
+      const affected = Object.entries(policy.apps).filter(([, a]) => (a.category || "Other") === categoryName && typeof a.dailyLimitSeconds === "number").length;
+      setConfirmDialog({
+        kind: "clear",
+        categoryName,
+        title: `Clear ${categoryName} limits?`,
+        message: affected > 0 ? `This removes the category limit and clears limits on ${affected} app${affected === 1 ? "" : "s"}.` : `This removes the ${categoryName} category limit.`,
+        confirmLabel: "Clear",
+        action: () => {
+          persistPolicy((prev) => {
+            const categories = { ...prev.categories || {} };
+            delete categories[categoryName];
+            const apps = { ...prev.apps };
+            for (const pkg of Object.keys(apps)) {
+              if ((apps[pkg].category || "Other") === categoryName && "dailyLimitSeconds" in apps[pkg]) {
+                const { dailyLimitSeconds, ...rest } = apps[pkg];
+                apps[pkg] = rest;
+              }
+            }
+            return { ...prev, categories, apps };
+          });
+        }
+      });
+    }
+    function runConfirm() {
+      if (confirmDialog) confirmDialog.action();
+      setConfirmDialog(null);
+    }
     function toggleSection(key) {
       setCollapsed((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
     }
@@ -15579,7 +15809,7 @@
     const batchStyle = animatingSection ? { animation: animatingSection.phase === "exiting" ? "pgFadeOut 250ms ease forwards" : "pgFadeIn 250ms ease forwards" } : void 0;
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { padding: `0 ${spacing2.base}px ${spacing2.base}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("style", { children: ANIMATION_STYLES }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { position: "sticky", top: 0, zIndex: 10, backgroundColor: colors.surface.base, paddingTop: `${spacing2.base}px`, paddingBottom: `${spacing2.sm}px`, display: "flex", gap: `${spacing2.sm}px`, alignItems: "center" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { position: "sticky", top: 0, zIndex: 10, backgroundColor: colors.surface.base, paddingTop: `${spacing2.base}px`, paddingBottom: `${spacing2.sm}px`, display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           "input",
           {
@@ -15588,59 +15818,78 @@
             onChange: (e) => setSearch(e.target.value),
             placeholder: "Search apps...",
             style: {
-              flex: 1,
+              width: "100%",
               padding: "7px 10px",
               fontSize: "13px",
               border: `1px solid ${colors.border}`,
               borderRadius: `${radius2.md}px`,
               outline: "none",
               color: colors.text.primary,
-              backgroundColor: colors.surface.input
+              backgroundColor: colors.surface.input,
+              boxSizing: "border-box"
             },
             "aria-label": "Search apps"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-          "button",
-          {
-            style: {
-              padding: "6px 10px",
-              fontSize: "12px",
-              border: `1px solid ${colors.border}`,
-              borderRadius: `${radius2.full}px`,
-              background: colors.surface.elevated,
-              cursor: "pointer",
-              color: colors.text.secondary,
-              whiteSpace: "nowrap"
-            },
-            onClick: () => setSortOrder((s) => s === "alpha" ? "date" : "alpha"),
-            "aria-label": "Toggle sort order",
-            children: sortOrder === "alpha" ? "A-Z" : "Date"
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-          "button",
-          {
-            style: {
-              padding: "6px 10px",
-              fontSize: "12px",
-              border: `1px solid ${viewMode === "category" ? colors.primary : colors.border}`,
-              borderRadius: `${radius2.full}px`,
-              background: viewMode === "category" ? `${colors.primary}22` : colors.surface.elevated,
-              cursor: "pointer",
-              color: viewMode === "category" ? colors.primary : colors.text.secondary,
-              whiteSpace: "nowrap"
-            },
-            onClick: () => setViewMode((v) => {
-              const next = v === "status" ? "category" : "status";
-              window.callBare("pref:set", { key: "appsTab:viewMode", value: next }).catch(() => {
-              });
-              return next;
-            }),
-            "aria-label": "Toggle view mode",
-            children: viewMode === "status" ? "By Status" : "By Category"
-          }
-        )
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", gap: `${spacing2.md}px`, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: colors.text.muted }, children: [
+            "Sort by:",
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+              "button",
+              {
+                style: {
+                  width: "100px",
+                  padding: "6px 10px",
+                  fontSize: "12px",
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: `${radius2.full}px`,
+                  background: colors.surface.elevated,
+                  cursor: "pointer",
+                  color: colors.text.secondary,
+                  whiteSpace: "nowrap",
+                  textAlign: "center"
+                },
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  setSortOrder((s) => s === "alpha" ? "date" : "alpha");
+                },
+                "aria-label": "Toggle sort order",
+                children: sortOrder === "alpha" ? "Name" : "Install Date"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: colors.text.muted }, children: [
+            "Filter by:",
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+              "button",
+              {
+                style: {
+                  width: "100px",
+                  padding: "6px 10px",
+                  fontSize: "12px",
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: `${radius2.full}px`,
+                  background: colors.surface.elevated,
+                  cursor: "pointer",
+                  color: colors.text.secondary,
+                  whiteSpace: "nowrap",
+                  textAlign: "center"
+                },
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  setViewMode((v) => {
+                    const next = v === "status" ? "category" : "status";
+                    window.callBare("pref:set", { key: "appsTab:viewMode", value: next }).catch(() => {
+                    });
+                    return next;
+                  });
+                },
+                "aria-label": "Toggle view mode",
+                children: viewMode === "status" ? "Status" : "Category"
+              }
+            )
+          ] })
+        ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px`, marginBottom: `${spacing2.md}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { style: { fontSize: "13px", color: colors.text.muted }, children: [
@@ -15652,7 +15901,10 @@
           "button",
           {
             style: { fontSize: "12px", padding: "2px 8px", border: `1px solid ${colors.border}`, borderRadius: "10px", background: "none", cursor: "pointer", color: colors.text.secondary },
-            onClick: () => setSearch(""),
+            onClick: () => {
+              window.callBare("haptic:tap");
+              setSearch("");
+            },
             children: "Clear"
           }
         )
@@ -15689,6 +15941,10 @@
             onUpdate: handleUpdate,
             onDecide: handleDecide,
             onBatchDecide: handleBatchDecide,
+            onCategoryLimit: handleCategoryLimit,
+            onCategoryApply: handleCategoryApply,
+            onCategoryClear: handleCategoryClear,
+            categoryLimitSeconds: policy.categories && policy.categories[catName] && policy.categories[catName].dailyLimitSeconds,
             overrideMap,
             collapsed: q ? false : collapsed[catName] ?? true,
             onToggle: () => toggleSection(catName),
@@ -15697,7 +15953,26 @@
           },
           catName
         );
-      })
+      }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        Modal,
+        {
+          visible: !!confirmDialog,
+          onClose: () => setConfirmDialog(null),
+          title: confirmDialog?.title || "",
+          footer: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Button, { variant: "secondary", onClick: () => {
+              window.callBare("haptic:tap");
+              setConfirmDialog(null);
+            }, style: { flex: 1 }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Button, { variant: "danger", onClick: () => {
+              window.callBare("haptic:tap");
+              runConfirm();
+            }, style: { flex: 1 }, children: confirmDialog?.confirmLabel || "Confirm" })
+          ] }),
+          children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { textAlign: "center" }, children: confirmDialog?.message })
+        }
+      )
     ] });
   }
 

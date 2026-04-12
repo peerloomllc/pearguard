@@ -153,6 +153,11 @@ public class EnforcementService extends Service {
             reactContext
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                 .emit("onUsageFlush", params);
+            // Record flush time so WorkManager only wakes the app when data is stale
+            getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+                .edit()
+                .putLong("last_usage_flush_ms", now)
+                .apply();
         } else {
             // RN bridge is dead — collect usage natively and queue
             JSONArray usage = UsageStatsModule.collectDailyUsageNative(this);

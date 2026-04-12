@@ -343,6 +343,11 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     public void clearQueuedReports(Promise promise) {
         try {
             UsageQueueHelper.clear(reactContext);
+            // Record flush time so WorkManager only wakes the app when data is stale
+            reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+                .edit()
+                .putLong("last_usage_flush_ms", System.currentTimeMillis())
+                .apply();
             promise.resolve(true);
         } catch (Exception e) {
             promise.resolve(false);

@@ -30,6 +30,15 @@ class MainActivity : ReactActivity() {
 
         super.onCreate(null)
 
+        // WorkManager wake-up: move to background quickly so the RN bridge
+        // has time to initialize and flush queued usage reports, but the child
+        // sees minimal disruption (no animation via intent flag, short delay).
+        if (intent?.getBooleanExtra("usage_flush_wake", false) == true) {
+            android.os.Handler(mainLooper).postDelayed({
+                moveTaskToBack(true)
+            }, 10_000)
+        }
+
         // ACTION_PACKAGE_ADDED and ACTION_PACKAGE_REMOVED cannot be received via
         // manifest registration on Android 8+. Register the receiver at runtime so
         // the child device can relay installs/uninstalls to the parent over P2P.

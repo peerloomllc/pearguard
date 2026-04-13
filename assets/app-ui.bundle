@@ -18529,9 +18529,11 @@
     { name: "Phoenix", url: "https://phoenix.acinq.co", desc: "Self-custodial Lightning wallet" }
   ];
   function openURL(url) {
+    window.callBare("haptic:tap");
     window.callBare("openURL", { url });
   }
   function shareApp() {
+    window.callBare("haptic:tap");
     window.callBare("share:text", {
       text: "Check out PearGuard - a private, peer-to-peer parental control app with no servers or accounts.\n\nhttps://peerloomllc.com/pearguard/"
     });
@@ -18540,10 +18542,11 @@
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const [walletModal, setWalletModal] = (0, import_react14.useState)(false);
     async function handleDonateBTC() {
+      window.callBare("haptic:tap");
       try {
         const can = await window.callBare("canOpenURL", { url: "lightning:test" });
         if (can) {
-          openURL("lightning:" + LIGHTNING_ADDRESS);
+          window.callBare("openURL", { url: "lightning:" + LIGHTNING_ADDRESS });
         } else {
           setWalletModal(true);
         }
@@ -18645,7 +18648,10 @@
             " Bitcoin Lightning ",
             /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Icon, { name: "Lightning", size: 18, color: colors.primary })
           ] }),
-          footer: /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Button, { variant: "secondary", onClick: () => setWalletModal(false), style: fullWidth, children: "Close" }),
+          footer: /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Button, { variant: "secondary", onClick: () => {
+            window.callBare("haptic:tap");
+            setWalletModal(false);
+          }, style: fullWidth, children: "Close" }),
           children: [
             /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { style: { lineHeight: "1.6", marginTop: 0, marginBottom: `${spacing2.base}px` }, children: "No Lightning wallet was detected on your device. Bitcoin Lightning is a fast, low-fee payment network built on top of Bitcoin. To send a tip, install one of these wallets:" }),
             /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: WALLETS.map((w) => /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(Button, { variant: "secondary", onClick: () => openURL(w.url), style: { width: "100%", textAlign: "left" }, children: [

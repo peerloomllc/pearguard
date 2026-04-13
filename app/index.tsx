@@ -15,6 +15,8 @@ import b4a from 'b4a'
 import { Asset } from 'expo-asset'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
+import * as DocumentPicker from 'expo-document-picker'
+import * as Sharing from 'expo-sharing'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { setBareCaller } from './setup'
@@ -277,6 +279,89 @@ export default function Root () {
         webViewRef.current?.injectJavaScript(
           'window.__pearResponse(' + msg.id + ', { ok: true });true;'
         )
+        return
+      }
+
+      if (msg.method === 'file:save') {
+        (async () => {
+          try {
+            const { filename, content, mimeType } = msg.args || {}
+            if (!filename || typeof content !== 'string') throw new Error('file:save missing filename or content')
+            if (isAndroid && NativeModules.PearGuardDownloads?.saveToDownloads) {
+              const path = await NativeModules.PearGuardDownloads.saveToDownloads(
+                filename, content, mimeType || 'application/json'
+              )
+              NativeModules.PearGuardDownloads.showToast('Saved to ' + path, true)
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ ok: true, path }) + ');true;'
+              )
+              return
+            }
+            // iOS / fallback: write to cache and present share sheet.
+            const uri = (FileSystem.cacheDirectory || '') + filename
+            await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 })
+            const canShare = await Sharing.isAvailableAsync()
+            if (!canShare) throw new Error('sharing not available on this device')
+            await Sharing.shareAsync(uri, {
+              mimeType: mimeType || 'application/json',
+              dialogTitle: 'Save ' + filename,
+              UTI: 'public.json',
+            })
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ ok: true, uri }) + ');true;'
+            )
+          } catch (e: any) {
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msg.id + ', null, ' + JSON.stringify(String(e?.message || e)) + ');true;'
+            )
+          }
+        })()
+        return
+      }
+
+      if (msg.method === 'file:pick') {
+        (async () => {
+          try {
+            const res = await DocumentPicker.getDocumentAsync({
+              type: ['application/json', 'text/plain', '*/*'],
+              copyToCacheDirectory: true,
+              multiple: false,
+            })
+            if (res.canceled) {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ canceled: true }) + ');true;'
+              )
+              return
+            }
+            const asset = res.assets && res.assets[0]
+            if (!asset) throw new Error('no file selected')
+            const content = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 })
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ canceled: false, content, name: asset.name }) + ');true;'
+            )
+          } catch (e: any) {
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msg.id + ', null, ' + JSON.stringify(String(e?.message || e)) + ');true;'
+            )
+          }
+        })()
+        return
+      }
+
+      if (msg.method === 'clipboard:read') {
+        (async () => {
+          try {
+            const { Clipboard: RNClipboard } = require('react-native')
+            const text = await RNClipboard.getString()
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ text: text || '' }) + ');true;'
+            )
+          } catch (e: any) {
+            webViewRef.current?.injectJavaScript(
+              'window.__pearResponse(' + msg.id + ', null, ' + JSON.stringify(String(e?.message || e)) + ');true;'
+            )
+          }
+        })()
         return
       }
 

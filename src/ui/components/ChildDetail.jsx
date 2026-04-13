@@ -7,6 +7,7 @@ import UsageTab from './UsageTab.jsx';
 import AppsTab from './AppsTab.jsx';
 import ActivityTab from './ActivityTab.jsx';
 import RulesTab from './RulesTab.jsx';
+import AdvancedTab from './AdvancedTab.jsx';
 import UsageReports from './UsageReports.jsx';
 import Modal from './primitives/Modal.jsx';
 import Input from './primitives/Input.jsx';
@@ -16,6 +17,7 @@ const TABS = [
   { key: 'apps', label: 'Apps', icon: 'SquaresFour' },
   { key: 'activity', label: 'Activity', icon: 'ListBullets' },
   { key: 'rules', label: 'Rules', icon: 'Shield' },
+  { key: 'advanced', label: 'Advanced', icon: 'GearSix' },
 ];
 
 const TAB_COMPONENTS = { usage: UsageTab, apps: AppsTab, activity: ActivityTab, rules: RulesTab };
@@ -32,16 +34,9 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     return () => unsub();
   }, []);
   const [showReports, setShowReports] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmLock, setConfirmLock] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
   const [lockMessage, setLockMessage] = useState('');
-
-  async function handleRemove() {
-    window.callBare('haptic:tap');
-    await window.callBare('child:unpair', { childPublicKey: child.publicKey });
-    onBack();
-  }
 
   function onLockButtonClick() {
     window.callBare('haptic:tap');
@@ -97,13 +92,14 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           <Icon name="CaretLeft" size={20} color={colors.primary} />
         </button>
         <Avatar avatar={child.avatarThumb} name={child.displayName} size={32} />
+        <span style={{
+          width: '10px', height: '10px', borderRadius: '50%',
+          backgroundColor: child.isOnline ? colors.success : colors.text.muted,
+          flexShrink: 0,
+        }} />
         <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1 }}>
           {child.displayName}
         </span>
-        <span style={{
-          width: '8px', height: '8px', borderRadius: '50%',
-          backgroundColor: child.isOnline ? colors.success : colors.text.muted,
-        }} />
 
         <button
           onClick={onLockButtonClick}
@@ -113,13 +109,6 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           <Icon name={locked ? 'LockSimple' : 'LockSimpleOpen'} size={20} color={locked ? colors.error : colors.text.muted} />
         </button>
 
-        <button
-          onClick={() => { window.callBare('haptic:tap'); setConfirmRemove(true); }}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}
-          aria-label="Remove child"
-        >
-          <Icon name="Trash" size={18} color={colors.text.muted} />
-        </button>
       </div>
 
       {/* Sub-tabs */}
@@ -156,22 +145,12 @@ export default function ChildDetail({ child, initialTab, onBack }) {
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
         {tab === 'usage' ? (
           <UsageTab childPublicKey={child.publicKey} onShowReports={() => setShowReports(true)} />
+        ) : tab === 'advanced' ? (
+          <AdvancedTab child={child} onUnpair={onBack} />
         ) : (
           <ActiveComponent childPublicKey={child.publicKey} />
         )}
       </div>
-
-      <Modal
-        visible={confirmRemove}
-        onClose={() => setConfirmRemove(false)}
-        title={`Unpair from ${child.displayName}?`}
-        footer={<>
-          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setConfirmRemove(false); }} style={{ flex: 1 }}>Cancel</Button>
-          <Button variant="danger" icon="Trash" onClick={handleRemove} style={{ flex: 1 }}>Unpair</Button>
-        </>}
-      >
-        This will remove {child.displayName} from your dashboard. You'll need to re-pair to monitor this device again.
-      </Modal>
 
       <Modal
         visible={confirmLock}

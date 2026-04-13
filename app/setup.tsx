@@ -9,6 +9,8 @@
 import { useState, useRef } from 'react'
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, InputAccessoryView, Keyboard } from 'react-native'
 import { useRouter } from 'expo-router'
+import * as DocumentPicker from 'expo-document-picker'
+import * as FileSystem from 'expo-file-system/legacy'
 import NativeIcon from './NativeIcon'
 import { colors, spacing, radius, typography, fontFamily } from '../src/rn-theme'
 
@@ -21,7 +23,7 @@ export function setBareCaller (fn: (method: string, args: any) => Promise<any>) 
 export function getBareCaller() { return _callBare }
 
 export default function SetupScreen () {
-  const [step, setStep]               = useState<'mode' | 'name' | 'pin'>('mode')
+  const [step, setStep]               = useState<'mode' | 'name' | 'pin' | 'restored'>('mode')
   const [selectedMode, setSelectedMode] = useState<'parent' | 'child' | null>(null)
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
@@ -31,6 +33,30 @@ export default function SetupScreen () {
   const confirmPinRef                 = useRef<TextInput>(null)
   const router = useRouter()
   const pinAccessoryID = 'pinAccessoryDone'
+
+  async function restoreFromBackup () {
+    if (!_callBare) { setError('App not ready — please wait'); return }
+    setError(null)
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      })
+      if (res.canceled) return
+      const asset = res.assets && res.assets[0]
+      if (!asset) { setError('No file selected.'); return }
+      setLoading(true)
+      const content = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 })
+      if (!content.trim()) throw new Error('Selected file is empty.')
+      await _callBare('backup:import', { jsonString: content, allowOverwrite: true })
+      setLoading(false)
+      setStep('restored')
+    } catch (e: any) {
+      setError(e?.message || 'Failed to restore backup.')
+      setLoading(false)
+    }
+  }
 
   async function selectMode (mode: 'parent' | 'child') {
     if (!_callBare) { setError('App not ready — please wait'); return }
@@ -79,6 +105,22 @@ export default function SetupScreen () {
       setError(e.message || 'Failed to set PIN. Please try again.')
       setLoading(false)
     }
+  }
+
+  if (step === 'restored') {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.iconCircle, styles.iconCircleGreen]}>
+          <NativeIcon name="DownloadSimple" size={32} color={colors.primaryLight} />
+        </View>
+        <Text style={styles.title}>Backup restored</Text>
+        <Text style={styles.subtitle}>
+          Your parent identity, paired children, and policies have been restored.
+          {'\n\n'}
+          Please force-close PearGuard and reopen it to finish loading the restored state.
+        </Text>
+      </View>
+    )
   }
 
   if (step === 'name') {
@@ -206,6 +248,11 @@ export default function SetupScreen () {
             <Text style={styles.btnTitle}>I'm a Child</Text>
             <Text style={styles.btnSub}>This device will be monitored by a parent</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.restoreLink} onPress={restoreFromBackup}>
+            <NativeIcon name="DownloadSimple" size={16} color={colors.text.secondary} />
+            <Text style={styles.restoreLinkText}>Restore parent from backup</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -233,4 +280,6 @@ const styles = StyleSheet.create({
   accessoryBar: { backgroundColor: colors.surface.card, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: spacing.base, paddingVertical: spacing.sm },
   accessoryBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   accessoryBtnText: { color: colors.primary, fontSize: 16, fontFamily: fontFamily.semibold },
+  restoreLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.md, marginTop: spacing.sm },
+  restoreLinkText: { color: colors.text.secondary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, textDecorationLine: 'underline' },
 })

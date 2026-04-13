@@ -1368,6 +1368,106 @@ function createDispatch (ctx) {
         return results
       }
 
+      case 'rules:export': {
+        const { childPubKey } = args
+        if (!childPubKey) throw new Error('invalid rules:export args')
+        const policyRaw = await ctx.db.get('policy:' + childPubKey)
+        if (!policyRaw) throw new Error('no policy for child ' + childPubKey.slice(0, 8))
+        const identityRaw = await ctx.db.get('identity')
+        if (!identityRaw) throw new Error('no identity')
+        const { buildRulesExport } = require('./backup')
+        const json = buildRulesExport(policyRaw.value, childPubKey, identityRaw.value)
+        return { json }
+      }
+
+      case 'rules:import:preview': {
+        const { jsonString, targetChildPubKey } = args
+        if (!jsonString || !targetChildPubKey) throw new Error('invalid rules:import:preview args')
+        const { parseAndVerify, diffPolicies, KIND_RULES } = require('./backup')
+        const { payload } = parseAndVerify(jsonString, KIND_RULES)
+        const targetRaw = await ctx.db.get('policy:' + targetChildPubKey).catch(() => null)
+        const targetApps = (targetRaw && targetRaw.value && targetRaw.value.apps) || {}
+        const sourceApps = (payload.policy && payload.policy.apps) || {}
+        const installedSet = new Set(Object.keys(targetApps))
+        const diff = diffPolicies(targetRaw?.value, payload.policy, installedSet)
+        const nameOf = (pkg) => (sourceApps[pkg]?.appName) || (targetApps[pkg]?.appName) || pkg
+        return {
+          sourceChildPubKey: payload.sourceChildPubKey,
+          targetChildPubKey,
+          appsAdded: diff.appsAdded.map(p => ({ packageName: p, appName: nameOf(p) })),
+          appsRemoved: diff.appsRemoved.map(p => ({ packageName: p, appName: nameOf(p) })),
+          appsChanged: diff.appsChanged.map(p => ({ packageName: p, appName: nameOf(p) })),
+          appsSkipped: (diff.appsSkipped || []).map(p => ({ packageName: p, appName: nameOf(p) })),
+          schedulesChanged: diff.schedulesChanged
+        }
+      }
+
+      case 'rules:import:apply': {
+        const { jsonString, targetChildPubKey } = args
+        if (!jsonString || !targetChildPubKey) throw new Error('invalid rules:import:apply args')
+        const { parseAndVerify, mergeRulesIntoPolicy, KIND_RULES } = require('./backup')
+        const { payload } = parseAndVerify(jsonString, KIND_RULES)
+        const targetRaw = await ctx.db.get('policy:' + targetChildPubKey).catch(() => null)
+        const installedSet = new Set(Object.keys((targetRaw && targetRaw.value && targetRaw.value.apps) || {}))
+        const merged = mergeRulesIntoPolicy(targetRaw?.value, payload.policy, targetChildPubKey, installedSet)
+        await ctx.db.put('policy:' + targetChildPubKey, merged)
+        try {
+          const peerRecord = await ctx.db.get('peers:' + targetChildPubKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: merged })
+        } catch (_e) {}
+        return { ok: true }
+      }
+
+      case 'backup:export': {
+        const identityRaw = await ctx.db.get('identity')
+        if (!identityRaw) throw new Error('no identity')
+        const profileRaw = await ctx.db.get('profile').catch(() => null)
+        const settingsRaw = await ctx.db.get('parentSettings').catch(() => null)
+        const peers = []
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          peers.push(value)
+        }
+        const policies = {}
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'policy:', lt: 'policy:~' })) {
+          policies[key.replace(/^policy:/, '')] = value
+        }
+        const { buildBackup } = require('./backup')
+        const json = buildBackup({
+          identity: identityRaw.value,
+          profile: profileRaw ? profileRaw.value : null,
+          parentSettings: settingsRaw ? settingsRaw.value : null,
+          peers,
+          policies
+        })
+        return { json, peerCount: peers.length, policyCount: Object.keys(policies).length }
+      }
+
+      case 'backup:import': {
+        const { jsonString, allowOverwrite } = args
+        if (!jsonString) throw new Error('invalid backup:import args')
+        const { parseAndVerify, KIND_BACKUP } = require('./backup')
+        const { payload } = parseAndVerify(jsonString, KIND_BACKUP)
+        const existingIdentity = await ctx.db.get('identity').catch(() => null)
+        if (existingIdentity && !allowOverwrite) {
+          throw new Error('device not fresh: identity already exists. Clear app data before importing.')
+        }
+        await ctx.db.put('identity', payload.identity)
+        if (payload.profile) await ctx.db.put('profile', payload.profile)
+        if (payload.parentSettings) await ctx.db.put('parentSettings', payload.parentSettings)
+        await ctx.db.put('mode', 'parent')
+        const paired = []
+        for (const peer of payload.peers || []) {
+          if (!peer || !peer.publicKey) continue
+          await ctx.db.put('peers:' + peer.publicKey, peer)
+          paired.push(peer.publicKey)
+        }
+        for (const [childKey, policy] of Object.entries(payload.policies || {})) {
+          await ctx.db.put('policy:' + childKey, policy)
+        }
+        return { ok: true, paired, restartRequired: true }
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }

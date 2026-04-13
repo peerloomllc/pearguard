@@ -6,6 +6,7 @@ import Toggle from './primitives/Toggle.jsx';
 import Avatar from './Avatar.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import { pickCameraPhoto, processFileForAvatar } from './avatarUtils.js';
+import DeviceBackupModal from './DeviceBackupModal.jsx';
 
 const DEFAULT_TIME_OPTIONS = [15, 30, 60, 120];
 const DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
@@ -93,6 +94,8 @@ export default function Settings() {
   const [timeOptsOpen, setTimeOptsOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [backupMode, setBackupMode] = useState(null); // 'export' | 'import' | null
 
   // Profile state
   const [name, setName] = useState('');
@@ -455,6 +458,25 @@ export default function Settings() {
           </div>
         </Collapsible>
       )}
+
+      {/* Device Backup */}
+      {settingsLoaded && (
+        <Collapsible title="DEVICE BACKUP" open={backupOpen} onToggle={() => setBackupOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
+          <div style={{ fontSize: '13px', color: colors.text.muted, marginBottom: `${spacing.sm}px` }}>
+            Save your full parent state (identity, children, policies) to migrate to a new device.
+          </div>
+          <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+            <Button variant="secondary" icon="Export" onClick={() => { window.callBare('haptic:tap'); setBackupMode('export'); }} style={{ flex: 1 }}>Export</Button>
+            <Button variant="secondary" icon="DownloadSimple" onClick={() => { window.callBare('haptic:tap'); setBackupMode('import'); }} style={{ flex: 1 }}>Import</Button>
+          </div>
+        </Collapsible>
+      )}
+
+      <DeviceBackupModal
+        visible={backupMode !== null}
+        mode={backupMode || 'export'}
+        onClose={() => setBackupMode(null)}
+      />
 
       {/* Save settings button */}
       {settingsLoaded && (

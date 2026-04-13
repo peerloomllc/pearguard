@@ -1855,4 +1855,111 @@ describe('bare dispatch', () => {
       expect(result).toEqual({ isSet: false })
     })
   })
+
+  describe('export / import dispatch', () => {
+    const { generateKeypair } = require('../src/identity')
+
+    function makeCtx () {
+      const kp = generateKeypair()
+      const identity = { publicKey: kp.publicKey.toString('hex'), secretKey: kp.secretKey.toString('hex') }
+      const stored = { identity }
+      const db = {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        createReadStream: ({ gt, lt }) => {
+          const prefix = gt.replace(/[^:]*$/, '')
+          const keys = Object.keys(stored).filter(k => k > gt && k < lt).sort()
+          return (async function* () {
+            for (const k of keys) yield { key: k, value: stored[k] }
+          })()
+        }
+      }
+      return { db, stored, identity, sendToPeer: jest.fn(), peers: new Map() }
+    }
+
+    test('rules:export then rules:import:preview produces diff', async () => {
+      const ctx = makeCtx()
+      const childA = 'aa'.repeat(32)
+      const childB = 'bb'.repeat(32)
+      ctx.stored['policy:' + childA] = {
+        childPublicKey: childA, version: 1,
+        apps: { 'com.x': { status: 'blocked', appName: 'X', addedAt: 1 } },
+        schedules: [], pinHash: 'A', locked: false, lockMessage: ''
+      }
+      ctx.stored['policy:' + childB] = {
+        childPublicKey: childB, version: 1,
+        apps: { 'com.y': { status: 'allowed', appName: 'Y', addedAt: 1 } },
+        schedules: [], pinHash: 'B', locked: false, lockMessage: ''
+      }
+      const dispatch = createDispatch(ctx)
+      const { json } = await dispatch('rules:export', { childPubKey: childA })
+      const preview = await dispatch('rules:import:preview', { jsonString: json, targetChildPubKey: childB })
+      expect(preview.sourceChildPubKey).toBe(childA)
+      expect(preview.appsAdded).toEqual([{ packageName: 'com.x', appName: 'X' }])
+      expect(preview.appsRemoved).toEqual([{ packageName: 'com.y', appName: 'Y' }])
+    })
+
+    test('rules:import:apply preserves target pinHash and locked', async () => {
+      const ctx = makeCtx()
+      const childA = 'aa'.repeat(32)
+      const childB = 'bb'.repeat(32)
+      ctx.stored['policy:' + childA] = {
+        childPublicKey: childA, version: 1,
+        apps: { 'com.x': { status: 'blocked', appName: 'X', addedAt: 1 } },
+        schedules: [{ label: 'N', days: [0], start: '21:00', end: '07:00', exemptApps: [] }],
+        pinHash: 'A', locked: false, lockMessage: ''
+      }
+      ctx.stored['policy:' + childB] = {
+        childPublicKey: childB, version: 5,
+        apps: {}, schedules: [],
+        pinHash: 'KEEPME', locked: true, lockMessage: 'hi'
+      }
+      ctx.stored['peers:' + childB] = { publicKey: childB, noiseKey: 'nk' }
+      const dispatch = createDispatch(ctx)
+      const { json } = await dispatch('rules:export', { childPubKey: childA })
+      await dispatch('rules:import:apply', { jsonString: json, targetChildPubKey: childB })
+      const written = ctx.stored['policy:' + childB]
+      expect(written.pinHash).toBe('KEEPME')
+      expect(written.locked).toBe(true)
+      expect(written.lockMessage).toBe('hi')
+      expect(written.apps['com.x']).toBeDefined()
+      expect(written.schedules).toHaveLength(1)
+      expect(written.version).toBe(6)
+      expect(ctx.sendToPeer).toHaveBeenCalledWith('nk', expect.objectContaining({ type: 'policy:update' }))
+    })
+
+    test('backup:export then backup:import round-trips on fresh ctx', async () => {
+      const ctxA = makeCtx()
+      const childA = 'aa'.repeat(32)
+      ctxA.stored['profile'] = { displayName: 'Parent', avatar: null }
+      ctxA.stored['parentSettings'] = { timeRequestMinutes: [15], warningMinutes: [5] }
+      ctxA.stored['peers:' + childA] = { publicKey: childA, displayName: 'Kid', swarmTopic: 'cc'.repeat(32), noiseKey: 'nk' }
+      ctxA.stored['policy:' + childA] = { childPublicKey: childA, version: 1, apps: {}, schedules: [] }
+      const dispatchA = createDispatch(ctxA)
+      const { json, peerCount, policyCount } = await dispatchA('backup:export', {})
+      expect(peerCount).toBe(1)
+      expect(policyCount).toBe(1)
+
+      const ctxB = { ...makeCtx(), sendToPeer: jest.fn(), peers: new Map() }
+      delete ctxB.stored.identity // fresh install
+      const dispatchB = createDispatch(ctxB)
+      const result = await dispatchB('backup:import', { jsonString: json })
+      expect(result.ok).toBe(true)
+      expect(result.paired).toContain(childA)
+      expect(ctxB.stored.identity.publicKey).toBe(ctxA.identity.publicKey)
+      expect(ctxB.stored['peers:' + childA]).toBeDefined()
+      expect(ctxB.stored['policy:' + childA]).toBeDefined()
+      expect(ctxB.stored.mode).toBe('parent')
+    })
+
+    test('backup:import refuses non-fresh device without allowOverwrite', async () => {
+      const ctxA = makeCtx()
+      const dispatchA = createDispatch(ctxA)
+      const { json } = await dispatchA('backup:export', {})
+      const ctxB = makeCtx() // already has its own identity
+      const dispatchB = createDispatch(ctxB)
+      await expect(dispatchB('backup:import', { jsonString: json })).rejects.toThrow(/not fresh/)
+    })
+  })
 })

@@ -104,17 +104,20 @@ function createDispatch (ctx) {
           }
           // Merge latest usage report so Dashboard has currentApp/todayScreenTimeSeconds on mount
           let usageFields = {}
+          const policyRaw = await ctx.db.get('policy:' + value.publicKey).catch(() => null)
+          const policyApps = policyRaw?.value?.apps || {}
+          const lockedField = {
+            locked: !!(policyRaw?.value?.locked),
+            lockMessage: policyRaw?.value?.lockMessage || '',
+          }
           for await (const { value: report } of ctx.db.createReadStream({
             gt: 'usageReport:' + value.publicKey + ':',
             lt: 'usageReport:' + value.publicKey + ':~',
             reverse: true,
             limit: 1,
           })) {
-            // Look up icon from parent's policy store
             let currentAppIcon = null
             if (report.currentAppPackage) {
-              const policyRaw = await ctx.db.get('policy:' + value.publicKey).catch(() => null)
-              const policyApps = policyRaw?.value?.apps || {}
               currentAppIcon = policyApps[report.currentAppPackage]?.iconBase64 || null
             }
             usageFields = {
@@ -125,7 +128,7 @@ function createDispatch (ctx) {
             }
           }
           seenKeys.add(value.publicKey)
-          children.push({ ...value, isOnline, ...usageFields })
+          children.push({ ...value, isOnline, ...lockedField, ...usageFields })
         }
         // Fallback: Hyperbee createReadStream range queries can miss recently-stored
         // records due to B-tree snapshot timing. Use db.get for any known peer keys
@@ -141,7 +144,10 @@ function createDispatch (ctx) {
             if (isBlocked) continue
             const value = record.value
             const isOnline = value.noiseKey ? ctx.peers.has(value.noiseKey) : false
-            children.push({ ...value, isOnline })
+            const policyRaw = await ctx.db.get('policy:' + key).catch(() => null)
+            const locked = !!(policyRaw?.value?.locked)
+            const lockMessage = policyRaw?.value?.lockMessage || ''
+            children.push({ ...value, isOnline, locked, lockMessage })
           }
         }
         if (children.length === 0 && ctx.knownPeerKeys && ctx.knownPeerKeys.size > 0) {
@@ -640,8 +646,9 @@ function createDispatch (ctx) {
           }
         }
 
-        // Locked state and names for LockOverlay / greeting
+        // Locked state and names for lock banner / greeting
         const locked = !!(policy && policy.locked)
+        const lockMessage = (policy && policy.lockMessage) || ''
         let parentName = null
         let childName = null
         for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
@@ -650,7 +657,7 @@ function createDispatch (ctx) {
         const identRaw = await ctx.db.get('identity')
         if (identRaw && identRaw.value && identRaw.value.name) childName = identRaw.value.name
 
-        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy, locked, parentName, childName }
+        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy, locked, lockMessage, parentName, childName }
       }
 
       case 'app:installed': {
@@ -1207,11 +1214,17 @@ function createDispatch (ctx) {
       }
 
       case 'policy:setLock': {
-        const { childPublicKey, locked } = args
+        const { childPublicKey, locked, lockMessage } = args
         if (!childPublicKey) throw new Error('invalid policy:setLock args')
         const raw = await ctx.db.get('policy:' + childPublicKey)
         const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
         policy.locked = !!locked
+        if (locked) {
+          const msg = typeof lockMessage === 'string' ? lockMessage.trim() : ''
+          policy.lockMessage = msg ? msg.slice(0, 280) : ''
+        } else {
+          policy.lockMessage = ''
+        }
         policy.version = (policy.version || 0) + 1
         await ctx.db.put('policy:' + childPublicKey, policy)
         try {

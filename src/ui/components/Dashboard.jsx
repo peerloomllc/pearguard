@@ -3,6 +3,7 @@ import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import Modal from './primitives/Modal.jsx';
 import Button from './primitives/Button.jsx';
+import Input from './primitives/Input.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 import InviteCard from './InviteCard.jsx';
@@ -15,6 +16,7 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [selectedTab, setSelectedTab] = useState(null);
   const [inviteActive, setInviteActive] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
+  const [lockMessage, setLockMessage] = useState('');
   const childrenRef = useRef(children);
   childrenRef.current = children;
 
@@ -111,6 +113,19 @@ export default forwardRef(function Dashboard(_props, ref) {
       window.onBareEvent('child:unpaired', (data) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
       }),
+      window.onBareEvent('peer:connected', (data) => {
+        if (!data?.remoteKey) return;
+        setChildren((prev) => prev.map((c) =>
+          c.noiseKey === data.remoteKey ? { ...c, isOnline: true } : c
+        ));
+        loadChildren();
+      }),
+      window.onBareEvent('peer:disconnected', (data) => {
+        if (!data?.remoteKey) return;
+        setChildren((prev) => prev.map((c) =>
+          c.noiseKey === data.remoteKey ? { ...c, isOnline: false } : c
+        ));
+      }),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
@@ -138,9 +153,10 @@ export default forwardRef(function Dashboard(_props, ref) {
 
   async function confirmLock() {
     if (!lockTarget) return;
-    await window.callBare('policy:setLock', { childPublicKey: lockTarget.publicKey, locked: true });
+    await window.callBare('policy:setLock', { childPublicKey: lockTarget.publicKey, locked: true, lockMessage });
     setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true } : c));
     setLockTarget(null);
+    setLockMessage('');
   }
 
   // Android back gesture: close child detail view
@@ -225,16 +241,23 @@ export default forwardRef(function Dashboard(_props, ref) {
 
       <Modal
         visible={!!lockTarget}
-        onClose={() => setLockTarget(null)}
+        onClose={() => { setLockTarget(null); setLockMessage(''); }}
         title={`Lock ${lockTarget?.displayName}'s device?`}
         footer={<>
-          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setLockTarget(null); }} style={{ flex: 1 }}>Cancel</Button>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setLockTarget(null); setLockMessage(''); }} style={{ flex: 1 }}>Cancel</Button>
           <Button variant="danger" icon="LockSimple" onClick={() => { window.callBare('haptic:tap'); confirmLock(); }} style={{ flex: 1 }}>Lock</Button>
         </>}
       >
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', marginBottom: `${spacing.md}px` }}>
           This will immediately block all apps on {lockTarget?.displayName}'s device until you unlock it.
         </div>
+        <Input
+          label="Message (optional)"
+          placeholder="Shown to your child on the block screen"
+          value={lockMessage}
+          onChange={(e) => setLockMessage(e.target.value.slice(0, 280))}
+          maxLength={280}
+        />
       </Modal>
     </div>
   );

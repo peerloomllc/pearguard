@@ -673,6 +673,14 @@ export default function Root () {
                   )
                 }
               }
+              // Parent unpaired a child — clear heartbeat tracking so stale
+              // "device has not checked in" notifications don't keep firing (#146).
+              if (msg.event === 'child:unpaired') {
+                const { childPublicKey } = msg.data ?? {}
+                if (childPublicKey && isAndroid) {
+                  NativeModules.UsageStatsModule?.clearChildHeartbeat?.(childPublicKey)
+                }
+              }
               // Show a notification on the parent device when a child sends a time request
               if (msg.event === 'time:request:received') {
                 const { id: requestId, childDisplayName, appName, packageName, childPublicKey } = msg.data ?? {}
@@ -830,6 +838,10 @@ export default function Root () {
         if (data.mode === 'parent') {
           if (isAndroid) {
             NativeModules.UsageStatsModule?.startParentService?.()
+            // Prune heartbeat entries for children that are no longer paired (#146).
+            NativeModules.UsageStatsModule?.pruneStaleHeartbeats?.(
+              Array.isArray(data.pairedKeys) ? data.pairedKeys : []
+            )
           } else {
             // Background sync scheduling happens in AppDelegate on launch.
             // Check if a pending background task woke us - if so, trigger reconnect.

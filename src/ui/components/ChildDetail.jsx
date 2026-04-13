@@ -9,6 +9,7 @@ import ActivityTab from './ActivityTab.jsx';
 import RulesTab from './RulesTab.jsx';
 import UsageReports from './UsageReports.jsx';
 import Modal from './primitives/Modal.jsx';
+import Input from './primitives/Input.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', icon: 'ChartBar' },
@@ -34,6 +35,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmLock, setConfirmLock] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
+  const [lockMessage, setLockMessage] = useState('');
 
   async function handleRemove() {
     window.callBare('haptic:tap');
@@ -50,15 +52,16 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     }
   }
 
-  async function applyLock(newLocked) {
-    await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: newLocked });
+  async function applyLock(newLocked, message) {
+    await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: newLocked, lockMessage: message || '' });
     setLocked(newLocked);
   }
 
   async function handleConfirmLock() {
     window.callBare('haptic:tap');
     setConfirmLock(false);
-    await applyLock(true);
+    await applyLock(true, lockMessage);
+    setLockMessage('');
   }
 
   // Android back gesture: close UsageReports sub-view
@@ -172,16 +175,23 @@ export default function ChildDetail({ child, initialTab, onBack }) {
 
       <Modal
         visible={confirmLock}
-        onClose={() => setConfirmLock(false)}
+        onClose={() => { setConfirmLock(false); setLockMessage(''); }}
         title={`Lock ${child.displayName}'s device?`}
         footer={<>
-          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setConfirmLock(false); }} style={{ flex: 1 }}>Cancel</Button>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setConfirmLock(false); setLockMessage(''); }} style={{ flex: 1 }}>Cancel</Button>
           <Button variant="danger" icon="LockSimple" onClick={handleConfirmLock} style={{ flex: 1 }}>Lock</Button>
         </>}
       >
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', marginBottom: `${spacing.md}px` }}>
           This will immediately block all apps on {child.displayName}'s device until you unlock it.
         </div>
+        <Input
+          label="Message (optional)"
+          placeholder="Shown to your child on the block screen"
+          value={lockMessage}
+          onChange={(e) => setLockMessage(e.target.value.slice(0, 280))}
+          maxLength={280}
+        />
       </Modal>
     </div>
   );

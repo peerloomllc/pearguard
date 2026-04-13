@@ -1,5 +1,6 @@
 node_modules/
 TODO.md
+DONE.md
 .expo/
 # Android build artifacts only — source files are tracked
 android/build/

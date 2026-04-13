@@ -764,10 +764,25 @@ function createDispatch (ctx) {
       }
 
       case 'swarm:reconnect': {
-        if (ctx.swarm) {
-          await ctx.swarm.flush().catch(e => console.warn('[bare] swarm:reconnect flush failed:', e.message))
+        if (!ctx.swarm) return { rejoined: 0 }
+        // Re-announce on every paired peer's topic. swarm.flush() alone is not
+        // enough: after long background, network change, or Android doze the
+        // DHT announce can go stale and peers stop discovering each other (#147).
+        // Mirror the cold-start rejoin loop in init() so foreground recovery
+        // matches a fresh launch.
+        const activePeerTopics = new Set()
+        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (value && value.swarmTopic) activePeerTopics.add(value.swarmTopic)
         }
-        return {}
+        const topicHexSet = new Set(activePeerTopics)
+        for await (const { value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+          if (value && value.topicHex) topicHexSet.add(value.topicHex)
+        }
+        const topicHexes = [...topicHexSet]
+        await Promise.all(topicHexes.map(t =>
+          ctx.joinTopic(t).catch(e => console.warn('[bare] swarm:reconnect rejoin failed:', e.message))
+        ))
+        return { rejoined: topicHexes.length }
       }
 
       case 'heartbeat:send': {

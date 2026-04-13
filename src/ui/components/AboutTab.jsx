@@ -14,10 +14,12 @@ const WALLETS = [
 ];
 
 function openURL(url) {
+  window.callBare('haptic:tap');
   window.callBare('openURL', { url });
 }
 
 function shareApp() {
+  window.callBare('haptic:tap');
   window.callBare('share:text', {
     text: 'Check out PearGuard - a private, peer-to-peer parental control app with no servers or accounts.\n\nhttps://peerloomllc.com/pearguard/',
   });
@@ -28,10 +30,11 @@ export default function AboutTab() {
   const [walletModal, setWalletModal] = useState(false);
 
   async function handleDonateBTC() {
+    window.callBare('haptic:tap');
     try {
       const can = await window.callBare('canOpenURL', { url: 'lightning:test' });
       if (can) {
-        openURL('lightning:' + LIGHTNING_ADDRESS);
+        window.callBare('openURL', { url: 'lightning:' + LIGHTNING_ADDRESS });
       } else {
         setWalletModal(true);
       }
@@ -132,7 +135,7 @@ export default function AboutTab() {
         visible={walletModal}
         onClose={() => setWalletModal(false)}
         title={<><Icon name="Lightning" size={18} color={colors.primary} /> Bitcoin Lightning <Icon name="Lightning" size={18} color={colors.primary} /></>}
-        footer={<Button variant="secondary" onClick={() => setWalletModal(false)} style={fullWidth}>Close</Button>}
+        footer={<Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setWalletModal(false); }} style={fullWidth}>Close</Button>}
       >
         <p style={{ lineHeight: '1.6', marginTop: 0, marginBottom: `${spacing.base}px` }}>
           No Lightning wallet was detected on your device. Bitcoin Lightning is a fast, low-fee

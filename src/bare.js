@@ -146,10 +146,40 @@ async function init (dataDir, attempt = 0) {
   // inflate startup time by ~5s each. A topic is orphaned if no paired peer
   // references it. Only prune when there are paired peers — if there are none,
   // we may be mid-invite and shouldn't touch the topic.
+  // Self-heal peer records missing swarmTopic by binding them to an orphan topic
+  // (a topics:* entry not referenced by any other peer). This repairs state left
+  // behind by previous pair cycles where the parent's peer record was written
+  // without a swarmTopic because Hyperswarm delivered empty info.topics[] (#147).
+  const peersMissingTopic = []
   const activePeerTopics = new Set()
-  for await (const { value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+  for await (const { key, value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
     if (value && value.publicKey) knownPeerKeys.add(value.publicKey)
     if (value && value.swarmTopic) activePeerTopics.add(value.swarmTopic)
+    else if (value) peersMissingTopic.push({ key, value })
+  }
+  if (peersMissingTopic.length > 0) {
+    const orphanTopics = []
+    for await (const { value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
+      if (value && value.topicHex && !activePeerTopics.has(value.topicHex)) {
+        orphanTopics.push(value.topicHex)
+      }
+    }
+    if (peersMissingTopic.length === 1 && orphanTopics.length === 1) {
+      const healed = { ...peersMissingTopic[0].value, swarmTopic: orphanTopics[0] }
+      await db.put(peersMissingTopic[0].key, healed).catch(() => {})
+      activePeerTopics.add(orphanTopics[0])
+      console.log('[bare] healed peer', peersMissingTopic[0].key, 'with topic', orphanTopics[0].slice(0, 8))
+    } else if (orphanTopics.length > 1) {
+      // Ambiguous (multiple orphan topics, e.g. install/pair cycles left leftovers):
+      // we can't know which topic belongs to which peer. Drop the orphans and their
+      // persisted records so we stop announcing on topics no peer uses. Affected peers
+      // will need to re-pair — which is already the only known recovery path.
+      console.warn('[bare] cannot auto-heal:', peersMissingTopic.length, 'peers missing topic,',
+        orphanTopics.length, 'orphan topics — dropping orphans, re-pair required')
+      for (const t of orphanTopics) {
+        await db.del('topics:' + t).catch(() => {})
+      }
+    }
   }
   const topicHexSet = new Set()
   for await (const { key, value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
@@ -756,6 +786,35 @@ async function handleHello (msg, conn, remoteKeyHex) {
   }
 
   const inMemoryPeer = peers.get(remoteKeyHex)
+  // Resolve swarmTopic with fallbacks so the peer record always has it. Hyperswarm
+  // can deliver a connection with empty info.topics[] (dedup / reconnect paths),
+  // leaving inMemoryPeer.topicHex null; without a fallback the parent's peer record
+  // gets written without swarmTopic and the topic is lost after app restart (#147).
+  let resolvedTopic = inMemoryPeer && inMemoryPeer.topicHex
+    ? inMemoryPeer.topicHex
+    : (existingRecord && existingRecord.value && existingRecord.value.swarmTopic)
+      || null
+  if (!resolvedTopic) {
+    if (msg.payload && msg.payload.mode === 'child') {
+      // Parent receiving hello from a child: bind to the most recent pending invite topic.
+      const pendingTopics = []
+      for await (const { key, value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
+        if (value && value.topicHex) pendingTopics.push({ key, ...value })
+      }
+      if (pendingTopics.length === 1) {
+        resolvedTopic = pendingTopics[0].topicHex
+      } else if (pendingTopics.length > 1) {
+        pendingTopics.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        resolvedTopic = pendingTopics[0].topicHex
+      }
+    } else {
+      // Child receiving hello from a parent: read swarmTopic from pendingParent.
+      const pending = await db.get('pendingParent:' + peerIdentityKeyHex).catch(() => null)
+      if (pending && pending.value && pending.value.swarmTopic) {
+        resolvedTopic = pending.value.swarmTopic
+      }
+    }
+  }
   const peerRecord = {
     ...(existingRecord ? existingRecord.value : {}),
     publicKey:   peerIdentityKeyHex,
@@ -764,7 +823,11 @@ async function handleHello (msg, conn, remoteKeyHex) {
     pairedAt:    existingRecord ? existingRecord.value.pairedAt : Date.now(),
     lastSeen:    Date.now(),
     noiseKey:    remoteKeyHex,
-    ...(inMemoryPeer && inMemoryPeer.topicHex ? { swarmTopic: inMemoryPeer.topicHex } : {}),
+    ...(resolvedTopic ? { swarmTopic: resolvedTopic } : {}),
+  }
+  // Clear the one-shot pending invite topic record once it's bound.
+  if (resolvedTopic && msg.payload && msg.payload.mode === 'child') {
+    await db.del('pendingInviteTopic:' + resolvedTopic).catch(() => {})
   }
   await db.put('peers:' + peerIdentityKeyHex, peerRecord)
   knownPeerKeys.add(peerIdentityKeyHex)

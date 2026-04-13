@@ -111,6 +111,19 @@ export default forwardRef(function Dashboard(_props, ref) {
       window.onBareEvent('child:unpaired', (data) => {
         setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
       }),
+      window.onBareEvent('peer:connected', (data) => {
+        if (!data?.remoteKey) return;
+        setChildren((prev) => prev.map((c) =>
+          c.noiseKey === data.remoteKey ? { ...c, isOnline: true } : c
+        ));
+        loadChildren();
+      }),
+      window.onBareEvent('peer:disconnected', (data) => {
+        if (!data?.remoteKey) return;
+        setChildren((prev) => prev.map((c) =>
+          c.noiseKey === data.remoteKey ? { ...c, isOnline: false } : c
+        ));
+      }),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);

@@ -17711,6 +17711,19 @@
         }),
         window.onBareEvent("child:unpaired", (data) => {
           setChildren((prev) => prev.filter((c) => c.publicKey !== data.childPublicKey));
+        }),
+        window.onBareEvent("peer:connected", (data) => {
+          if (!data?.remoteKey) return;
+          setChildren((prev) => prev.map(
+            (c) => c.noiseKey === data.remoteKey ? { ...c, isOnline: true } : c
+          ));
+          loadChildren();
+        }),
+        window.onBareEvent("peer:disconnected", (data) => {
+          if (!data?.remoteKey) return;
+          setChildren((prev) => prev.map(
+            (c) => c.noiseKey === data.remoteKey ? { ...c, isOnline: false } : c
+          ));
         })
       ];
       return () => unsubs.forEach((u) => u());
@@ -19150,17 +19163,32 @@
     }, []);
     (0, import_react19.useEffect)(() => {
       if (mode !== "child") return;
-      window.callBare("children:list").then(setParents).catch(() => {
+      const refresh = () => window.callBare("children:list").then(setParents).catch(() => {
       });
-      const unsub = window.onBareEvent("peer:paired", () => {
-        pairDoneRef.current = true;
-        window.callBare("children:list").then(setParents).catch(() => {
-        });
-        setPairState("idle");
-        setPairedBanner(true);
-        setTimeout(() => setPairedBanner(false), 3e3);
-      });
-      return unsub;
+      refresh();
+      const unsubs = [
+        window.onBareEvent("peer:paired", () => {
+          pairDoneRef.current = true;
+          refresh();
+          setPairState("idle");
+          setPairedBanner(true);
+          setTimeout(() => setPairedBanner(false), 3e3);
+        }),
+        window.onBareEvent("peer:connected", (data) => {
+          if (!data?.remoteKey) return;
+          setParents((prev) => prev.map(
+            (p) => p.noiseKey === data.remoteKey ? { ...p, isOnline: true } : p
+          ));
+          refresh();
+        }),
+        window.onBareEvent("peer:disconnected", (data) => {
+          if (!data?.remoteKey) return;
+          setParents((prev) => prev.map(
+            (p) => p.noiseKey === data.remoteKey ? { ...p, isOnline: false } : p
+          ));
+        })
+      ];
+      return () => unsubs.forEach((u) => u());
     }, [mode]);
     async function handleSave() {
       const trimmed = name.trim();

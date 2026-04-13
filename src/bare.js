@@ -151,17 +151,22 @@ async function init (dataDir, attempt = 0) {
     if (value && value.publicKey) knownPeerKeys.add(value.publicKey)
     if (value && value.swarmTopic) activePeerTopics.add(value.swarmTopic)
   }
-  const topicHexes = []
+  const topicHexSet = new Set()
   for await (const { key, value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
     if (!value || !value.topicHex) continue
     if (activePeerTopics.size > 0 && !activePeerTopics.has(value.topicHex)) {
       console.log('[bare] pruning orphaned topic at startup:', value.topicHex.slice(0, 8))
       await db.del(key).catch(() => {})
     } else {
-      topicHexes.push(value.topicHex)
+      topicHexSet.add(value.topicHex)
     }
   }
-  await Promise.all(topicHexes.map(t => joinTopic(t).catch(() => {})))
+  // Backfill: rejoin any peer's swarmTopic even if the topics:* record was
+  // never persisted (older pairings predate topic persistence — #144).
+  for (const t of activePeerTopics) topicHexSet.add(t)
+  const topicHexes = [...topicHexSet]
+  console.log('[bare] rejoining', topicHexes.length, 'topic(s) on startup')
+  await Promise.all(topicHexes.map(t => joinTopic(t).catch(e => console.error('[bare] rejoin failed:', e.message))))
 
   // Clean up usage data older than 30 days
   async function cleanupOldUsageData() {
@@ -236,6 +241,7 @@ async function init (dataDir, attempt = 0) {
   send({ type: 'event', event: 'ready', data: {
     publicKey: b4a.toString(identity.publicKey, 'hex'),
     mode,
+    pairedKeys: [...knownPeerKeys],
   }})
 
   // Start 60-second heartbeat timer

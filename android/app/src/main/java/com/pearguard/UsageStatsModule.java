@@ -28,6 +28,7 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 
@@ -1075,6 +1076,59 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             .putString("heartbeat_name_" + childPublicKey, displayName)
             .putBoolean("heartbeat_notified_" + childPublicKey, false)
             .apply();
+    }
+
+    /**
+     * Prunes heartbeat SharedPreferences entries for any child whose key is
+     * not in the supplied paired-keys list. Called at startup to clean up
+     * stale entries left behind by unpairs that happened before #146's fix.
+     */
+    @ReactMethod
+    public void pruneStaleHeartbeats(ReadableArray pairedKeys) {
+        java.util.HashSet<String> paired = new java.util.HashSet<>();
+        for (int i = 0; i < pairedKeys.size(); i++) {
+            String k = pairedKeys.getString(i);
+            if (k != null) paired.add(k);
+        }
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        for (String key : prefs.getAll().keySet()) {
+            String childKey = null;
+            if (key.startsWith("heartbeat_last_")) childKey = key.substring("heartbeat_last_".length());
+            else if (key.startsWith("heartbeat_name_")) childKey = key.substring("heartbeat_name_".length());
+            else if (key.startsWith("heartbeat_notified_at_")) childKey = key.substring("heartbeat_notified_at_".length());
+            else if (key.startsWith("heartbeat_notified_")) childKey = key.substring("heartbeat_notified_".length());
+            if (childKey != null && !paired.contains(childKey)) {
+                editor.remove(key);
+                if (nm != null) nm.cancel(9000 + Math.abs(childKey.hashCode() % 500));
+            }
+        }
+        editor.apply();
+    }
+
+    /**
+     * Clears heartbeat tracking for a child (called on unpair). Removes the
+     * SharedPreferences entries so ParentConnectionService no longer fires
+     * "device has not checked in" notifications for a peer that is no longer
+     * paired, and cancels any currently-posted offline notification.
+     */
+    @ReactMethod
+    public void clearChildHeartbeat(String childPublicKey) {
+        if (childPublicKey == null) return;
+        reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .remove("heartbeat_last_" + childPublicKey)
+            .remove("heartbeat_name_" + childPublicKey)
+            .remove("heartbeat_notified_" + childPublicKey)
+            .remove("heartbeat_notified_at_" + childPublicKey)
+            .apply();
+        NotificationManager nm =
+            (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) {
+            nm.cancel(9000 + Math.abs(childPublicKey.hashCode() % 500));
+        }
     }
 
     /**

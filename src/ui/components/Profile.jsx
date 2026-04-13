@@ -35,15 +35,31 @@ export default function Profile({ mode }) {
   // Child mode: load existing paired parents and listen for new pairings
   useEffect(() => {
     if (mode !== 'child') return
-    window.callBare('children:list').then(setParents).catch(() => {})
-    const unsub = window.onBareEvent('peer:paired', () => {
-      pairDoneRef.current = true
-      window.callBare('children:list').then(setParents).catch(() => {})
-      setPairState('idle')
-      setPairedBanner(true)
-      setTimeout(() => setPairedBanner(false), 3000)
-    })
-    return unsub
+    const refresh = () => window.callBare('children:list').then(setParents).catch(() => {})
+    refresh()
+    const unsubs = [
+      window.onBareEvent('peer:paired', () => {
+        pairDoneRef.current = true
+        refresh()
+        setPairState('idle')
+        setPairedBanner(true)
+        setTimeout(() => setPairedBanner(false), 3000)
+      }),
+      window.onBareEvent('peer:connected', (data) => {
+        if (!data?.remoteKey) return
+        setParents((prev) => prev.map((p) =>
+          p.noiseKey === data.remoteKey ? { ...p, isOnline: true } : p
+        ))
+        refresh()
+      }),
+      window.onBareEvent('peer:disconnected', (data) => {
+        if (!data?.remoteKey) return
+        setParents((prev) => prev.map((p) =>
+          p.noiseKey === data.remoteKey ? { ...p, isOnline: false } : p
+        ))
+      }),
+    ]
+    return () => unsubs.forEach((u) => u())
   }, [mode])
 
   async function handleSave() {

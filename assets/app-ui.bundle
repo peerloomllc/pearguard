@@ -18823,7 +18823,7 @@
           ] }),
           pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, role: "alert", children: pinStatus }),
           pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, role: "status", children: "PIN updated successfully." }),
-          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { type: "submit", style: { width: "100%" }, "aria-label": "Save PIN", children: "Save PIN" })
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { type: "submit", style: { alignSelf: "center" }, "aria-label": "Save PIN", children: "Save PIN" })
         ] })
       ] }),
       settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(Collapsible, { title: "TIME REQUEST OPTIONS", open: timeOptsOpen, onToggle: () => setTimeOptsOpen((o) => !o), maxHeight: "200px", ...collapsibleProps, children: [
@@ -18870,17 +18870,11 @@
         /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Toggle, { checked: currentTheme === "dark", onChange: (checked) => setTheme2(checked ? "dark" : "light") })
       ] }) }),
       settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(Collapsible, { title: "DEVICE BACKUP", open: backupOpen, onToggle: () => setBackupOpen((o) => !o), maxHeight: "220px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { fontSize: "13px", color: colors.text.muted, marginBottom: `${spacing2.sm}px` }, children: "Save your full parent state (identity, children, policies) to migrate to a new device." }),
-        /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { variant: "secondary", icon: "Export", onClick: () => {
-            window.callBare("haptic:tap");
-            setBackupMode("export");
-          }, style: { flex: 1 }, children: "Export" }),
-          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { variant: "secondary", icon: "DownloadSimple", onClick: () => {
-            window.callBare("haptic:tap");
-            setBackupMode("import");
-          }, style: { flex: 1 }, children: "Import" })
-        ] })
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { fontSize: "13px", color: colors.text.muted, marginBottom: `${spacing2.sm}px` }, children: 'Save your full parent state (identity, children, policies) to migrate to a new device. To restore a backup, install the app on a fresh device and choose "Restore parent from backup" on the welcome screen.' }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { variant: "secondary", icon: "Export", onClick: () => {
+          window.callBare("haptic:tap");
+          setBackupMode("export");
+        }, children: "Export backup" }) })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
         DeviceBackupModal,
@@ -18900,6 +18894,7 @@
               window.callBare("haptic:tap");
               handleSettingsSave();
             },
+            style: { alignSelf: "center" },
             children: "Save Settings"
           }
         )

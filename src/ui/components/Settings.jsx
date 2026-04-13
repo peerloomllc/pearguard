@@ -404,7 +404,7 @@ export default function Settings() {
           {pinStatus === 'success' && (
             <p style={{ color: colors.success, fontSize: '13px', margin: 0 }} role="status">PIN updated successfully.</p>
           )}
-          <Button type="submit" style={{ width: '100%' }} aria-label="Save PIN">
+          <Button type="submit" style={{ alignSelf: 'center' }} aria-label="Save PIN">
             Save PIN
           </Button>
         </form>
@@ -463,11 +463,10 @@ export default function Settings() {
       {settingsLoaded && (
         <Collapsible title="DEVICE BACKUP" open={backupOpen} onToggle={() => setBackupOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
           <div style={{ fontSize: '13px', color: colors.text.muted, marginBottom: `${spacing.sm}px` }}>
-            Save your full parent state (identity, children, policies) to migrate to a new device.
+            Save your full parent state (identity, children, policies) to migrate to a new device. To restore a backup, install the app on a fresh device and choose "Restore parent from backup" on the welcome screen.
           </div>
-          <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-            <Button variant="secondary" icon="Export" onClick={() => { window.callBare('haptic:tap'); setBackupMode('export'); }} style={{ flex: 1 }}>Export</Button>
-            <Button variant="secondary" icon="DownloadSimple" onClick={() => { window.callBare('haptic:tap'); setBackupMode('import'); }} style={{ flex: 1 }}>Import</Button>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Button variant="secondary" icon="Export" onClick={() => { window.callBare('haptic:tap'); setBackupMode('export'); }}>Export backup</Button>
           </div>
         </Collapsible>
       )}
@@ -489,6 +488,7 @@ export default function Settings() {
           )}
           <Button
             onClick={() => { window.callBare('haptic:tap'); handleSettingsSave(); }}
+            style={{ alignSelf: 'center' }}
           >
             Save Settings
           </Button>

@@ -50,7 +50,7 @@ function signPayload (payload, identity) {
  * @param {object} snapshot.policies       — { [childPubKeyHex]: policyObject }
  */
 function buildBackup (snapshot) {
-  const { identity, profile, parentSettings, peers, policies } = snapshot
+  const { identity, profile, parentSettings, parentPolicy, peers, policies } = snapshot
   const sanitizedPolicies = {}
   for (const [childKey, policy] of Object.entries(policies || {})) {
     sanitizedPolicies[childKey] = stripPinPlain(policy)
@@ -62,6 +62,7 @@ function buildBackup (snapshot) {
     identity,
     profile: profile || null,
     parentSettings: parentSettings || null,
+    parentPolicy: parentPolicy || null,
     peers: peers || [],
     policies: sanitizedPolicies
   }

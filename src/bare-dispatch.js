@@ -1424,6 +1424,7 @@ function createDispatch (ctx) {
         if (!identityRaw) throw new Error('no identity')
         const profileRaw = await ctx.db.get('profile').catch(() => null)
         const settingsRaw = await ctx.db.get('parentSettings').catch(() => null)
+        const parentPolicyRaw = await ctx.db.get('policy').catch(() => null)
         const peers = []
         for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
           peers.push(value)
@@ -1437,6 +1438,7 @@ function createDispatch (ctx) {
           identity: identityRaw.value,
           profile: profileRaw ? profileRaw.value : null,
           parentSettings: settingsRaw ? settingsRaw.value : null,
+          parentPolicy: parentPolicyRaw ? parentPolicyRaw.value : null,
           peers,
           policies
         })
@@ -1450,11 +1452,12 @@ function createDispatch (ctx) {
         const { payload } = parseAndVerify(jsonString, KIND_BACKUP)
         const existingIdentity = await ctx.db.get('identity').catch(() => null)
         if (existingIdentity && !allowOverwrite) {
-          throw new Error('device not fresh: identity already exists. Clear app data before importing.')
+          throw new Error('Device not fresh: identity already exists. Clear app data before importing.')
         }
         await ctx.db.put('identity', payload.identity)
         if (payload.profile) await ctx.db.put('profile', payload.profile)
         if (payload.parentSettings) await ctx.db.put('parentSettings', payload.parentSettings)
+        if (payload.parentPolicy) await ctx.db.put('policy', payload.parentPolicy)
         await ctx.db.put('mode', 'parent')
         const paired = []
         for (const peer of payload.peers || []) {

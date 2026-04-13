@@ -17454,6 +17454,7 @@
       /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: {
         display: "flex",
         overflowX: "auto",
+        justifyContent: "center",
         borderBottom: `1px solid ${colors.border}`,
         backgroundColor: colors.surface.card
       }, children: TABS.map((t) => {
@@ -17488,7 +17489,7 @@
           t.key
         );
       }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: tab === "usage" ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(UsageTab, { childPublicKey: child.publicKey, onShowReports: () => setShowReports(true) }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ActiveComponent, { childPublicKey: child.publicKey }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: { flex: 1, overflowY: "auto", overflowX: "hidden" }, children: tab === "usage" ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(UsageTab, { childPublicKey: child.publicKey, onShowReports: () => setShowReports(true) }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ActiveComponent, { childPublicKey: child.publicKey }) }),
       /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
         Modal,
         {
@@ -17540,8 +17541,6 @@
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
     const [invite, setInvite] = (0, import_react10.useState)(null);
     const [error, setError] = (0, import_react10.useState)(null);
-    const [sharing, setSharing] = (0, import_react10.useState)(false);
-    const [copied, setCopied] = (0, import_react10.useState)(false);
     const canvasRef = (0, import_react10.useRef)(null);
     (0, import_react10.useEffect)(() => {
       window.callBare("invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
@@ -17559,20 +17558,8 @@
         }).catch(console.error);
       }
     }, [invite]);
-    function handleShare() {
-      if (!invite?.inviteLink || sharing) return;
-      setSharing(true);
-      window.callBare("share:text", { text: invite.inviteLink }).finally(() => setSharing(false));
-    }
-    function handleCopy() {
-      if (!invite?.inviteLink) return;
-      window.callBare("clipboard:copy", { text: invite.inviteLink }).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2e3);
-      }).catch(() => {
-      });
-    }
     const cardStyle = {
+      position: "relative",
       backgroundColor: colors.surface.card,
       border: `1px solid ${colors.border}`,
       borderRadius: `${radius2.lg}px`,
@@ -17590,27 +17577,28 @@
       return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: cardStyle, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0 }, children: "Generating invite..." }) });
     }
     return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: cardStyle, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: `${spacing2.sm}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0 }, children: "Add a Child Device" }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-          "button",
-          {
-            onClick: onDismiss,
-            style: {
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: `${spacing2.xs}px`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            },
-            "aria-label": "Dismiss invite",
-            children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Icon, { name: "X", size: 20, color: colors.text.muted })
-          }
-        )
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px` }, children: "Scan this QR code on the child's device, or share the link." }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Add a Child Device" }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+        "button",
+        {
+          onClick: onDismiss,
+          style: {
+            position: "absolute",
+            top: `${spacing2.base}px`,
+            right: `${spacing2.base}px`,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: `${spacing2.xs}px`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          },
+          "aria-label": "Dismiss invite",
+          children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Icon, { name: "X", size: 20, color: colors.text.muted })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: "Scan this QR code on the child's device." }),
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { style: {
         display: "flex",
         justifyContent: "center",
@@ -17619,10 +17607,6 @@
         backgroundColor: "#ffffff",
         borderRadius: `${radius2.md}px`
       }, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("canvas", { ref: canvasRef }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, marginBottom: `${spacing2.md}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Button, { variant: "primary", icon: "ShareNetwork", onClick: handleShare, disabled: sharing, style: { flex: 1 }, children: "Share Link" }),
-        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Button, { variant: "secondary", icon: "Copy", onClick: handleCopy, style: { flex: 1 }, children: copied ? "Copied!" : "Copy Link" })
-      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, textAlign: "center" }, children: "Waiting for child to connect..." })
     ] });
   }
@@ -18261,28 +18245,13 @@
                 {
                   onClick: () => {
                     window.callBare("haptic:tap");
-                    handlePickCamera();
-                  },
-                  disabled: photoLoading,
-                  style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
-                  children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
-                    " Camera"
-                  ]
-                }
-              ),
-              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(
-                "button",
-                {
-                  onClick: () => {
-                    window.callBare("haptic:tap");
                     fileInputRef.current?.click();
                   },
                   disabled: photoLoading,
                   style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
                   children: [
                     /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
-                    " Gallery"
+                    " Photo"
                   ]
                 }
               ),
@@ -19320,28 +19289,13 @@
               {
                 onClick: () => {
                   window.callBare("haptic:tap");
-                  handlePickCamera();
-                },
-                disabled: photoLoading,
-                style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
-                children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
-                  " Camera"
-                ]
-              }
-            ),
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
-              "button",
-              {
-                onClick: () => {
-                  window.callBare("haptic:tap");
                   fileInputRef.current?.click();
                 },
                 disabled: photoLoading,
                 style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
                 children: [
                   /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
-                  " Gallery"
+                  " Photo"
                 ]
               }
             ),

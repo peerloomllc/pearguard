@@ -8,8 +8,6 @@ export default function InviteCard({ onConnected, onDismiss }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
-  const [sharing, setSharing] = useState(false);
-  const [copied, setCopied] = useState(false);
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -33,22 +31,8 @@ export default function InviteCard({ onConnected, onDismiss }) {
     }
   }, [invite]);
 
-  function handleShare() {
-    if (!invite?.inviteLink || sharing) return;
-    setSharing(true);
-    window.callBare('share:text', { text: invite.inviteLink })
-      .finally(() => setSharing(false));
-  }
-
-  function handleCopy() {
-    if (!invite?.inviteLink) return;
-    window.callBare('clipboard:copy', { text: invite.inviteLink }).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
-  }
-
   const cardStyle = {
+    position: 'relative',
     backgroundColor: colors.surface.card,
     border: `1px solid ${colors.border}`,
     borderRadius: `${radius.lg}px`,
@@ -76,24 +60,23 @@ export default function InviteCard({ onConnected, onDismiss }) {
 
   return (
     <div style={cardStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
-        <h3 style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', margin: 0 }}>
-          Add a Child Device
-        </h3>
-        <button
-          onClick={onDismiss}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-          aria-label="Dismiss invite"
-        >
-          <Icon name="X" size={20} color={colors.text.muted} />
-        </button>
-      </div>
+      <h3 style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+        Add a Child Device
+      </h3>
+      <button
+        onClick={onDismiss}
+        style={{
+          position: 'absolute', top: `${spacing.base}px`, right: `${spacing.base}px`,
+          background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        aria-label="Dismiss invite"
+      >
+        <Icon name="X" size={20} color={colors.text.muted} />
+      </button>
 
-      <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing.base}px` }}>
-        Scan this QR code on the child's device, or share the link.
+      <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing.base}px`, textAlign: 'center' }}>
+        Scan this QR code on the child's device.
       </p>
 
       <div style={{
@@ -102,15 +85,6 @@ export default function InviteCard({ onConnected, onDismiss }) {
         backgroundColor: '#ffffff', borderRadius: `${radius.md}px`,
       }}>
         <canvas ref={canvasRef} />
-      </div>
-
-      <div style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
-        <Button variant="primary" icon="ShareNetwork" onClick={handleShare} disabled={sharing} style={{ flex: 1 }}>
-          Share Link
-        </Button>
-        <Button variant="secondary" icon="Copy" onClick={handleCopy} style={{ flex: 1 }}>
-          {copied ? 'Copied!' : 'Copy Link'}
-        </Button>
       </div>
 
       <p style={{ ...typography.caption, color: colors.text.muted, fontStyle: 'italic', margin: 0, textAlign: 'center' }}>

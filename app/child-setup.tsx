@@ -8,7 +8,7 @@
 // No back button (gestureEnabled: false in _layout.tsx).
 
 import { useState, useEffect, useRef } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Modal, TextInput } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Modal } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { getBareCaller } from './setup'
@@ -137,8 +137,6 @@ export default function ChildSetupScreen() {
   const [showScanner, setShowScanner] = useState(false)
   const [pairState, setPairState] = useState<'idle' | 'connecting' | 'error'>('idle')
   const [pairError, setPairError] = useState<string | null>(null)
-  const [showPaste, setShowPaste] = useState(false)
-  const [pasteLink, setPasteLink] = useState('')
   const isBypassRecovery = source === 'bypass_recovery'
 
   useEffect(() => {
@@ -219,14 +217,6 @@ export default function ChildSetupScreen() {
     }, 1500)
   }
 
-  function handlePasteSubmit() {
-    const trimmed = pasteLink.trim()
-    if (!trimmed) return
-    handleScanned(trimmed)
-    setPasteLink('')
-    setShowPaste(false)
-  }
-
   function openSettings() {
     if (step === 3) return
     setPolling(true)
@@ -244,7 +234,7 @@ export default function ChildSetupScreen() {
 
         <Text style={styles.title}>Pair with your parent</Text>
         <Text style={styles.description}>
-          Ask your parent to open PearGuard, go to their Profile tab, and tap "Share Invite". Then scan their QR code below.
+          Ask your parent to open PearGuard and tap "Add Child" on their Dashboard. Then scan the QR code they show you.
         </Text>
 
         {pairError && (
@@ -268,45 +258,6 @@ export default function ChildSetupScreen() {
             >
               <Text style={styles.buttonPairText}>Scan Parent's QR Code</Text>
             </TouchableOpacity>
-
-            {showPaste ? (
-              <View style={styles.pasteBox}>
-                <TextInput
-                  style={styles.pasteInput}
-                  value={pasteLink}
-                  onChangeText={setPasteLink}
-                  placeholder="Paste invite link here"
-                  placeholderTextColor={colors.text.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <View style={styles.pasteButtons}>
-                  <TouchableOpacity
-                    style={[styles.pasteBtn, styles.pasteBtnConnect, !pasteLink.trim() && styles.pasteBtnDisabled]}
-                    onPress={handlePasteSubmit}
-                    disabled={!pasteLink.trim()}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.pasteBtnConnectText}>Connect</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.pasteBtn, styles.pasteBtnCancel]}
-                    onPress={() => { setShowPaste(false); setPasteLink(''); }}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.pasteBtnCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.pasteToggle}
-                onPress={() => setShowPaste(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.pasteToggleText}>Or paste an invite link</Text>
-              </TouchableOpacity>
-            )}
           </>
         )}
 
@@ -384,15 +335,4 @@ const styles = StyleSheet.create({
   notifyText:       { color: colors.error, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center' },
   errorBanner:      { backgroundColor: colors.surface.tintedRed, borderWidth: 1, borderColor: colors.error, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: 14, marginBottom: spacing.lg, width: '100%' },
   errorText:        { color: colors.error, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center' },
-  pasteToggle:      { marginTop: spacing.xs, padding: spacing.sm },
-  pasteToggleText:  { color: colors.text.muted, fontSize: 13, fontFamily: fontFamily.regular, textAlign: 'center', textDecorationLine: 'underline' },
-  pasteBox:         { backgroundColor: colors.surface.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.base, width: '100%', marginTop: spacing.xs },
-  pasteInput:       { backgroundColor: colors.surface.base, borderWidth: 1, borderColor: '#444444', borderRadius: radius.md, padding: spacing.md, color: colors.text.primary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, marginBottom: spacing.md },
-  pasteButtons:     { flexDirection: 'row', gap: spacing.sm },
-  pasteBtn:         { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center' },
-  pasteBtnConnect:  { backgroundColor: colors.surface.tintedBlue, borderWidth: 1, borderColor: colors.accent },
-  pasteBtnConnectText: { color: colors.accent, fontSize: 14, fontFamily: fontFamily.semibold },
-  pasteBtnDisabled: { opacity: 0.4 },
-  pasteBtnCancel:   { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border },
-  pasteBtnCancelText: { color: colors.text.muted, fontSize: 14, fontFamily: fontFamily.regular },
 })

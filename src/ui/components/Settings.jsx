@@ -289,18 +289,11 @@ export default function Settings() {
             ) : (
               <>
                 <button
-                  onClick={() => { window.callBare('haptic:tap'); handlePickCamera(); }}
-                  disabled={photoLoading}
-                  style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
-                >
-                  <Icon name="Camera" size={14} color={colors.text.primary} /> Camera
-                </button>
-                <button
                   onClick={() => { window.callBare('haptic:tap'); fileInputRef.current?.click(); }}
                   disabled={photoLoading}
                   style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
                 >
-                  <Icon name="ImageSquare" size={14} color={colors.text.primary} /> Gallery
+                  <Icon name="ImageSquare" size={14} color={colors.text.primary} /> Photo
                 </button>
                 <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileInput} />
               </>

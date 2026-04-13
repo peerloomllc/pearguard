@@ -473,7 +473,11 @@ public class AppBlockerModule extends AccessibilityService {
      * to allow a one-off exception is worse UX than letting the override win.
      */
     private String getBlockReason(String packageName) {
-        // Exemptions: system services and phone/messaging are never blocked.
+        // Exemptions: system services, phone/messaging, and PearGuard itself
+        // are never blocked — otherwise global lock would lock the child out
+        // of the app they need to see the block reason / request overrides.
+        if (packageName == null) return null;
+        if (packageName.equals(getPackageName())) return null;
         if (isSystemOverlayPackage(packageName)) return null;
         if (isPhoneOrMessagingApp(packageName)) return null;
 
@@ -483,7 +487,11 @@ public class AppBlockerModule extends AccessibilityService {
         try {
             // Step 0: Device-wide lock — parent toggled quick-lock, block everything.
             boolean locked = policy.optBoolean("locked", false);
-            if (locked) return "Device is locked by your parent.";
+            if (locked) {
+                String lockMessage = policy.optString("lockMessage", "");
+                if (lockMessage != null && !lockMessage.isEmpty()) return lockMessage;
+                return "Device is locked by your parent.";
+            }
 
             // Step 1: Active override — PIN success (in-memory) or parent P2P grant (SharedPrefs).
             // Overrides win over schedule, daily limits, and policy status.

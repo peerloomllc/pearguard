@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../theme.js'
-import LockOverlay from './LockOverlay.jsx'
+import Icon from '../icons.js'
 
 function timeRemaining(expiresAt) {
   const diff = Math.max(0, expiresAt - Date.now())
@@ -38,12 +38,29 @@ export default function ChildHome() {
 
   if (!homeData) return <div style={{ padding: `${spacing.xl}px`, color: colors.text.muted }}>Loading...</div>
 
-  if (homeData.locked) {
-    return <LockOverlay parentName={homeData.parentName} />
-  }
-
   return (
     <div style={{ padding: `${spacing.xl}px` }}>
+      {homeData.locked && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`,
+          padding: `${spacing.md}px`, borderRadius: `${radius.md}px`,
+          backgroundColor: colors.error + '22',
+          border: `1px solid ${colors.error}`,
+          marginBottom: `${spacing.base}px`,
+        }}>
+          <Icon name="LockSimple" size={20} color={colors.error} />
+          <div style={{ flex: 1 }}>
+            <div style={{ ...typography.body, fontWeight: '600', color: colors.error }}>
+              Device locked{homeData.parentName ? ` by ${homeData.parentName}` : ''}
+            </div>
+            {homeData.lockMessage ? (
+              <div style={{ ...typography.caption, color: colors.text.secondary, marginTop: `${spacing.xs}px` }}>
+                {homeData.lockMessage}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
       <h2 style={{ ...typography.display, color: colors.text.primary, marginBottom: `${spacing.base}px` }}>
         Hi, {homeData.childName || 'there'}
       </h2>

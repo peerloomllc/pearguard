@@ -271,6 +271,11 @@ function createDispatch (ctx) {
           }
         }
 
+        // Record this topic as a pending invite so handleHello can bind it to the
+        // child's peer record even if Hyperswarm delivers an empty info.topics[] on
+        // the accepted connection (#147 follow-up).
+        await ctx.db.put('pendingInviteTopic:' + topicHex, { topicHex, createdAt: Date.now() }).catch(() => {})
+
         // Join the swarm topic (parent listens for child connections)
         await ctx.joinTopic(topicHex)
 
@@ -296,8 +301,10 @@ function createDispatch (ctx) {
 
         const { parentPublicKey, swarmTopic } = parsed
 
-        // Store the parent's public key as a "pending" entry — will be confirmed on hello
-        await ctx.db.put('pendingParent:' + parentPublicKey, { publicKey: parentPublicKey, ts: Date.now() })
+        // Store the parent's public key as a "pending" entry — will be confirmed on hello.
+        // Include swarmTopic so handleHello can bind it to the peer record even if
+        // Hyperswarm delivers an empty info.topics[] on the accepted connection (#147 follow-up).
+        await ctx.db.put('pendingParent:' + parentPublicKey, { publicKey: parentPublicKey, swarmTopic, ts: Date.now() })
 
         // Join the swarm topic alongside any existing parent topics (multi-parent support).
         // Old single-parent behavior deleted all existing topics here — now we keep them.

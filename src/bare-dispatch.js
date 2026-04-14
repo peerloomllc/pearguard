@@ -85,6 +85,36 @@ function createDispatch (ctx) {
       }
 
       case 'children:list': {
+        // Child-mode auto-dedup (#151): same parent re-paired with a fresh identity
+        // leaves a stale peers:{oldKey} record. Group by normalized displayName;
+        // keep (isOnline desc, lastSeen desc, pairedAt desc); delete the rest.
+        if (ctx.mode === 'child') {
+          const groups = new Map()
+          for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+            const name = (value.displayName || '').trim().toLowerCase()
+            if (!name) continue
+            if (!groups.has(name)) groups.set(name, [])
+            groups.get(name).push(value)
+          }
+          for (const entries of groups.values()) {
+            if (entries.length < 2) continue
+            entries.sort((a, b) => {
+              const aOnline = a.noiseKey && ctx.peers.has(a.noiseKey) ? 1 : 0
+              const bOnline = b.noiseKey && ctx.peers.has(b.noiseKey) ? 1 : 0
+              if (aOnline !== bOnline) return bOnline - aOnline
+              if ((b.lastSeen || 0) !== (a.lastSeen || 0)) return (b.lastSeen || 0) - (a.lastSeen || 0)
+              return (b.pairedAt || 0) - (a.pairedAt || 0)
+            })
+            for (let i = 1; i < entries.length; i++) {
+              const stale = entries[i]
+              console.log('[bare] auto-dedup parent peer:', stale.displayName, stale.publicKey?.slice(0, 12))
+              await ctx.db.del('peers:' + stale.publicKey).catch(() => {})
+              await ctx.db.del('pendingParent:' + stale.publicKey).catch(() => {})
+              if (ctx.knownPeerKeys) ctx.knownPeerKeys.delete(stale.publicKey)
+            }
+          }
+        }
+
         const children = []
         const seenKeys = new Set()
         const seenNoiseKeys = new Set()

@@ -15349,10 +15349,14 @@
   function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const batchAction = category.key === "allowed" ? "deny" : category.key === "blocked" ? "approve" : null;
+    const isPending = category.key === "pending";
     function handleBatchAll() {
       if (batchAction && onBatchDecide) {
         onBatchDecide(entries.map(([pkg]) => pkg), batchAction);
       }
+    }
+    function handleBatchPending(decision) {
+      if (onBatchDecide) onBatchDecide(entries.map(([pkg]) => pkg), decision);
     }
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { marginBottom: `${spacing2.sm}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
@@ -15396,6 +15400,30 @@
             children: batchAction === "approve" ? "Approve All" : "Deny All"
           }
         ) }),
+        isPending && entries.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+            "button",
+            {
+              style: { flex: 1, padding: `${spacing2.sm}px ${spacing2.md}px`, border: "none", borderRadius: `${radius2.md}px`, backgroundColor: colors.success, color: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handleBatchPending("approve");
+              },
+              children: "Approve All"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+            "button",
+            {
+              style: { flex: 1, padding: `${spacing2.sm}px ${spacing2.md}px`, border: "none", borderRadius: `${radius2.md}px`, backgroundColor: colors.error, color: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
+              onClick: () => {
+                window.callBare("haptic:tap");
+                handleBatchPending("deny");
+              },
+              children: "Deny All"
+            }
+          )
+        ] }),
         entries.map(([pkg, data]) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
           AppRow,
           {

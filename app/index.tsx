@@ -964,8 +964,17 @@ export default function Root () {
             .then((json: string) => {
               const reports = JSON.parse(json || '[]')
               if (reports.length === 0) return
-              console.log('[PearGuard] Flushing', reports.length, 'queued usage reports')
-              for (const report of reports) {
+              // Drop queued reports captured before today's local midnight.
+              // Their todaySeconds values reflect a prior day and would otherwise
+              // overwrite today's "latest" report with stale numbers.
+              const startOfToday = new Date()
+              startOfToday.setHours(0, 0, 0, 0)
+              const todayMs = startOfToday.getTime()
+              const fresh = reports.filter((r: { timestamp?: number }) => (r.timestamp || 0) >= todayMs)
+              const staleCount = reports.length - fresh.length
+              if (staleCount > 0) console.log('[PearGuard] Dropping', staleCount, 'stale queued usage reports (pre-midnight)')
+              console.log('[PearGuard] Flushing', fresh.length, 'queued usage reports')
+              for (const report of fresh) {
                 sendToWorklet({ method: 'usage:flush', args: { usage: report.usage, queued: true } })
               }
               NativeModules.UsageStatsModule?.clearQueuedReports?.()

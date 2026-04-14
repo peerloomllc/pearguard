@@ -58,12 +58,12 @@ export default function ChildCard({ child, onPress, onLockToggle }) {
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
         <Avatar avatar={child.avatarThumb} name={displayName} size={32} />
         <span style={{
           width: '10px', height: '10px', borderRadius: '50%',
           backgroundColor: isOnline ? colors.success : colors.text.muted,
-          marginRight: `${spacing.sm}px`, flexShrink: 0,
+          flexShrink: 0,
         }} />
         <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1 }}>
           {displayName}

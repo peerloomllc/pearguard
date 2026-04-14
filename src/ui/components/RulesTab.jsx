@@ -68,6 +68,8 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
   const [newRule, setNewRule] = useState(BLANK_RULE);
   const [editingIndex, setEditingIndex] = useState(null);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   const appNames = {};
   const appList = [];
@@ -94,12 +96,14 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
     setEditingIndex(index);
     setNewRule({ ...policy.schedules[index], exemptApps: policy.schedules[index].exemptApps || [] });
     setSubmitAttempted(false);
+    setShowForm(true);
   }
 
   function handleCancelEdit() {
     setEditingIndex(null);
     setNewRule(BLANK_RULE);
     setSubmitAttempted(false);
+    setShowForm(false);
   }
 
   function handleSaveRule() {
@@ -115,6 +119,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
     setNewRule(BLANK_RULE);
     setEditingIndex(null);
     setSubmitAttempted(false);
+    setShowForm(false);
   }
 
   function toggleDay(dayIndex) {
@@ -147,14 +152,23 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
 
   return (
     <div>
-      <p style={{ ...typography.caption, color: colors.text.secondary, marginBottom: `${spacing.base}px`, lineHeight: '1.4' }}>
-        Schedule rules define <strong>blackout windows</strong> - times when apps are blocked.
-        Apps are allowed outside these windows.
-      </p>
-
-      <h3 style={{ ...typography.subheading, fontWeight: '600', color: colors.text.primary, marginBottom: `${spacing.sm}px` }}>
-        Active Rules
-      </h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`, marginBottom: `${spacing.sm}px` }}>
+        <h3 style={{ ...typography.subheading, fontWeight: '600', color: colors.text.primary, margin: 0 }}>
+          Active Rules
+        </h3>
+        <button
+          onClick={() => { window.callBare('haptic:tap'); setShowInfo((v) => !v); }}
+          aria-label="About schedule rules"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px`, display: 'flex', alignItems: 'center' }}
+        >
+          <Icon name="Info" size={16} color={colors.text.muted} />
+        </button>
+      </div>
+      {showInfo && (
+        <p style={{ ...typography.caption, color: colors.text.secondary, marginBottom: `${spacing.base}px`, lineHeight: '1.4', padding: `${spacing.sm}px`, background: colors.surface.elevated, borderRadius: `${radius.md}px` }}>
+          Schedule rules define <strong>blackout windows</strong> - times when apps are blocked. Apps are allowed outside these windows.
+        </p>
+      )}
       {schedules.length === 0 && (
         <p style={{ ...typography.body, color: colors.text.muted }}>No blackout rules yet.</p>
       )}
@@ -172,6 +186,29 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
         />
       ))}
 
+      {!showForm && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: `${spacing.xl}px` }}>
+          <button
+            onClick={() => { window.callBare('haptic:tap'); setShowForm(true); }}
+            aria-label="Add schedule rule"
+            style={{
+              display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
+              padding: `${spacing.sm}px ${spacing.base}px`,
+              border: 'none',
+              borderRadius: `${radius.md}px`,
+              backgroundColor: colors.primary,
+              color: '#FFFFFF',
+              cursor: 'pointer',
+              ...typography.body,
+            }}
+          >
+            <Icon name="Plus" size={16} color="#FFFFFF" />
+            Add Rule
+          </button>
+        </div>
+      )}
+
+      {showForm && (<>
       <h3 style={{ ...typography.subheading, fontWeight: '600', color: colors.text.primary, marginTop: `${spacing.xl}px`, marginBottom: `${spacing.sm}px` }}>
         {editingIndex !== null ? 'Edit Rule' : 'Add Rule'}
       </h3>
@@ -285,25 +322,24 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
           >
             {editingIndex !== null ? 'Save Changes' : 'Add Rule'}
           </button>
-          {editingIndex !== null && (
-            <button
-              onClick={handleCancelEdit}
-              aria-label="Cancel edit"
-              style={{
-                padding: `${spacing.sm}px ${spacing.base}px`,
-                border: `1px solid ${colors.border}`,
-                borderRadius: `${radius.md}px`,
-                background: 'transparent',
-                cursor: 'pointer',
-                ...typography.body,
-                color: colors.text.secondary,
-              }}
-            >
-              Cancel
-            </button>
-          )}
+          <button
+            onClick={handleCancelEdit}
+            aria-label="Cancel"
+            style={{
+              padding: `${spacing.sm}px ${spacing.base}px`,
+              border: `1px solid ${colors.border}`,
+              borderRadius: `${radius.md}px`,
+              background: 'transparent',
+              cursor: 'pointer',
+              ...typography.body,
+              color: colors.text.secondary,
+            }}
+          >
+            Cancel
+          </button>
         </div>
       </div>
+      </>)}
     </div>
   );
 }
@@ -401,7 +437,6 @@ function ContactsSection({ policy, setPolicy, childPublicKey, colors, typography
 
 export default function RulesTab({ childPublicKey }) {
   const { colors, typography, spacing, radius } = useTheme();
-  const [activeSection, setActiveSection] = useState('schedule');
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -425,35 +460,7 @@ export default function RulesTab({ childPublicKey }) {
 
   return (
     <div style={{ padding: `${spacing.base}px` }}>
-      <div style={{ display: 'flex', gap: 0, marginBottom: `${spacing.base}px`, borderBottom: `1px solid ${colors.divider}` }}>
-        {[
-          { key: 'schedule', icon: 'Clock', label: 'Schedule' },
-          { key: 'contacts', icon: 'User', label: 'Contacts' },
-        ].map(({ key, icon, label }) => (
-          <button
-            key={key}
-            onClick={() => setActiveSection(key)}
-            aria-label={`${label} section`}
-            style={{
-              display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,
-              padding: `${spacing.sm}px ${spacing.base}px`,
-              border: 'none',
-              borderBottom: activeSection === key ? `2px solid ${colors.primary}` : '2px solid transparent',
-              background: 'transparent',
-              cursor: 'pointer',
-              color: activeSection === key ? colors.primary : colors.text.secondary,
-              marginBottom: '-1px',
-              ...typography.body,
-            }}
-          >
-            <Icon name={icon} size={16} color={activeSection === key ? colors.primary : colors.text.secondary} />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {activeSection === 'schedule' && <ScheduleSection {...sectionProps} />}
-      {activeSection === 'contacts' && <ContactsSection {...sectionProps} />}
+      <ScheduleSection {...sectionProps} />
     </div>
   );
 }

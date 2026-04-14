@@ -7,6 +7,7 @@ import Avatar from './Avatar.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import { pickCameraPhoto, processFileForAvatar } from './avatarUtils.js';
 import DeviceBackupModal from './DeviceBackupModal.jsx';
+import Collapsible from './primitives/Collapsible.jsx';
 
 const DEFAULT_TIME_OPTIONS = [15, 30, 60, 120];
 const DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
@@ -19,41 +20,6 @@ function formatMinutes(min) {
   const m = min % 60;
   if (m === 0) return h + (h === 1 ? ' hour' : ' hours');
   return h + 'h ' + m + 'm';
-}
-
-function Collapsible({ title, open, onToggle, maxHeight, children, colors, spacing, radius }) {
-  return (
-    <div style={{
-      backgroundColor: colors.surface.elevated,
-      borderRadius: `${radius.lg}px`,
-      marginBottom: `${spacing.md}px`,
-      overflow: 'hidden',
-    }}>
-      <div
-        onClick={() => { window.callBare('haptic:tap'); onToggle(); }}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 16px', cursor: 'pointer',
-        }}
-      >
-        <div style={{ fontSize: '12px', fontWeight: '300', color: colors.text.muted, letterSpacing: '0.06em' }}>
-          {title}
-        </div>
-        <span style={{
-          fontSize: '16px', color: colors.text.muted, transition: 'transform 0.3s',
-          transform: open ? 'rotate(90deg)' : 'rotate(0deg)', display: 'inline-block',
-        }}>&rsaquo;</span>
-      </div>
-      <div style={{
-        maxHeight: open ? maxHeight : '0px', overflow: 'hidden',
-        transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-      }}>
-        <div style={{ padding: '0 16px 14px' }}>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function ChipSelect({ options, selected, onChange, formatter, colors, spacing, radius }) {
@@ -151,13 +117,14 @@ export default function Settings() {
 
   async function handleNameSave() {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed || trimmed === savedName) return;
     setSavingName(true);
     setNameStatus(null);
     try {
       await window.callBare('identity:setName', { name: trimmed });
       setSavedName(trimmed);
       setNameStatus('success');
+      setTimeout(() => setNameStatus((s) => (s === 'success' ? null : s)), 2000);
     } catch {
       setNameStatus('error');
     } finally {
@@ -254,7 +221,6 @@ export default function Settings() {
     }
   }
 
-  const nameUnchanged = name.trim() === savedName || !name.trim();
 
   const inputStyle = {
     padding: '10px',
@@ -272,11 +238,10 @@ export default function Settings() {
 
   return (
     <div style={{ padding: `${spacing.base}px`, overflowY: 'auto', flex: 1 }}>
-      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.lg}px` }}>Settings</h2>
+      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.lg}px`, textAlign: 'center' }}>Settings</h2>
 
       {/* Profile */}
       <section style={{ marginBottom: `${spacing.xxl}px` }}>
-        <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: `${spacing.sm}px`, color: colors.text.primary }}>Profile</h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: `${spacing.lg}px` }}>
           <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
@@ -329,24 +294,19 @@ export default function Settings() {
               type="text"
               value={name}
               onChange={(e) => { setName(e.target.value); setNameStatus(null); }}
+              onBlur={handleNameSave}
               placeholder="e.g. Mom"
               style={inputStyle}
             />
           </label>
-          {nameStatus === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Name saved.</p>}
+          {savingName && <p style={{ color: colors.text.muted, fontSize: '13px', margin: 0 }}>Saving...</p>}
+          {!savingName && nameStatus === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Saved.</p>}
           {nameStatus === 'error' && <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>Failed to save name.</p>}
-          <Button
-            onClick={() => { window.callBare('haptic:tap'); handleNameSave(); }}
-            disabled={savingName || nameUnchanged}
-            style={{ alignSelf: 'center' }}
-          >
-            {savingName ? 'Saving...' : 'Save Name'}
-          </Button>
         </div>
       </section>
 
       {/* Override PIN */}
-      <Collapsible title="OVERRIDE PIN" open={pinOpen} onToggle={() => setPinOpen(o => !o)} maxHeight="350px" {...collapsibleProps}>
+      <Collapsible title="Override PIN" icon="LockSimple" open={pinOpen} onToggle={() => setPinOpen(o => !o)} maxHeight="350px" {...collapsibleProps}>
         <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
           Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device.
         </p>
@@ -410,9 +370,22 @@ export default function Settings() {
         </form>
       </Collapsible>
 
+      {/* Appearance */}
+      {settingsLoaded && (
+        <Collapsible title="Appearance" icon="SunDim" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
+              <Icon name={currentTheme === 'dark' ? 'Moon' : 'SunDim'} size={20} color={colors.text.primary} />
+              <span style={{ fontSize: '14px', color: colors.text.primary }}>{currentTheme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
+            </div>
+            <Toggle checked={currentTheme === 'dark'} onChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
+          </div>
+        </Collapsible>
+      )}
+
       {/* Time Request Options */}
       {settingsLoaded && (
-        <Collapsible title="TIME REQUEST OPTIONS" open={timeOptsOpen} onToggle={() => setTimeOptsOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
+        <Collapsible title="Time Request Options" icon="Clock" open={timeOptsOpen} onToggle={() => setTimeOptsOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
           <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
             Choose which duration options the child sees when requesting more time from the block overlay.
           </p>
@@ -430,7 +403,7 @@ export default function Settings() {
 
       {/* Warning Thresholds */}
       {settingsLoaded && (
-        <Collapsible title="WARNING NOTIFICATIONS" open={warningOpen} onToggle={() => setWarningOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
+        <Collapsible title="Warning Notifications" icon="Bell" open={warningOpen} onToggle={() => setWarningOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
           <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
             The child will be notified this many minutes before a schedule block starts or a daily time limit runs out.
           </p>
@@ -446,22 +419,9 @@ export default function Settings() {
         </Collapsible>
       )}
 
-      {/* Appearance */}
-      {settingsLoaded && (
-        <Collapsible title="APPEARANCE" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
-              <Icon name={currentTheme === 'dark' ? 'Moon' : 'SunDim'} size={20} color={colors.text.primary} />
-              <span style={{ fontSize: '14px', color: colors.text.primary }}>{currentTheme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
-            </div>
-            <Toggle checked={currentTheme === 'dark'} onChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
-          </div>
-        </Collapsible>
-      )}
-
       {/* Device Backup */}
       {settingsLoaded && (
-        <Collapsible title="DEVICE BACKUP" open={backupOpen} onToggle={() => setBackupOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
+        <Collapsible title="Device Backup" icon="Export" open={backupOpen} onToggle={() => setBackupOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
           <div style={{ fontSize: '13px', color: colors.text.muted, marginBottom: `${spacing.sm}px` }}>
             Save your full parent state (identity, children, policies) to migrate to a new device. To restore a backup, install the app on a fresh device and choose "Restore parent from backup" on the welcome screen.
           </div>

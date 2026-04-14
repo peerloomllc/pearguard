@@ -1008,7 +1008,11 @@ export default function Root () {
   // not here, so the 600ms timer starts after the WebView has actually loaded
   // (not from dbReady, which fires before the WebView even begins loading).
 
-  if (!html || !dbReady) {
+  // Screenshot mode: the native ScreenshotModule exposes a non-zero scene,
+  // bypass the dbReady gate so the WebView renders fixtures without waiting
+  // on the bare worklet handshake.
+  const _ssScene = ((NativeModules as any).PearGuardScreenshot?.scene ?? 0)
+  if (!html || (!dbReady && _ssScene <= 0)) {
     return <View style={styles.loading} />
   }
 
@@ -1019,6 +1023,13 @@ export default function Root () {
         source={{ html }}
         style={styles.webview}
         onMessage={onWebViewMessage}
+        injectedJavaScriptBeforeContentLoaded={`window.__pearPlatform=${JSON.stringify(Platform.OS)};${(() => {
+          const mod = (NativeModules as any).PearGuardScreenshot
+          const scene = mod?.scene ?? 0
+          const dark = mod?.dark ?? -1
+          if (scene <= 0) return ''
+          return `window.__PEARGUARD_SCREENSHOT_SCENE=${scene};window.__PEARGUARD_SCREENSHOT_DARK=${dark};`
+        })()}true;`}
         onRenderProcessGone={() => {
           console.warn('[RN] WebView render process gone — reloading')
           _webViewLoaded = false

@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0A1CAM0D1E5F7A8B00C4MSWF /* CameraModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */; };
-		0A1CAM0D1E5F7A8B00C4MOBF /* CameraModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */; };
 		08BCEDEAFE3AA065F097E219 /* BackgroundSyncModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D3DA3B0EBB2AED336B78BAA /* BackgroundSyncModule.swift */; };
+		0A1CAM0D1E5F7A8B00C4MOBF /* CameraModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */; };
+		0A1CAM0D1E5F7A8B00C4MSWF /* CameraModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		16A6E35995F1BD287A53C7CF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F66802B5E7C5E0E2EC6A02AE /* PrivacyInfo.xcprivacy */; };
 		1795CC7CCE24DE4AB29909B5 /* HapticModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9614E921A450723032DB8898 /* HapticModule.swift */; };
@@ -17,11 +17,13 @@
 		32C5CF5121BB8D712301B73B /* libPods-PearGuard.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E2BE94A6AC86C7A1113BEEC /* libPods-PearGuard.a */; };
 		38A4ECD3650BD78004D4BF65 /* LinkModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9860AA90DFDA005E09AD4E1B /* LinkModule.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		498447EA80F6195677FFEBA7 /* ScreenshotModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2887B3443E7704DE8183D21E /* ScreenshotModule.swift */; };
 		561323C198E49185883C7D6D /* NotificationsModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 30DAA9894CA0253B13590C9A /* NotificationsModule.m */; };
 		8407A0C4F11C63BC9B07D260 /* HapticModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A802E7F4E22F654753498ECC /* HapticModule.m */; };
 		8541ED7D54CE9E52B6BFA463 /* NotificationsModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A310415DDC728260EA4C3EDD /* NotificationsModule.swift */; };
 		A6EFA3828EE775606E068FEF /* ShareModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E244D1CED58FCC2847A141 /* ShareModule.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		BB5D1B04E0B9457F0D2D6F90 /* ScreenshotModule.m in Sources */ = {isa = PBXBuildFile; fileRef = ECF7681825788CF2150E8350 /* ScreenshotModule.m */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 		F1387EAF9156FE9814F880F6 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D047C4B46A04AA1F30A3EDE /* ExpoModulesProvider.swift */; };
 		F345F093D73F6A73DD1D5EDD /* ShareModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 19E6B85469A4888CD0928866 /* ShareModule.m */; };
@@ -30,12 +32,13 @@
 
 /* Begin PBXFileReference section */
 		00231D581114ED195448AD51 /* Pods-PearGuard.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PearGuard.release.xcconfig"; path = "Target Support Files/Pods-PearGuard/Pods-PearGuard.release.xcconfig"; sourceTree = "<group>"; };
+		0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CameraModule.m; path = PearGuard/CameraModule.m; sourceTree = "<group>"; };
+		0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CameraModule.swift; path = PearGuard/CameraModule.swift; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* PearGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PearGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = PearGuard/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = PearGuard/Info.plist; sourceTree = "<group>"; };
-		0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CameraModule.swift; path = PearGuard/CameraModule.swift; sourceTree = "<group>"; };
-		0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CameraModule.m; path = PearGuard/CameraModule.m; sourceTree = "<group>"; };
 		19E6B85469A4888CD0928866 /* ShareModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ShareModule.m; path = PearGuard/ShareModule.m; sourceTree = "<group>"; };
+		2887B3443E7704DE8183D21E /* ScreenshotModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScreenshotModule.swift; path = PearGuard/ScreenshotModule.swift; sourceTree = "<group>"; };
 		30DAA9894CA0253B13590C9A /* NotificationsModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = NotificationsModule.m; path = PearGuard/NotificationsModule.m; sourceTree = "<group>"; };
 		3D3DA3B0EBB2AED336B78BAA /* BackgroundSyncModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackgroundSyncModule.swift; path = PearGuard/BackgroundSyncModule.swift; sourceTree = "<group>"; };
 		4E2BE94A6AC86C7A1113BEEC /* libPods-PearGuard.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-PearGuard.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -49,6 +52,7 @@
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		BDC71E017223E622C969C3B6 /* LinkModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = LinkModule.m; path = PearGuard/LinkModule.m; sourceTree = "<group>"; };
 		E22565EF77FD8913DCC4C271 /* BackgroundSyncModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = BackgroundSyncModule.m; path = PearGuard/BackgroundSyncModule.m; sourceTree = "<group>"; };
+		ECF7681825788CF2150E8350 /* ScreenshotModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ScreenshotModule.m; path = PearGuard/ScreenshotModule.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = PearGuard/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* PearGuard-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "PearGuard-Bridging-Header.h"; path = "PearGuard/PearGuard-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -90,6 +94,8 @@
 				19E6B85469A4888CD0928866 /* ShareModule.m */,
 				0A1CAM0D1E5F7A8B00C4MREF /* CameraModule.swift */,
 				0A1CAM0D1E5F7A8B00C4MORE /* CameraModule.m */,
+				2887B3443E7704DE8183D21E /* ScreenshotModule.swift */,
+				ECF7681825788CF2150E8350 /* ScreenshotModule.m */,
 			);
 			name = PearGuard;
 			sourceTree = "<group>";
@@ -407,6 +413,8 @@
 				F345F093D73F6A73DD1D5EDD /* ShareModule.m in Sources */,
 				0A1CAM0D1E5F7A8B00C4MSWF /* CameraModule.swift in Sources */,
 				0A1CAM0D1E5F7A8B00C4MOBF /* CameraModule.m in Sources */,
+				498447EA80F6195677FFEBA7 /* ScreenshotModule.swift in Sources */,
+				BB5D1B04E0B9457F0D2D6F90 /* ScreenshotModule.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

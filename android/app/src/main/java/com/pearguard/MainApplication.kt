@@ -29,6 +29,7 @@ class MainApplication : Application(), ReactApplication {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
               add(PearGuardPackage())
+              add(ScreenshotPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"

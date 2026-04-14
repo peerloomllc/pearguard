@@ -1,0 +1,35 @@
+repository: https://github.com/peerloomllc/pearguard
+
+name: PearGuard
+summary: Peer-to-peer parental controls - manage screen time without a middleman
+description: |
+  PearGuard is a private, peer-to-peer parental control app. A parent device
+  manages screen time and app access on a child device directly, with no
+  server, no account and no third party in the middle.
+
+  Features:
+  - Screen time limits and bedtime windows
+  - Per-app allow, block or time-limit policies
+  - Activity view on the parent device
+  - Child-initiated time requests, approved from the parent device
+  - Pair via QR code or invite link
+  - Fully offline-capable - your family's data stays on your devices
+
+tags:
+  - parental-controls
+  - privacy
+  - p2p
+  - nostr
+
+license: MIT
+website: https://github.com/peerloomllc/pearguard
+
+images:
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-1.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/dark/scene-2.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-3.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/dark/scene-4.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-5.png
+
+metadata_sources:
+  - github

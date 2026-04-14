@@ -247,11 +247,16 @@ const STATUS_CATEGORIES = [
 function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, onBatchDecide, overrideMap, collapsed, onToggle, animatingItems, batchAnimationStyle }) {
   const { colors, spacing, radius } = useTheme();
   const batchAction = category.key === 'allowed' ? 'deny' : category.key === 'blocked' ? 'approve' : null;
+  const isPending = category.key === 'pending';
 
   function handleBatchAll() {
     if (batchAction && onBatchDecide) {
       onBatchDecide(entries.map(([pkg]) => pkg), batchAction);
     }
+  }
+
+  function handleBatchPending(decision) {
+    if (onBatchDecide) onBatchDecide(entries.map(([pkg]) => pkg), decision);
   }
 
   return (
@@ -287,6 +292,22 @@ function StatusSection({ category, entries, childPublicKey, onUpdate, onDecide, 
                 onClick={() => { window.callBare('haptic:tap'); handleBatchAll(); }}
               >
                 {batchAction === 'approve' ? 'Approve All' : 'Deny All'}
+              </button>
+            </div>
+          )}
+          {isPending && entries.length > 0 && (
+            <div style={{ display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.sm}px 0`, borderBottom: `1px solid ${colors.divider}` }}>
+              <button
+                style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.success, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                onClick={() => { window.callBare('haptic:tap'); handleBatchPending('approve'); }}
+              >
+                Approve All
+              </button>
+              <button
+                style={{ flex: 1, padding: `${spacing.sm}px ${spacing.md}px`, border: 'none', borderRadius: `${radius.md}px`, backgroundColor: colors.error, color: '#FFFFFF', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                onClick={() => { window.callBare('haptic:tap'); handleBatchPending('deny'); }}
+              >
+                Deny All
               </button>
             </div>
           )}

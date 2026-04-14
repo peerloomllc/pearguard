@@ -274,9 +274,25 @@ const CHILD_HOME = {
 const CHILD_HOME_LOCKED = {
   ...CHILD_HOME,
   locked: true,
-  lockMessage: 'Time for dinner — phone back at 7pm.',
+  lockMessage: 'Time for dinner - phone back at 7pm.',
   activeOverrides: [],
 }
+
+// Paired parent devices shown on the child's Profile tab.
+const PAIRED_PARENTS = [
+  {
+    publicKey: 'f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f',
+    displayName: 'Mom',
+    avatarThumb: null,
+    isOnline: true,
+  },
+  {
+    publicKey: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    displayName: 'Dad',
+    avatarThumb: null,
+    isOnline: false,
+  },
+]
 
 // ─── Date freeze ─────────────────────────────────────────────────────────────
 function freezeDate () {
@@ -294,8 +310,8 @@ function freezeDate () {
 
 // ─── Fake callBare dispatch ──────────────────────────────────────────────────
 function makeCallBare (scene) {
-  const children = scene.children ?? []
   const mode = scene.mode ?? 'parent'
+  const children = scene.children ?? (mode === 'child' ? (scene.parents ?? []) : [])
   const homeData = scene.homeData || CHILD_HOME
 
   return function fakeCallBare (method, args) {
@@ -303,7 +319,7 @@ function makeCallBare (scene) {
     switch (method) {
       // identity / setup
       case 'identity:getMode':     return Promise.resolve({ mode })
-      case 'identity:getName':     return Promise.resolve({ name: mode === 'parent' ? 'Mom' : 'Alex' })
+      case 'identity:getName':     return Promise.resolve({ displayName: mode === 'parent' ? 'Mom' : 'Alex', avatar: null })
       case 'identity:setName':     return Promise.resolve(true)
       case 'identity:setAvatar':   return Promise.resolve(true)
 
@@ -387,7 +403,7 @@ export const SCENES = {
   7:  { mode: 'parent', children: [CHILD_ALEX], openChild: CHILD_ALEX.publicKey, openTab: 'usage', showReports: true, reportsView: 'categories' },
   8:  { mode: 'parent', children: [], inviteActive: true },
   9:  { mode: 'child', homeData: CHILD_HOME },
-  10: { mode: 'child', homeData: CHILD_HOME_LOCKED },
+  10: { mode: 'child', parents: PAIRED_PARENTS, childTab: 'profile' },
 }
 
 export function installFixtures (sceneNum) {
@@ -410,6 +426,9 @@ export function installFixtures (sceneNum) {
   }
   if (scene.inviteActive) {
     window.__pearScreenshotInvite = true
+  }
+  if (scene.childTab) {
+    window.__pearScreenshotChildTab = scene.childTab
   }
   return { scene }
 }

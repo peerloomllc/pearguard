@@ -22,8 +22,8 @@ MAIN_ACTIVITY="${ANDROID_MAIN_ACTIVITY:-$APP_ID/com.pearguard.MainActivity}"
 APK_PATH="${APK_PATH:-$REPO_ROOT/android/app/build/outputs/apk/debug/app-debug.apk}"
 
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/metadata/android/screenshots}"
-SCENES=(1 2 3 4 5)
-APPEARANCES=(light dark)
+SCENES=(1 2 3 4 5 6 7 8 9 10)
+APPEARANCES=(light)
 
 # AVDs from ANDROID_SCREENSHOT_AVDS (space-separated, set in scripts/app.conf)
 # or fall back to a single phone. Play Store requires at least one phone.

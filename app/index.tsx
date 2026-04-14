@@ -916,7 +916,10 @@ export default function Root () {
           _pendingInviteUrl = null
         }
         if (!data.mode) {
-          setTimeout(() => router.replace('/setup'), 500)
+          const ssScene = ((NativeModules as any).PearGuardScreenshot?.scene ?? 0)
+          if (ssScene <= 0) {
+            setTimeout(() => router.replace('/setup'), 500)
+          }
         }
         // Start the parent background service so Hyperswarm stays connected
         // while the app is backgrounded (keeps process alive, prevents TCP drop)

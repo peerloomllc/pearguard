@@ -24,8 +24,8 @@ XCODE_WORKSPACE="${XCODE_WORKSPACE:-ios/${APP_NAME}.xcworkspace}"
 XCODE_SCHEME="${XCODE_SCHEME:-$APP_NAME}"
 
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/metadata/ios/screenshots}"
-SCENES=(1 2 3 4 5)
-APPEARANCES=(light dark)
+SCENES=(1 2 3 4 5 6 7 8 9 10)
+APPEARANCES=(light)
 
 # Devices from IOS_SCREENSHOT_DEVICES (space-separated "DeviceName|UDID"
 # pairs, set in scripts/app.conf). iPhone 17 Pro Max = 6.9" App Store size.

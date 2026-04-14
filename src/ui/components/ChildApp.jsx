@@ -11,7 +11,7 @@ const TABS = [
 
 export default function ChildApp() {
   const { colors, typography } = useTheme();
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState(() => (typeof window !== 'undefined' && window.__pearScreenshotChildTab) || 'home');
 
   useEffect(() => {
     // Notification tap: switch to home so ChildHome can open the requests modal

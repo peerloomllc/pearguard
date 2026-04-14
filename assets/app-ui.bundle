@@ -17899,6 +17899,17 @@
       }
     }, [children]);
     (0, import_react13.useEffect)(() => {
+      if (children.length === 0) return;
+      const ss = window.__pearScreenshotOpenChild;
+      if (ss?.publicKey) {
+        const child = children.find((c) => c.publicKey === ss.publicKey);
+        if (child) {
+          setSelectedChild(child);
+          setSelectedTab(ss.tab || "activity");
+        }
+      }
+    }, [children]);
+    (0, import_react13.useEffect)(() => {
       function handleNav(data) {
         const key = data?.childPublicKey;
         if (!key) return;

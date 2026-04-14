@@ -656,19 +656,33 @@ function createDispatch (ctx) {
         const policy = raw ? raw.value : null
         const apps = (policy && policy.apps) || {}
 
-        // Count blocked and pending apps
-        let blockedCount = 0
-        let pendingCount = 0
+        // Collect blocked and pending app lists
+        const blockedApps = []
+        const pendingApps = []
         for (const pkg of Object.keys(apps)) {
-          if (apps[pkg].status === 'blocked') blockedCount++
-          if (apps[pkg].status === 'pending') pendingCount++
+          const entry = apps[pkg]
+          const item = { packageName: pkg, appName: entry.appName || pkg }
+          if (entry.status === 'blocked') blockedApps.push(item)
+          if (entry.status === 'pending') pendingApps.push(item)
         }
+        blockedApps.sort((a, b) => a.appName.localeCompare(b.appName))
+        pendingApps.sort((a, b) => a.appName.localeCompare(b.appName))
+        const blockedCount = blockedApps.length
+        const pendingCount = pendingApps.length
 
-        // Count pending requests
-        let pendingRequests = 0
+        // Collect pending requests with app name resolution
+        const pendingRequestsList = []
         for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
-          if (value.status === 'pending') pendingRequests++
+          if (value.status === 'pending') {
+            const appEntry = apps[value.packageName]
+            pendingRequestsList.push({
+              ...value,
+              appName: value.appName || (appEntry && appEntry.appName) || value.packageName,
+            })
+          }
         }
+        pendingRequestsList.sort((a, b) => b.requestedAt - a.requestedAt)
+        const pendingRequests = pendingRequestsList.length
 
         // Count active overrides
         const now = Date.now()
@@ -694,7 +708,7 @@ function createDispatch (ctx) {
         const identRaw = await ctx.db.get('identity')
         if (identRaw && identRaw.value && identRaw.value.name) childName = identRaw.value.name
 
-        return { blockedCount, pendingCount, pendingRequests, activeOverrides, hasPolicy: !!policy, locked, lockMessage, parentName, childName }
+        return { blockedCount, pendingCount, pendingRequests, blockedApps, pendingApps, pendingRequestsList, activeOverrides, hasPolicy: !!policy, locked, lockMessage, parentName, childName }
       }
 
       case 'app:installed': {

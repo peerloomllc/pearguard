@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react'
+import { useTheme } from '../theme.js'
 
-function statusBadge(status) {
+function statusBadge(status, colors) {
   switch (status) {
-    case 'approved': return { label: 'Approved!', color: '#007733' }
-    case 'denied':   return { label: 'Denied', color: '#CC0000' }
-    default:         return { label: 'Pending...', color: '#888' }
+    case 'approved': return { label: 'Approved!', color: colors.success }
+    case 'denied':   return { label: 'Denied',    color: colors.error }
+    default:         return { label: 'Pending...', color: colors.text.muted }
   }
 }
 
 export default function ChildRequests() {
+  const { colors, typography, spacing, radius } = useTheme()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
@@ -29,12 +31,9 @@ export default function ChildRequests() {
 
   useEffect(() => {
     let isMounted = true
-
     loadRequests().then(() => { if (!isMounted) return })
-
     const unsubSubmit = window.onBareEvent('request:submitted', () => { if (isMounted) loadRequests() })
     const unsubUpdated = window.onBareEvent('request:updated', () => { if (isMounted) loadRequests() })
-
     return () => {
       isMounted = false
       unsubSubmit()
@@ -42,49 +41,73 @@ export default function ChildRequests() {
     }
   }, [])
 
-  if (loading) return <div style={{ padding: 24 }}>Loading...</div>
+  if (loading) {
+    return (
+      <div style={{ padding: `${spacing.xl}px`, color: colors.text.muted, ...typography.body }}>
+        Loading...
+      </div>
+    )
+  }
+
+  const hasResolved = requests.some((r) => r.status === 'approved' || r.status === 'denied')
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ margin: 0 }}>My Requests</h2>
-        {requests.some((r) => r.status === 'approved' || r.status === 'denied') && (
+    <div style={{ padding: `${spacing.xl}px`, ...typography.body, color: colors.text.primary }}>
+      <div style={{
+        marginBottom: `${spacing.base}px`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <h2 style={{ ...typography.display, color: colors.text.primary, margin: 0 }}>My Requests</h2>
+        {hasResolved && (
           <button
             onClick={() => { window.callBare('haptic:tap'); handleClearResolved(); }}
             disabled={clearing}
-            style={{ fontSize: 13, padding: '6px 12px', border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: clearing ? 'not-allowed' : 'pointer', color: '#555' }}
+            style={{
+              ...typography.caption,
+              padding: `${spacing.xs}px ${spacing.md}px`,
+              border: `1px solid ${colors.border}`,
+              borderRadius: `${radius.md}px`,
+              background: colors.surface.card,
+              color: colors.text.secondary,
+              cursor: clearing ? 'not-allowed' : 'pointer',
+            }}
           >
-            {clearing ? 'Clearing…' : 'Clear resolved'}
+            {clearing ? 'Clearing...' : 'Clear resolved'}
           </button>
         )}
       </div>
 
       {requests.length === 0 && (
-        <p style={{ color: '#888' }}>No requests yet.</p>
+        <p style={{ ...typography.body, color: colors.text.muted }}>No requests yet.</p>
       )}
 
       {requests.map((req) => {
-        const badge = statusBadge(req.status)
+        const badge = statusBadge(req.status, colors)
         return (
           <div
             key={req.id}
             style={{
-              padding: 16,
-              marginBottom: 12,
-              borderRadius: 8,
-              backgroundColor: '#F5F5F5',
+              padding: `${spacing.base}px`,
+              marginBottom: `${spacing.md}px`,
+              borderRadius: `${radius.md}px`,
+              backgroundColor: colors.surface.card,
+              border: `1px solid ${colors.border}`,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
             }}
           >
             <div>
-              <div style={{ fontWeight: 'bold' }}>{req.appName || req.packageName}</div>
-              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+              <div style={{ ...typography.body, fontWeight: '600', color: colors.text.primary }}>
+                {req.appName || req.packageName}
+              </div>
+              <div style={{ ...typography.caption, color: colors.text.muted, marginTop: `${spacing.xs}px` }}>
                 {new Date(req.requestedAt).toLocaleTimeString()}
               </div>
             </div>
-            <div style={{ color: badge.color, fontWeight: 'bold' }}>{badge.label}</div>
+            <div style={{ ...typography.caption, fontWeight: '700', color: badge.color }}>
+              {badge.label}
+            </div>
           </div>
         )
       })}

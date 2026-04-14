@@ -780,7 +780,7 @@
   var require_react_dom_production = __commonJS({
     "node_modules/react-dom/cjs/react-dom.production.js"(exports) {
       "use strict";
-      var React24 = require_react();
+      var React23 = require_react();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
         if (1 < arguments.length) {
@@ -820,7 +820,7 @@
           implementation
         };
       }
-      var ReactSharedInternals = React24.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React23.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       function getCrossOriginStringAs(as, input) {
         if ("font" === as) return "";
         if ("string" === typeof input)
@@ -956,7 +956,7 @@
     "node_modules/react-dom/cjs/react-dom-client.production.js"(exports) {
       "use strict";
       var Scheduler = require_scheduler();
-      var React24 = require_react();
+      var React23 = require_react();
       var ReactDOM = require_react_dom();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
@@ -1140,7 +1140,7 @@
         return null;
       }
       var isArrayImpl = Array.isArray;
-      var ReactSharedInternals = React24.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React23.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var sharedNotPendingObject = {
         pending: false,
@@ -12132,7 +12132,7 @@
           0 === i && attemptExplicitHydrationTarget(target);
         }
       };
-      var isomorphicReactPackageVersion$jscomp$inline_1785 = React24.version;
+      var isomorphicReactPackageVersion$jscomp$inline_1785 = React23.version;
       if ("19.1.4" !== isomorphicReactPackageVersion$jscomp$inline_1785)
         throw Error(
           formatProdErrorMessage(
@@ -14448,7 +14448,7 @@
   });
 
   // src/ui/main.jsx
-  var import_react25 = __toESM(require_react());
+  var import_react24 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/ui/fonts.js
@@ -14476,7 +14476,7 @@
   }
 
   // src/ui/App.jsx
-  var import_react24 = __toESM(require_react());
+  var import_react23 = __toESM(require_react());
 
   // src/ui/theme.js
   var import_react = __toESM(require_react());
@@ -19301,20 +19301,104 @@
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_react23 = __toESM(require_react());
+  var import_react22 = __toESM(require_react());
 
   // src/ui/components/ChildHome.jsx
   var import_react20 = __toESM(require_react());
   var import_jsx_runtime27 = __toESM(require_jsx_runtime());
+  function greeting(name) {
+    if (name) return `Hi, ${name}`;
+    const h = (/* @__PURE__ */ new Date()).getHours();
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  }
   function timeRemaining2(expiresAt) {
     const diff = Math.max(0, expiresAt - Date.now());
     const mins = Math.ceil(diff / 6e4);
     if (mins >= 60) return Math.floor(mins / 60) + "h " + mins % 60 + "m";
     return mins + "m";
   }
-  function ChildHome() {
+  function SummaryTile({ value, label, valueColor, onClick, disabled, colors, spacing: spacing2, radius: radius2 }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+      "button",
+      {
+        type: "button",
+        onClick: disabled ? void 0 : onClick,
+        disabled,
+        style: {
+          flex: 1,
+          padding: "14px",
+          borderRadius: `${radius2.lg}px`,
+          backgroundColor: colors.surface.elevated,
+          border: "none",
+          textAlign: "center",
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? 0.6 : 1,
+          fontFamily: "inherit"
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "22px", fontWeight: "700", color: valueColor }, children: value }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "11px", color: colors.text.muted, marginTop: `${spacing2.xs}px` }, children: label })
+        ]
+      }
+    );
+  }
+  function AppList({ items, emptyText, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    if (!items || items.length === 0) {
+      return /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { ...typography2.body, color: colors.text.muted, textAlign: "center" }, children: emptyText });
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { maxHeight: "50vh", overflowY: "auto" }, children: items.map((a) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+      "div",
+      {
+        style: {
+          padding: `${spacing2.md}px ${spacing2.base}px`,
+          marginBottom: `${spacing2.sm}px`,
+          borderRadius: `${radius2.md}px`,
+          backgroundColor: colors.surface.elevated,
+          ...typography2.body,
+          color: colors.text.primary,
+          fontWeight: "600"
+        },
+        children: [
+          a.appName,
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { ...typography2.caption, color: colors.text.muted, fontWeight: "400", marginTop: `${spacing2.xs}px` }, children: a.packageName })
+        ]
+      },
+      a.packageName
+    )) });
+  }
+  function RequestList({ items, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    if (!items || items.length === 0) {
+      return /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { ...typography2.body, color: colors.text.muted, textAlign: "center" }, children: "No pending requests." });
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { maxHeight: "50vh", overflowY: "auto" }, children: items.map((r) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+      "div",
+      {
+        style: {
+          padding: `${spacing2.md}px ${spacing2.base}px`,
+          marginBottom: `${spacing2.sm}px`,
+          borderRadius: `${radius2.md}px`,
+          backgroundColor: colors.surface.elevated,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { ...typography2.body, fontWeight: "600", color: colors.text.primary }, children: r.appName || r.packageName }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { ...typography2.caption, color: colors.text.muted, marginTop: `${spacing2.xs}px` }, children: new Date(r.requestedAt).toLocaleTimeString() })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { ...typography2.caption, fontWeight: "700", color: colors.text.muted }, children: "Pending..." })
+        ]
+      },
+      r.id
+    )) });
+  }
+  function ChildHome({ openDetail }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
     const [homeData, setHomeData] = (0, import_react20.useState)(null);
+    const [detail, setDetail] = (0, import_react20.useState)(null);
     const loadHomeData = (0, import_react20.useCallback)(() => {
       window.callBare("child:homeData").then(setHomeData).catch(() => {
       });
@@ -19333,7 +19417,13 @@
         clearInterval(timer);
       };
     }, [loadHomeData]);
+    (0, import_react20.useEffect)(() => {
+      if (!openDetail) return;
+      const unsub = window.onBareEvent("navigate:child:requests", () => setDetail("requests"));
+      return unsub;
+    }, [openDetail]);
     if (!homeData) return /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { padding: `${spacing2.xl}px`, color: colors.text.muted }, children: "Loading..." });
+    const detailTitle = detail === "blocked" ? "Blocked apps" : detail === "pending" ? "Awaiting approval" : detail === "requests" ? "Pending requests" : "";
     return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { padding: `${spacing2.xl}px` }, children: [
       homeData.locked && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: {
         display: "flex",
@@ -19354,44 +19444,50 @@
           homeData.lockMessage ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginTop: `${spacing2.xs}px` }, children: homeData.lockMessage }) : null
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("h2", { style: { ...typography2.display, color: colors.text.primary, marginBottom: `${spacing2.base}px` }, children: [
-        "Hi, ",
-        homeData.childName || "there"
-      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { style: { ...typography2.display, color: colors.text.primary, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: greeting(homeData.childName) }),
       /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", gap: `${spacing2.md}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: {
-          flex: 1,
-          padding: "14px",
-          borderRadius: `${radius2.lg}px`,
-          backgroundColor: colors.surface.elevated,
-          textAlign: "center"
-        }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "22px", fontWeight: "700", color: colors.error }, children: homeData.blockedCount }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "11px", color: colors.text.muted, marginTop: `${spacing2.xs}px` }, children: "Blocked" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: {
-          flex: 1,
-          padding: "14px",
-          borderRadius: `${radius2.lg}px`,
-          backgroundColor: colors.surface.elevated,
-          textAlign: "center"
-        }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "22px", fontWeight: "700", color: colors.secondary }, children: homeData.pendingCount }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "11px", color: colors.text.muted, marginTop: `${spacing2.xs}px` }, children: "Awaiting approval" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: {
-          flex: 1,
-          padding: "14px",
-          borderRadius: `${radius2.lg}px`,
-          backgroundColor: colors.surface.elevated,
-          textAlign: "center"
-        }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "22px", fontWeight: "700", color: colors.primary }, children: homeData.pendingRequests }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "11px", color: colors.text.muted, marginTop: `${spacing2.xs}px` }, children: "Pending requests" })
-        ] })
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          SummaryTile,
+          {
+            value: homeData.blockedCount,
+            label: "Blocked",
+            valueColor: colors.error,
+            onClick: () => setDetail("blocked"),
+            disabled: homeData.blockedCount === 0,
+            colors,
+            spacing: spacing2,
+            radius: radius2
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          SummaryTile,
+          {
+            value: homeData.pendingCount,
+            label: "Awaiting approval",
+            valueColor: colors.secondary,
+            onClick: () => setDetail("pending"),
+            disabled: homeData.pendingCount === 0,
+            colors,
+            spacing: spacing2,
+            radius: radius2
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          SummaryTile,
+          {
+            value: homeData.pendingRequests,
+            label: "Pending requests",
+            valueColor: colors.primary,
+            onClick: () => setDetail("requests"),
+            disabled: homeData.pendingRequests === 0,
+            colors,
+            spacing: spacing2,
+            radius: radius2
+          }
+        )
       ] }),
       homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h3", { style: { fontSize: "15px", fontWeight: "700", marginBottom: "10px", color: colors.text.primary }, children: "Active overrides" }),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h3", { style: { fontSize: "15px", fontWeight: "700", marginBottom: "10px", color: colors.text.primary, textAlign: "center" }, children: "Active overrides" }),
         homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: {
           display: "flex",
           justifyContent: "space-between",
@@ -19411,123 +19507,36 @@
             " left"
           ] })
         ] }, i))
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Modal, { visible: !!detail, onClose: () => setDetail(null), title: detailTitle, children: [
+        detail === "blocked" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(AppList, { items: homeData.blockedApps, emptyText: "No blocked apps.", colors, typography: typography2, spacing: spacing2, radius: radius2 }),
+        detail === "pending" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(AppList, { items: homeData.pendingApps, emptyText: "Nothing awaiting approval.", colors, typography: typography2, spacing: spacing2, radius: radius2 }),
+        detail === "requests" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(RequestList, { items: homeData.pendingRequestsList, colors, typography: typography2, spacing: spacing2, radius: radius2 })
       ] })
     ] });
   }
 
-  // src/ui/components/ChildRequests.jsx
-  var import_react21 = __toESM(require_react());
-  var import_jsx_runtime28 = __toESM(require_jsx_runtime());
-  function statusBadge(status) {
-    switch (status) {
-      case "approved":
-        return { label: "Approved!", color: "#007733" };
-      case "denied":
-        return { label: "Denied", color: "#CC0000" };
-      default:
-        return { label: "Pending...", color: "#888" };
-    }
-  }
-  function ChildRequests() {
-    const [requests, setRequests] = (0, import_react21.useState)([]);
-    const [loading, setLoading] = (0, import_react21.useState)(true);
-    const [clearing, setClearing] = (0, import_react21.useState)(false);
-    async function loadRequests() {
-      setLoading(true);
-      const { requests: requests2 } = await window.callBare("requests:list");
-      setRequests(requests2 || []);
-      setLoading(false);
-    }
-    async function handleClearResolved() {
-      setClearing(true);
-      await window.callBare("requests:clear");
-      await loadRequests();
-      setClearing(false);
-    }
-    (0, import_react21.useEffect)(() => {
-      let isMounted = true;
-      loadRequests().then(() => {
-        if (!isMounted) return;
-      });
-      const unsubSubmit = window.onBareEvent("request:submitted", () => {
-        if (isMounted) loadRequests();
-      });
-      const unsubUpdated = window.onBareEvent("request:updated", () => {
-        if (isMounted) loadRequests();
-      });
-      return () => {
-        isMounted = false;
-        unsubSubmit();
-        unsubUpdated();
-      };
-    }, []);
-    if (loading) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { padding: 24 }, children: "Loading..." });
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { padding: 24 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h2", { style: { margin: 0 }, children: "My Requests" }),
-        requests.some((r) => r.status === "approved" || r.status === "denied") && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
-          "button",
-          {
-            onClick: () => {
-              window.callBare("haptic:tap");
-              handleClearResolved();
-            },
-            disabled: clearing,
-            style: { fontSize: 13, padding: "6px 12px", border: "1px solid #ccc", borderRadius: 6, background: "#fff", cursor: clearing ? "not-allowed" : "pointer", color: "#555" },
-            children: clearing ? "Clearing\u2026" : "Clear resolved"
-          }
-        )
-      ] }),
-      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: "#888" }, children: "No requests yet." }),
-      requests.map((req) => {
-        const badge = statusBadge(req.status);
-        return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
-          "div",
-          {
-            style: {
-              padding: 16,
-              marginBottom: 12,
-              borderRadius: 8,
-              backgroundColor: "#F5F5F5",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center"
-            },
-            children: [
-              /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { fontWeight: "bold" }, children: req.appName || req.packageName }),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { color: "#888", fontSize: 12, marginTop: 4 }, children: new Date(req.requestedAt).toLocaleTimeString() })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { color: badge.color, fontWeight: "bold" }, children: badge.label })
-            ]
-          },
-          req.id
-        );
-      })
-    ] });
-  }
-
   // src/ui/components/Profile.jsx
-  var import_react22 = __toESM(require_react());
+  var import_react21 = __toESM(require_react());
   init_avatarUtils();
-  var import_jsx_runtime29 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime28 = __toESM(require_jsx_runtime());
   function Profile({ mode }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [name, setName] = (0, import_react22.useState)("");
-    const [savedName, setSavedName] = (0, import_react22.useState)("");
-    const [avatar, setAvatar] = (0, import_react22.useState)(null);
-    const [showPicker, setShowPicker] = (0, import_react22.useState)(false);
-    const [saving, setSaving] = (0, import_react22.useState)(false);
-    const [photoLoading, setPhotoLoading] = (0, import_react22.useState)(false);
-    const fileInputRef = (0, import_react22.useRef)(null);
-    const [status, setStatus] = (0, import_react22.useState)(null);
-    const [pairState, setPairState] = (0, import_react22.useState)("idle");
-    const [pairError, setPairError] = (0, import_react22.useState)(null);
-    const [parents, setParents] = (0, import_react22.useState)([]);
-    const [pairedBanner, setPairedBanner] = (0, import_react22.useState)(false);
-    const [parentsOpen, setParentsOpen] = (0, import_react22.useState)(true);
-    const pairDoneRef = (0, import_react22.useRef)(false);
-    (0, import_react22.useEffect)(() => {
+    const [name, setName] = (0, import_react21.useState)("");
+    const [savedName, setSavedName] = (0, import_react21.useState)("");
+    const [avatar, setAvatar] = (0, import_react21.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react21.useState)(false);
+    const [saving, setSaving] = (0, import_react21.useState)(false);
+    const [photoLoading, setPhotoLoading] = (0, import_react21.useState)(false);
+    const fileInputRef = (0, import_react21.useRef)(null);
+    const [status, setStatus] = (0, import_react21.useState)(null);
+    const [pairState, setPairState] = (0, import_react21.useState)("idle");
+    const [pairError, setPairError] = (0, import_react21.useState)(null);
+    const [parents, setParents] = (0, import_react21.useState)([]);
+    const [pairedBanner, setPairedBanner] = (0, import_react21.useState)(false);
+    const [parentsOpen, setParentsOpen] = (0, import_react21.useState)(true);
+    const pairDoneRef = (0, import_react21.useRef)(false);
+    (0, import_react21.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
         setName(n);
@@ -19536,7 +19545,7 @@
       }).catch(() => {
       });
     }, []);
-    (0, import_react22.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       if (mode !== "child") return;
       const refresh = () => window.callBare("children:list").then(setParents).catch(() => {
       });
@@ -19656,12 +19665,12 @@
       backgroundColor: colors.surface.input,
       color: colors.text.primary
     };
-    return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.xl}px`, textAlign: "center" }, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.xl}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
-        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
-          window.__pearPlatform === "ios" ? /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+    return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.xl}px`, textAlign: "center" }, children: "Profile" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.xl}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
+          window.__pearPlatform === "ios" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
             "button",
             {
               onClick: () => {
@@ -19671,12 +19680,12 @@
               disabled: photoLoading,
               style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
                 " Camera"
               ]
             }
-          ) : /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(import_jsx_runtime29.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+          ) : /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
               "button",
               {
                 onClick: () => {
@@ -19686,14 +19695,14 @@
                 disabled: photoLoading,
                 style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
                   " Photo"
                 ]
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("input", { ref: fileInputRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFileInput })
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("input", { ref: fileInputRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFileInput })
           ] }),
-          avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+          avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
             "button",
             {
               onClick: () => {
@@ -19707,7 +19716,7 @@
           )
         ] })
       ] }),
-      showPicker && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+      showPicker && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
         AvatarPicker,
         {
           currentAvatar: avatar,
@@ -19716,10 +19725,10 @@
           onCancel: () => setShowPicker(false)
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
           label,
-          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
             "input",
             {
               type: "text",
@@ -19734,12 +19743,12 @@
             }
           )
         ] }),
-        saving && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.text.muted, fontSize: "13px", margin: 0 }, children: "Saving..." }),
-        !saving && status === "success" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, children: "Saved." }),
-        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, children: "Failed to save name." })
+        saving && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.text.muted, fontSize: "13px", margin: 0 }, children: "Saving..." }),
+        !saving && status === "success" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, children: "Saved." }),
+        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, children: "Failed to save name." })
       ] }),
-      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
           Collapsible,
           {
             title: "Paired Parents",
@@ -19751,27 +19760,27 @@
             spacing: spacing2,
             radius: radius2,
             children: [
-              parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { marginBottom: `${spacing2.base}px` }, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: {
+              parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { marginBottom: `${spacing2.base}px` }, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: {
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
                 padding: "10px 0",
                 borderBottom: `1px solid ${colors.divider}`
               }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border } }),
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { fontSize: "15px", fontWeight: "500", flex: 1, color: colors.text.primary }, children: p.displayName || "Parent Device" }),
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { fontSize: "12px", color: colors.text.muted }, children: p.isOnline ? "Connected" : "Offline" })
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border } }),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { fontSize: "15px", fontWeight: "500", flex: 1, color: colors.text.primary }, children: p.displayName || "Parent Device" }),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { fontSize: "12px", color: colors.text.muted }, children: p.isOnline ? "Connected" : "Offline" })
               ] }, p.publicKey)) }),
-              pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { onClick: () => {
+              pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { onClick: () => {
                 window.callBare("haptic:tap");
                 handlePair();
               }, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }) }),
-              pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center" }, children: "Connecting to parent..." }),
-              pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0, textAlign: "center" }, children: "Pairing in progress..." }),
-              pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(import_jsx_runtime29.Fragment, { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0, textAlign: "center" }, children: pairError }),
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { onClick: () => {
+              pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center" }, children: "Connecting to parent..." }),
+              pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0, textAlign: "center" }, children: "Pairing in progress..." }),
+              pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0, textAlign: "center" }, children: pairError }),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { onClick: () => {
                   window.callBare("haptic:tap");
                   setPairState("idle");
                 }, children: "Try Again" }) })
@@ -19779,7 +19788,7 @@
             ]
           }
         ),
-        pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: {
+        pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: {
           backgroundColor: `${colors.success}22`,
           color: colors.success,
           border: `1px solid ${colors.success}44`,
@@ -19795,43 +19804,42 @@
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_jsx_runtime30 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime29 = __toESM(require_jsx_runtime());
   var TABS3 = [
-    { key: "home", label: "Home", icon: "House", Component: ChildHome },
-    { key: "requests", label: "Requests", icon: "Bell", Component: ChildRequests },
-    { key: "profile", label: "Profile", icon: "User", Component: () => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Profile, { mode: "child" }) }
+    { key: "home", label: "Home", icon: "House", Component: () => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ChildHome, { openDetail: true }) },
+    { key: "profile", label: "Profile", icon: "User", Component: () => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Profile, { mode: "child" }) }
   ];
   function ChildApp() {
     const { colors, typography: typography2 } = useTheme();
-    const [tab, setTab] = (0, import_react23.useState)("home");
-    (0, import_react23.useEffect)(() => {
-      const unsub = window.onBareEvent("navigate:child:requests", () => setTab("requests"));
+    const [tab, setTab] = (0, import_react22.useState)("home");
+    (0, import_react22.useEffect)(() => {
+      const unsub = window.onBareEvent("navigate:child:requests", () => setTab("home"));
       return unsub;
     }, []);
-    const ActiveTab = TABS3.find((t) => t.key === tab)?.Component || ChildHome;
-    return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
+    const ActiveTab = TABS3.find((t) => t.key === tab)?.Component || TABS3[0].Component;
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: {
       display: "flex",
       flexDirection: "column",
       height: "100vh",
       backgroundColor: colors.surface.base,
       ...typography2.body
     }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ActiveTab, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(TabBar, { tabs: TABS3, activeTab: tab, onTabChange: setTab })
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ActiveTab, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(TabBar, { tabs: TABS3, activeTab: tab, onTabChange: setTab })
     ] });
   }
 
   // src/ui/App.jsx
-  var import_jsx_runtime31 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime30 = __toESM(require_jsx_runtime());
   function ModeSetup() {
     const { colors, typography: typography2 } = useTheme();
-    return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", backgroundColor: colors.surface.base }, children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("p", { style: { ...typography2.body, color: colors.text.secondary }, children: "Waiting for setup..." }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", backgroundColor: colors.surface.base }, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { style: { ...typography2.body, color: colors.text.secondary }, children: "Waiting for setup..." }) });
   }
   function App() {
-    const [mode, setMode] = (0, import_react24.useState)(null);
-    const [ready, setReady] = (0, import_react24.useState)(false);
+    const [mode, setMode] = (0, import_react23.useState)(null);
+    const [ready, setReady] = (0, import_react23.useState)(false);
     const { colors } = useTheme();
-    (0, import_react24.useEffect)(() => {
+    (0, import_react23.useEffect)(() => {
       initTheme();
       window.callBare("identity:getMode").then(({ mode: m }) => setMode(m)).catch(() => {
       });
@@ -19843,11 +19851,11 @@
       return unsub;
     }, []);
     if (!ready) return null;
-    return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { style: { height: "100vh", backgroundColor: colors.surface.base, color: colors.text.primary }, children: mode === "parent" ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ParentApp, {}) : mode === "child" ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ChildApp, {}) : /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ModeSetup, {}) });
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { height: "100vh", backgroundColor: colors.surface.base, color: colors.text.primary }, children: mode === "parent" ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ParentApp, {}) : mode === "child" ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ChildApp, {}) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ModeSetup, {}) });
   }
 
   // src/ui/main.jsx
-  var import_jsx_runtime32 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime31 = __toESM(require_jsx_runtime());
   injectFonts();
   var pending = {};
   var nextId = 1;
@@ -19906,7 +19914,7 @@
     window.ReactNativeWebView.postMessage(JSON.stringify({ method: "back:result", args: { handled: false } }));
   };
   var root = (0, import_client.createRoot)(document.getElementById("root"));
-  root.render(/* @__PURE__ */ (0, import_jsx_runtime32.jsx)(App, {}));
+  root.render(/* @__PURE__ */ (0, import_jsx_runtime31.jsx)(App, {}));
 })();
 /*! Bundled license information:
 

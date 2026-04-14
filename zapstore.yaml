@@ -26,10 +26,15 @@ website: https://github.com/peerloomllc/pearguard
 
 images:
   - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-1.png
-  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/dark/scene-2.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-2.png
   - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-3.png
-  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/dark/scene-4.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-4.png
   - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-5.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-6.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-7.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-8.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-9.png
+  - ./metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-10.png
 
 metadata_sources:
   - github

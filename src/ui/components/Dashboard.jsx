@@ -187,14 +187,15 @@ export default forwardRef(function Dashboard(_props, ref) {
 
   return (
     <div style={{ padding: `${spacing.base}px` }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.base}px` }}>
-        <h2 style={{ ...typography.heading, color: colors.text.primary, margin: 0 }}>
+      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: `${spacing.base}px` }}>
+        <h2 style={{ ...typography.heading, color: colors.text.primary, margin: 0, textAlign: 'center' }}>
           Dashboard
         </h2>
         {!inviteActive && !loading && children.length > 0 && (
           <button
             onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
             style={{
+              position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
               background: 'none', border: 'none', cursor: 'pointer',
               ...typography.body, color: colors.primary, fontWeight: '600',
               display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,

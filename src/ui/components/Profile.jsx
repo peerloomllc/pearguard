@@ -4,6 +4,8 @@ import Icon from '../icons.js'
 import Avatar from './Avatar.jsx'
 import AvatarPicker from './AvatarPicker.jsx'
 import { pickCameraPhoto } from './avatarUtils.js'
+import Button from './primitives/Button.jsx'
+import Collapsible from './primitives/Collapsible.jsx'
 
 export default function Profile({ mode }) {
   const { colors, typography, spacing, radius } = useTheme()
@@ -19,6 +21,7 @@ export default function Profile({ mode }) {
   const [pairError, setPairError] = useState(null)
   const [parents, setParents] = useState([]) // child mode: list of paired parents
   const [pairedBanner, setPairedBanner] = useState(false)
+  const [parentsOpen, setParentsOpen] = useState(true)
   const pairDoneRef = useRef(false) // true once peer:paired fires; prevents acceptInvite overriding state
 
   useEffect(() => {
@@ -64,13 +67,14 @@ export default function Profile({ mode }) {
 
   async function handleSave() {
     const trimmed = name.trim()
-    if (!trimmed) return
+    if (!trimmed || trimmed === savedName) return
     setSaving(true)
     setStatus(null)
     try {
       await window.callBare('identity:setName', { name: trimmed })
       setSavedName(trimmed)
       setStatus('success')
+      setTimeout(() => setStatus((s) => (s === 'success' ? null : s)), 2000)
     } catch {
       setStatus('error')
     } finally {
@@ -147,7 +151,6 @@ export default function Profile({ mode }) {
 
   const label = mode === 'parent' ? 'Parent Name' : 'Your Name'
   const placeholder = mode === 'parent' ? 'e.g. Mom' : 'e.g. Alex'
-  const unchanged = name.trim() === savedName || !name.trim()
 
   const inputStyle = {
     padding: '10px',
@@ -159,21 +162,9 @@ export default function Profile({ mode }) {
     color: colors.text.primary,
   }
 
-  const btnStyle = {
-    padding: `${spacing.md}px`,
-    border: 'none',
-    borderRadius: `${radius.md}px`,
-    backgroundColor: colors.primary,
-    color: '#FFFFFF',
-    cursor: 'pointer',
-    fontSize: '15px',
-    fontWeight: '600',
-    marginTop: `${spacing.xs}px`,
-  }
-
   return (
     <div style={{ padding: `${spacing.base}px` }}>
-      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.xl}px` }}>Profile</h2>
+      <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.xl}px`, textAlign: 'center' }}>Profile</h2>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: `${spacing.xl}px` }}>
         <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
@@ -226,79 +217,87 @@ export default function Profile({ mode }) {
             type="text"
             value={name}
             onChange={(e) => { setName(e.target.value); setStatus(null) }}
+            onBlur={handleSave}
             placeholder={placeholder}
             style={inputStyle}
           />
         </label>
 
-        {status === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Name saved.</p>}
+        {saving && <p style={{ color: colors.text.muted, fontSize: '13px', margin: 0 }}>Saving...</p>}
+        {!saving && status === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Saved.</p>}
         {status === 'error' && <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>Failed to save name.</p>}
-
-        <button
-          onClick={() => { window.callBare('haptic:tap'); handleSave(); }}
-          disabled={saving || unchanged}
-          style={{ ...btnStyle, alignSelf: 'center', ...(saving || unchanged ? { backgroundColor: colors.surface.elevated, color: colors.text.muted, cursor: 'not-allowed' } : {}) }}
-        >
-          {saving ? 'Saving\u2026' : 'Save Name'}
-        </button>
       </div>
 
-      {mode === 'child' && pairedBanner && (
-        <div style={{
-          backgroundColor: `${colors.success}22`,
-          color: colors.success,
-          border: `1px solid ${colors.success}44`,
-          borderRadius: `${radius.md}px`,
-          padding: `10px 14px`,
-          marginTop: `${spacing.base}px`,
-          fontSize: '14px',
-          fontWeight: '500',
-        }}>
-          Successfully paired with parent!
-        </div>
-      )}
-
       {mode === 'child' && (
-        <div style={{ marginTop: `${spacing.xxl}px` }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: `${spacing.md}px`, color: colors.text.primary }}>Parents</h3>
+        <div style={{ marginTop: `${spacing.xl}px` }}>
+          <Collapsible
+            title="Paired Parents"
+            icon="User"
+            open={parentsOpen}
+            onToggle={() => setParentsOpen((o) => !o)}
+            maxHeight="600px"
+            colors={colors}
+            spacing={spacing}
+            radius={radius}
+          >
+            {parents.length > 0 && (
+              <div style={{ marginBottom: `${spacing.base}px` }}>
+                {parents.map((p) => (
+                  <div key={p.publicKey} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 0', borderBottom: `1px solid ${colors.divider}`,
+                  }}>
+                    <Avatar avatar={p.avatarThumb} name={p.displayName || 'Parent'} size={32} />
+                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border }} />
+                    <span style={{ fontSize: '15px', fontWeight: '500', flex: 1, color: colors.text.primary }}>{p.displayName || 'Parent Device'}</span>
+                    <span style={{ fontSize: '12px', color: colors.text.muted }}>{p.isOnline ? 'Connected' : 'Offline'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
-          {parents.length > 0 && (
-            <div style={{ marginBottom: `${spacing.base}px` }}>
-              {parents.map((p) => (
-                <div key={p.publicKey} style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '10px 0', borderBottom: `1px solid ${colors.divider}`,
-                }}>
-                  <Avatar avatar={p.avatarThumb} name={p.displayName || 'Parent'} size={32} />
-                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border }} />
-                  <span style={{ fontSize: '15px', fontWeight: '500', flex: 1, color: colors.text.primary }}>{p.displayName || 'Parent Device'}</span>
-                  <span style={{ fontSize: '12px', color: colors.text.muted }}>{p.isOnline ? 'Connected' : 'Offline'}</span>
+            {pairState === 'idle' && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <Button onClick={() => { window.callBare('haptic:tap'); handlePair(); }}>
+                  {parents.length > 0 ? 'Pair Another Parent' : 'Pair to Parent'}
+                </Button>
+              </div>
+            )}
+
+            {pairState === 'connecting' && (
+              <p style={{ color: colors.text.muted, fontSize: '14px', textAlign: 'center' }}>Connecting to parent...</p>
+            )}
+
+            {pairState === 'success' && (
+              <p style={{ color: colors.success, fontSize: '13px', margin: 0, textAlign: 'center' }}>Pairing in progress...</p>
+            )}
+
+            {pairState === 'error' && (
+              <>
+                <p style={{ color: colors.error, fontSize: '13px', margin: 0, textAlign: 'center' }}>{pairError}</p>
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: `${spacing.sm}px` }}>
+                  <Button onClick={() => { window.callBare('haptic:tap'); setPairState('idle'); }}>
+                    Try Again
+                  </Button>
                 </div>
-              ))}
+              </>
+            )}
+          </Collapsible>
+
+          {pairedBanner && (
+            <div style={{
+              backgroundColor: `${colors.success}22`,
+              color: colors.success,
+              border: `1px solid ${colors.success}44`,
+              borderRadius: `${radius.md}px`,
+              padding: `10px 14px`,
+              marginTop: `${spacing.base}px`,
+              fontSize: '14px',
+              fontWeight: '500',
+              textAlign: 'center',
+            }}>
+              Successfully paired with parent!
             </div>
-          )}
-
-          {pairState === 'idle' && (
-            <button style={btnStyle} onClick={() => { window.callBare('haptic:tap'); handlePair(); }}>
-              {parents.length > 0 ? 'Pair Another Parent' : 'Pair to Parent'}
-            </button>
-          )}
-
-          {pairState === 'connecting' && (
-            <p style={{ color: colors.text.muted, fontSize: '14px' }}>Connecting to parent\u2026</p>
-          )}
-
-          {pairState === 'success' && (
-            <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Pairing in progress\u2026</p>
-          )}
-
-          {pairState === 'error' && (
-            <>
-              <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>{pairError}</p>
-              <button style={btnStyle} onClick={() => { window.callBare('haptic:tap'); setPairState('idle'); }}>
-                Try Again
-              </button>
-            </>
           )}
         </div>
       )}

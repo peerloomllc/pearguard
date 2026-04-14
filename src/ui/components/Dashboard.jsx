@@ -53,6 +53,11 @@ export default forwardRef(function Dashboard(_props, ref) {
     }
   }, [children]);
 
+  // Screenshot mode: activate invite card on empty dashboard
+  useEffect(() => {
+    if (window.__pearScreenshotInvite) setInviteActive(true);
+  }, []);
+
   useEffect(() => {
     if (children.length === 0) return;
     const ss = window.__pearScreenshotOpenChild;

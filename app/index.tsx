@@ -981,6 +981,20 @@ export default function Root () {
     return () => { nativeSubs.forEach(sub => sub.remove()) }
   }, [])
 
+  // Black-screen watchdog: if the WebView hasn't fired onLoad within 3s after html
+  // is set and render, reload. Covers cases where the WebView silently fails to paint
+  // (e.g. Android renderer wedged after long background) without crashing.
+  useEffect(() => {
+    if (!html || !dbReady || webViewReady) return
+    const t = setTimeout(() => {
+      if (!_webViewLoaded) {
+        console.warn('[RN] WebView onLoad watchdog timeout — reloading')
+        webViewRef.current?.reload()
+      }
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [html, dbReady, webViewReady])
+
   // Pending notification navigation is now consumed in the onLoad handler below,
   // not here, so the 600ms timer starts after the WebView has actually loaded
   // (not from dbReady, which fires before the WebView even begins loading).
@@ -996,6 +1010,16 @@ export default function Root () {
         source={{ html }}
         style={styles.webview}
         onMessage={onWebViewMessage}
+        onRenderProcessGone={() => {
+          console.warn('[RN] WebView render process gone — reloading')
+          _webViewLoaded = false
+          webViewRef.current?.reload()
+        }}
+        onContentProcessDidTerminate={() => {
+          console.warn('[RN] WebView content process terminated — reloading')
+          _webViewLoaded = false
+          webViewRef.current?.reload()
+        }}
         onLoad={() => {
           _webViewLoaded = true
           setWebViewReady(true)

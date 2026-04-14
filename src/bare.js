@@ -195,8 +195,11 @@ async function init (dataDir, attempt = 0) {
   // never persisted (older pairings predate topic persistence — #144).
   for (const t of activePeerTopics) topicHexSet.add(t)
   const topicHexes = [...topicHexSet]
-  console.log('[bare] rejoining', topicHexes.length, 'topic(s) on startup')
-  await Promise.all(topicHexes.map(t => joinTopic(t).catch(e => console.error('[bare] rejoin failed:', e.message))))
+  console.log('[bare] rejoining', topicHexes.length, 'topic(s) on startup (async)')
+  // Fire-and-forget: swarm.flush() blocks ~5s per topic on DHT ack, which would
+  // delay the 'ready' event (and therefore the UI) by that much. Peers reconnect
+  // as soon as the joins complete in the background.
+  Promise.all(topicHexes.map(t => joinTopic(t).catch(e => console.error('[bare] rejoin failed:', e.message))))
 
   // Clean up usage data older than 30 days
   async function cleanupOldUsageData() {

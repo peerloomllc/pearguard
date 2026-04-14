@@ -738,7 +738,7 @@ function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
 
 export default function UsageReports({ childPublicKey, onBack }) {
   const { colors, typography, spacing, radius } = useTheme();
-  const [view, setView] = useState('daily');
+  const [view, setView] = useState(() => window.__pearScreenshotReportsView || 'daily');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: colors.surface.base }}>

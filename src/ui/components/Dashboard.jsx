@@ -53,6 +53,23 @@ export default forwardRef(function Dashboard(_props, ref) {
     }
   }, [children]);
 
+  // Screenshot mode: activate invite card on empty dashboard
+  useEffect(() => {
+    if (window.__pearScreenshotInvite) setInviteActive(true);
+  }, []);
+
+  useEffect(() => {
+    if (children.length === 0) return;
+    const ss = window.__pearScreenshotOpenChild;
+    if (ss?.publicKey) {
+      const child = children.find((c) => c.publicKey === ss.publicKey);
+      if (child) {
+        setSelectedChild(child);
+        setSelectedTab(ss.tab || 'activity');
+      }
+    }
+  }, [children]);
+
   // Handle notification deep link navigation from live events
   useEffect(() => {
     function handleNav(data) {

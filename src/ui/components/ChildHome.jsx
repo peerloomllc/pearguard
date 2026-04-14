@@ -144,7 +144,7 @@ export default function ChildHome({ openDetail }) {
     detail === 'requests' ? 'Pending requests' : ''
 
   return (
-    <div style={{ padding: `${spacing.xl}px` }}>
+    <div style={{ padding: `${spacing.xl}px`, paddingTop: `calc(${spacing.xl}px + env(safe-area-inset-top, 0px))` }}>
       {homeData.locked && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`,

@@ -33,7 +33,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     });
     return () => unsub();
   }, []);
-  const [showReports, setShowReports] = useState(false);
+  const [showReports, setShowReports] = useState(() => !!window.__pearScreenshotShowReports);
   const [confirmLock, setConfirmLock] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
   const [lockMessage, setLockMessage] = useState('');

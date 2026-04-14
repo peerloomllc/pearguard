@@ -6,6 +6,23 @@ PearGuard lets a parent device manage screen time and app access on a child devi
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-1.png" width="180" alt="Parent dashboard" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-2.png" width="180" alt="Rules" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-3.png" width="180" alt="Apps by category" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-4.png" width="180" alt="Usage" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-5.png" width="180" alt="Activity and time requests" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-6.png" width="180" alt="Daily usage report" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-7.png" width="180" alt="Category usage report" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-8.png" width="180" alt="Pair a child device" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-9.png" width="180" alt="Child home" />
+  <img src="metadata/android/screenshots/Pixel_9_Pro_Framed/light/scene-10.png" width="180" alt="Child profile with paired parents" />
+</p>
+
+---
+
 ## Features
 
 - **Screen time limits** - set daily time budgets and bedtime windows on the child device

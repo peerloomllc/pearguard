@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { injectFonts } from './fonts.js';
 import App from './App.jsx';
+import { installFixtures } from './screenshot-fixtures.js';
 
 injectFonts();
 
@@ -87,6 +88,13 @@ window.__pearBack = function () {
   }
   window.ReactNativeWebView.postMessage(JSON.stringify({ method: 'back:result', args: { handled: false } }));
 };
+
+// Screenshot mode: if a scene was injected by the RN shell before this bundle
+// ran, swap window.callBare / onBareEvent for canned fixtures before mounting.
+const _screenshotScene = window.__PEARGUARD_SCREENSHOT_SCENE;
+if (_screenshotScene) {
+  installFixtures(_screenshotScene);
+}
 
 // Mount React app
 const root = createRoot(document.getElementById('root'));

@@ -6,6 +6,16 @@ Completed items with implementation notes. Open items are in `TODO.md`.
 
 ## Added 2026-04-14
 
+### [x] Look up ASC_APP_ID (#106) - closed 2026-04-14
+- Registered `com.pearguard` App ID in Apple Developer portal and created PearGuard listing in App Store Connect.
+- `asc apps list` returned numeric ID `6762235405`.
+- Set `ASC_APP_ID=6762235405` in `~/peerloomllc/pearguard/scripts/.env` on Mac Mini (gitignored).
+
+### [x] Create metadata/ios/ directory (#111) - closed 2026-04-14
+- Scaffolded to match PearCal layout: `app-info/en-US.json`, `en-US/release_notes.txt`, `version/default/en-US.json`.
+- PearGuard-specific copy: subtitle "P2P parental controls. No cloud.", privacy URL `peerloomllc.com/pearguard/privacy`, support URL `github.com/peerloomllc/pearguard/issues`.
+- Release notes placeholder ("Initial release."); update before first submission.
+
 ### [x] Port screenshot automation from PearCal (#112) - closed 2026-04-14
 - Copied scripts (`android-screenshots.sh`, `ios-screenshots.sh`, `screenshots.sh`, `add-ios-sources.rb`, `frame-android-screenshots.sh`) and `scripts/assets/pixel5-frame.png`.
 - Added `ScreenshotModule.kt` + `ScreenshotPackage.kt` under `com.pearguard`, registered in `MainApplication.kt`; iOS `ScreenshotModule.swift` + `.m` registered via `add-ios-sources.rb`.

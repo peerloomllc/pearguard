@@ -19,7 +19,4 @@ Open items only. Completed items are in `DONE.md`.
 
 ## Release Pre-work (before first release)
 
-| # | Title | Details |
-|---|-------|---------|
-| 106 | Look up ASC_APP_ID | Register PearGuard in App Store Connect, then run `asc apps list --output json` to get numeric ID. Deferred until iOS App Store listing is created. |
-| 111 | Create metadata/ios/ directory | Only needed if/when iOS parent-only version ships (see #102). |
+_All release pre-work complete._

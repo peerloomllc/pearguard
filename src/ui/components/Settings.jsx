@@ -22,6 +22,108 @@ function formatMinutes(min) {
   return h + 'h ' + m + 'm';
 }
 
+const CATEGORY_LABELS = {
+  data: 'Block data',
+  tree: 'Tree index',
+  bitfield: 'Bitfield',
+  header: 'Header / oplog',
+  other: 'Other',
+};
+
+function Bar({ pct, color, bg }) {
+  return (
+    <div style={{ height: 6, borderRadius: 3, background: bg, overflow: 'hidden', marginTop: 4 }}>
+      <div style={{ height: '100%', width: `${Math.max(1, pct)}%`, background: color }} />
+    </div>
+  );
+}
+
+function StorageModal({ modal, onClose, breakdown, analyze, result, colors, typography, spacing, radius, formatBytes }) {
+  if (!modal) return null;
+
+  const title = modal === 'breakdown' ? 'Storage Breakdown'
+    : modal === 'analyze' ? 'Reclaimable Analysis'
+    : 'Reclaim Complete';
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: `${spacing.lg}px` }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: colors.surface.card, borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, maxWidth: 480, width: '100%', maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${colors.border}` }}>
+        <h3 style={{ ...typography.subheading, color: colors.text.primary, margin: 0, marginBottom: `${spacing.md}px`, textAlign: 'center' }}>{title}</h3>
+
+        {modal === 'breakdown' && breakdown && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: `${spacing.md}px` }}>
+              <span style={{ fontSize: 13, color: colors.text.secondary }}>On disk</span>
+              <span style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary }}>{formatBytes(breakdown.total)}</span>
+            </div>
+            {Object.entries(breakdown.cats).filter(([, v]) => v.count > 0).sort((a, b) => b[1].size - a[1].size).map(([cat, v]) => {
+              const pct = breakdown.total > 0 ? (100 * v.size / breakdown.total) : 0;
+              return (
+                <div key={cat} style={{ marginBottom: `${spacing.sm}px` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: colors.text.secondary }}>
+                    <span>{CATEGORY_LABELS[cat] || cat} <span style={{ color: colors.text.muted }}>({v.count})</span></span>
+                    <span>{formatBytes(v.size)} ({pct.toFixed(0)}%)</span>
+                  </div>
+                  <Bar pct={pct} color={colors.primary} bg={colors.border} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {modal === 'analyze' && analyze && (
+          <div>
+            <div style={{ padding: `${spacing.md}px`, backgroundColor: colors.surface.base, borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: colors.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Reclaimable</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: analyze.pct > 20 ? colors.error : colors.text.primary, marginTop: 4 }}>
+                ~{formatBytes(analyze.reclaimableBytes)} <span style={{ fontSize: 14, color: colors.text.muted }}>({analyze.pct}%)</span>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px`, fontSize: 12, textAlign: 'center' }}>
+              <div><div style={{ color: colors.success, fontSize: 18, fontWeight: 600 }}>{analyze.groups.keep || 0}</div><div style={{ color: colors.text.muted }}>keep</div></div>
+              <div><div style={{ color: colors.error, fontSize: 18, fontWeight: 600 }}>{analyze.groups.wipe || 0}</div><div style={{ color: colors.text.muted }}>wipe</div></div>
+              <div><div style={{ color: colors.text.primary, fontSize: 18, fontWeight: 600 }}>{analyze.groups.request || 0}</div><div style={{ color: colors.text.muted }}>requests</div></div>
+            </div>
+            <div style={{ fontSize: 12, color: colors.text.muted, marginBottom: `${spacing.sm}px` }}>By prefix (live data)</div>
+            {Object.entries(analyze.byPrefix).sort((a, b) => b[1].bytes - a[1].bytes).map(([prefix, v]) => {
+              const totalLive = analyze.estLiveBytes || 1;
+              const pct = (100 * v.bytes / totalLive);
+              const barColor = v.cls === 'wipe' ? colors.error : v.cls === 'keep' ? colors.success : colors.text.muted;
+              return (
+                <div key={prefix} style={{ marginBottom: `${spacing.sm}px` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: colors.text.secondary }}>
+                    <span style={{ fontFamily: 'monospace' }}>{prefix} <span style={{ color: colors.text.muted }}>({v.count})</span></span>
+                    <span>{formatBytes(v.bytes)}</span>
+                  </div>
+                  <Bar pct={pct} color={barColor} bg={colors.border} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {modal === 'result' && result && (
+          <div>
+            <div style={{ padding: `${spacing.md}px`, backgroundColor: colors.surface.base, borderRadius: `${radius.md}px`, textAlign: 'center', marginBottom: `${spacing.md}px` }}>
+              <div style={{ fontSize: 11, color: colors.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Freed</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: colors.success, marginTop: 4 }}>{formatBytes(result.freed)}</div>
+              <div style={{ fontSize: 13, color: colors.text.muted, marginTop: 4 }}>{formatBytes(result.before)} to {formatBytes(result.after)}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: `${spacing.sm}px`, fontSize: 13, color: colors.text.secondary, textAlign: 'center' }}>
+              <div><div style={{ color: colors.success, fontSize: 18, fontWeight: 600 }}>{result.kept}</div><div>keys kept</div></div>
+              <div><div style={{ color: colors.error, fontSize: 18, fontWeight: 600 }}>{result.dropped}</div><div>keys dropped</div></div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: `${spacing.lg}px`, display: 'flex', justifyContent: 'center' }}>
+          <button onClick={onClose} style={{ padding: `${spacing.sm}px ${spacing.xl}px`, borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, fontSize: 14, cursor: 'pointer', minWidth: 140 }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChipSelect({ options, selected, onChange, formatter, colors, spacing, radius }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
@@ -62,6 +164,14 @@ export default function Settings() {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [backupMode, setBackupMode] = useState(null); // 'export' | 'import' | null
+  const [storageOpen, setStorageOpen] = useState(false);
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [storageBreakdown, setStorageBreakdown] = useState(null);
+  const [storageAnalyze, setStorageAnalyze] = useState(null);
+  const [reclaimResult, setReclaimResult] = useState(null);
+  const [reclaimConfirm, setReclaimConfirm] = useState(false);
+  const [storageError, setStorageError] = useState(null);
+  const [storageModal, setStorageModal] = useState(null); // 'breakdown' | 'analyze' | 'result' | null
 
   // Profile state
   const [name, setName] = useState('');
@@ -205,6 +315,57 @@ export default function Settings() {
     }
   }
 
+
+  function formatBytes(n) {
+    if (!n || n < 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let u = 0;
+    let v = n;
+    while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+    return v.toFixed(v < 10 && u > 0 ? 1 : 0) + ' ' + units[u];
+  }
+
+  async function handleStorageBreakdown() {
+    setStorageError(null);
+    setStorageBusy(true);
+    try {
+      const res = await window.callBare('storage:breakdown');
+      setStorageBreakdown(res);
+      setStorageModal('breakdown');
+    } catch (e) {
+      setStorageError(e.message || 'Failed to read storage');
+    }
+    setStorageBusy(false);
+  }
+
+  async function handleStorageAnalyze() {
+    setStorageError(null);
+    setStorageBusy(true);
+    try {
+      const res = await window.callBare('storage:analyze');
+      setStorageAnalyze(res);
+      setStorageModal('analyze');
+    } catch (e) {
+      setStorageError(e.message || 'Failed to analyze storage');
+    }
+    setStorageBusy(false);
+  }
+
+  async function handleStorageReclaim() {
+    setStorageError(null);
+    setStorageBusy(true);
+    setReclaimConfirm(false);
+    try {
+      const res = await window.callBare('storage:rebuild');
+      setReclaimResult(res);
+      try { setStorageBreakdown(await window.callBare('storage:breakdown')); } catch {}
+      try { setStorageAnalyze(await window.callBare('storage:analyze')); } catch {}
+      setStorageModal('result');
+    } catch (e) {
+      setStorageError(e.message || 'Reclaim failed');
+    }
+    setStorageBusy(false);
+  }
 
   const inputStyle = {
     padding: '10px',
@@ -407,6 +568,48 @@ export default function Settings() {
         mode={backupMode || 'export'}
         onClose={() => setBackupMode(null)}
       />
+
+      {/* Storage */}
+      <Collapsible title="Storage" icon="Trash" open={storageOpen} onToggle={() => setStorageOpen(o => !o)} maxHeight="400px" {...collapsibleProps}>
+        <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+          The local database grows over time as telemetry (usage reports, alerts, sessions) accumulates. Check the current footprint and reclaim disk when it gets large.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, alignItems: 'center' }}>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); handleStorageBreakdown(); }} disabled={storageBusy} style={{ minWidth: '200px' }}>Storage Breakdown</Button>
+          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); handleStorageAnalyze(); }} disabled={storageBusy} style={{ minWidth: '200px' }}>Analyze Reclaimable</Button>
+          <Button onClick={() => { window.callBare('haptic:tap'); setReclaimConfirm(true); }} disabled={storageBusy || !storageAnalyze} style={{ minWidth: '200px' }}>Reclaim Storage</Button>
+        </div>
+        {storageBusy && <p style={{ fontSize: '13px', color: colors.text.muted, margin: `${spacing.md}px 0 0`, textAlign: 'center' }}>Working...</p>}
+        {storageError && <p style={{ fontSize: '13px', color: colors.error, margin: `${spacing.md}px 0 0`, textAlign: 'center' }}>{storageError}</p>}
+      </Collapsible>
+
+      <StorageModal
+        modal={storageModal}
+        onClose={() => setStorageModal(null)}
+        breakdown={storageBreakdown}
+        analyze={storageAnalyze}
+        result={reclaimResult}
+        colors={colors}
+        typography={typography}
+        spacing={spacing}
+        radius={radius}
+        formatBytes={formatBytes}
+      />
+
+      {reclaimConfirm && (
+        <div onClick={() => setReclaimConfirm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: `${spacing.lg}px` }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: colors.surface.card, borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, maxWidth: 420, width: '100%', border: `1px solid ${colors.border}` }}>
+            <h3 style={{ ...typography.subheading, color: colors.text.primary, margin: 0, marginBottom: `${spacing.md}px`, textAlign: 'center' }}>Reclaim Storage?</h3>
+            <p style={{ fontSize: '13px', color: colors.text.secondary, margin: 0, marginBottom: `${spacing.lg}px`, lineHeight: 1.5, textAlign: 'center' }}>
+              This permanently deletes historical usage reports, alerts, override grants, bypass events and session logs. Identity, children, policies and pending requests are preserved.
+            </p>
+            <div style={{ display: 'flex', gap: `${spacing.sm}px`, justifyContent: 'center' }}>
+              <Button variant="secondary" onClick={() => setReclaimConfirm(false)} style={{ flex: 1, maxWidth: 160 }}>Cancel</Button>
+              <Button onClick={() => { window.callBare('haptic:tap'); handleStorageReclaim(); }} style={{ flex: 1, maxWidth: 160 }}>Reclaim now</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Save settings button */}
       {settingsLoaded && (

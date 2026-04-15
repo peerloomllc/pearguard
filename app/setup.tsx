@@ -7,7 +7,7 @@
 // Child path: calls setMode then navigates directly to /child-setup.
 
 import { useState, useRef } from 'react'
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, InputAccessoryView, Keyboard } from 'react-native'
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, InputAccessoryView, Keyboard, TouchableWithoutFeedback } from 'react-native'
 import { useRouter } from 'expo-router'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
@@ -31,6 +31,8 @@ export default function SetupScreen () {
   const [pin, setPin]                 = useState('')
   const [confirmPin, setConfirmPin]   = useState('')
   const confirmPinRef                 = useRef<TextInput>(null)
+  const pinScrollRef                  = useRef<ScrollView>(null)
+  const [pinShifted, setPinShifted]   = useState(false)
   const router = useRouter()
   const pinAccessoryID = 'pinAccessoryDone'
 
@@ -125,44 +127,48 @@ export default function SetupScreen () {
 
   if (step === 'name') {
     return (
-      <View style={styles.container}>
-        <View style={[styles.iconCircle, styles.iconCircleGreen]}>
-          <NativeIcon name="User" size={32} color={colors.primaryLight} />
-        </View>
-        <Text style={styles.title}>What's your name?</Text>
-        <Text style={styles.subtitle}>
-          This name is shown to the other device when you pair.
-        </Text>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface.base }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.container}>
+            <View style={[styles.iconCircle, styles.iconCircleGreen]}>
+              <NativeIcon name="User" size={32} color={colors.primaryLight} />
+            </View>
+            <Text style={styles.title}>What's your name?</Text>
+            <Text style={styles.subtitle}>
+              This name is shown to the other device when you pair.
+            </Text>
 
-        {error && <Text style={styles.error}>{error}</Text>}
+            {error && <Text style={styles.error}>{error}</Text>}
 
-        {loading ? (
-          <ActivityIndicator color={colors.primary} size="large" />
-        ) : (
-          <View style={styles.form}>
-            <Text style={styles.label}>Your name</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={(v) => { setName(v); setError(null) }}
-              placeholder="Your name"
-              placeholderTextColor={colors.text.muted}
-              maxLength={30}
-              autoFocus
-            />
-            <TouchableOpacity style={styles.btnSave} onPress={handleSetName}>
-              <Text style={styles.btnSaveText}>Continue</Text>
-            </TouchableOpacity>
+            {loading ? (
+              <ActivityIndicator color={colors.primary} size="large" />
+            ) : (
+              <View style={styles.form}>
+                <Text style={styles.label}>Your name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={(v) => { setName(v); setError(null) }}
+                  placeholder="Your name"
+                  placeholderTextColor={colors.text.muted}
+                  maxLength={30}
+                  autoFocus
+                />
+                <TouchableOpacity style={styles.btnSave} onPress={handleSetName}>
+                  <Text style={styles.btnSaveText}>Continue</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
-        )}
-      </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     )
   }
 
   if (step === 'pin') {
     return (
       <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface.base }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={[styles.container, { justifyContent: 'flex-start', paddingTop: 60 }]} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={pinScrollRef} contentContainerStyle={[styles.container, { flex: undefined, flexGrow: 1 }, pinShifted ? { justifyContent: 'flex-start', paddingTop: 20, paddingBottom: 20 } : { justifyContent: 'center' }]} keyboardShouldPersistTaps="handled">
           <View style={[styles.iconCircle, styles.iconCircleGreen]}>
             <NativeIcon name="LockSimple" size={32} color={colors.primaryLight} />
           </View>
@@ -178,7 +184,7 @@ export default function SetupScreen () {
             <ActivityIndicator color={colors.primary} size="large" />
           ) : (
             <View style={styles.form}>
-              <Text style={styles.label}>PIN (4+ digits)</Text>
+              <Text style={styles.label}>PIN (4 digits)</Text>
               <TextInput
                 style={styles.input}
                 value={pin}
@@ -200,6 +206,10 @@ export default function SetupScreen () {
                 style={styles.input}
                 value={confirmPin}
                 onChangeText={(v) => { setConfirmPin(v); setError(null) }}
+                onFocus={() => {
+                  setPinShifted(true);
+                  setTimeout(() => pinScrollRef.current?.scrollToEnd({ animated: true }), 50);
+                }}
                 placeholder="Repeat PIN"
                 placeholderTextColor={colors.text.muted}
                 keyboardType="numeric"

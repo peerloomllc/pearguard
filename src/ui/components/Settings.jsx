@@ -5,7 +5,7 @@ import Button from './primitives/Button.jsx';
 import Toggle from './primitives/Toggle.jsx';
 import Avatar from './Avatar.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
-import { pickCameraPhoto, processFileForAvatar } from './avatarUtils.js';
+import { pickPhoto } from './avatarUtils.js';
 import DeviceBackupModal from './DeviceBackupModal.jsx';
 import Collapsible from './primitives/Collapsible.jsx';
 
@@ -71,7 +71,6 @@ export default function Settings() {
   const [savingName, setSavingName] = useState(false);
   const [nameStatus, setNameStatus] = useState(null);
   const [photoLoading, setPhotoLoading] = useState(false);
-  const fileInputRef = useRef(null);
 
   // PIN state
   const [newPin, setNewPin] = useState('');
@@ -142,31 +141,16 @@ export default function Settings() {
     }
   }
 
-  async function handlePickCamera() {
+  async function handlePickPhoto() {
     setPhotoLoading(true);
     try {
-      const av = await pickCameraPhoto();
+      const av = await pickPhoto();
       if (av) {
         await window.callBare('identity:setAvatar', { avatar: av });
         setAvatar(av);
       }
     } catch { /* cancelled or error */ }
     setPhotoLoading(false);
-  }
-
-  async function handleFileInput(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoLoading(true);
-    try {
-      const av = await processFileForAvatar(file);
-      if (av) {
-        await window.callBare('identity:setAvatar', { avatar: av });
-        setAvatar(av);
-      }
-    } catch { /* error */ }
-    setPhotoLoading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   async function handleRemovePhoto() {
@@ -246,26 +230,13 @@ export default function Settings() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: `${spacing.lg}px` }}>
           <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
           <div style={{ display: 'flex', gap: '8px', marginTop: `${spacing.sm}px` }}>
-            {window.__pearPlatform === 'ios' ? (
-              <button
-                onClick={() => { window.callBare('haptic:tap'); handlePickCamera(); }}
-                disabled={photoLoading}
-                style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
-              >
-                <Icon name="Camera" size={14} color={colors.text.primary} /> Camera
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => { window.callBare('haptic:tap'); fileInputRef.current?.click(); }}
-                  disabled={photoLoading}
-                  style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
-                >
-                  <Icon name="ImageSquare" size={14} color={colors.text.primary} /> Photo
-                </button>
-                <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileInput} />
-              </>
-            )}
+            <button
+              onClick={() => { window.callBare('haptic:tap'); handlePickPhoto(); }}
+              disabled={photoLoading}
+              style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
+            >
+              <Icon name="ImageSquare" size={14} color={colors.text.primary} /> Photo
+            </button>
             {avatar && avatar.type === 'custom' && (
               <button
                 onClick={() => { window.callBare('haptic:tap'); handleRemovePhoto(); }}

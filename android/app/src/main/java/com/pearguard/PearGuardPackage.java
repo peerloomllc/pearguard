@@ -17,6 +17,7 @@ public class PearGuardPackage implements ReactPackage {
         modules.add(new UsageStatsModule(reactContext));
         modules.add(new ContactsModule(reactContext));
         modules.add(new DownloadsModule(reactContext));
+        modules.add(new CameraModule(reactContext));
         // AppBlockerModule, DeviceAdminModule, PackageMonitorModule, and
         // BootReceiverModule are Android components (AccessibilityService,
         // BroadcastReceiver) — they are not ReactContextBaseJavaModules.

@@ -3,7 +3,7 @@ import { useTheme } from '../theme.js'
 import Icon from '../icons.js'
 import Avatar from './Avatar.jsx'
 import AvatarPicker from './AvatarPicker.jsx'
-import { pickCameraPhoto } from './avatarUtils.js'
+import { pickPhoto } from './avatarUtils.js'
 import Button from './primitives/Button.jsx'
 import Collapsible from './primitives/Collapsible.jsx'
 
@@ -15,7 +15,6 @@ export default function Profile({ mode }) {
   const [showPicker, setShowPicker] = useState(false)
   const [saving, setSaving] = useState(false)
   const [photoLoading, setPhotoLoading] = useState(false)
-  const fileInputRef = useRef(null)
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
   const [pairError, setPairError] = useState(null)
@@ -92,32 +91,16 @@ export default function Profile({ mode }) {
     }
   }
 
-  async function handlePickCamera() {
+  async function handlePickPhoto() {
     setPhotoLoading(true)
     try {
-      const av = await pickCameraPhoto()
+      const av = await pickPhoto()
       if (av) {
         await window.callBare('identity:setAvatar', { avatar: av })
         setAvatar(av)
       }
     } catch { /* cancelled or error */ }
     setPhotoLoading(false)
-  }
-
-  async function handleFileInput(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setPhotoLoading(true)
-    try {
-      const { processFileForAvatar } = await import('./avatarUtils.js')
-      const av = await processFileForAvatar(file)
-      if (av) {
-        await window.callBare('identity:setAvatar', { avatar: av })
-        setAvatar(av)
-      }
-    } catch { /* error */ }
-    setPhotoLoading(false)
-    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   async function handleRemovePhoto() {
@@ -169,26 +152,13 @@ export default function Profile({ mode }) {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: `${spacing.xl}px` }}>
         <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
         <div style={{ display: 'flex', gap: '8px', marginTop: `${spacing.sm}px` }}>
-          {window.__pearPlatform === 'ios' ? (
-            <button
-              onClick={() => { window.callBare('haptic:tap'); handlePickCamera(); }}
-              disabled={photoLoading}
-              style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
-            >
-              <Icon name="Camera" size={14} color={colors.text.primary} /> Camera
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={() => { window.callBare('haptic:tap'); fileInputRef.current?.click(); }}
-                disabled={photoLoading}
-                style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
-              >
-                <Icon name="ImageSquare" size={14} color={colors.text.primary} /> Photo
-              </button>
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileInput} />
-            </>
-          )}
+          <button
+            onClick={() => { window.callBare('haptic:tap'); handlePickPhoto(); }}
+            disabled={photoLoading}
+            style={{ fontSize: '12px', padding: '5px 14px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text.primary, cursor: photoLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: photoLoading ? 0.5 : 1 }}
+          >
+            <Icon name="ImageSquare" size={14} color={colors.text.primary} /> Photo
+          </button>
           {avatar && avatar.type === 'custom' && (
             <button
               onClick={() => { window.callBare('haptic:tap'); handleRemovePhoto(); }}

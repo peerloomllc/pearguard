@@ -6,15 +6,8 @@
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-  };
   var __commonJS = (cb, mod) => function __require() {
     return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-  };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
   };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
@@ -14377,76 +14370,6 @@
     }
   });
 
-  // src/ui/components/avatarUtils.js
-  var avatarUtils_exports = {};
-  __export(avatarUtils_exports, {
-    pickCameraPhoto: () => pickCameraPhoto,
-    processFileForAvatar: () => processFileForAvatar,
-    readFileAsBase64: () => readFileAsBase64
-  });
-  function compressImage(base64, size, quality, sourceMime) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        const min = Math.min(img.width, img.height);
-        const sx = (img.width - min) / 2;
-        const sy = (img.height - min) / 2;
-        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        resolve(dataUrl.split(",")[1]);
-      };
-      img.src = "data:" + (sourceMime || "image/jpeg") + ";base64," + base64;
-    });
-  }
-  function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target.result;
-        resolve(dataUrl.split(",")[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-  async function pickCameraPhoto() {
-    const result = await window.callBare("avatar:pickCamera");
-    if (!result || !result.base64) return null;
-    const mime = result.mime || "image/jpeg";
-    const isAnimated = ANIMATED_MIMES.includes(mime);
-    if (isAnimated && result.base64.length <= MAX_ANIMATED_BASE64) {
-      const thumb642 = await compressImage(result.base64, 48, 0.6, mime);
-      return { type: "custom", base64: result.base64, thumb64: thumb642, mime };
-    }
-    const base64 = await compressImage(result.base64, 256, 0.8, mime);
-    const thumb64 = await compressImage(result.base64, 48, 0.6, mime);
-    return { type: "custom", base64, thumb64 };
-  }
-  async function processFileForAvatar(file) {
-    const mime = file.type || "image/jpeg";
-    const isAnimated = ANIMATED_MIMES.includes(mime);
-    const raw = await readFileAsBase64(file);
-    if (isAnimated && raw.length <= MAX_ANIMATED_BASE64) {
-      const thumb642 = await compressImage(raw, 48, 0.6, mime);
-      return { type: "custom", base64: raw, thumb64: thumb642, mime };
-    }
-    const base64 = await compressImage(raw, 256, 0.8, mime);
-    const thumb64 = await compressImage(raw, 48, 0.6, mime);
-    return { type: "custom", base64, thumb64 };
-  }
-  var ANIMATED_MIMES, MAX_ANIMATED_BASE64;
-  var init_avatarUtils = __esm({
-    "src/ui/components/avatarUtils.js"() {
-      "use strict";
-      ANIMATED_MIMES = ["image/gif", "image/webp"];
-      MAX_ANIMATED_BASE64 = 5e5;
-    }
-  });
-
   // src/ui/main.jsx
   var import_react24 = __toESM(require_react());
   var import_client = __toESM(require_client());
@@ -18277,8 +18200,41 @@
     ] }) });
   }
 
-  // src/ui/components/Settings.jsx
-  init_avatarUtils();
+  // src/ui/components/avatarUtils.js
+  function compressImage(base64, size, quality, sourceMime) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+        const mime = sourceMime || "image/jpeg";
+        const dataUrl = canvas.toDataURL(mime, quality);
+        resolve(dataUrl.split(",")[1]);
+      };
+      img.src = "data:" + (sourceMime || "image/jpeg") + ";base64," + base64;
+    });
+  }
+  var ANIMATED_MIMES = ["image/gif", "image/webp"];
+  var MAX_ANIMATED_BASE64 = 5e5;
+  async function pickPhoto() {
+    const result = await window.callBare("avatar:pickPhoto");
+    if (!result || !result.base64) return null;
+    const mime = result.mime || "image/jpeg";
+    const isAnimated = ANIMATED_MIMES.includes(mime);
+    if (isAnimated && result.base64.length <= MAX_ANIMATED_BASE64) {
+      const thumb642 = await compressImage(result.base64, 48, 0.6, mime);
+      return { type: "custom", base64: result.base64, thumb64: thumb642, mime };
+    }
+    const base64 = await compressImage(result.base64, 256, 0.8, mime);
+    const thumb64 = await compressImage(result.base64, 48, 0.6, mime);
+    return { type: "custom", base64, thumb64, mime };
+  }
 
   // src/ui/components/DeviceBackupModal.jsx
   var import_react15 = __toESM(require_react());
@@ -18504,7 +18460,6 @@
     const [savingName, setSavingName] = (0, import_react17.useState)(false);
     const [nameStatus, setNameStatus] = (0, import_react17.useState)(null);
     const [photoLoading, setPhotoLoading] = (0, import_react17.useState)(false);
-    const fileInputRef = (0, import_react17.useRef)(null);
     const [newPin, setNewPin] = (0, import_react17.useState)("");
     const [confirmPin, setConfirmPin] = (0, import_react17.useState)("");
     const [pinStatus, setPinStatus] = (0, import_react17.useState)(null);
@@ -18560,10 +18515,10 @@
       } catch {
       }
     }
-    async function handlePickCamera() {
+    async function handlePickPhoto() {
       setPhotoLoading(true);
       try {
-        const av = await pickCameraPhoto();
+        const av = await pickPhoto();
         if (av) {
           await window.callBare("identity:setAvatar", { avatar: av });
           setAvatar(av);
@@ -18571,21 +18526,6 @@
       } catch {
       }
       setPhotoLoading(false);
-    }
-    async function handleFileInput(e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setPhotoLoading(true);
-      try {
-        const av = await processFileForAvatar(file);
-        if (av) {
-          await window.callBare("identity:setAvatar", { avatar: av });
-          setAvatar(av);
-        }
-      } catch {
-      }
-      setPhotoLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
     async function handleRemovePhoto() {
       setPhotoLoading(true);
@@ -18653,38 +18593,21 @@
         /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.lg}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
           /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
-            window.__pearPlatform === "ios" ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
               "button",
               {
                 onClick: () => {
                   window.callBare("haptic:tap");
-                  handlePickCamera();
+                  handlePickPhoto();
                 },
                 disabled: photoLoading,
                 style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
-                  " Camera"
+                  /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
+                  " Photo"
                 ]
               }
-            ) : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
-                "button",
-                {
-                  onClick: () => {
-                    window.callBare("haptic:tap");
-                    fileInputRef.current?.click();
-                  },
-                  disabled: photoLoading,
-                  style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
-                  children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
-                    " Photo"
-                  ]
-                }
-              ),
-              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { ref: fileInputRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFileInput })
-            ] }),
+            ),
             avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
               "button",
               {
@@ -19532,7 +19455,6 @@
 
   // src/ui/components/Profile.jsx
   var import_react21 = __toESM(require_react());
-  init_avatarUtils();
   var import_jsx_runtime28 = __toESM(require_jsx_runtime());
   function Profile({ mode }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
@@ -19542,7 +19464,6 @@
     const [showPicker, setShowPicker] = (0, import_react21.useState)(false);
     const [saving, setSaving] = (0, import_react21.useState)(false);
     const [photoLoading, setPhotoLoading] = (0, import_react21.useState)(false);
-    const fileInputRef = (0, import_react21.useRef)(null);
     const [status, setStatus] = (0, import_react21.useState)(null);
     const [pairState, setPairState] = (0, import_react21.useState)("idle");
     const [pairError, setPairError] = (0, import_react21.useState)(null);
@@ -19612,10 +19533,10 @@
       } catch {
       }
     }
-    async function handlePickCamera() {
+    async function handlePickPhoto() {
       setPhotoLoading(true);
       try {
-        const av = await pickCameraPhoto();
+        const av = await pickPhoto();
         if (av) {
           await window.callBare("identity:setAvatar", { avatar: av });
           setAvatar(av);
@@ -19623,22 +19544,6 @@
       } catch {
       }
       setPhotoLoading(false);
-    }
-    async function handleFileInput(e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setPhotoLoading(true);
-      try {
-        const { processFileForAvatar: processFileForAvatar2 } = await Promise.resolve().then(() => (init_avatarUtils(), avatarUtils_exports));
-        const av = await processFileForAvatar2(file);
-        if (av) {
-          await window.callBare("identity:setAvatar", { avatar: av });
-          setAvatar(av);
-        }
-      } catch {
-      }
-      setPhotoLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
     async function handleRemovePhoto() {
       setPhotoLoading(true);
@@ -19684,38 +19589,21 @@
       /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.xl}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
         /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
-          window.__pearPlatform === "ios" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
             "button",
             {
               onClick: () => {
                 window.callBare("haptic:tap");
-                handlePickCamera();
+                handlePickPhoto();
               },
               disabled: photoLoading,
               style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "Camera", size: 14, color: colors.text.primary }),
-                " Camera"
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
+                " Photo"
               ]
             }
-          ) : /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
-              "button",
-              {
-                onClick: () => {
-                  window.callBare("haptic:tap");
-                  fileInputRef.current?.click();
-                },
-                disabled: photoLoading,
-                style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
-                children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
-                  " Photo"
-                ]
-              }
-            ),
-            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("input", { ref: fileInputRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFileInput })
-          ] }),
+          ),
           avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
             "button",
             {

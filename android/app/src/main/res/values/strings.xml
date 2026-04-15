@@ -1,4 +1,5 @@
 <resources>
   <string name="app_name">PearGuard</string>
   <string name="expo_system_ui_user_interface_style" translatable="false">dark</string>
+  <string name="accessibility_service_description">Enforces parental control rules set by the paired parent device. Detects when a restricted app is opened on this device and closes it. PearGuard does not read screen content, does not log keystrokes and does not send any Accessibility data off this device.</string>
 </resources>

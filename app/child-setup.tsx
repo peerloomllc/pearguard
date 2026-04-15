@@ -44,7 +44,7 @@ const PERMISSION_STEPS = {
     Icon: IconAccessibility,
     title: 'Enable Accessibility Service',
     description:
-      'PearGuard needs the Accessibility Service to detect and block restricted apps on this device.',
+      'PearGuard uses the Accessibility Service to enforce parental control rules on this device. When a restricted app is opened, PearGuard detects it and closes it. PearGuard does not read screen content, does not log keystrokes and does not send any Accessibility data off this device. Only the list of allowed and blocked apps is synced peer-to-peer with the paired parent device.',
     instructions: [
       'Tap the button below',
       'Find PearGuard in the list',

@@ -476,7 +476,7 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       // Trigger native notification (same channel as approval decisions)
       send({ method: 'native:showDecisionNotification', args: { appName: appName || packageName || 'the app', decision: 'denied' } })
       // Broadcast resolution to all parents so co-parent activity lists update (#122)
-      sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'denied', packageName, resolvedAt: Date.now() } })
+      sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'denied', packageName, appName, resolvedAt: Date.now() } })
       break
     }
     case 'app:decision':
@@ -495,7 +495,7 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
         if (value.requestedAt < resolvedCutoff) continue
         sendToPeer(remoteKeyHex, {
           type: 'request:resolved',
-          payload: { requestId: value.id, status: value.status, packageName: value.packageName, resolvedAt: value.expiresAt || Date.now() },
+          payload: { requestId: value.id, status: value.status, packageName: value.packageName, appName: value.appName, resolvedAt: value.expiresAt || Date.now() },
         })
       }
       break
@@ -1009,7 +1009,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
         if (value.requestedAt < resolvedCutoff) continue
         const resolved = signMessage({
           type: 'request:resolved',
-          payload: { requestId: value.id, status: value.status, packageName: value.packageName, resolvedAt: value.expiresAt || Date.now() },
+          payload: { requestId: value.id, status: value.status, packageName: value.packageName, appName: value.appName, resolvedAt: value.expiresAt || Date.now() },
         }, identity)
         conn.write(Buffer.from(JSON.stringify(resolved) + '\n'))
         backfilled++

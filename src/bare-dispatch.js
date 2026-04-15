@@ -1515,6 +1515,21 @@ function createDispatch (ctx) {
         return { ok: true, paired, restartRequired: true }
       }
 
+      case 'storage:breakdown': {
+        if (!ctx.storageBreakdown) throw new Error('storageBreakdown unavailable')
+        return await ctx.storageBreakdown()
+      }
+
+      case 'storage:analyze': {
+        if (!ctx.analyzeStorage) throw new Error('analyzeStorage unavailable')
+        return await ctx.analyzeStorage()
+      }
+
+      case 'storage:rebuild': {
+        if (!ctx.rebuildLocalDb) throw new Error('rebuildLocalDb unavailable')
+        return await ctx.rebuildLocalDb()
+      }
+
       default:
         throw new Error('unknown method: ' + method)
     }

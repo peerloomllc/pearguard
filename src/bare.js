@@ -29,6 +29,9 @@ let identity     = null   // { publicKey: Buffer, secretKey: Buffer }
 let mode         = null   // 'parent' | 'child' | null
 let dispatch     = null   // method dispatch function
 let _initialized = false  // guard against re-running init on component remount
+let _dataDir     = null   // Absolute data dir (set in init); used by storage breakdown/reclaim
+let _rebuildBusy = false  // Single-flight guard for storage reclaim
+let _dispatchCtx = null   // Captured ctx object so storage rebuild can swap db reference
 
 // Peers map: hex(publicKey) → { publicKey: Buffer, displayName: string, conn: object }
 const peers = new Map()
@@ -92,6 +95,7 @@ async function init (dataDir, attempt = 0) {
   // Open (or create) the local Hypercore + Hyperbee.
   // Retry up to 20 times on lock errors — Bare may restart before the previous
   // instance releases the Hypercore lock file.
+  _dataDir = dataDir
   try {
     core = new Hypercore(dataDir + '/pearguard/core')
     await core.ready()
@@ -129,14 +133,19 @@ async function init (dataDir, attempt = 0) {
   mode = storedMode ? storedMode.value : null
 
   // Build dispatch with live context
-  dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
+  _dispatchCtx = { db, identity, swarm, peers, send, sign, verify, b4a, mode,
     joinTopic, sendToPeer, sendToAllParents, sodium, knownPeerKeys,
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
     resetParentConnection: (identityKey) => {
       if (identityKey) parentPeers.delete(identityKey)
       else parentPeers.clear()
-    } })
+    },
+    storageBreakdown: () => storageBreakdown(),
+    analyzeStorage: () => analyzeStorage(),
+    rebuildLocalDb: () => rebuildLocalDb(),
+  }
+  dispatch = createDispatch(_dispatchCtx)
 
   // Rejoin any persisted swarm topics so peers can reconnect after app restart.
   // Run all joins in parallel — each swarm.flush() blocks ~5s waiting for DHT
@@ -1023,6 +1032,201 @@ async function handleHello (msg, conn, remoteKeyHex) {
     send({ type: 'event', event: 'apps:syncRequested', data: {} })
     // Ask RN shell to gather usage stats and send a fresh report to the parent
     send({ type: 'event', event: 'usageFlushRequested', data: {} })
+  }
+}
+
+// ── Storage: breakdown, analyze, reclaim ──────────────────────────────────────
+//
+// Ported from PearCal (see p2p-wiki/wiki/concepts/hyperbee-bloat-and-reclaim.md).
+// PearGuard is single-core (no Autobase) and no replication: the local Hyperbee
+// is not shared via swarm, so closing/swapping `core` is safe without tearing
+// down hyperswarm connections.
+
+// Hyperbee keys that must survive a reclaim rebuild.
+const MUST_KEEP_EXACT = new Set([
+  'identity', 'mode', 'profile', 'parentSettings', 'policy',
+  'settings:theme', 'donationReminderDismissed', 'pinLog', 'pendingMessages',
+])
+const MUST_KEEP_PREFIXES = [
+  'peers:', 'topics:', 'policy:', 'blocked:', 'pendingParent:',
+  'pendingInviteTopic:', 'pref:', '_migration:',
+]
+const WIPEABLE_PREFIXES = [
+  'alert:', 'override:', 'usage:', 'usageReport:', 'bypass:', 'sessions:',
+]
+
+function classifyKey (k) {
+  if (MUST_KEEP_EXACT.has(k)) return 'keep'
+  for (const p of MUST_KEEP_PREFIXES) if (k.startsWith(p)) return 'keep'
+  // Requests: keep only pending; drop resolved.
+  if (k.startsWith('req:') || k.startsWith('request:')) return 'request'
+  for (const p of WIPEABLE_PREFIXES) if (k.startsWith(p)) return 'wipe'
+  return 'other'
+}
+
+async function storageBreakdown () {
+  const fs = require('bare-fs')
+  const path = require('bare-path')
+  const root = _dataDir + '/pearguard/core'
+  let total = 0
+  const cats = {
+    data: { size: 0, count: 0 },      // core blocks / oplog
+    tree: { size: 0, count: 0 },      // hypercore tree
+    bitfield: { size: 0, count: 0 },
+    header: { size: 0, count: 0 },
+    other: { size: 0, count: 0 },
+  }
+  const perDir = {}
+  async function walk (dir, rel) {
+    let entries
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) }
+    catch { return }
+    for (const e of entries) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) { await walk(p, rel ? rel + '/' + e.name : e.name); continue }
+      let size = 0
+      try { size = (await fs.promises.stat(p)).size } catch { continue }
+      total += size
+      perDir[rel || '.'] = (perDir[rel || '.'] || 0) + size
+      const n = e.name
+      let cat = 'other'
+      if (n === 'data' || n.startsWith('data.')) cat = 'data'
+      else if (n === 'tree' || n.startsWith('tree.')) cat = 'tree'
+      else if (n === 'bitfield' || n.startsWith('bitfield.')) cat = 'bitfield'
+      else if (n === 'header' || n === 'oplog' || n === 'key' || n === 'signatures') cat = 'header'
+      cats[cat].size += size
+      cats[cat].count += 1
+    }
+  }
+  await walk(root, '')
+  return { total, cats, perDir, root }
+}
+
+async function analyzeStorage () {
+  // Walk every live key and group by classification + prefix.
+  // Byte estimate = key.length + JSON(value).length (rough, ignores b-tree nodes).
+  const groups = { keep: 0, wipe: 0, request: 0, other: 0 }
+  const byPrefix = {}
+  let totalKeys = 0
+  let estLiveBytes = 0
+  let pendingRequests = 0
+  let resolvedRequests = 0
+  for await (const { key, value } of db.createReadStream()) {
+    totalKeys++
+    const cls = classifyKey(key)
+    groups[cls] = (groups[cls] || 0) + 1
+    // Derive a prefix bucket: take up to first ':' or whole key.
+    const colonIdx = key.indexOf(':')
+    const prefix = colonIdx === -1 ? key : key.slice(0, colonIdx + 1) + '*'
+    let approx = key.length
+    try { approx += JSON.stringify(value).length } catch {}
+    byPrefix[prefix] = byPrefix[prefix] || { count: 0, bytes: 0, cls }
+    byPrefix[prefix].count++
+    byPrefix[prefix].bytes += approx
+    estLiveBytes += approx
+    if (cls === 'request') {
+      if (value && value.status === 'pending') pendingRequests++
+      else resolvedRequests++
+    }
+  }
+  // On-disk footprint and reclaimable estimate.
+  const { total: onDisk } = await storageBreakdown()
+  // All historical versions are on disk; live keys are a small subset. Reclaim
+  // estimate = onDisk - (estimated size of kept-key live values). This is an
+  // upper bound because b-tree overhead for kept keys is also kept.
+  const keepBytes = Object.entries(byPrefix)
+    .filter(([, v]) => v.cls === 'keep')
+    .reduce((a, [, v]) => a + v.bytes, 0)
+    + Object.entries(byPrefix)
+      .filter(([, v]) => v.cls === 'request')
+      .reduce((a, [, v]) => a + v.bytes, 0) // pending requests are kept
+  const reclaimableBytes = Math.max(0, onDisk - keepBytes)
+  const pct = onDisk > 0 ? Math.round(100 * reclaimableBytes / onDisk) : 0
+  return {
+    onDisk,
+    totalKeys,
+    estLiveBytes,
+    reclaimableBytes,
+    pct,
+    groups,
+    pendingRequests,
+    resolvedRequests,
+    byPrefix,
+  }
+}
+
+async function rebuildLocalDb () {
+  if (_rebuildBusy) throw new Error('rebuild already running')
+  if (!_dataDir) throw new Error('dataDir not set')
+  _rebuildBusy = true
+  const fs = require('bare-fs')
+  async function dirSize (dir) {
+    let total = 0
+    let entries
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) }
+    catch { return 0 }
+    for (const e of entries) {
+      const p = dir + '/' + e.name
+      if (e.isDirectory()) total += await dirSize(p)
+      else { try { total += (await fs.promises.stat(p)).size } catch {} }
+    }
+    return total
+  }
+  const coreDir = _dataDir + '/pearguard/core'
+  const newDir  = _dataDir + '/pearguard/core.new'
+  const bakDir  = _dataDir + '/pearguard/core.old'
+  try {
+    const before = await dirSize(coreDir)
+    try { await fs.promises.rm(newDir, { recursive: true, force: true }) } catch {}
+    try { await fs.promises.rm(bakDir, { recursive: true, force: true }) } catch {}
+
+    const newCore = new Hypercore(newDir)
+    await newCore.ready()
+    const newDb = new Hyperbee(newCore, { keyEncoding: 'utf-8', valueEncoding: 'json' })
+    await newDb.ready()
+
+    let kept = 0
+    let dropped = 0
+    for await (const entry of db.createReadStream()) {
+      const cls = classifyKey(entry.key)
+      if (cls === 'keep') {
+        await newDb.put(entry.key, entry.value)
+        kept++
+      } else if (cls === 'request') {
+        if (entry.value && entry.value.status === 'pending') {
+          await newDb.put(entry.key, entry.value)
+          kept++
+        } else {
+          dropped++
+        }
+      } else {
+        // wipe or other — drop
+        dropped++
+      }
+    }
+
+    await newDb.close()
+    await newCore.close()
+    await db.close()
+    await core.close()
+
+    // Atomic swap.
+    await fs.promises.rename(coreDir, bakDir)
+    await fs.promises.rename(newDir, coreDir)
+
+    core = new Hypercore(coreDir)
+    await core.ready()
+    db = new Hyperbee(core, { keyEncoding: 'utf-8', valueEncoding: 'json' })
+    await db.ready()
+    // Rewire dispatch ctx so subsequent calls use the new db.
+    if (_dispatchCtx) _dispatchCtx.db = db
+
+    try { await fs.promises.rm(bakDir, { recursive: true, force: true }) } catch {}
+
+    const after = await dirSize(coreDir)
+    return { before, after, freed: Math.max(0, before - after), kept, dropped }
+  } finally {
+    _rebuildBusy = false
   }
 }
 

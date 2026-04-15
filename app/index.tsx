@@ -100,8 +100,10 @@ function sendToWorklet (msg: object, pendingId?: number) {
 // clears that stored URL, then injects the appropriate navigation event into the
 // WebView (or buffers it for cold start).
 
-function consumePendingNavigation () {
-  NativeModules.UsageStatsModule?.consumePendingNavigation?.()
+function consumePendingNavigation (): Promise<void> {
+  const p = NativeModules.UsageStatsModule?.consumePendingNavigation?.()
+  if (!p || typeof p.then !== 'function') return Promise.resolve()
+  return p
     .then((url: string | null) => {
       if (!url) return
       if (url.includes('/alerts')) {
@@ -110,6 +112,9 @@ function consumePendingNavigation () {
         const tabMatch = qs.match(/tab=([^&]+)/)
         if (keyMatch) {
           const nav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+          // Always retain nav in module scope so it survives a WebView/Activity remount
+          // that can happen when a deep-link intent reaches an already-alive RN process (#124).
+          _pendingAlertsNav = nav
           if (_dbReady && _webViewLoaded) {
             _injectToWebView?.(`window.__pendingAlertsNav=${JSON.stringify(nav)};true;`)
             setTimeout(() => {
@@ -117,17 +122,14 @@ function consumePendingNavigation () {
                 'window.__pearEvent("navigate:child:alerts",' + JSON.stringify(nav) + ');true;'
               )
             }, 300)
-          } else {
-            _pendingAlertsNav = nav
           }
         }
       } else if (url.includes('/child-requests')) {
+        _pendingChildRequestsNav = true
         if (_dbReady && _webViewLoaded) {
           setTimeout(() => {
             _injectToWebView?.('window.__pearEvent("navigate:child:requests",{});true;')
           }, 100)
-        } else {
-          _pendingChildRequestsNav = true
         }
       }
     })
@@ -500,8 +502,10 @@ export default function Root () {
       }
       // Notification deep links (alerts, child-requests) are stored in
       // SharedPreferences by MainActivity — check on cold start too.
+      // Await the read so _pendingAlertsNav / _pendingChildRequestsNav are set
+      // before the WebView mounts and its onLoad handler checks them (#124).
       if (isAndroid) {
-        consumePendingNavigation()
+        await consumePendingNavigation()
       }
 
       // Request POST_NOTIFICATIONS permission (Android 13+, API 33)
@@ -996,7 +1000,7 @@ export default function Root () {
         source={{ html }}
         style={styles.webview}
         onMessage={onWebViewMessage}
-        injectedJavaScriptBeforeContentLoaded={`window.__pearPlatform=${JSON.stringify(Platform.OS)};${(() => {
+        injectedJavaScriptBeforeContentLoaded={`window.__pearPlatform=${JSON.stringify(Platform.OS)};${_pendingAlertsNav ? `window.__pendingAlertsNav=${JSON.stringify(_pendingAlertsNav)};` : ''}${(() => {
           const mod = (NativeModules as any).PearGuardScreenshot
           const scene = mod?.scene ?? 0
           const dark = mod?.dark ?? -1

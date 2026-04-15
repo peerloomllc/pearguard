@@ -151,6 +151,17 @@
         </intent-filter>
     </receiver>
 
+    <!-- FileProvider: share camera photo URIs with external camera apps -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/file_paths" />
+    </provider>
+
     <!-- BootReceiverModule: starts enforcement after reboot -->
     <receiver
         android:name=".BootReceiverModule"

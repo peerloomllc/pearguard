@@ -414,58 +414,28 @@ export default function Root () {
         return
       }
 
-      if (msg.method === 'avatar:pickCamera' || msg.method === 'avatar:pickGallery') {
+      if (msg.method === 'avatar:pickPhoto') {
         const msgId = msg.id
         ;(async () => {
           try {
-            // iOS: native camera module shows action sheet (Take Photo / Choose from Library)
-            if (!isAndroid && PearGuardCamera?.capture) {
-              const dataUrl: string = await PearGuardCamera.capture()
-              // dataUrl is "data:<mime>;base64,<data>"
-              const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/)
-              if (!match) {
-                webViewRef.current?.injectJavaScript(
-                  'window.__pearResponse(' + msgId + ', null, "no data");true;'
-                )
-              } else {
-                webViewRef.current?.injectJavaScript(
-                  'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64: match[2], mime: match[1] }) + ', null);true;'
-                )
-              }
+            if (!PearGuardCamera?.capture) {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msgId + ', null, "camera unavailable");true;'
+              )
               return
             }
-            // Android: use expo-image-picker with separate camera/gallery launchers
-            const launch = msg.method === 'avatar:pickCamera'
-              ? ImagePicker.launchCameraAsync
-              : ImagePicker.launchImageLibraryAsync
-            const result = await launch({
-              mediaTypes: ['images'],
-              allowsEditing: false,
-              quality: 0.8,
-              base64: true,
-            })
-            if (result.canceled || !result.assets?.[0]) {
+            // Native module shows a single picker with both Camera and Gallery options.
+            const dataUrl: string = await PearGuardCamera.capture()
+            // dataUrl is "data:<mime>;base64,<data>"
+            const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/)
+            if (!match) {
               webViewRef.current?.injectJavaScript(
-                'window.__pearResponse(' + msgId + ', null, "cancelled");true;'
+                'window.__pearResponse(' + msgId + ', null, "no data");true;'
               )
             } else {
-              const asset = result.assets[0]
-              const mime = asset.mimeType || 'image/jpeg'
-              // For animated formats, read the raw file to preserve animation
-              // (ImagePicker's base64 output may strip GIF/WebP frames)
-              let base64 = asset.base64
-              if ((mime === 'image/gif' || mime === 'image/webp') && asset.uri) {
-                base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
-              }
-              if (!base64) {
-                webViewRef.current?.injectJavaScript(
-                  'window.__pearResponse(' + msgId + ', null, "no data");true;'
-                )
-              } else {
-                webViewRef.current?.injectJavaScript(
-                  'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64, mime }) + ', null);true;'
-                )
-              }
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msgId + ', ' + JSON.stringify({ base64: match[2], mime: match[1] }) + ', null);true;'
+              )
             }
           } catch (err: any) {
             webViewRef.current?.injectJavaScript(

@@ -1565,7 +1565,7 @@ async function handleAppDecision (payload, db, send, sendToAllParents) {
       send({ type: 'event', event: 'request:updated', data: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName || value.packageName } })
       // Broadcast resolution to all parents so co-parent activity lists update (#122)
       if (sendToAllParents) {
-        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: requestStatus, packageName: value.packageName, resolvedAt: Date.now() } })
+        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: requestStatus, packageName: value.packageName, appName: value.appName, resolvedAt: Date.now() } })
       }
     }
   }
@@ -1615,11 +1615,17 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
   // Sync pending req:* entries with the new policy so ChildRequests shows the correct status.
   // This handles the case where app:decision was not delivered directly (e.g., child was offline
   // and the parent's decision arrives via the policy:update pushed on reconnect).
+  // Only resolve a pending request if the app's status ACTUALLY CHANGED vs. the prior policy.
+  // Otherwise a parent re-pushing its cached policy on reconnect would auto-deny any pending
+  // request whose app was already blocked (#137).
   const apps = payload.apps || {}
+  const prevApps = (existing && existing.value && existing.value.apps) || {}
   for await (const { key, value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
     if (value.status !== 'pending') continue
     const appEntry = apps[value.packageName]
     const appStatus = appEntry && appEntry.status
+    const prevStatus = prevApps[value.packageName] && prevApps[value.packageName].status
+    if (appStatus === prevStatus) continue
     if (appStatus === 'allowed' || appStatus === 'blocked') {
       const newStatus = appStatus === 'allowed' ? 'approved' : 'denied'
       await db.put(key, { ...value, status: newStatus })
@@ -1629,7 +1635,7 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
       } })
       // Broadcast resolution to all parents so co-parent activity lists update (#122)
       if (sendToAllParents) {
-        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: newStatus, packageName: value.packageName, resolvedAt: Date.now() } })
+        sendToAllParents({ type: 'request:resolved', payload: { requestId: value.id, status: newStatus, packageName: value.packageName, appName: value.appName, resolvedAt: Date.now() } })
       }
     }
   }
@@ -1678,7 +1684,7 @@ async function handleTimeExtend (payload, db, send, sendToAllParents) {
 
   // Broadcast resolution to all parents so co-parent activity lists update (#122)
   if (sendToAllParents) {
-    sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'approved', packageName, resolvedAt: Date.now() } })
+    sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'approved', packageName, appName: appName || packageName, resolvedAt: Date.now() } })
   }
 }
 
@@ -1969,7 +1975,7 @@ async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) 
  * @param {function} send - bare->RN IPC send function
  */
 async function handleRequestResolved (payload, db, send, childPublicKey) {
-  const { requestId, status, packageName, resolvedAt } = payload
+  const { requestId, status, packageName, appName, resolvedAt } = payload
   if (!requestId || !status) return
 
   const existing = await db.get('request:' + requestId).catch(() => null)
@@ -1978,8 +1984,11 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   if (existing && existing.value.status !== 'pending') return
 
   if (existing) {
-    // Normal path: update the existing pending entry.
-    await db.put('request:' + requestId, { ...existing.value, status, resolvedAt })
+    // Normal path: update the existing pending entry. Backfill appName if missing
+    // (older entries created via the defence-in-depth path may not have it).
+    const merged = { ...existing.value, status, resolvedAt }
+    if (!merged.appName && appName) merged.appName = appName
+    await db.put('request:' + requestId, merged)
   } else {
     // Defence-in-depth: this parent never received the original time:request
     // (e.g. was offline during submission and reconnect message ordering lost it).
@@ -1991,6 +2000,7 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
     await db.put('request:' + requestId, {
       id: requestId,
       packageName: packageName || 'unknown',
+      appName: appName || packageName || 'unknown',
       status,
       resolvedAt,
       requestedAt: resolvedAt || Date.now(),
@@ -1999,7 +2009,7 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
       childDisplayName,
     })
   }
-  send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName } })
+  send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
 module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }

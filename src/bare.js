@@ -107,7 +107,9 @@ async function init (dataDir) {
   // Build dispatch with live context
   dispatch = createDispatch({ db, identity, swarm, peers, send, sign, verify, b4a, mode,
     joinTopic, sendToPeer, sendToParent, sodium,
-    onModeChange: (m) => { mode = m } })
+    onModeChange: (m) => { mode = m },
+    getMode: () => mode,
+    resetParentConnection: () => { peerConnected = false; parentPeer = null } })
 
   // Rejoin any persisted swarm topics so peers can reconnect after app restart
   const topicHexes = []
@@ -263,13 +265,13 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       await handleAppDecision(msg.payload, db, send)
       break
     case 'app:installed':
-      await handleIncomingAppInstalled(msg.payload, msg.from, db, send)
+      await handleIncomingAppInstalled(msg.payload, msg.from, db, send, sendToPeer)
       break
     case 'app:uninstalled':
       await handleIncomingAppUninstalled(msg.payload, msg.from, db, send)
       break
     case 'apps:sync':
-      await handleIncomingAppsSync(msg.payload, msg.from, db, send)
+      await handleIncomingAppsSync(msg.payload, msg.from, db, send, sendToPeer)
       break
     case 'time:request':
       await handleIncomingTimeRequest(msg.payload, msg.from, db, send)
@@ -399,12 +401,15 @@ async function handleHello (msg, conn, remoteKeyHex) {
     peer.displayName = displayName ?? 'Unknown'
   }
 
-  console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName)
+  const isFirstPairing = !existingRecord
+  console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName, isFirstPairing ? '(new)' : '(reconnect)')
   send({ type: 'event', event: 'peer:paired', data: peerRecord })
 
   // Notify the parent UI that a child has connected
   if (mode === 'parent') {
-    send({ type: 'event', event: 'child:connected', data: peerRecord })
+    // Emit child:connected only for first-time pairings; child:reconnected for subsequent reconnects
+    const eventName = isFirstPairing ? 'child:connected' : 'child:reconnected'
+    send({ type: 'event', event: eventName, data: peerRecord })
 
     // Push the latest stored policy to the child so enforcement stays current
     const storedPolicy = await db.get('policy:' + peerIdentityKeyHex).catch(() => null)

@@ -33,6 +33,8 @@ const _eventHandlers = new Map<string, ((data: any) => void)[]>()
 let _pendingInviteUrl: string | null = null
 // { childPublicKey, tab } from pear://pearguard/alerts deep link — injected into WebView after dbReady
 let _pendingAlertsNav: { childPublicKey: string; tab?: string } | null = null
+// pear://pearguard/child-requests deep link — navigate child app to Requests tab
+let _pendingChildRequestsNav = false
 // Events that fired before the WebView finished loading — replayed once onLoad fires.
 // Bare auto-reconnects on startup (reloads persisted topics), so peer:paired /
 // child:connected can fire before the WebView is ready to receive them.
@@ -56,6 +58,8 @@ Linking.addEventListener('url', ({ url }) => {
     const keyMatch = qs.match(/childPublicKey=([^&]+)/)
     const tabMatch = qs.match(/tab=([^&]+)/)
     if (keyMatch) _pendingAlertsNav = { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+  } else if (url && url.startsWith('pear://pearguard/child-requests')) {
+    _pendingChildRequestsNav = true
   }
 })
 
@@ -491,6 +495,8 @@ export default function Root () {
           const keyMatch = qs.match(/childPublicKey=([^&]+)/)
           const tabMatch = qs.match(/tab=([^&]+)/)
           if (keyMatch) _pendingAlertsNav = _pendingAlertsNav ?? { childPublicKey: decodeURIComponent(keyMatch[1]), tab: tabMatch ? decodeURIComponent(tabMatch[1]) : undefined }
+        } else if (url && url.startsWith('pear://pearguard/child-requests')) {
+          _pendingChildRequestsNav = _pendingChildRequestsNav || true
         }
       }).catch(() => {})
     }
@@ -508,6 +514,17 @@ export default function Root () {
     setTimeout(() => {
       webViewRef.current?.injectJavaScript(
         'window.__pearEvent("navigate:child:alerts",' + JSON.stringify({ childPublicKey, tab }) + ');true;'
+      )
+    }, 600)
+  }, [dbReady])
+
+  // When db is ready and a child-requests deep link is pending, navigate child app to Requests tab
+  useEffect(() => {
+    if (!dbReady || !_pendingChildRequestsNav) return
+    _pendingChildRequestsNav = false
+    setTimeout(() => {
+      webViewRef.current?.injectJavaScript(
+        'window.__pearEvent("navigate:child:requests",{});true;'
       )
     }, 600)
   }, [dbReady])

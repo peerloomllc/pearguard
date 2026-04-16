@@ -331,6 +331,14 @@ function createDispatch (ctx) {
 
         const { parentPublicKey, swarmTopic } = parsed
 
+        // If we already have a confirmed peers: entry for this parent, surface
+        // an explicit alreadyPaired signal so the UI can stop waiting on a
+        // peer:paired event that won't fire a second time.
+        const existing = await ctx.db.get('peers:' + parentPublicKey)
+        if (existing) {
+          return { ok: true, alreadyPaired: true, parentPublicKey, swarmTopic }
+        }
+
         // Store the parent's public key as a "pending" entry — will be confirmed on hello.
         // Include swarmTopic so handleHello can bind it to the peer record even if
         // Hyperswarm delivers an empty info.topics[] on the accepted connection (#147 follow-up).

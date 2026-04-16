@@ -18,10 +18,13 @@ export default function Profile({ mode }) {
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
   const [pairError, setPairError] = useState(null)
+  const [pairUiMode, setPairUiMode] = useState('initial') // 'initial' | 'methodPicker' | 'paste'
+  const [pasteUrl, setPasteUrl] = useState('')
   const [parents, setParents] = useState([]) // child mode: list of paired parents
-  const [pairedBanner, setPairedBanner] = useState(false)
+  const [pairedBanner, setPairedBanner] = useState(null) // string message or null
   const [parentsOpen, setParentsOpen] = useState(true)
   const pairDoneRef = useRef(false) // true once peer:paired fires; prevents acceptInvite overriding state
+  const pairTimeoutRef = useRef(null) // fallback timer if peer:paired never fires
 
   useEffect(() => {
     window.callBare('identity:getName')
@@ -42,10 +45,14 @@ export default function Profile({ mode }) {
     const unsubs = [
       window.onBareEvent('peer:paired', () => {
         pairDoneRef.current = true
+        if (pairTimeoutRef.current) {
+          clearTimeout(pairTimeoutRef.current)
+          pairTimeoutRef.current = null
+        }
         refresh()
         setPairState('idle')
-        setPairedBanner(true)
-        setTimeout(() => setPairedBanner(false), 3000)
+        setPairedBanner('Successfully paired with parent!')
+        setTimeout(() => setPairedBanner(null), 3000)
       }),
       window.onBareEvent('peer:connected', (data) => {
         if (!data?.remoteKey) return
@@ -61,7 +68,13 @@ export default function Profile({ mode }) {
         ))
       }),
     ]
-    return () => unsubs.forEach((u) => u())
+    return () => {
+      unsubs.forEach((u) => u())
+      if (pairTimeoutRef.current) {
+        clearTimeout(pairTimeoutRef.current)
+        pairTimeoutRef.current = null
+      }
+    }
   }, [mode])
 
   async function handleSave() {
@@ -112,16 +125,34 @@ export default function Profile({ mode }) {
     setPhotoLoading(false)
   }
 
+  // After acceptInvite resolves, decide what UI state to land in.
+  // - alreadyPaired: surface a banner and reset to idle (peer:paired won't fire).
+  // - new pair: enter 'success' and arm a 10s fallback that resets to idle if
+  //   peer:paired never arrives (network blip, parent offline, etc).
+  function settleAfterAcceptInvite(result) {
+    if (result && result.alreadyPaired) {
+      setPairState('idle')
+      setPairedBanner('Already paired with this parent.')
+      setTimeout(() => setPairedBanner((m) => (m === 'Already paired with this parent.' ? null : m)), 3000)
+      return
+    }
+    if (!pairDoneRef.current) {
+      setPairState('success')
+      pairTimeoutRef.current = setTimeout(() => {
+        pairTimeoutRef.current = null
+        if (!pairDoneRef.current) setPairState('idle')
+      }, 10000)
+    }
+  }
+
   async function handlePair() {
     pairDoneRef.current = false
     setPairError(null)
     try {
       const url = await window.callBare('qr:scan')  // camera opens natively; wait for scan
       setPairState('connecting')                      // show connecting only after scan
-      await window.callBare('acceptInvite', [url])
-      if (!pairDoneRef.current) {
-        setPairState('success')
-      }
+      const result = await window.callBare('acceptInvite', [url])
+      settleAfterAcceptInvite(result)
     } catch (e) {
       if (e.message === 'cancelled') {
         setPairState('idle')
@@ -129,6 +160,23 @@ export default function Profile({ mode }) {
         setPairState('error')
         setPairError(e.message)
       }
+    }
+  }
+
+  async function handlePasteAndPair() {
+    const url = pasteUrl.trim()
+    if (!url) return
+    pairDoneRef.current = false
+    setPairError(null)
+    setPairUiMode('initial')
+    setPasteUrl('')
+    setPairState('connecting')
+    try {
+      const result = await window.callBare('acceptInvite', [url])
+      settleAfterAcceptInvite(result)
+    } catch (e) {
+      setPairState('error')
+      setPairError(e.message)
     }
   }
 
@@ -226,11 +274,47 @@ export default function Profile({ mode }) {
               </div>
             )}
 
-            {pairState === 'idle' && (
+            {pairState === 'idle' && pairUiMode === 'initial' && (
               <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <Button onClick={() => { window.callBare('haptic:tap'); handlePair(); }}>
+                <Button onClick={() => { window.callBare('haptic:tap'); setPairUiMode('methodPicker'); }}>
                   {parents.length > 0 ? 'Pair Another Parent' : 'Pair to Parent'}
                 </Button>
+              </div>
+            )}
+
+            {pairState === 'idle' && pairUiMode === 'methodPicker' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+                <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+                  <Button style={{ flex: 1 }} icon="QrCode" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('initial'); handlePair(); }}>
+                    Scan QR Code
+                  </Button>
+                  <Button style={{ flex: 1 }} icon="ClipboardText" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('paste'); }}>
+                    Paste from Clipboard
+                  </Button>
+                </div>
+                <button
+                  onClick={() => setPairUiMode('initial')}
+                  style={{ background: 'none', border: 'none', color: colors.text.secondary, fontSize: '13px', cursor: 'pointer', padding: 0, alignSelf: 'center' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {pairState === 'idle' && pairUiMode === 'paste' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+                <input
+                  type="text"
+                  value={pasteUrl}
+                  onChange={(e) => setPasteUrl(e.target.value)}
+                  placeholder="pear://pearguard/join?..."
+                  style={inputStyle}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+                  <Button style={{ flex: 1 }} variant="secondary" onClick={() => { setPairUiMode('methodPicker'); setPasteUrl(''); }}>Cancel</Button>
+                  <Button style={{ flex: 1 }} onClick={() => { window.callBare('haptic:tap'); handlePasteAndPair(); }} disabled={!pasteUrl.trim()}>Pair</Button>
+                </div>
               </div>
             )}
 
@@ -266,7 +350,7 @@ export default function Profile({ mode }) {
               fontWeight: '500',
               textAlign: 'center',
             }}>
-              Successfully paired with parent!
+              {pairedBanner}
             </div>
           )}
         </div>

@@ -9,6 +9,7 @@ const path = require('path')
 const fs = require('fs')
 const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
 const { createBareKitShim } = require('../backend/barekit-shim')
+const { EnforcementController } = require('../enforcement')
 
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
@@ -18,6 +19,7 @@ let mainWindow = null
 let bare = null
 let pendingCalls = new Map()  // id -> { resolve, reject }
 let nextId = 1
+let enforcement = null  // lazily constructed in app.whenReady so tests can stub active-win
 
 // Install the BareKit shim BEFORE requiring bare.js so its module-top
 // `BareKit.IPC.on('data', ...)` binds to our EventEmitter.
@@ -32,10 +34,14 @@ shim.onBareOut((buf) => {
     let msg
     try { msg = JSON.parse(line) } catch (e) { continue }
 
-    // native:* methods are enforcement directives (setPolicy, grantOverride,
-    // showDecisionNotification). In mobile these route to RN shell which calls
-    // Android/iOS APIs. On Windows we'll route them into the enforcement
-    // module. For now, log and stub.
+    // native:* methods are enforcement directives. Mobile routes them to RN
+    // which calls Android/iOS APIs; Windows routes them into the enforcement
+    // controller. grantOverride and getEnforcementState arrive in PR 2.
+    if (msg.method === 'native:setPolicy') {
+      if (enforcement) enforcement.setPolicyJson(msg.args && msg.args.json)
+      else console.warn('[main] native:setPolicy received before enforcement init')
+      return
+    }
     if (msg.method === 'native:showDecisionNotification') {
       const { appName, decision } = msg.args || {}
       new Notification({
@@ -235,6 +241,16 @@ app.whenReady().then(() => {
   // to our EventEmitter rather than throwing on undefined BareKit.
   bare = require('../../../src/bare.js')
 
+  // active-win is required lazily so unit tests can run without the native
+  // prebuild and so a missing module degrades to "no enforcement" rather than
+  // crashing the child app.
+  try {
+    const activeWin = require('active-win')
+    enforcement = new EnforcementController({ activeWin })
+  } catch (e) {
+    console.error('[main] enforcement disabled, active-win failed to load:', e.message)
+  }
+
   // Kick off bare.js init with Electron's per-user data dir. The window is
   // created as soon as `ready` fires from bare, so UI calls made during
   // component mount land after dispatch is wired up.
@@ -262,6 +278,13 @@ app.whenReady().then(() => {
       }
       bufferedEvents.length = 0
     })
+
+    // Start the foreground monitor only after bare is ready and we know we're
+    // in child mode. Skip during smoke tests so they don't spin up a poller
+    // they don't need.
+    if (enforcement && !process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
+      enforcement.start()
+    }
   }
 
   if (bareReady) onReady()
@@ -276,5 +299,6 @@ app.on('window-all-closed', () => {
   // On Windows the child app should stay running in the background for
   // enforcement. For Phase 1 we quit on window close; watchdog arrives in
   // Phase 5.
+  if (enforcement) enforcement.stop()
   if (process.platform !== 'darwin') app.quit()
 })

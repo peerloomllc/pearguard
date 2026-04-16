@@ -10,6 +10,8 @@ const fs = require('fs')
 const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
+const { OverridesStore } = require('../enforcement/overrides-store')
+const { OverlayManager } = require('./overlay')
 
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
@@ -40,6 +42,11 @@ shim.onBareOut((buf) => {
     if (msg.method === 'native:setPolicy') {
       if (enforcement) enforcement.setPolicyJson(msg.args && msg.args.json)
       else console.warn('[main] native:setPolicy received before enforcement init')
+      return
+    }
+    if (msg.method === 'native:grantOverride') {
+      if (enforcement) enforcement.applyGrant(msg.args || {})
+      else console.warn('[main] native:grantOverride received before enforcement init')
       return
     }
     if (msg.method === 'native:showDecisionNotification') {
@@ -246,7 +253,40 @@ app.whenReady().then(() => {
   // crashing the child app.
   try {
     const activeWin = require('active-win')
-    enforcement = new EnforcementController({ activeWin })
+    const overridesStore = new OverridesStore({
+      filePath: path.join(app.getPath('userData'), 'overrides.json'),
+    })
+    const overlay = new OverlayManager({
+      rendererDir: path.join(__dirname, '..', 'renderer'),
+    })
+    enforcement = new EnforcementController({ activeWin, overridesStore, overlay })
+
+    // Forward overlay button clicks to bare. The grant returned by pin:verify
+    // arrives back through `native:grantOverride`, which is already wired to
+    // controller.applyGrant — that re-evaluates and dismisses the overlay.
+    overlay.on('request-time', async (payload) => {
+      try {
+        await callBare('time:request', payload)
+        overlay.notifyResult('overlay:time-request-result', { ok: true })
+      } catch (e) {
+        overlay.notifyResult('overlay:time-request-result', { ok: false, error: e.message })
+      }
+    })
+    overlay.on('verify-pin', async (payload) => {
+      try {
+        const result = await callBare('pin:verify', payload)
+        if (result && result.granted) {
+          overlay.notifyResult('overlay:pin-verify-result', { ok: true })
+        } else {
+          const reason = (result && result.reason) === 'wrong-pin' ? 'Wrong PIN.'
+            : (result && result.reason) === 'no-pin' ? 'No PIN set on this device.'
+            : 'Could not verify PIN.'
+          overlay.notifyResult('overlay:pin-verify-result', { ok: false, error: reason })
+        }
+      } catch (e) {
+        overlay.notifyResult('overlay:pin-verify-result', { ok: false, error: e.message })
+      }
+    })
   } catch (e) {
     console.error('[main] enforcement disabled, active-win failed to load:', e.message)
   }

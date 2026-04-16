@@ -4,10 +4,15 @@
 // pass, 1 on first failure. Run from windows/: `node tests/enforcement.smoke.js`.
 
 const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 const { evaluate, isSystemExempt } = require('../src/enforcement/block-evaluator')
 const { ExeMap } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
+const { OverridesStore } = require('../src/enforcement/overrides-store')
+const { EnforcementController } = require('../src/enforcement')
 
 const tests = []
 function test(name, fn) { tests.push({ name, fn }) }
@@ -343,6 +348,164 @@ test('ForegroundMonitor surfaces active-win errors as events', async () => {
   m.stop()
   assert.ok(errs.length >= 1)
   assert.strictEqual(errs[0].message, 'boom')
+})
+
+// --- OverridesStore ------------------------------------------------------
+
+function tmpStorePath() {
+  return path.join(os.tmpdir(), 'pearguard-test-overrides-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.json')
+}
+
+test('OverridesStore.applyGrant adds entry and emits grant event', () => {
+  const s = new OverridesStore({ filePath: null })
+  let emitted = null
+  s.on('grant', (g) => { emitted = g })
+  const exp = Date.now() + 60_000
+  const result = s.applyGrant({ packageName: 'com.foo', expiresAt: exp })
+  assert.strictEqual(result, exp)
+  assert.strictEqual(s.asMap().get('com.foo'), exp)
+  assert.deepStrictEqual(emitted, { packageName: 'com.foo', expiresAt: exp })
+})
+
+test('OverridesStore.applyGrant rejects past expiry', () => {
+  const s = new OverridesStore({ filePath: null })
+  const result = s.applyGrant({ packageName: 'com.foo', expiresAt: Date.now() - 1000 })
+  assert.strictEqual(result, null)
+  assert.strictEqual(s.asMap().has('com.foo'), false)
+})
+
+test('OverridesStore persists across instantiations', () => {
+  const filePath = tmpStorePath()
+  try {
+    const exp = Date.now() + 60_000
+    const a = new OverridesStore({ filePath })
+    a.applyGrant({ packageName: 'com.foo', expiresAt: exp })
+    const b = new OverridesStore({ filePath })
+    assert.strictEqual(b.asMap().get('com.foo'), exp)
+  } finally {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
+})
+
+test('OverridesStore drops already-expired entries on load', () => {
+  const filePath = tmpStorePath()
+  try {
+    fs.writeFileSync(filePath, JSON.stringify({ 'com.fresh': Date.now() + 60_000, 'com.stale': Date.now() - 60_000 }))
+    const s = new OverridesStore({ filePath })
+    assert.strictEqual(s.asMap().has('com.fresh'), true)
+    assert.strictEqual(s.asMap().has('com.stale'), false)
+  } finally {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
+})
+
+test('OverridesStore.prune removes expired entries', () => {
+  const s = new OverridesStore({ filePath: null })
+  s.asMap().set('com.future', Date.now() + 60_000)
+  s.asMap().set('com.past', Date.now() - 1000)
+  const removed = s.prune()
+  assert.strictEqual(removed, 1)
+  assert.strictEqual(s.asMap().has('com.past'), false)
+  assert.strictEqual(s.asMap().has('com.future'), true)
+})
+
+// --- EnforcementController integration -----------------------------------
+
+function makeController(activeWin, { overlay = makeFakeOverlay() } = {}) {
+  const controller = new EnforcementController({
+    activeWin,
+    intervalMs: 5,
+    overridesStore: new OverridesStore({ filePath: null }),
+    overlay,
+    logger: { log() {}, warn() {} },
+  })
+  return { controller, overlay }
+}
+
+function makeFakeOverlay() {
+  return {
+    shows: [],
+    hides: 0,
+    show(p) { this.shows.push(p) },
+    hide() { this.hides++ },
+  }
+}
+
+test('Controller shows overlay on block, hides on allow', async () => {
+  let current = { owner: { path: 'C:\\Games\\Roblox\\RobloxPlayerBeta.exe', processId: 1, name: 'roblox' }, title: 'Roblox' }
+  const fakeActiveWin = async () => current
+  const { controller, overlay } = makeController(fakeActiveWin)
+
+  controller.setPolicyJson(JSON.stringify(policy()))  // roblox is status: blocked
+  controller.start()
+
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 1, 'expected one show after first tick')
+  assert.strictEqual(overlay.shows[0].packageName, 'com.roblox.client')
+  assert.strictEqual(overlay.shows[0].category, 'status')
+
+  // Switch to an allowed app — overlay should hide.
+  current = { owner: { path: 'C:\\Spotify\\Spotify.exe', processId: 2, name: 'spotify' }, title: 'Spotify' }
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.hides, 1, 'expected one hide after switching to allowed app')
+
+  controller.stop()
+})
+
+test('Controller does not re-show overlay for the same blocked package', async () => {
+  let title = 'A'
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Games\\Roblox\\RobloxPlayerBeta.exe', processId: 1, name: 'roblox' },
+    title: title++,  // change title each tick to force a foreground-changed emit
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.setPolicyJson(JSON.stringify(policy()))
+  controller.start()
+  await new Promise(r => setTimeout(r, 30))
+  controller.stop()
+  // The monitor's de-dup keys on exePath+pid, so the title bump alone won't
+  // re-fire — but even if it did, the controller suppresses repeat shows for
+  // the same package.
+  assert.strictEqual(overlay.shows.length, 1)
+})
+
+test('Controller hides overlay when grant arrives for blocked app', async () => {
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Games\\Roblox\\RobloxPlayerBeta.exe', processId: 1, name: 'roblox' },
+    title: 'Roblox',
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.setPolicyJson(JSON.stringify(policy()))
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 1)
+
+  controller.applyGrant({ packageName: 'com.roblox.client', expiresAt: Date.now() + 60_000 })
+  // applyGrant triggers a synchronous re-evaluate — no need to wait for the
+  // next tick.
+  assert.strictEqual(overlay.hides, 1)
+
+  controller.stop()
+})
+
+test('Controller hides overlay on policy change that allows the app', async () => {
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Games\\Roblox\\RobloxPlayerBeta.exe', processId: 1, name: 'roblox' },
+    title: 'Roblox',
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.setPolicyJson(JSON.stringify(policy()))  // blocked
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 1)
+
+  const updated = policy()
+  updated.apps['com.roblox.client'].status = 'allowed'
+  controller.setPolicyJson(JSON.stringify(updated))
+  // setPolicyJson fires a re-evaluate via PolicyCache 'change' subscription.
+  assert.strictEqual(overlay.hides, 1)
+
+  controller.stop()
 })
 
 // --- Runner --------------------------------------------------------------

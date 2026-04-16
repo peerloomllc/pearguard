@@ -1,6 +1,18 @@
+// Electron's Linux sandbox fails under Fedora Wayland and some other distros
+// because the chrome-sandbox helper isn't setuid. Disable it before requiring
+// electron so the setting propagates to child processes. Windows ignores this.
+if (process.platform === 'linux') {
+  process.env.ELECTRON_DISABLE_SANDBOX = '1'
+}
+
 const path = require('path')
-const { app, BrowserWindow, ipcMain, Notification } = require('electron')
+const fs = require('fs')
+const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
 const { createBareKitShim } = require('../backend/barekit-shim')
+
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration()
+}
 
 let mainWindow = null
 let bare = null
@@ -93,7 +105,49 @@ function callBare(method, args) {
   })
 }
 
+// Methods handled on mobile by the RN shell (app/index.tsx) rather than bare.
+// On Electron we intercept them here and provide a desktop-appropriate path.
+const IMAGE_MIME = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.gif': 'image/gif', '.webp': 'image/webp',
+}
+
+async function handleShellMethod(method, args) {
+  if (method === 'qr:scan') {
+    // Desktop has no camera. The parent already copies the invite link via the
+    // "Share Link" button; the child pastes that to their clipboard and taps
+    // Pair, at which point we read it back here.
+    const text = clipboard.readText().trim()
+    if (!text || !text.startsWith('pear://pearguard/join')) {
+      throw new Error('Copy the invite link from the parent device, then try again.')
+    }
+    return text
+  }
+  if (method === 'avatar:pickPhoto') {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a profile photo',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
+    })
+    if (canceled || !filePaths[0]) return null
+    const data = await fs.promises.readFile(filePaths[0])
+    const mime = IMAGE_MIME[path.extname(filePaths[0]).toLowerCase()] || 'image/jpeg'
+    return { base64: data.toString('base64'), mime }
+  }
+  if (method === 'share:text') {
+    // Desktop has no native share sheet — copy to clipboard so the user can paste it anywhere.
+    const text = (args && args.text) || ''
+    if (text) clipboard.writeText(text)
+    return null
+  }
+  if (method === 'haptic:tap') return null  // no-op on desktop
+  return undefined  // not a shell method
+}
+
 ipcMain.handle('bare-call', async (_event, { method, args }) => {
+  const shellResult = await handleShellMethod(method, args)
+  if (shellResult !== undefined) return shellResult
+
   if (!bareReady) {
     return new Promise((resolve, reject) => {
       pendingRendererCalls.push({ method, args, resolve, reject })
@@ -106,6 +160,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 420,
     height: 760,
+    minWidth: 360,
+    minHeight: 640,
+    title: 'PearGuard',
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: false,
@@ -114,11 +171,15 @@ function createWindow() {
   })
   const entry = process.env.PEARGUARD_SMOKE ? 'smoke.html' : 'index.html'
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', entry))
-  if (process.env.PEARGUARD_SMOKE) {
+
+  // Mirror renderer console to the main process stdout when logging is on.
+  if (process.env.PEARGUARD_SMOKE || process.env.PEARGUARD_UI_SMOKE || process.env.PEARGUARD_LOG_RENDERER) {
     mainWindow.webContents.on('console-message', (_e, _level, message) => {
       console.log('[renderer]', message)
     })
-    // After smoke test runs, dump the results table from the DOM and quit.
+  }
+
+  if (process.env.PEARGUARD_SMOKE) {
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
         try {
@@ -131,6 +192,40 @@ function createWindow() {
         }
         app.quit()
       }, 3000)
+    })
+  }
+
+  if (process.env.PEARGUARD_UI_SMOKE) {
+    // Load index.html (real UI), wait for the React tree to mount and call
+    // `identity:getMode`, then dump a summary of the DOM so we can confirm
+    // the bundle booted correctly without opening a GUI. Also exercises the
+    // `qr:scan` shell-method intercept by seeding the clipboard with a fake
+    // invite URL and round-tripping via window.callBare.
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(async () => {
+        try {
+          clipboard.writeText('pear://pearguard/join?t=smoketest')
+          const info = await mainWindow.webContents.executeJavaScript(`(async () => {
+            const out = {
+              rootHTMLLength: document.getElementById('root')?.innerHTML.length || 0,
+              hasRoot: !!document.getElementById('root'),
+              title: document.title,
+              bodyText: document.body.innerText.slice(0, 500),
+              hasCallBare: typeof window.callBare === 'function',
+              hasOnBareEvent: typeof window.onBareEvent === 'function',
+              qrScanResult: null,
+              qrScanError: null,
+            };
+            try { out.qrScanResult = await window.callBare('qr:scan'); }
+            catch (e) { out.qrScanError = e.message; }
+            return out;
+          })()`)
+          console.log('=== UI SMOKE ===\n' + JSON.stringify(info, null, 2) + '\n=== END ===')
+        } catch (e) {
+          console.error('ui smoke dump failed:', e.message)
+        }
+        app.quit()
+      }, 4000)
     })
   }
 }
@@ -146,7 +241,19 @@ app.whenReady().then(() => {
   const dataDir = app.getPath('userData')
   sendToBare({ method: 'init', dataDir })
 
-  const onReady = () => {
+  const onReady = async () => {
+    // This Windows client is child-only. If no mode is persisted yet, pin it
+    // to 'child' so the UI skips the (mobile-only) mode-select shell screen
+    // and lands on ChildApp directly.
+    try {
+      const { mode } = await callBare('identity:getMode')
+      if (!mode) {
+        await callBare('setMode', ['child'])
+      }
+    } catch (e) {
+      console.error('[main] mode bootstrap failed:', e.message)
+    }
+
     createWindow()
     // Flush any buffered events to the renderer once it's loaded.
     mainWindow.webContents.once('did-finish-load', () => {

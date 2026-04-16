@@ -19705,10 +19705,13 @@ ${invite.inviteLink}`
     const [status, setStatus] = (0, import_react21.useState)(null);
     const [pairState, setPairState] = (0, import_react21.useState)("idle");
     const [pairError, setPairError] = (0, import_react21.useState)(null);
+    const [pairUiMode, setPairUiMode] = (0, import_react21.useState)("initial");
+    const [pasteUrl, setPasteUrl] = (0, import_react21.useState)("");
     const [parents, setParents] = (0, import_react21.useState)([]);
-    const [pairedBanner, setPairedBanner] = (0, import_react21.useState)(false);
+    const [pairedBanner, setPairedBanner] = (0, import_react21.useState)(null);
     const [parentsOpen, setParentsOpen] = (0, import_react21.useState)(true);
     const pairDoneRef = (0, import_react21.useRef)(false);
+    const pairTimeoutRef = (0, import_react21.useRef)(null);
     (0, import_react21.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
@@ -19726,10 +19729,14 @@ ${invite.inviteLink}`
       const unsubs = [
         window.onBareEvent("peer:paired", () => {
           pairDoneRef.current = true;
+          if (pairTimeoutRef.current) {
+            clearTimeout(pairTimeoutRef.current);
+            pairTimeoutRef.current = null;
+          }
           refresh();
           setPairState("idle");
-          setPairedBanner(true);
-          setTimeout(() => setPairedBanner(false), 3e3);
+          setPairedBanner("Successfully paired with parent!");
+          setTimeout(() => setPairedBanner(null), 3e3);
         }),
         window.onBareEvent("peer:connected", (data) => {
           if (!data?.remoteKey) return;
@@ -19745,7 +19752,13 @@ ${invite.inviteLink}`
           ));
         })
       ];
-      return () => unsubs.forEach((u) => u());
+      return () => {
+        unsubs.forEach((u) => u());
+        if (pairTimeoutRef.current) {
+          clearTimeout(pairTimeoutRef.current);
+          pairTimeoutRef.current = null;
+        }
+      };
     }, [mode]);
     async function handleSave() {
       const trimmed = name.trim();
@@ -19792,16 +19805,29 @@ ${invite.inviteLink}`
       }
       setPhotoLoading(false);
     }
+    function settleAfterAcceptInvite(result) {
+      if (result && result.alreadyPaired) {
+        setPairState("idle");
+        setPairedBanner("Already paired with this parent.");
+        setTimeout(() => setPairedBanner((m) => m === "Already paired with this parent." ? null : m), 3e3);
+        return;
+      }
+      if (!pairDoneRef.current) {
+        setPairState("success");
+        pairTimeoutRef.current = setTimeout(() => {
+          pairTimeoutRef.current = null;
+          if (!pairDoneRef.current) setPairState("idle");
+        }, 1e4);
+      }
+    }
     async function handlePair() {
       pairDoneRef.current = false;
       setPairError(null);
       try {
         const url = await window.callBare("qr:scan");
         setPairState("connecting");
-        await window.callBare("acceptInvite", [url]);
-        if (!pairDoneRef.current) {
-          setPairState("success");
-        }
+        const result = await window.callBare("acceptInvite", [url]);
+        settleAfterAcceptInvite(result);
       } catch (e) {
         if (e.message === "cancelled") {
           setPairState("idle");
@@ -19809,6 +19835,22 @@ ${invite.inviteLink}`
           setPairState("error");
           setPairError(e.message);
         }
+      }
+    }
+    async function handlePasteAndPair() {
+      const url = pasteUrl.trim();
+      if (!url) return;
+      pairDoneRef.current = false;
+      setPairError(null);
+      setPairUiMode("initial");
+      setPasteUrl("");
+      setPairState("connecting");
+      try {
+        const result = await window.callBare("acceptInvite", [url]);
+        settleAfterAcceptInvite(result);
+      } catch (e) {
+        setPairState("error");
+        setPairError(e.message);
       }
     }
     const label = mode === "parent" ? "Parent Name" : "Your Name";
@@ -19912,10 +19954,54 @@ ${invite.inviteLink}`
                 /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { fontSize: "15px", fontWeight: "500", flex: 1, color: colors.text.primary }, children: p.displayName || "Parent Device" }),
                 /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { fontSize: "12px", color: colors.text.muted }, children: p.isOnline ? "Connected" : "Offline" })
               ] }, p.publicKey)) }),
-              pairState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { onClick: () => {
+              pairState === "idle" && pairUiMode === "initial" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { onClick: () => {
                 window.callBare("haptic:tap");
-                handlePair();
+                setPairUiMode("methodPicker");
               }, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }) }),
+              pairState === "idle" && pairUiMode === "methodPicker" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, icon: "QrCode", onClick: () => {
+                    window.callBare("haptic:tap");
+                    setPairUiMode("initial");
+                    handlePair();
+                  }, children: "Scan QR Code" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, icon: "ClipboardText", onClick: () => {
+                    window.callBare("haptic:tap");
+                    setPairUiMode("paste");
+                  }, children: "Paste from Clipboard" })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+                  "button",
+                  {
+                    onClick: () => setPairUiMode("initial"),
+                    style: { background: "none", border: "none", color: colors.text.secondary, fontSize: "13px", cursor: "pointer", padding: 0, alignSelf: "center" },
+                    children: "Cancel"
+                  }
+                )
+              ] }),
+              pairState === "idle" && pairUiMode === "paste" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+                  "input",
+                  {
+                    type: "text",
+                    value: pasteUrl,
+                    onChange: (e) => setPasteUrl(e.target.value),
+                    placeholder: "pear://pearguard/join?...",
+                    style: inputStyle,
+                    autoFocus: true
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, variant: "secondary", onClick: () => {
+                    setPairUiMode("methodPicker");
+                    setPasteUrl("");
+                  }, children: "Cancel" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, onClick: () => {
+                    window.callBare("haptic:tap");
+                    handlePasteAndPair();
+                  }, disabled: !pasteUrl.trim(), children: "Pair" })
+                ] })
+              ] }),
               pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center" }, children: "Connecting to parent..." }),
               pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0, textAlign: "center" }, children: "Pairing in progress..." }),
               pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
@@ -19938,7 +20024,7 @@ ${invite.inviteLink}`
           fontSize: "14px",
           fontWeight: "500",
           textAlign: "center"
-        }, children: "Successfully paired with parent!" })
+        }, children: pairedBanner })
       ] })
     ] });
   }

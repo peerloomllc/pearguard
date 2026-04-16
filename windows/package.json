@@ -1,0 +1,24 @@
+{
+  "name": "pearguard-windows",
+  "version": "0.1.0",
+  "description": "PearGuard Windows desktop child client",
+  "private": true,
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild"
+  },
+  "dependencies": {
+    "active-win": "^8.2.1",
+    "b4a": "^1.8.0",
+    "hyperbee": "^2.27.3",
+    "hypercore": "^11.26.0",
+    "hyperdht": "^6.29.0",
+    "hyperswarm": "^4.17.0",
+    "sodium-native": "^4.3.3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "electron": "^33.0.0"
+  }
+}

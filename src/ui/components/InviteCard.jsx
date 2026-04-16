@@ -31,6 +31,14 @@ export default function InviteCard({ onConnected, onDismiss }) {
     }
   }, [invite]);
 
+  const handleShare = () => {
+    if (!invite?.inviteLink) return;
+    window.callBare('haptic:tap');
+    window.callBare('share:text', {
+      text: `Tap this link on the child device to pair with PearGuard:\n\n${invite.inviteLink}`,
+    });
+  };
+
   const cardStyle = {
     position: 'relative',
     backgroundColor: colors.surface.card,
@@ -85,6 +93,14 @@ export default function InviteCard({ onConnected, onDismiss }) {
         backgroundColor: '#ffffff', borderRadius: `${radius.md}px`,
       }}>
         <canvas ref={canvasRef} />
+      </div>
+
+      <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+        Or share the link directly (for devices without a camera):
+      </p>
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.base}px` }}>
+        <Button variant="secondary" icon="ShareNetwork" onClick={handleShare}>Share Link</Button>
       </div>
 
       <p style={{ ...typography.caption, color: colors.text.muted, fontStyle: 'italic', margin: 0, textAlign: 'center' }}>

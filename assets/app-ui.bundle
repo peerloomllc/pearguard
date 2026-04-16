@@ -17726,6 +17726,15 @@
         }).catch(console.error);
       }
     }, [invite]);
+    const handleShare = () => {
+      if (!invite?.inviteLink) return;
+      window.callBare("haptic:tap");
+      window.callBare("share:text", {
+        text: `Tap this link on the child device to pair with PearGuard:
+
+${invite.inviteLink}`
+      });
+    };
     const cardStyle = {
       position: "relative",
       backgroundColor: colors.surface.card,
@@ -17775,6 +17784,8 @@
         backgroundColor: "#ffffff",
         borderRadius: `${radius2.md}px`
       }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("canvas", { ref: canvasRef }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Or share the link directly (for devices without a camera):" }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { variant: "secondary", icon: "ShareNetwork", onClick: handleShare, children: "Share Link" }) }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, textAlign: "center" }, children: "Waiting for child to connect..." })
     ] });
   }

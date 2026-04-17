@@ -107,13 +107,20 @@ shim.onBareOut((buf) => {
 })
 
 async function runAppsSync() {
+  console.log('[main] apps:sync starting')
   const apps = await enumerateInstalledApps()
   if (!apps.length) {
     console.log('[main] apps:sync enumerator returned 0 apps')
     return
   }
-  console.log('[main] apps:sync reporting', apps.length, 'apps')
-  await callBare('apps:sync', { apps })
+  console.log('[main] apps:sync reporting', apps.length, 'apps; sample=', apps.slice(0, 3))
+  try {
+    await callBare('apps:sync', { apps })
+    console.log('[main] apps:sync callBare returned ok')
+  } catch (e) {
+    console.warn('[main] apps:sync callBare rejected:', e.message)
+    return
+  }
   // Seed the ExeMap so the foreground monitor can resolve apps the enumerator
   // reported with an exe path. Without this, a freshly-synced Windows-only
   // app (packageName=win.<slug>) wouldn't enforce because its exe wasn't in

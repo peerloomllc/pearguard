@@ -13,8 +13,15 @@ const { DEFAULT_MAP } = require('./exe-map')
 //     (SDK bits, redistributables) since those aren't real user-facing apps
 //   - forces @() around the pipeline so a single match still serializes as a
 //     JSON array — ConvertTo-Json emits a bare object otherwise
+// Force the output stream to UTF-8 before emitting JSON. Without this,
+// PowerShell's default [Console]::OutputEncoding on Windows is usually
+// UTF-16 LE (with BOM), which Node reads as a string full of null bytes
+// and JSON.parse bombs out -> we silently return 0 apps. The encoding
+// override has to be *inside* the script, not set from Node, because the
+// child process inherits the defaults before -Command runs.
 const PS_SCRIPT = `
 $ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $paths = @(
   'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
   'HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
@@ -57,7 +64,11 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
     logger.warn('[apps-enumerator] powershell invocation failed:', e.message)
     return []
   }
-  return parseAndShape(stdout, logger)
+  const raw = stdout || ''
+  logger.log('[apps-enumerator] ps stdout bytes=%d head=%j', raw.length, raw.slice(0, 200))
+  const shaped = parseAndShape(raw, logger)
+  logger.log('[apps-enumerator] shaped %d app rows', shaped.length)
+  return shaped
 }
 
 function parseAndShape(stdout, logger = console) {
@@ -86,7 +97,9 @@ function parseAndShape(stdout, logger = console) {
 // ConvertTo-Json returns either `[]`, a single object, or an array. Guard all
 // three + the "empty stdout" case that happens when no hive matches.
 function parsePowershellJson(stdout, logger = console) {
-  const text = (stdout || '').trim()
+  // Strip UTF-8 BOM if present — PowerShell sometimes prepends one even when
+  // OutputEncoding is forced to UTF-8.
+  let text = (stdout || '').replace(/^\uFEFF/, '').trim()
   if (!text) return []
   let parsed
   try {

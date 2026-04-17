@@ -130,9 +130,15 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
   return merged
 }
 
-// Union two shaped-row lists, deduping by packageName. Registry rows win over
-// UWP rows when a collision occurs — the registry entry carries the exe path
-// that the foreground monitor needs to actually enforce.
+// Union two shaped-row lists. Two-pass dedup:
+//   1. packageName-level: if the same packageName appears in both lists,
+//      primary wins (registry rows carry the exe path enforcement needs).
+//   2. Fuzzy-name merge: a UWP row ('uwp.<family>') and a Win32 row
+//      ('win.<slug>' or DEFAULT_MAP'd) with the same normalized display name
+//      are the same app — Calculator ships both a registry Uninstall entry
+//      and a Get-StartApps entry. The UWP ID wins as survivor because it's
+//      globally stable (Store family name), but we absorb the Win32 row's
+//      exeBasename/exePath so a direct-exe launch still resolves via ExeMap.
 function mergeRows(primary, secondary) {
   const byPackage = new Map()
   for (const row of primary) {
@@ -143,7 +149,31 @@ function mergeRows(primary, secondary) {
       byPackage.set(row.packageName, row)
     }
   }
-  return Array.from(byPackage.values())
+  const rows = Array.from(byPackage.values())
+
+  const win32ByName = new Map()
+  for (const row of rows) {
+    if (row.packageName.startsWith('uwp.')) continue
+    const n = normalizeDisplayName(row.appName)
+    if (n && !win32ByName.has(n)) win32ByName.set(n, row)
+  }
+  const absorbed = new Set()
+  for (const row of rows) {
+    if (!row.packageName.startsWith('uwp.')) continue
+    const n = normalizeDisplayName(row.appName)
+    if (!n) continue
+    const win32 = win32ByName.get(n)
+    if (!win32 || absorbed.has(win32.packageName)) continue
+    if (!row.exeBasename && win32.exeBasename) row.exeBasename = win32.exeBasename
+    if (!row.exePath && win32.exePath) row.exePath = win32.exePath
+    absorbed.add(win32.packageName)
+  }
+  return rows.filter((r) => !absorbed.has(r.packageName))
+}
+
+function normalizeDisplayName(name) {
+  if (typeof name !== 'string') return ''
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
 // Shape Get-StartApps JSON into the same row format as parseAndShape.
@@ -257,4 +287,4 @@ function slugify(name) {
     .slice(0, 64) || 'unknown'
 }
 
-module.exports = { enumerateInstalledApps, parseAndShape, parseUwpAndShape, mergeRows, extractExeBasename, extractExePath, slugify }
+module.exports = { enumerateInstalledApps, parseAndShape, parseUwpAndShape, mergeRows, extractExeBasename, extractExePath, slugify, normalizeDisplayName }

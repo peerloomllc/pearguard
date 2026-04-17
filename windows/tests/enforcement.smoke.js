@@ -8,7 +8,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { evaluate, isSystemExempt } = require('../src/enforcement/block-evaluator')
-const { ExeMap } = require('../src/enforcement/exe-map')
+const { ExeMap, UWP_HOST_BASENAMES } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
@@ -354,6 +354,36 @@ test('ExeMap.learn adds runtime mappings', () => {
   const m = new ExeMap({})
   m.learn('foobar.exe', 'com.example.foobar')
   assert.strictEqual(m.resolve('C:\\foobar.exe'), 'com.example.foobar')
+})
+
+test('ExeMap.learnUwp/resolveUwpByTitle round-trip matches titles case- and punct-insensitively', () => {
+  const m = new ExeMap({})
+  m.learnUwp({ title: 'Calculator', packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', exeBasename: 'calculatorapp.exe' })
+  assert.deepStrictEqual(
+    m.resolveUwpByTitle('Calculator'),
+    { packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', exeBasename: 'calculatorapp.exe' },
+  )
+  // Case and punctuation drop out of normalization.
+  assert.deepStrictEqual(
+    m.resolveUwpByTitle('CALCULATOR'),
+    { packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', exeBasename: 'calculatorapp.exe' },
+  )
+  assert.strictEqual(m.resolveUwpByTitle('Unknown App'), null)
+  assert.strictEqual(m.resolveUwpByTitle(''), null)
+  assert.strictEqual(m.resolveUwpByTitle(null), null)
+})
+
+test('ExeMap.learnUwp allows null exeBasename for pure UWP apps', () => {
+  const m = new ExeMap({})
+  m.learnUwp({ title: 'Microsoft Store', packageName: 'uwp.microsoft_windowsstore_8wekyb3d8bbwe' })
+  assert.deepStrictEqual(
+    m.resolveUwpByTitle('Microsoft Store'),
+    { packageName: 'uwp.microsoft_windowsstore_8wekyb3d8bbwe', exeBasename: null },
+  )
+})
+
+test('UWP_HOST_BASENAMES covers ApplicationFrameHost', () => {
+  assert.strictEqual(UWP_HOST_BASENAMES.has('applicationframehost.exe'), true)
 })
 
 // --- PolicyCache ---------------------------------------------------------
@@ -926,6 +956,51 @@ test('Controller daily-limit crossing flips an in-flight session to blocked', as
   controller.stop()
 })
 
+test('Controller blocks UWP via ApplicationFrameHost + title fallback', async () => {
+  // Repro for #2: the kid opens Calculator. active-win reports
+  // ApplicationFrameHost.exe as the owner and "Calculator" as the title.
+  // ExeMap has no mapping for the host (and the host is SYSTEM_EXEMPT
+  // post-#1), so without the title fallback the evaluator would short-circuit
+  // to null and nothing would block. With learnUwp registered from apps:sync,
+  // resolveUwpByTitle recovers the UWP packageName and we enforce against it.
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Windows\\System32\\ApplicationFrameHost.exe', processId: 1, name: 'ApplicationFrameHost' },
+    title: 'Calculator',
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.exeMap.learnUwp({
+    title: 'Calculator',
+    packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe',
+    exeBasename: 'calculatorapp.exe',
+  })
+  const p = policy()
+  p.apps['uwp.microsoft_windowscalculator_8wekyb3d8bbwe'] = {
+    status: 'blocked', appName: 'Calculator',
+  }
+  controller.setPolicyJson(JSON.stringify(p))
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 1, 'expected overlay for blocked UWP')
+  assert.strictEqual(overlay.shows[0].packageName, 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe')
+  assert.strictEqual(overlay.shows[0].category, 'status')
+  controller.stop()
+})
+
+test('Controller allows UWP host when title does not match any registered UWP', async () => {
+  // Unknown UWP titles fall through to "unmapped → allow" rather than tripping
+  // over the host's own SYSTEM_EXEMPT entry.
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Windows\\System32\\ApplicationFrameHost.exe', processId: 1, name: 'ApplicationFrameHost' },
+    title: 'SomeUnregisteredApp',
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.setPolicyJson(JSON.stringify(policy({ locked: false })))
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 0)
+  controller.stop()
+})
+
 // --- pin-verify ----------------------------------------------------------
 
 // Lazy-load sodium-native — the prebuild may not be present in every dev env.
@@ -1154,6 +1229,40 @@ test('mergeRows prefers registry rows over UWP on packageName collision', () => 
   const shared = merged.find((r) => r.packageName === 'com.app')
   assert.strictEqual(shared.appName, 'App (Registry)')
   assert.strictEqual(shared.exeBasename, 'app.exe')
+})
+
+test('mergeRows fuzzy-merges UWP and Win32 twins by normalized display name', () => {
+  // Repro: Calculator ships both a registry Uninstall entry (win.calculator)
+  // and a Get-StartApps entry (uwp.<family>). Without fuzzy-merge, the parent
+  // sees two Calculators and has to block both; even then nothing enforces
+  // because the foreground owner for UWPs is ApplicationFrameHost.exe.
+  const registry = [
+    { packageName: 'win.calculator', appName: 'Calculator', exeBasename: 'calculatorapp.exe', isLauncher: false },
+    { packageName: 'win.notepad', appName: 'Notepad', exeBasename: 'notepad.exe', isLauncher: false },
+  ]
+  const uwp = [
+    { packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', appName: 'Calculator', exeBasename: null, isLauncher: false },
+    { packageName: 'uwp.microsoft_store', appName: 'Microsoft Store', exeBasename: null, isLauncher: false },
+  ]
+  const merged = mergeRows(registry, uwp)
+  assert.strictEqual(merged.length, 3, 'calculator twin collapses; notepad + store pass through')
+  const calc = merged.find((r) => r.appName === 'Calculator')
+  assert.ok(calc, 'one calculator entry survives the merge')
+  assert.strictEqual(calc.packageName, 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe',
+    'UWP ID wins as survivor (globally stable)')
+  assert.strictEqual(calc.exeBasename, 'calculatorapp.exe',
+    'Win32 twin exeBasename is absorbed so direct-exe launches still resolve')
+  assert.ok(merged.find((r) => r.packageName === 'win.notepad'), 'Win32-only app survives')
+  assert.ok(merged.find((r) => r.packageName === 'uwp.microsoft_store'), 'UWP-only app survives')
+})
+
+test('mergeRows fuzzy match ignores whitespace and punctuation differences', () => {
+  const registry = [{ packageName: 'win.visual_studio_code', appName: 'Visual Studio Code', exeBasename: 'code.exe', isLauncher: false }]
+  const uwp = [{ packageName: 'uwp.microsoft_vscode', appName: 'Visual-Studio-Code', exeBasename: null, isLauncher: false }]
+  const merged = mergeRows(registry, uwp)
+  assert.strictEqual(merged.length, 1)
+  assert.strictEqual(merged[0].packageName, 'uwp.microsoft_vscode')
+  assert.strictEqual(merged[0].exeBasename, 'code.exe')
 })
 
 test('enumerateInstalledApps merges registry and UWP exec calls', async () => {

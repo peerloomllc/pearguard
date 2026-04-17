@@ -161,6 +161,17 @@ async function runAppsSync() {
         enforcement.exeMap.learn(a.exeBasename, a.packageName)
         basenames.push(a.exeBasename)
       }
+      // Register UWP rows by their display title so ApplicationFrameHost
+      // foreground ticks can resolve the hosted UWP. exeBasename is passed
+      // through when the enumerator fuzzy-merged a Win32 twin (Calculator),
+      // so a direct-exe launch gets the same packageName via ExeMap.resolve.
+      if (a.packageName && a.packageName.startsWith('uwp.') && a.appName) {
+        enforcement.exeMap.learnUwp({
+          title: a.appName,
+          packageName: a.packageName,
+          exeBasename: a.exeBasename || null,
+        })
+      }
     }
     enforcement.monitor.markSeen(basenames)
   }

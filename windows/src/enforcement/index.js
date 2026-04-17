@@ -1,5 +1,5 @@
 const { PolicyCache } = require('./policy-cache')
-const { ExeMap } = require('./exe-map')
+const { ExeMap, UWP_HOST_BASENAMES } = require('./exe-map')
 const { ForegroundMonitor } = require('./foreground-monitor')
 const { OverridesStore } = require('./overrides-store')
 const { UsageTracker } = require('./usage-tracker')
@@ -124,8 +124,23 @@ class EnforcementController {
       this._logger.log('[enforcement] skip own window', { exe: info.exePath, pid: info.pid })
       return
     }
-    const exeBasename = info.exePath ? info.exePath.split(/[\\/]/).pop() : ''
-    const packageName = this.exeMap.resolve(info.exePath)
+    let exeBasename = info.exePath ? info.exePath.split(/[\\/]/).pop() : ''
+    let packageName = this.exeMap.resolve(info.exePath)
+
+    // UWP host fallback. ApplicationFrameHost.exe is the foreground owner
+    // whenever the kid focuses a UWP app (Calculator, Store, Xbox, etc.) and
+    // is in SYSTEM_EXEMPT_BASENAMES, so the evaluator would short-circuit if
+    // we passed the host's basename through. Resolve the hosted UWP via the
+    // title map and substitute a synthetic non-exempt exeBasename so
+    // evaluate() treats this like a normal app foreground.
+    if (!packageName && exeBasename && UWP_HOST_BASENAMES.has(exeBasename.toLowerCase())) {
+      const uwp = this.exeMap.resolveUwpByTitle(info.title)
+      if (uwp) {
+        packageName = uwp.packageName
+        exeBasename = uwp.exeBasename || ('uwp:' + packageName)
+      }
+    }
+
     this._lastForeground = {
       exePath: info.exePath,
       exeBasename,

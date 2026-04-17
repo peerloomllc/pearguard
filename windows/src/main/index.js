@@ -12,6 +12,7 @@ const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')
 const { UsageTracker } = require('../enforcement/usage-tracker')
+const { enumerateInstalledApps } = require('../enforcement/apps-enumerator')
 const { OverlayManager } = require('./overlay')
 
 // How often we hand usage telemetry to bare for replication to the parent.
@@ -85,6 +86,17 @@ shim.onBareOut((buf) => {
         bareReady = true
         flushReadyQueue()
       }
+      // apps:syncRequested + usageFlushRequested are shell-side concerns —
+      // the Android shell handles these in app/index.tsx; on Electron they
+      // don't need to reach the renderer. Intercept and fulfill locally.
+      if (msg.event === 'apps:syncRequested') {
+        runAppsSync().catch((e) => console.warn('[main] apps:sync failed:', e.message))
+        return
+      }
+      if (msg.event === 'usageFlushRequested') {
+        flushUsageOnce().catch((e) => console.warn('[main] usage:flush failed:', e.message))
+        return
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bare-event', msg)
       } else {
@@ -93,6 +105,25 @@ shim.onBareOut((buf) => {
     }
   }
 })
+
+async function runAppsSync() {
+  const apps = await enumerateInstalledApps()
+  if (!apps.length) {
+    console.log('[main] apps:sync enumerator returned 0 apps')
+    return
+  }
+  console.log('[main] apps:sync reporting', apps.length, 'apps')
+  await callBare('apps:sync', { apps })
+  // Seed the ExeMap so the foreground monitor can resolve apps the enumerator
+  // reported with an exe path. Without this, a freshly-synced Windows-only
+  // app (packageName=win.<slug>) wouldn't enforce because its exe wasn't in
+  // the starter DEFAULT_MAP.
+  if (enforcement) {
+    for (const a of apps) {
+      if (a.exeBasename && a.packageName) enforcement.exeMap.learn(a.exeBasename, a.packageName)
+    }
+  }
+}
 
 let bareReady = false
 const bufferedEvents = []

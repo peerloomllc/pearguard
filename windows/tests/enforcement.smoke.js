@@ -14,6 +14,7 @@ const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
 const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
+const { enumerateInstalledApps, extractExeBasename, slugify, parseAndShape } = require('../src/enforcement/apps-enumerator')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 
 const tests = []
@@ -604,6 +605,92 @@ test('UsageTracker getDailyUsageAll surfaces display names', () => {
   const roblox = list.find((x) => x.packageName === 'com.roblox.client')
   assert.strictEqual(discord.appName, 'Discord')
   assert.strictEqual(roblox.appName, 'Roblox')
+})
+
+// --- apps-enumerator -----------------------------------------------------
+
+test('extractExeBasename strips icon index and quotes', () => {
+  assert.strictEqual(extractExeBasename('C:\\Program Files\\App\\app.exe,0'), 'app.exe')
+  assert.strictEqual(extractExeBasename('"C:\\Program Files\\App\\app.exe",0'), 'app.exe')
+  assert.strictEqual(extractExeBasename('C:\\Games\\Roblox\\RobloxPlayerBeta.exe'), 'robloxplayerbeta.exe')
+  assert.strictEqual(extractExeBasename(''), null)
+  assert.strictEqual(extractExeBasename(null), null)
+  assert.strictEqual(extractExeBasename('C:\\no-exe-here\\readme.txt'), null)
+})
+
+test('slugify produces safe packageName suffixes', () => {
+  assert.strictEqual(slugify('Microsoft Edge'), 'microsoft_edge')
+  assert.strictEqual(slugify('OBS Studio (x64)'), 'obs_studio_x64')
+  assert.strictEqual(slugify('  LibreOffice  '), 'libreoffice')
+  assert.strictEqual(slugify(''), 'unknown')
+})
+
+test('parseAndShape maps known exes to DEFAULT_MAP packageNames', () => {
+  const json = JSON.stringify([
+    { DisplayName: 'Google Chrome', DisplayIcon: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe,0' },
+    { DisplayName: 'Discord', DisplayIcon: '"C:\\Users\\k\\AppData\\Local\\Discord\\app-1.0\\Discord.exe"' },
+  ])
+  const apps = parseAndShape(json)
+  const chrome = apps.find((a) => a.appName === 'Google Chrome')
+  const discord = apps.find((a) => a.appName === 'Discord')
+  assert.strictEqual(chrome.packageName, 'com.android.chrome')
+  assert.strictEqual(chrome.exeBasename, 'chrome.exe')
+  assert.strictEqual(discord.packageName, 'com.discord')
+  assert.strictEqual(discord.exeBasename, 'discord.exe')
+})
+
+test('parseAndShape synthesizes win.<slug> for unknown exes', () => {
+  const json = JSON.stringify([
+    { DisplayName: 'LibreOffice 7.6', DisplayIcon: 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' },
+  ])
+  const apps = parseAndShape(json)
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].packageName, 'win.libreoffice_7_6')
+  assert.strictEqual(apps[0].exeBasename, 'soffice.exe')
+})
+
+test('parseAndShape handles the single-object JSON shape PowerShell returns for one match', () => {
+  const json = JSON.stringify({ DisplayName: 'Solo', DisplayIcon: 'C:\\Solo\\solo.exe' })
+  const apps = parseAndShape(json)
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].appName, 'Solo')
+})
+
+test('parseAndShape drops entries without DisplayName and dedupes by name', () => {
+  const json = JSON.stringify([
+    { DisplayName: '', DisplayIcon: 'C:\\nope\\nope.exe' },
+    { DisplayName: null, DisplayIcon: '' },
+    { DisplayName: 'Discord', DisplayIcon: '' },  // first, no exe
+    { DisplayName: 'Discord', DisplayIcon: 'C:\\Discord\\Discord.exe' },  // second, has exe — should win
+  ])
+  const apps = parseAndShape(json)
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].appName, 'Discord')
+  assert.strictEqual(apps[0].exeBasename, 'discord.exe')
+  assert.strictEqual(apps[0].packageName, 'com.discord')
+})
+
+test('parseAndShape returns [] on empty or non-JSON input', () => {
+  const quiet = { warn() {} }
+  assert.deepStrictEqual(parseAndShape('', quiet), [])
+  assert.deepStrictEqual(parseAndShape('not json', quiet), [])
+  assert.deepStrictEqual(parseAndShape('[]', quiet), [])
+})
+
+test('enumerateInstalledApps forwards fake exec output through parseAndShape', async () => {
+  const fakeExec = async () => JSON.stringify([
+    { DisplayName: 'Spotify', DisplayIcon: 'C:\\Spotify\\Spotify.exe,0' },
+  ])
+  const apps = await enumerateInstalledApps({ exec: fakeExec })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].packageName, 'com.spotify.music')
+  assert.strictEqual(apps[0].isLauncher, false)
+})
+
+test('enumerateInstalledApps swallows exec failure and returns []', async () => {
+  const fakeExec = async () => { throw new Error('powershell missing') }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { warn() {} } })
+  assert.deepStrictEqual(apps, [])
 })
 
 // --- EnforcementController integration -----------------------------------

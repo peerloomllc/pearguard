@@ -331,6 +331,17 @@ function createDispatch (ctx) {
 
         const { parentPublicKey, swarmTopic } = parsed
 
+        // Store/refresh the pendingParent entry so handleHello can bind the
+        // incoming connection to the new invite's topic even if we already have
+        // a peers: entry from a prior pair.
+        await ctx.db.put('pendingParent:' + parentPublicKey, { publicKey: parentPublicKey, swarmTopic, ts: Date.now() })
+
+        // Always join the new swarm topic. A parent that issued a fresh invite
+        // after rotating topics won't be reachable on the old one, so even when
+        // we already have a peers: entry we need to rejoin on the new topic for
+        // Hyperswarm to rediscover them.
+        await ctx.joinTopic(swarmTopic)
+
         // If we already have a confirmed peers: entry for this parent, surface
         // an explicit alreadyPaired signal so the UI can stop waiting on a
         // peer:paired event that won't fire a second time.
@@ -338,15 +349,6 @@ function createDispatch (ctx) {
         if (existing) {
           return { ok: true, alreadyPaired: true, parentPublicKey, swarmTopic }
         }
-
-        // Store the parent's public key as a "pending" entry — will be confirmed on hello.
-        // Include swarmTopic so handleHello can bind it to the peer record even if
-        // Hyperswarm delivers an empty info.topics[] on the accepted connection (#147 follow-up).
-        await ctx.db.put('pendingParent:' + parentPublicKey, { publicKey: parentPublicKey, swarmTopic, ts: Date.now() })
-
-        // Join the swarm topic alongside any existing parent topics (multi-parent support).
-        // Old single-parent behavior deleted all existing topics here — now we keep them.
-        await ctx.joinTopic(swarmTopic)
 
         return { ok: true, swarmTopic, parentPublicKey }
       }

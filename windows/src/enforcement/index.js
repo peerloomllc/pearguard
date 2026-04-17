@@ -3,6 +3,9 @@ const { ExeMap } = require('./exe-map')
 const { ForegroundMonitor } = require('./foreground-monitor')
 const { OverridesStore } = require('./overrides-store')
 const { evaluate } = require('./block-evaluator')
+const { verifyPin } = require('./pin-verify')
+
+const DEFAULT_OVERRIDE_SECONDS = 3600
 
 // Wires the enforcement primitives together. The controller is intentionally
 // I/O-free: it doesn't open BrowserWindows itself. The host (main/index.js)
@@ -14,13 +17,17 @@ class EnforcementController {
     intervalMs,
     overridesStore = new OverridesStore(),
     overlay = null,        // { show({packageName, appName, reason, category}), hide() }
+    sodium = null,         // sodium-native, optional — required only for PIN verification
+    isOwnWindow = null,    // (info) => bool — used to ignore our own electron windows
     logger = console,
   } = {}) {
+    this._sodium = sodium
     this.policyCache = new PolicyCache()
     this.exeMap = new ExeMap()
     this.overrides = overridesStore
     this.monitor = new ForegroundMonitor({ activeWin, intervalMs })
     this._overlay = overlay
+    this._isOwnWindow = typeof isOwnWindow === 'function' ? isOwnWindow : () => false
     this._logger = logger
     this._getUsageSeconds = () => 0  // PR 3 plugs in real usage tracking
 
@@ -28,7 +35,11 @@ class EnforcementController {
     // re-evaluate without waiting for the next monitor tick. This mirrors
     // Android's behavior of dismissing the overlay the moment a grant arrives.
     this._lastForeground = null  // { packageName, exeBasename, title }
-    this._currentOverlayPkg = null
+    // Visibility tracking for the overlay. We can't use _currentOverlayKey ===
+    // null as the "hidden" sentinel because unmapped exes legitimately have
+    // packageName === null when blocked by lock or schedule.
+    this._overlayVisible = false
+    this._currentOverlayKey = null  // packageName || exeBasename of currently shown block
 
     this.monitor.on('foreground-changed', (info) => this._onForegroundChanged(info))
     this.monitor.on('error', (err) => this._logger.warn('[enforcement] active-win error:', err.message))
@@ -52,6 +63,28 @@ class EnforcementController {
     return expiry
   }
 
+  // Verify a PIN against the cached policy. Used by the overlay before
+  // routing audit logging through bare via pin:used. Returns:
+  //   { ok: true, expiresAt: number, durationSeconds: number }   on success
+  //   { ok: false, reason: 'no-policy'|'no-pin'|'wrong-pin'|'no-sodium' }
+  verifyPinAndGrant({ pin, packageName }) {
+    if (!this._sodium) return { ok: false, reason: 'no-sodium' }
+    const policy = this.policyCache.getPolicy()
+    const result = verifyPin({ sodium: this._sodium, policy, pin })
+    if (!result.ok) return result
+    const durationSeconds = (policy && policy.overrideDurationSeconds) || DEFAULT_OVERRIDE_SECONDS
+    const expiresAt = Date.now() + durationSeconds * 1000
+    if (packageName) {
+      this.applyGrant({ packageName, expiresAt })
+    } else {
+      // No app to grant against (unmapped exe). Still re-evaluate so a
+      // schedule-clearing policy push can dismiss; the kid won't get a
+      // persistent override but at least the dialog completes successfully.
+      this._reevaluateCurrent()
+    }
+    return { ok: true, expiresAt, durationSeconds }
+  }
+
   setOverlay(overlay) {
     this._overlay = overlay
   }
@@ -65,6 +98,14 @@ class EnforcementController {
   }
 
   _onForegroundChanged(info) {
+    // Skip our own electron windows (main + overlay). When the kid clicks
+    // "Enter PIN" the overlay window takes focus and active-win reports it as
+    // electron.exe; without this guard the controller would re-show the
+    // overlay against itself and clobber the PIN view.
+    if (this._isOwnWindow(info)) {
+      this._logger.log('[enforcement] skip own window', { exe: info.exePath, pid: info.pid })
+      return
+    }
     const exeBasename = info.exePath ? info.exePath.split(/[\\/]/).pop() : ''
     this._lastForeground = {
       exePath: info.exePath,
@@ -106,8 +147,9 @@ class EnforcementController {
 
   _showOverlay(fg, decision) {
     if (!this._overlay) return
-    // If the same package is already overlaid, don't churn the window.
-    if (this._currentOverlayPkg === fg.packageName) return
+    const key = fg.packageName || fg.exeBasename || ''
+    // If the same target is already overlaid, don't churn the window.
+    if (this._overlayVisible && this._currentOverlayKey === key) return
     const policy = this.policyCache.getPolicy()
     const appEntry = (policy && policy.apps && policy.apps[fg.packageName]) || {}
     const settings = (policy && policy.settings) || {}
@@ -118,13 +160,15 @@ class EnforcementController {
       category: decision.category,
       timeRequestMinutes: Array.isArray(settings.timeRequestMinutes) ? settings.timeRequestMinutes : null,
     })
-    this._currentOverlayPkg = fg.packageName
+    this._overlayVisible = true
+    this._currentOverlayKey = key
   }
 
   _hideOverlayIfShown() {
-    if (!this._overlay || !this._currentOverlayPkg) return
+    if (!this._overlay || !this._overlayVisible) return
     this._overlay.hide()
-    this._currentOverlayPkg = null
+    this._overlayVisible = false
+    this._currentOverlayKey = null
   }
 }
 

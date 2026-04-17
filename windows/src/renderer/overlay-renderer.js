@@ -71,9 +71,18 @@ function sendApprovalRequest() {
   })
 }
 
-function configureForCategory(category) {
+function configureForCategory(category, packageName) {
   // 'lock' has no recovery — parent must unlock from their device.
   if (category === 'lock') {
+    els.btnRequest.classList.add('hidden')
+    els.btnPin.classList.add('hidden')
+    return
+  }
+  // Unmapped exes (no packageName) can't be granted an override — the override
+  // store keys by packageName — and the parent's request list won't render an
+  // entry without one. Hide both actions so the kid isn't presented with
+  // controls that can't actually unlock the app.
+  if (!packageName) {
     els.btnRequest.classList.add('hidden')
     els.btnPin.classList.add('hidden')
     return
@@ -93,7 +102,7 @@ window.overlay.onPayload((payload) => {
   current = payload
   els.appName.textContent = payload.appName || 'App blocked'
   els.reason.textContent = payload.reason || 'This app is blocked.'
-  configureForCategory(payload.category)
+  configureForCategory(payload.category, payload.packageName)
   renderTimeGrid(payload.timeRequestMinutes || DEFAULT_TIME_OPTIONS)
   showView('main')
 })

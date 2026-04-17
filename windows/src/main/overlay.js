@@ -91,6 +91,14 @@ class OverlayManager extends EventEmitter {
       this._win.webContents.send(channel, result)
     }
   }
+
+  // OS pid of the renderer process backing the overlay window, or null when
+  // no overlay is currently shown. Used by the enforcement controller to
+  // ignore the overlay's own foreground events.
+  getRendererPid() {
+    if (!this._win || this._win.isDestroyed()) return null
+    try { return this._win.webContents.getOSProcessId() } catch (_) { return null }
+  }
 }
 
 module.exports = { OverlayManager }

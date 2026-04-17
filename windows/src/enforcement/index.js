@@ -16,6 +16,7 @@ class EnforcementController {
   constructor({
     activeWin,
     intervalMs,
+    seenExesPath = null,   // persistence path for first-seen dedupe
     overridesStore = new OverridesStore(),
     usageTracker = new UsageTracker(),
     overlay = null,        // { show({packageName, appName, reason, category}), hide() }
@@ -28,7 +29,7 @@ class EnforcementController {
     this.exeMap = new ExeMap()
     this.overrides = overridesStore
     this.usage = usageTracker
-    this.monitor = new ForegroundMonitor({ activeWin, intervalMs })
+    this.monitor = new ForegroundMonitor({ activeWin, intervalMs, seenExesPath })
     this._overlay = overlay
     this._isOwnWindow = typeof isOwnWindow === 'function' ? isOwnWindow : () => false
     this._logger = logger

@@ -14,7 +14,7 @@ const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
 const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
-const { enumerateInstalledApps, extractExeBasename, slugify, parseAndShape } = require('../src/enforcement/apps-enumerator')
+const { enumerateInstalledApps, extractExeBasename, slugify, parseAndShape, parseUwpAndShape, mergeRows } = require('../src/enforcement/apps-enumerator')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 
 const tests = []
@@ -1022,6 +1022,128 @@ test('verifyPinAndGrant without sodium → no-sodium', () => {
   })
   const r = controller.verifyPinAndGrant({ pin: '1234', packageName: 'com.foo' })
   assert.deepStrictEqual(r, { ok: false, reason: 'no-sodium' })
+})
+
+// --- ForegroundMonitor first-sighting dedupe -----------------------------
+
+function tmpSeenExesPath() {
+  return path.join(os.tmpdir(), 'pearguard-test-seen-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.json')
+}
+
+test('ForegroundMonitor emits app-first-seen once per basename', async () => {
+  const responses = [
+    { owner: { path: 'C:\\foo.exe', processId: 1, name: 'foo' }, title: 't1' },
+    { owner: { path: 'C:\\foo.exe', processId: 2, name: 'foo' }, title: 't1' },  // same basename, new pid
+    { owner: { path: 'C:\\bar.exe', processId: 3, name: 'bar' }, title: 't2' },
+    { owner: { path: 'C:\\FOO.EXE', processId: 4, name: 'foo' }, title: 't3' },  // case variant — still dup
+  ]
+  let calls = 0
+  const fakeActiveWin = async () => responses[Math.min(calls++, responses.length - 1)]
+  const m = new ForegroundMonitor({ activeWin: fakeActiveWin, intervalMs: 5 })
+  const firstSeen = []
+  m.on('app-first-seen', (info) => firstSeen.push(info))
+  m.start()
+  await new Promise(r => setTimeout(r, 80))
+  m.stop()
+  const basenames = firstSeen.map((x) => x.exeBasename)
+  assert.deepStrictEqual(new Set(basenames), new Set(['foo.exe', 'bar.exe']))
+})
+
+test('ForegroundMonitor seenExes persists across instances', async () => {
+  const filePath = tmpSeenExesPath()
+  try {
+    const first = new ForegroundMonitor({
+      activeWin: async () => ({ owner: { path: 'C:\\a.exe', processId: 1, name: 'a' }, title: '' }),
+      intervalMs: 5,
+      seenExesPath: filePath,
+    })
+    const firstEvents = []
+    first.on('app-first-seen', (info) => firstEvents.push(info))
+    first.start()
+    await new Promise(r => setTimeout(r, 30))
+    first.stop()
+    assert.strictEqual(firstEvents.length, 1, 'first instance should see a.exe once')
+
+    const second = new ForegroundMonitor({
+      activeWin: async () => ({ owner: { path: 'C:\\a.exe', processId: 2, name: 'a' }, title: '' }),
+      intervalMs: 5,
+      seenExesPath: filePath,
+    })
+    const secondEvents = []
+    second.on('app-first-seen', (info) => secondEvents.push(info))
+    second.start()
+    await new Promise(r => setTimeout(r, 30))
+    second.stop()
+    assert.strictEqual(secondEvents.length, 0, 'second instance should NOT re-fire for a.exe')
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})
+
+test('ForegroundMonitor.markSeen suppresses first-sighting for pre-seeded exes', async () => {
+  const m = new ForegroundMonitor({
+    activeWin: async () => ({ owner: { path: 'C:\\electron.exe', processId: 1, name: 'electron' }, title: '' }),
+    intervalMs: 5,
+  })
+  m.markSeen(['electron.exe'])
+  const events = []
+  m.on('app-first-seen', (info) => events.push(info))
+  m.start()
+  await new Promise(r => setTimeout(r, 30))
+  m.stop()
+  assert.strictEqual(events.length, 0)
+})
+
+// --- UWP / Get-StartApps -------------------------------------------------
+
+test('parseUwpAndShape extracts UWP packages via PackageFamilyName', () => {
+  const json = JSON.stringify([
+    { Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!Microsoft.XboxApp' },
+    { Name: 'Calculator', AppID: 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App' },
+    { Name: 'Notepad++', AppID: 'C:\\Program Files\\Notepad++\\notepad++.exe' },  // Win32 shortcut, ignored
+  ])
+  const rows = parseUwpAndShape(json)
+  assert.strictEqual(rows.length, 2)
+  const xbox = rows.find((r) => r.appName === 'Xbox')
+  assert.ok(xbox)
+  assert.strictEqual(xbox.packageName, 'uwp.microsoft_xboxapp_8wekyb3d8bbwe')
+  assert.strictEqual(xbox.exeBasename, null)
+})
+
+test('parseUwpAndShape handles empty/non-JSON gracefully', () => {
+  const quiet = { warn() {} }
+  assert.deepStrictEqual(parseUwpAndShape('', quiet), [])
+  assert.deepStrictEqual(parseUwpAndShape('[]', quiet), [])
+  assert.deepStrictEqual(parseUwpAndShape('garbage', quiet), [])
+})
+
+test('mergeRows prefers registry rows over UWP on packageName collision', () => {
+  const registry = [{ packageName: 'com.app', appName: 'App (Registry)', exeBasename: 'app.exe', isLauncher: false }]
+  const uwp = [
+    { packageName: 'com.app', appName: 'App (UWP)', exeBasename: null, isLauncher: false },
+    { packageName: 'uwp.unique', appName: 'Unique UWP', exeBasename: null, isLauncher: false },
+  ]
+  const merged = mergeRows(registry, uwp)
+  assert.strictEqual(merged.length, 2)
+  const shared = merged.find((r) => r.packageName === 'com.app')
+  assert.strictEqual(shared.appName, 'App (Registry)')
+  assert.strictEqual(shared.exeBasename, 'app.exe')
+})
+
+test('enumerateInstalledApps merges registry and UWP exec calls', async () => {
+  let callIdx = 0
+  const fakeExec = async () => {
+    callIdx++
+    if (callIdx === 1) {
+      return JSON.stringify([{ DisplayName: 'Chrome', DisplayIcon: 'C:\\chrome.exe,0' }])
+    }
+    return JSON.stringify([{ Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!Microsoft.XboxApp' }])
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 2)
+  const pkgs = apps.map((a) => a.packageName)
+  assert.ok(pkgs.includes('com.android.chrome'))
+  assert.ok(pkgs.some((p) => p.startsWith('uwp.')))
 })
 
 // --- Runner --------------------------------------------------------------

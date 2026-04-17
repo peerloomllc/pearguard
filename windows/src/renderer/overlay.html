@@ -2,18 +2,34 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'; font-src 'self';">
   <title>PearGuard</title>
   <style>
+    @font-face {
+      font-family: 'Nunito';
+      font-weight: 300;
+      src: url('./fonts/Nunito-Light.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Nunito';
+      font-weight: 400;
+      src: url('./fonts/Nunito-Regular.woff2') format('woff2');
+    }
     :root {
       color-scheme: dark;
-      --bg: #0d1117;
-      --fg: #e6edf3;
-      --muted: #8b949e;
-      --accent: #5b9bff;
-      --danger: #f85149;
-      --card: #161b22;
-      --border: #30363d;
+      --bg: #0D0D0D;
+      --card: #1A1A1A;
+      --elevated: #252525;
+      --input: #333333;
+      --border: #333333;
+      --divider: #2A2A2A;
+      --fg: #F0F0F0;
+      --muted: #A0A0A0;
+      --dim: #666666;
+      --primary: #4CAF50;
+      --primary-light: #81C784;
+      --danger: #EF5350;
+      --success: #66BB6A;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -21,7 +37,8 @@
       width: 100vw; height: 100vh;
       background: var(--bg);
       color: var(--fg);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-weight: 400;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -36,19 +53,24 @@
       border-radius: 16px;
       padding: 40px 36px;
       text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
-    .shield {
-      font-size: 56px;
-      line-height: 1;
-      margin-bottom: 16px;
+    .logo {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 20px;
+      display: block;
+      border-radius: 16px;
     }
     .app-name {
-      font-size: 22px;
-      font-weight: 600;
+      font-size: 20px;
+      font-weight: 300;
       margin: 0 0 8px;
+      color: var(--fg);
     }
     .reason {
-      font-size: 16px;
+      font-size: 14px;
+      font-weight: 400;
       color: var(--muted);
       margin: 0 0 28px;
       line-height: 1.5;
@@ -59,21 +81,25 @@
       gap: 12px;
     }
     button {
-      font: inherit;
+      font-family: inherit;
       font-size: 16px;
+      font-weight: 400;
       padding: 14px 18px;
-      border-radius: 10px;
+      border-radius: 12px;
       border: 1px solid var(--border);
-      background: transparent;
+      background: var(--elevated);
       color: var(--fg);
       cursor: pointer;
+      transition: background 120ms ease;
     }
+    button:hover { background: var(--input); }
     button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #0d1117;
-      font-weight: 600;
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #0D0D0D;
+      font-weight: 400;
     }
+    button.primary:hover { background: var(--primary-light); border-color: var(--primary-light); }
     button:disabled { opacity: 0.5; cursor: default; }
     .time-grid {
       display: grid;
@@ -91,34 +117,42 @@
       flex: 1;
       padding: 14px;
       font-size: 18px;
+      font-family: inherit;
       letter-spacing: 6px;
       text-align: center;
-      background: var(--bg);
+      background: var(--input);
       color: var(--fg);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
+    }
+    .pin-row input:focus {
+      outline: none;
+      border-color: var(--primary);
     }
     .status {
-      font-size: 14px;
+      font-size: 12px;
       margin-top: 14px;
-      min-height: 18px;
+      min-height: 16px;
+      color: var(--muted);
     }
     .status.error { color: var(--danger); }
-    .status.ok { color: var(--accent); }
+    .status.ok { color: var(--primary); }
     .hidden { display: none !important; }
     .back {
       background: transparent;
-      color: var(--muted);
+      color: var(--dim);
       border: none;
       padding: 8px;
       cursor: pointer;
       font-size: 14px;
+      font-family: inherit;
     }
+    .back:hover { color: var(--muted); background: transparent; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="shield">🛡️</div>
+    <img class="logo" src="./pearguard-logo.png" alt="PearGuard">
     <p class="app-name" id="app-name">App blocked</p>
     <p class="reason" id="reason">This app is blocked.</p>
 

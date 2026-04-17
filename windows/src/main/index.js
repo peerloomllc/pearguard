@@ -14,6 +14,7 @@ const { OverridesStore } = require('../enforcement/overrides-store')
 const { UsageTracker } = require('../enforcement/usage-tracker')
 const { enumerateInstalledApps, slugify } = require('../enforcement/apps-enumerator')
 const { readFileDescription } = require('../enforcement/exe-metadata')
+const { extractWin32Icons } = require('../enforcement/icon-extractor')
 const { DEFAULT_MAP } = require('../enforcement/exe-map')
 const { OverlayManager } = require('./overlay')
 
@@ -360,10 +361,14 @@ app.whenReady().then(() => {
     // Activity notification.
     enforcement.monitor.on('app-first-seen', async ({ exePath, exeBasename, title }) => {
       try {
-        const fileDescription = await readFileDescription(exePath)
+        const [fileDescription, iconMap] = await Promise.all([
+          readFileDescription(exePath),
+          extractWin32Icons([exePath]),
+        ])
         const packageName = enforcement.exeMap.resolve(exePath) || ('win.' + slugify(fileDescription || exeBasename))
         const appName = fileDescription || exeBasename || packageName
-        console.log('[main] app:installed first-sighting', { exeBasename, packageName, appName })
+        const iconBase64 = iconMap.get(exePath) || null
+        console.log('[main] app:installed first-sighting', { exeBasename, packageName, appName, hasIcon: !!iconBase64 })
         await callBare('app:installed', {
           packageName,
           appName,
@@ -371,6 +376,7 @@ app.whenReady().then(() => {
           exePath,
           windowTitle: title || '',
           fileDescription: fileDescription || '',
+          ...(iconBase64 && { iconBase64 }),
         })
       } catch (e) {
         console.warn('[main] app:installed first-sighting relay failed:', e.message)

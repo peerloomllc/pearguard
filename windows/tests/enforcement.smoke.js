@@ -14,7 +14,8 @@ const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
 const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
-const { enumerateInstalledApps, extractExeBasename, slugify, parseAndShape, parseUwpAndShape, mergeRows } = require('../src/enforcement/apps-enumerator')
+const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, parseAndShape, parseUwpAndShape, mergeRows } = require('../src/enforcement/apps-enumerator')
+const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 
 const tests = []
@@ -1144,6 +1145,123 @@ test('enumerateInstalledApps merges registry and UWP exec calls', async () => {
   const pkgs = apps.map((a) => a.packageName)
   assert.ok(pkgs.includes('com.android.chrome'))
   assert.ok(pkgs.some((p) => p.startsWith('uwp.')))
+})
+
+// --- icon-extractor ------------------------------------------------------
+
+test('extractExePath strips quotes and icon index', () => {
+  assert.strictEqual(extractExePath('C:\\Program Files\\App\\app.exe,0'), 'C:\\Program Files\\App\\app.exe')
+  assert.strictEqual(extractExePath('"C:\\Program Files\\App\\app.exe",0'), 'C:\\Program Files\\App\\app.exe')
+  assert.strictEqual(extractExePath('C:\\App\\plain.exe'), 'C:\\App\\plain.exe')
+  assert.strictEqual(extractExePath('C:\\readme.txt'), null)
+  assert.strictEqual(extractExePath(null), null)
+})
+
+test('buildWin32Script escapes embedded single quotes', () => {
+  const script = buildWin32Script(["C:\\has'quote.exe", 'C:\\plain.exe'])
+  // Embedded ' must become '' inside the generated PS array literal.
+  assert.ok(script.includes("'C:\\has''quote.exe'"))
+  assert.ok(script.includes("'C:\\plain.exe'"))
+})
+
+test('buildUwpScript embeds families as single-quoted literals', () => {
+  const script = buildUwpScript(['Microsoft.XboxApp_8wekyb3d8bbwe'])
+  assert.ok(script.includes("'Microsoft.XboxApp_8wekyb3d8bbwe'"))
+})
+
+test('extractWin32Icons returns Map of path → base64 from canned PS JSON', async () => {
+  const fakeExec = async () => JSON.stringify([
+    { path: 'C:\\a.exe', icon: 'ZmFrZS1pY29uLWE=' },
+    { path: 'C:\\b.exe', icon: null },
+    { path: 'C:\\c.exe', icon: 'ZmFrZS1pY29uLWM=' },
+  ])
+  const map = await extractWin32Icons(['C:\\a.exe', 'C:\\b.exe', 'C:\\c.exe'], { exec: fakeExec })
+  assert.strictEqual(map.get('C:\\a.exe'), 'ZmFrZS1pY29uLWE=')
+  assert.strictEqual(map.has('C:\\b.exe'), false)  // null icons omitted
+  assert.strictEqual(map.get('C:\\c.exe'), 'ZmFrZS1pY29uLWM=')
+})
+
+test('extractWin32Icons returns empty Map on empty input', async () => {
+  const map = await extractWin32Icons([], { exec: async () => 'unused' })
+  assert.strictEqual(map.size, 0)
+})
+
+test('extractWin32Icons swallows exec failure and returns empty Map', async () => {
+  const fakeExec = async () => { throw new Error('ps boom') }
+  const map = await extractWin32Icons(['C:\\a.exe'], { exec: fakeExec, logger: { warn() {} } })
+  assert.strictEqual(map.size, 0)
+})
+
+test('extractUwpIcons returns Map of family → base64', async () => {
+  const fakeExec = async () => JSON.stringify([
+    { family: 'Microsoft.XboxApp_8wekyb3d8bbwe', icon: 'WGJveC1pY29u' },
+    { family: 'Missing.Package_deadbeef', icon: null },
+  ])
+  const map = await extractUwpIcons(['Microsoft.XboxApp_8wekyb3d8bbwe', 'Missing.Package_deadbeef'], { exec: fakeExec })
+  assert.strictEqual(map.get('Microsoft.XboxApp_8wekyb3d8bbwe'), 'WGJveC1pY29u')
+  assert.strictEqual(map.has('Missing.Package_deadbeef'), false)
+})
+
+test('parseRows handles empty, non-JSON, and single-object shapes', () => {
+  const quiet = { warn() {} }
+  assert.deepStrictEqual(parseRows('', quiet), [])
+  assert.deepStrictEqual(parseRows('not json', quiet), [])
+  assert.deepStrictEqual(parseRows('{"path":"x","icon":"y"}'), [{ path: 'x', icon: 'y' }])
+})
+
+test('enumerateInstalledApps attaches iconBase64 to registry rows', async () => {
+  let callIdx = 0
+  const fakeExec = async (script) => {
+    callIdx++
+    if (script.includes('Uninstall')) {
+      return JSON.stringify([{ DisplayName: 'Chrome', DisplayIcon: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe,0' }])
+    }
+    if (script.includes('Get-StartApps')) {
+      return JSON.stringify([])
+    }
+    if (script.includes('ExtractAssociatedIcon')) {
+      return JSON.stringify([{ path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', icon: 'Y2hyb21lLWljb24=' }])
+    }
+    if (script.includes('Get-AppxPackage')) {
+      return JSON.stringify([])
+    }
+    throw new Error('unexpected script: ' + script.slice(0, 40))
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].packageName, 'com.android.chrome')
+  assert.strictEqual(apps[0].iconBase64, 'Y2hyb21lLWljb24=')
+  assert.strictEqual(apps[0].exePath, undefined, 'exePath should be stripped from returned row')
+})
+
+test('enumerateInstalledApps attaches iconBase64 to UWP rows via family', async () => {
+  const fakeExec = async (script) => {
+    if (script.includes('Uninstall')) return JSON.stringify([])
+    if (script.includes('Get-StartApps')) {
+      return JSON.stringify([{ Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!App' }])
+    }
+    if (script.includes('ExtractAssociatedIcon')) return JSON.stringify([])
+    if (script.includes('Get-AppxPackage')) {
+      return JSON.stringify([{ family: 'Microsoft.XboxApp_8wekyb3d8bbwe', icon: 'WGJveC1pY29u' }])
+    }
+    throw new Error('unexpected script')
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].iconBase64, 'WGJveC1pY29u')
+  assert.strictEqual(apps[0].packageFamilyName, undefined)
+})
+
+test('enumerateInstalledApps leaves iconBase64 undefined when extraction returns nothing', async () => {
+  const fakeExec = async (script) => {
+    if (script.includes('Uninstall')) {
+      return JSON.stringify([{ DisplayName: 'Noicon', DisplayIcon: 'C:\\noicon\\noicon.exe' }])
+    }
+    return JSON.stringify([])  // empty for StartApps, icons, appx
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].iconBase64, undefined)
 })
 
 // --- Runner --------------------------------------------------------------

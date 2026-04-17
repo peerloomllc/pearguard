@@ -42,23 +42,31 @@ function evaluate({
 }) {
   if (isSystemExempt(exeBasename)) return null
   if (!policy) return null
-  if (!packageName) return null  // unmapped exe — caller decides
 
-  // Step 0: Device-wide lock.
+  // Step 0: Device-wide lock applies to everything non-exempt, including
+  // unmapped exes. Otherwise a kid running mystery.exe would walk past the
+  // lock just because we lack a packageName mapping.
   if (policy.locked) {
     const msg = (policy.lockMessage && String(policy.lockMessage).trim()) || 'Device is locked by your parent.'
     return { reason: msg, category: 'lock' }
   }
 
-  // Step 1: Active override beats everything below.
-  if (overrides) {
+  // Step 1: Active override beats everything below. Overrides key by
+  // packageName, so unmapped exes have nothing to look up here.
+  if (packageName && overrides) {
     const expiry = overrides.get(packageName)
     if (expiry && now < expiry) return null
   }
 
-  // Step 2: Scheduled blackout.
+  // Step 2: Scheduled blackout. exemptApps matches by packageName, so an
+  // unmapped exe can never be exempt — meaning any unmapped exe falling
+  // inside a scheduled window will block. That matches Android's
+  // "everything blocked except listed exemptions" intent.
   const scheduleReason = getScheduleBlockReason(policy, packageName, now)
   if (scheduleReason) return { reason: scheduleReason, category: 'schedule' }
+
+  // For status / limit checks we need a packageName to look anything up.
+  if (!packageName) return null
 
   // Step 3: Status (blocked / pending).
   const apps = policy.apps || {}

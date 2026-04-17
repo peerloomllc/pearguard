@@ -10,6 +10,8 @@ const fs = require('fs')
 const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
+const { OverridesStore } = require('../enforcement/overrides-store')
+const { OverlayManager } = require('./overlay')
 
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
@@ -40,6 +42,11 @@ shim.onBareOut((buf) => {
     if (msg.method === 'native:setPolicy') {
       if (enforcement) enforcement.setPolicyJson(msg.args && msg.args.json)
       else console.warn('[main] native:setPolicy received before enforcement init')
+      return
+    }
+    if (msg.method === 'native:grantOverride') {
+      if (enforcement) enforcement.applyGrant(msg.args || {})
+      else console.warn('[main] native:grantOverride received before enforcement init')
       return
     }
     if (msg.method === 'native:showDecisionNotification') {
@@ -246,7 +253,71 @@ app.whenReady().then(() => {
   // crashing the child app.
   try {
     const activeWin = require('active-win')
-    enforcement = new EnforcementController({ activeWin })
+    const sodium = require('sodium-native')
+    const overridesStore = new OverridesStore({
+      filePath: path.join(app.getPath('userData'), 'overrides.json'),
+    })
+    const overlay = new OverlayManager({
+      rendererDir: path.join(__dirname, '..', 'renderer'),
+    })
+    // Ignore foreground events from any window we own. Without this, clicking
+    // a button on the overlay focuses the overlay's renderer (electron.exe)
+    // and the controller thinks "electron is now in the foreground" — which,
+    // under an active lock or schedule, would re-show the overlay and reset
+    // the PIN view back to main.
+    const isOwnWindow = (info) => {
+      if (!info || typeof info.pid !== 'number') return false
+      if (info.pid === process.pid) return true
+      const overlayPid = overlay.getRendererPid()
+      if (overlayPid && info.pid === overlayPid) return true
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+          const mainPid = mainWindow.webContents.getOSProcessId()
+          if (mainPid && info.pid === mainPid) return true
+        } catch (_) {}
+      }
+      return false
+    }
+    enforcement = new EnforcementController({ activeWin, overridesStore, overlay, sodium, isOwnWindow })
+
+    // Forward overlay button clicks to bare. The grant returned by pin:verify
+    // arrives back through `native:grantOverride`, which is already wired to
+    // controller.applyGrant — that re-evaluates and dismisses the overlay.
+    overlay.on('request-time', async (payload) => {
+      try {
+        await callBare('time:request', payload)
+        overlay.notifyResult('overlay:time-request-result', { ok: true })
+      } catch (e) {
+        overlay.notifyResult('overlay:time-request-result', { ok: false, error: e.message })
+      }
+    })
+    overlay.on('verify-pin', async (payload) => {
+      // Bare's pin:verify only checks the legacy policy.pinHash field which is
+      // stripped on the child by handlePolicyUpdate. Verify locally against
+      // the per-parent pinHashes map (mirroring AppBlockerModule on Android),
+      // then route a pin:used audit through bare for parent-side logging.
+      const { pin, packageName } = payload || {}
+      const result = enforcement.verifyPinAndGrant({ pin, packageName })
+      if (result.ok) {
+        overlay.notifyResult('overlay:pin-verify-result', { ok: true })
+        try {
+          await callBare('pin:used', {
+            packageName: packageName || null,
+            timestamp: Date.now(),
+            durationSeconds: result.durationSeconds,
+          })
+        } catch (e) {
+          console.warn('[main] pin:used audit relay failed:', e.message)
+        }
+      } else {
+        const reason = result.reason === 'wrong-pin' ? 'Wrong PIN.'
+          : result.reason === 'no-pin' ? 'No PIN set on this device.'
+          : result.reason === 'no-policy' ? 'Policy not loaded yet.'
+          : result.reason === 'no-sodium' ? 'PIN verification unavailable.'
+          : 'Could not verify PIN.'
+        overlay.notifyResult('overlay:pin-verify-result', { ok: false, error: reason })
+      }
+    })
   } catch (e) {
     console.error('[main] enforcement disabled, active-win failed to load:', e.message)
   }

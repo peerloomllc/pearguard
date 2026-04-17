@@ -2,6 +2,7 @@ const { PolicyCache } = require('./policy-cache')
 const { ExeMap } = require('./exe-map')
 const { ForegroundMonitor } = require('./foreground-monitor')
 const { OverridesStore } = require('./overrides-store')
+const { UsageTracker } = require('./usage-tracker')
 const { evaluate } = require('./block-evaluator')
 const { verifyPin } = require('./pin-verify')
 
@@ -16,6 +17,7 @@ class EnforcementController {
     activeWin,
     intervalMs,
     overridesStore = new OverridesStore(),
+    usageTracker = new UsageTracker(),
     overlay = null,        // { show({packageName, appName, reason, category}), hide() }
     sodium = null,         // sodium-native, optional — required only for PIN verification
     isOwnWindow = null,    // (info) => bool — used to ignore our own electron windows
@@ -25,11 +27,12 @@ class EnforcementController {
     this.policyCache = new PolicyCache()
     this.exeMap = new ExeMap()
     this.overrides = overridesStore
+    this.usage = usageTracker
     this.monitor = new ForegroundMonitor({ activeWin, intervalMs })
     this._overlay = overlay
     this._isOwnWindow = typeof isOwnWindow === 'function' ? isOwnWindow : () => false
     this._logger = logger
-    this._getUsageSeconds = () => 0  // PR 3 plugs in real usage tracking
+    this._getUsageSeconds = (pkg) => this.usage.getDailyUsageSeconds(pkg)
 
     // Track the latest foreground signal so applyGrant / setPolicyJson can
     // re-evaluate without waiting for the next monitor tick. This mirrors
@@ -48,6 +51,11 @@ class EnforcementController {
     // schedule should immediately reflect on the child without waiting for
     // a focus change.
     this.policyCache.on('change', () => this._reevaluateCurrent())
+
+    // Periodic re-evaluation so a daily-limit crossing flips a live session to
+    // blocked even while the kid stays in the same app. Started lazily in
+    // start() so tests that never call start() don't leave a dangling timer.
+    this._limitCheckTimer = null
   }
 
   setPolicyJson(json) {
@@ -91,10 +99,19 @@ class EnforcementController {
 
   start() {
     this.monitor.start()
+    if (!this._limitCheckTimer) {
+      this._limitCheckTimer = setInterval(() => this._reevaluateCurrent(), 5000)
+      if (typeof this._limitCheckTimer.unref === 'function') this._limitCheckTimer.unref()
+    }
   }
 
   stop() {
     this.monitor.stop()
+    if (this._limitCheckTimer) {
+      clearInterval(this._limitCheckTimer)
+      this._limitCheckTimer = null
+    }
+    this.usage.endActive()
   }
 
   _onForegroundChanged(info) {
@@ -107,14 +124,29 @@ class EnforcementController {
       return
     }
     const exeBasename = info.exePath ? info.exePath.split(/[\\/]/).pop() : ''
+    const packageName = this.exeMap.resolve(info.exePath)
     this._lastForeground = {
       exePath: info.exePath,
       exeBasename,
       pid: info.pid,
       title: info.title,
-      packageName: this.exeMap.resolve(info.exePath),
+      packageName,
     }
+    // Feed the usage tracker. Unmapped exes are recorded as null so the
+    // previous session closes cleanly without accruing to an unknown bucket.
+    const policy = this.policyCache.getPolicy()
+    const appName = (packageName && policy && policy.apps && policy.apps[packageName] && policy.apps[packageName].appName)
+      || info.ownerName || exeBasename || null
+    this.usage.noteForeground({ packageName, appName })
     this._evaluateAndApply()
+  }
+
+  // Re-run the evaluator against whatever exe is currently in the foreground,
+  // without waiting for the next monitor tick. Driven by the 5s limit-check
+  // timer, policy changes, grant arrivals, and any external caller that needs
+  // to reflect a state change synchronously.
+  reevaluate() {
+    this._reevaluateCurrent()
   }
 
   _reevaluateCurrent() {

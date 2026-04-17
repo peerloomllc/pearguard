@@ -11,7 +11,12 @@ const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')
+const { UsageTracker } = require('../enforcement/usage-tracker')
 const { OverlayManager } = require('./overlay')
+
+// How often we hand usage telemetry to bare for replication to the parent.
+// Matches Android's 60s UsageFlushAlarm cadence.
+const USAGE_FLUSH_INTERVAL_MS = 60_000
 
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
@@ -22,6 +27,7 @@ let bare = null
 let pendingCalls = new Map()  // id -> { resolve, reject }
 let nextId = 1
 let enforcement = null  // lazily constructed in app.whenReady so tests can stub active-win
+let usageFlushTimer = null
 
 // Install the BareKit shim BEFORE requiring bare.js so its module-top
 // `BareKit.IPC.on('data', ...)` binds to our EventEmitter.
@@ -257,6 +263,9 @@ app.whenReady().then(() => {
     const overridesStore = new OverridesStore({
       filePath: path.join(app.getPath('userData'), 'overrides.json'),
     })
+    const usageTracker = new UsageTracker({
+      filePath: path.join(app.getPath('userData'), 'usage.json'),
+    })
     const overlay = new OverlayManager({
       rendererDir: path.join(__dirname, '..', 'renderer'),
     })
@@ -278,7 +287,7 @@ app.whenReady().then(() => {
       }
       return false
     }
-    enforcement = new EnforcementController({ activeWin, overridesStore, overlay, sodium, isOwnWindow })
+    enforcement = new EnforcementController({ activeWin, overridesStore, usageTracker, overlay, sodium, isOwnWindow })
 
     // Forward overlay button clicks to bare. The grant returned by pin:verify
     // arrives back through `native:grantOverride`, which is already wired to
@@ -355,6 +364,7 @@ app.whenReady().then(() => {
     // they don't need.
     if (enforcement && !process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
       enforcement.start()
+      startUsageFlushTimer()
     }
   }
 
@@ -366,10 +376,46 @@ app.whenReady().then(() => {
   })
 })
 
+async function flushUsageOnce() {
+  if (!enforcement || !bareReady) return
+  const usage = enforcement.usage.getDailyUsageAll()
+  const weekly = enforcement.usage.getWeeklyUsageAll()
+  const sessions = enforcement.usage.takeSessions()
+  const foregroundPackage = enforcement.usage.getLastForegroundPackage()
+  if (usage.length === 0 && sessions.length === 0) return
+  try {
+    await callBare('usage:flush', { usage, weekly, foregroundPackage, sessions })
+  } catch (e) {
+    console.warn('[main] usage:flush failed:', e.message)
+  }
+}
+
+function startUsageFlushTimer() {
+  if (usageFlushTimer) return
+  usageFlushTimer = setInterval(flushUsageOnce, USAGE_FLUSH_INTERVAL_MS)
+  if (typeof usageFlushTimer.unref === 'function') usageFlushTimer.unref()
+}
+
+function stopUsageFlushTimer() {
+  if (usageFlushTimer) {
+    clearInterval(usageFlushTimer)
+    usageFlushTimer = null
+  }
+}
+
+app.on('before-quit', () => {
+  stopUsageFlushTimer()
+  // Close the active session so its seconds land in takeSessions() before we
+  // try to flush one last time.
+  if (enforcement) enforcement.usage.endActive()
+  flushUsageOnce()
+})
+
 app.on('window-all-closed', () => {
   // On Windows the child app should stay running in the background for
   // enforcement. For Phase 1 we quit on window close; watchdog arrives in
   // Phase 5.
   if (enforcement) enforcement.stop()
+  stopUsageFlushTimer()
   if (process.platform !== 'darwin') app.quit()
 })

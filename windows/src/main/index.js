@@ -7,7 +7,30 @@ if (process.platform === 'linux') {
 
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
 const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
+
+// Tee console output to a rolling log file. Desktop shortcuts launch
+// electron.exe directly with no stdout redirection, so without this the only
+// way to see logs is to run `npm start > pearguard.log`. File lives at
+// %USERPROFILE%/pearguard.log on Windows, $HOME/pearguard.log elsewhere.
+;(function installFileLogger() {
+  try {
+    const logPath = path.join(os.homedir(), 'pearguard.log')
+    // Truncate on each launch so the file stays bounded across restarts.
+    const stream = fs.createWriteStream(logPath, { flags: 'w' })
+    const tee = (orig) => (...args) => {
+      try {
+        const line = args.map((a) => typeof a === 'string' ? a : require('util').inspect(a, { depth: 4 })).join(' ')
+        stream.write(line + '\n')
+      } catch (_e) {}
+      orig.apply(console, args)
+    }
+    console.log = tee(console.log)
+    console.warn = tee(console.warn)
+    console.error = tee(console.error)
+  } catch (_e) { /* best-effort */ }
+})()
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')

@@ -39,6 +39,7 @@ const { enumerateInstalledApps, slugify } = require('../enforcement/apps-enumera
 const { readFileDescription } = require('../enforcement/exe-metadata')
 const { extractWin32Icons } = require('../enforcement/icon-extractor')
 const { DEFAULT_MAP } = require('../enforcement/exe-map')
+const { SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
 const { OverlayManager } = require('./overlay')
 
 // How often we hand usage telemetry to bare for replication to the parent.
@@ -368,14 +369,20 @@ app.whenReady().then(() => {
       isOwnWindow,
     })
 
-    // Suppress first-sighting for our own running process and the starter
-    // DEFAULT_MAP. Without this, the very first foreground tick would fire
-    // app:installed for electron.exe (our window just took focus), and the
-    // first time the kid launches chrome after pairing we'd notify the parent
-    // even though chrome is a well-known mapped app.
+    // Suppress first-sighting for our own running process, the starter
+    // DEFAULT_MAP, and Windows system/host processes. Without this, the very
+    // first foreground tick would fire app:installed for electron.exe (our
+    // window just took focus); the first chrome launch after pairing would
+    // re-notify the parent for a well-known mapped app; and every session
+    // would leak app:installed events for host processes like
+    // ApplicationFrameHost.exe and RuntimeBroker.exe that briefly steal focus.
     enforcement.monitor.loadSeen()
     const selfBasename = (process.execPath || '').split(/[\\/]/).pop()
-    enforcement.monitor.markSeen([selfBasename, ...Object.keys(DEFAULT_MAP)])
+    enforcement.monitor.markSeen([
+      selfBasename,
+      ...Object.keys(DEFAULT_MAP),
+      ...SYSTEM_EXEMPT_BASENAMES,
+    ])
 
     // New-exe sightings on the desktop are the closest analogue to Android's
     // PACKAGE_ADDED broadcast: we can't observe installs directly, so we treat

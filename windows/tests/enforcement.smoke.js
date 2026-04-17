@@ -53,6 +53,31 @@ test('isSystemExempt allows shell processes', () => {
   assert.strictEqual(isSystemExempt('chrome.exe'), false)
 })
 
+test('isSystemExempt covers Win11 host processes (ApplicationFrameHost, RuntimeBroker, etc.)', () => {
+  // These are Windows-owned host processes that briefly take focus when UWP
+  // apps launch or capability prompts appear. The raw host itself is not
+  // something a parent can meaningfully block — the hosted UWP needs to be
+  // resolved separately (title-based or subprocess-based) and evaluated on
+  // its own packageName. Case-insensitive to match Win32's filesystem rules.
+  assert.strictEqual(isSystemExempt('ApplicationFrameHost.exe'), true)
+  assert.strictEqual(isSystemExempt('RuntimeBroker.exe'), true)
+  assert.strictEqual(isSystemExempt('SearchHost.exe'), true)
+  assert.strictEqual(isSystemExempt('TextInputHost.exe'), true)
+  assert.strictEqual(isSystemExempt('Widgets.exe'), true)
+})
+
+test('exempt host exe short-circuits enforcement even under device lock', () => {
+  // Locks apply to everything non-exempt, so this confirms the host exempt
+  // is on the allow-always path — a UWP focus blip that reports as
+  // ApplicationFrameHost.exe won't trap the child behind a bedtime lock.
+  const r = evaluate({
+    policy: policy({ locked: true, lockMessage: 'Bedtime' }),
+    packageName: null,
+    exeBasename: 'ApplicationFrameHost.exe',
+  })
+  assert.strictEqual(r, null)
+})
+
 test('exempt exe short-circuits even without policy', () => {
   const r = evaluate({ policy: null, packageName: null, exeBasename: 'explorer.exe' })
   assert.strictEqual(r, null)

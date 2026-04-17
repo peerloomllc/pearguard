@@ -11,6 +11,8 @@ const SYSTEM_EXEMPT_BASENAMES = new Set([
   // black screen. Mirror Android's PHONE_PACKAGES + system-overlay exemption.
   'explorer.exe',
   'searchapp.exe',
+  'searchhost.exe',            // Win11 search flyout
+  'searchui.exe',              // Win10 Cortana/search UI
   'startmenuexperiencehost.exe',
   'shellexperiencehost.exe',
   'lockapp.exe',
@@ -23,6 +25,18 @@ const SYSTEM_EXEMPT_BASENAMES = new Set([
   'sihost.exe',
   'taskhostw.exe',
   'systemsettings.exe',
+  // Host/broker processes: these show up as the foreground owner when a
+  // UWP app is focused (ApplicationFrameHost) or when capability prompts
+  // steal focus (RuntimeBroker). Blocking the host itself is meaningless —
+  // the owned UWP needs to be resolved separately and evaluated on its own
+  // packageName. Keeping the raw host exempt also stops first-sighting from
+  // spamming the parent with "ApplicationFrameHost.exe was installed".
+  'applicationframehost.exe',
+  'runtimebroker.exe',
+  'textinputhost.exe',         // Win11 IME / touch keyboard host
+  'useroobebroker.exe',        // first-run / OOBE
+  'widgets.exe',               // Win11 widgets board
+  'widgetservice.exe',
 ])
 
 function isSystemExempt(exeBasename) {

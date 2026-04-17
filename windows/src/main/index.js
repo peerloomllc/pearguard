@@ -11,7 +11,13 @@ const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')
+const { UsageTracker } = require('../enforcement/usage-tracker')
+const { enumerateInstalledApps } = require('../enforcement/apps-enumerator')
 const { OverlayManager } = require('./overlay')
+
+// How often we hand usage telemetry to bare for replication to the parent.
+// Matches Android's 60s UsageFlushAlarm cadence.
+const USAGE_FLUSH_INTERVAL_MS = 60_000
 
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
@@ -22,6 +28,7 @@ let bare = null
 let pendingCalls = new Map()  // id -> { resolve, reject }
 let nextId = 1
 let enforcement = null  // lazily constructed in app.whenReady so tests can stub active-win
+let usageFlushTimer = null
 
 // Install the BareKit shim BEFORE requiring bare.js so its module-top
 // `BareKit.IPC.on('data', ...)` binds to our EventEmitter.
@@ -79,6 +86,17 @@ shim.onBareOut((buf) => {
         bareReady = true
         flushReadyQueue()
       }
+      // apps:syncRequested + usageFlushRequested are shell-side concerns —
+      // the Android shell handles these in app/index.tsx; on Electron they
+      // don't need to reach the renderer. Intercept and fulfill locally.
+      if (msg.event === 'apps:syncRequested') {
+        runAppsSync().catch((e) => console.warn('[main] apps:sync failed:', e.message))
+        return
+      }
+      if (msg.event === 'usageFlushRequested') {
+        flushUsageOnce().catch((e) => console.warn('[main] usage:flush failed:', e.message))
+        return
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bare-event', msg)
       } else {
@@ -87,6 +105,32 @@ shim.onBareOut((buf) => {
     }
   }
 })
+
+async function runAppsSync() {
+  console.log('[main] apps:sync starting')
+  const apps = await enumerateInstalledApps()
+  if (!apps.length) {
+    console.log('[main] apps:sync enumerator returned 0 apps')
+    return
+  }
+  console.log('[main] apps:sync reporting', apps.length, 'apps; sample=', apps.slice(0, 3))
+  try {
+    await callBare('apps:sync', { apps })
+    console.log('[main] apps:sync callBare returned ok')
+  } catch (e) {
+    console.warn('[main] apps:sync callBare rejected:', e.message)
+    return
+  }
+  // Seed the ExeMap so the foreground monitor can resolve apps the enumerator
+  // reported with an exe path. Without this, a freshly-synced Windows-only
+  // app (packageName=win.<slug>) wouldn't enforce because its exe wasn't in
+  // the starter DEFAULT_MAP.
+  if (enforcement) {
+    for (const a of apps) {
+      if (a.exeBasename && a.packageName) enforcement.exeMap.learn(a.exeBasename, a.packageName)
+    }
+  }
+}
 
 let bareReady = false
 const bufferedEvents = []
@@ -257,6 +301,9 @@ app.whenReady().then(() => {
     const overridesStore = new OverridesStore({
       filePath: path.join(app.getPath('userData'), 'overrides.json'),
     })
+    const usageTracker = new UsageTracker({
+      filePath: path.join(app.getPath('userData'), 'usage.json'),
+    })
     const overlay = new OverlayManager({
       rendererDir: path.join(__dirname, '..', 'renderer'),
     })
@@ -278,7 +325,7 @@ app.whenReady().then(() => {
       }
       return false
     }
-    enforcement = new EnforcementController({ activeWin, overridesStore, overlay, sodium, isOwnWindow })
+    enforcement = new EnforcementController({ activeWin, overridesStore, usageTracker, overlay, sodium, isOwnWindow })
 
     // Forward overlay button clicks to bare. The grant returned by pin:verify
     // arrives back through `native:grantOverride`, which is already wired to
@@ -355,6 +402,7 @@ app.whenReady().then(() => {
     // they don't need.
     if (enforcement && !process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
       enforcement.start()
+      startUsageFlushTimer()
     }
   }
 
@@ -366,10 +414,46 @@ app.whenReady().then(() => {
   })
 })
 
+async function flushUsageOnce() {
+  if (!enforcement || !bareReady) return
+  const usage = enforcement.usage.getDailyUsageAll()
+  const weekly = enforcement.usage.getWeeklyUsageAll()
+  const sessions = enforcement.usage.takeSessions()
+  const foregroundPackage = enforcement.usage.getLastForegroundPackage()
+  if (usage.length === 0 && sessions.length === 0) return
+  try {
+    await callBare('usage:flush', { usage, weekly, foregroundPackage, sessions })
+  } catch (e) {
+    console.warn('[main] usage:flush failed:', e.message)
+  }
+}
+
+function startUsageFlushTimer() {
+  if (usageFlushTimer) return
+  usageFlushTimer = setInterval(flushUsageOnce, USAGE_FLUSH_INTERVAL_MS)
+  if (typeof usageFlushTimer.unref === 'function') usageFlushTimer.unref()
+}
+
+function stopUsageFlushTimer() {
+  if (usageFlushTimer) {
+    clearInterval(usageFlushTimer)
+    usageFlushTimer = null
+  }
+}
+
+app.on('before-quit', () => {
+  stopUsageFlushTimer()
+  // Close the active session so its seconds land in takeSessions() before we
+  // try to flush one last time.
+  if (enforcement) enforcement.usage.endActive()
+  flushUsageOnce()
+})
+
 app.on('window-all-closed', () => {
   // On Windows the child app should stay running in the background for
   // enforcement. For Phase 1 we quit on window close; watchdog arrives in
   // Phase 5.
   if (enforcement) enforcement.stop()
+  stopUsageFlushTimer()
   if (process.platform !== 'darwin') app.quit()
 })

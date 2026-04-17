@@ -13,6 +13,8 @@ const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
+const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
+const { enumerateInstalledApps, extractExeBasename, slugify, parseAndShape } = require('../src/enforcement/apps-enumerator')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 
 const tests = []
@@ -443,6 +445,254 @@ test('OverridesStore.prune removes expired entries', () => {
   assert.strictEqual(s.asMap().has('com.future'), true)
 })
 
+// --- UsageTracker --------------------------------------------------------
+
+function tmpUsagePath() {
+  return path.join(os.tmpdir(), 'pearguard-test-usage-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.json')
+}
+
+// Tests run in whatever TZ the CI host picks. Anchor "now" to local-noon so
+// the rollover tests can walk seconds/minutes without accidentally crossing a
+// boundary during test execution.
+function localNoonToday() {
+  const d = new Date()
+  d.setHours(12, 0, 0, 0)
+  return d.getTime()
+}
+
+test('UsageTracker.noteForeground accrues seconds to the previous package', () => {
+  let t = localNoonToday()
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+  t += 45_000
+  u.noteForeground({ packageName: 'com.roblox.client', appName: 'Roblox' })
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 45)
+  // New session has just started, so ~0 seconds accrued so far.
+  assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 0)
+  t += 30_000
+  assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 30)
+})
+
+test('UsageTracker includes in-flight session in getDailyUsageSeconds', () => {
+  let t = localNoonToday()
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord' })
+  t += 10_000
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 10)
+})
+
+test('UsageTracker ignores unmapped foreground (no packageName)', () => {
+  let t = localNoonToday()
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+  t += 20_000
+  u.noteForeground({ packageName: null })
+  t += 60_000
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 20)
+  assert.strictEqual(u.getLastForegroundPackage(), null)
+})
+
+test('UsageTracker.takeSessions drains and re-opens the active session', () => {
+  let t = localNoonToday()
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+  t += 30_000
+  u.noteForeground({ packageName: 'com.roblox.client', appName: 'Roblox' })
+  t += 20_000
+
+  const first = u.takeSessions()
+  assert.strictEqual(first.length, 2, 'expected discord-close + roblox-snapshot')
+  assert.strictEqual(first[0].packageName, 'com.discord')
+  assert.strictEqual(first[1].packageName, 'com.roblox.client')
+  // Accrued time lives on in daily after takeSessions.
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 30)
+  assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 20)
+
+  // Continuing in Roblox — next takeSessions should contain only the new slice.
+  t += 10_000
+  const second = u.takeSessions()
+  assert.strictEqual(second.length, 1)
+  assert.strictEqual(second[0].packageName, 'com.roblox.client')
+  assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 30)
+})
+
+test('UsageTracker daily rollover zeros daily but preserves weekly', () => {
+  let t = localNoonToday()
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+  t += 60_000
+  u.noteForeground({ packageName: null })  // close the session cleanly
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 60)
+
+  // Jump forward 24h — daily resets, weekly keeps the 60s (same week unless
+  // we also cross Sunday; localNoonToday + 24h stays inside the same week as
+  // long as "today" isn't Saturday). Check both and adjust expectations.
+  const startOfThisWeek = localWeekStart(localNoonToday())
+  t = localNoonToday() + 24 * 3600 * 1000
+  const acrossWeek = localWeekStart(t) !== startOfThisWeek
+
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 0)
+  const weekly = u.getWeeklyUsageAll().find((x) => x.packageName === 'com.discord')
+  if (acrossWeek) {
+    assert.strictEqual(weekly, undefined, 'weekly should reset if day+1 crosses week boundary')
+  } else {
+    assert.strictEqual(weekly.secondsThisWeek, 60)
+  }
+})
+
+test('UsageTracker splits a session that straddles local midnight', () => {
+  // Start 30 minutes before midnight, end 10 minutes after.
+  const tomorrow = new Date()
+  tomorrow.setHours(0, 0, 0, 0)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const midnight = tomorrow.getTime()
+  let t = midnight - 30 * 60 * 1000
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+  t = midnight + 10 * 60 * 1000
+  u.noteForeground({ packageName: null })  // close
+
+  // After midnight, the old day is gone — daily counter for discord is the
+  // 10 minutes that landed in the new day.
+  assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 600)
+})
+
+test('UsageTracker persists daily/weekly across instantiations on the same day', () => {
+  const filePath = tmpUsagePath()
+  try {
+    let t = localNoonToday()
+    const a = new UsageTracker({ filePath, now: () => t })
+    a.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+    t += 120_000
+    a.endActive()  // persists
+
+    const b = new UsageTracker({ filePath, now: () => t })
+    assert.strictEqual(b.getDailyUsageSeconds('com.discord'), 120)
+  } finally {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
+})
+
+test('UsageTracker drops stored daily totals from a prior day on load', () => {
+  const filePath = tmpUsagePath()
+  try {
+    const yesterday = localDayStart(Date.now()) - 24 * 3600 * 1000
+    fs.writeFileSync(filePath, JSON.stringify({
+      dayStart: yesterday,
+      weekStart: localWeekStart(Date.now()),
+      daily: { 'com.discord': 999 },
+      weekly: { 'com.discord': 999 },
+    }))
+    const u = new UsageTracker({ filePath })
+    // Daily reset because the stored dayStart doesn't match today.
+    assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 0)
+    // Weekly kept because weekStart still matches.
+    const weekly = u.getWeeklyUsageAll().find((x) => x.packageName === 'com.discord')
+    assert.strictEqual(weekly.secondsThisWeek, 999)
+  } finally {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
+})
+
+test('UsageTracker getDailyUsageAll surfaces display names', () => {
+  let t = localNoonToday()
+  const u = new UsageTracker({ now: () => t })
+  u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
+  t += 30_000
+  u.noteForeground({ packageName: 'com.roblox.client', appName: 'Roblox' })
+  const list = u.getDailyUsageAll()
+  const discord = list.find((x) => x.packageName === 'com.discord')
+  const roblox = list.find((x) => x.packageName === 'com.roblox.client')
+  assert.strictEqual(discord.appName, 'Discord')
+  assert.strictEqual(roblox.appName, 'Roblox')
+})
+
+// --- apps-enumerator -----------------------------------------------------
+
+test('extractExeBasename strips icon index and quotes', () => {
+  assert.strictEqual(extractExeBasename('C:\\Program Files\\App\\app.exe,0'), 'app.exe')
+  assert.strictEqual(extractExeBasename('"C:\\Program Files\\App\\app.exe",0'), 'app.exe')
+  assert.strictEqual(extractExeBasename('C:\\Games\\Roblox\\RobloxPlayerBeta.exe'), 'robloxplayerbeta.exe')
+  assert.strictEqual(extractExeBasename(''), null)
+  assert.strictEqual(extractExeBasename(null), null)
+  assert.strictEqual(extractExeBasename('C:\\no-exe-here\\readme.txt'), null)
+})
+
+test('slugify produces safe packageName suffixes', () => {
+  assert.strictEqual(slugify('Microsoft Edge'), 'microsoft_edge')
+  assert.strictEqual(slugify('OBS Studio (x64)'), 'obs_studio_x64')
+  assert.strictEqual(slugify('  LibreOffice  '), 'libreoffice')
+  assert.strictEqual(slugify(''), 'unknown')
+})
+
+test('parseAndShape maps known exes to DEFAULT_MAP packageNames', () => {
+  const json = JSON.stringify([
+    { DisplayName: 'Google Chrome', DisplayIcon: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe,0' },
+    { DisplayName: 'Discord', DisplayIcon: '"C:\\Users\\k\\AppData\\Local\\Discord\\app-1.0\\Discord.exe"' },
+  ])
+  const apps = parseAndShape(json)
+  const chrome = apps.find((a) => a.appName === 'Google Chrome')
+  const discord = apps.find((a) => a.appName === 'Discord')
+  assert.strictEqual(chrome.packageName, 'com.android.chrome')
+  assert.strictEqual(chrome.exeBasename, 'chrome.exe')
+  assert.strictEqual(discord.packageName, 'com.discord')
+  assert.strictEqual(discord.exeBasename, 'discord.exe')
+})
+
+test('parseAndShape synthesizes win.<slug> for unknown exes', () => {
+  const json = JSON.stringify([
+    { DisplayName: 'LibreOffice 7.6', DisplayIcon: 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' },
+  ])
+  const apps = parseAndShape(json)
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].packageName, 'win.libreoffice_7_6')
+  assert.strictEqual(apps[0].exeBasename, 'soffice.exe')
+})
+
+test('parseAndShape handles the single-object JSON shape PowerShell returns for one match', () => {
+  const json = JSON.stringify({ DisplayName: 'Solo', DisplayIcon: 'C:\\Solo\\solo.exe' })
+  const apps = parseAndShape(json)
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].appName, 'Solo')
+})
+
+test('parseAndShape drops entries without DisplayName and dedupes by name', () => {
+  const json = JSON.stringify([
+    { DisplayName: '', DisplayIcon: 'C:\\nope\\nope.exe' },
+    { DisplayName: null, DisplayIcon: '' },
+    { DisplayName: 'Discord', DisplayIcon: '' },  // first, no exe
+    { DisplayName: 'Discord', DisplayIcon: 'C:\\Discord\\Discord.exe' },  // second, has exe — should win
+  ])
+  const apps = parseAndShape(json)
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].appName, 'Discord')
+  assert.strictEqual(apps[0].exeBasename, 'discord.exe')
+  assert.strictEqual(apps[0].packageName, 'com.discord')
+})
+
+test('parseAndShape returns [] on empty or non-JSON input', () => {
+  const quiet = { warn() {} }
+  assert.deepStrictEqual(parseAndShape('', quiet), [])
+  assert.deepStrictEqual(parseAndShape('not json', quiet), [])
+  assert.deepStrictEqual(parseAndShape('[]', quiet), [])
+})
+
+test('enumerateInstalledApps forwards fake exec output through parseAndShape', async () => {
+  const fakeExec = async () => JSON.stringify([
+    { DisplayName: 'Spotify', DisplayIcon: 'C:\\Spotify\\Spotify.exe,0' },
+  ])
+  const apps = await enumerateInstalledApps({ exec: fakeExec })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].packageName, 'com.spotify.music')
+  assert.strictEqual(apps[0].isLauncher, false)
+})
+
+test('enumerateInstalledApps swallows exec failure and returns []', async () => {
+  const fakeExec = async () => { throw new Error('powershell missing') }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { warn() {} } })
+  assert.deepStrictEqual(apps, [])
+})
+
 // --- EnforcementController integration -----------------------------------
 
 function makeController(activeWin, { overlay = makeFakeOverlay() } = {}) {
@@ -600,6 +850,52 @@ test('Controller hides overlay on policy change that allows the app', async () =
   controller.setPolicyJson(JSON.stringify(updated))
   // setPolicyJson fires a re-evaluate via PolicyCache 'change' subscription.
   assert.strictEqual(overlay.hides, 1)
+
+  controller.stop()
+})
+
+test('Controller daily-limit crossing flips an in-flight session to blocked', async () => {
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Programs\\Limited\\limited.exe', processId: 1, name: 'limited' },
+    title: 'Limited',
+  })
+  // Stub usage tracker so we can flip "used" without time travel. The
+  // controller wires getUsageSeconds from this tracker.
+  const usage = {
+    _used: 0,
+    _last: null,
+    noteForeground(info) { this._last = info.packageName },
+    getDailyUsageSeconds() { return this._used },
+    getDailyUsageAll() { return [] },
+    getWeeklyUsageAll() { return [] },
+    takeSessions() { return [] },
+    getLastForegroundPackage() { return this._last },
+    endActive() {},
+  }
+  const overlay = makeFakeOverlay()
+  const controller = new EnforcementController({
+    activeWin: fakeActiveWin,
+    intervalMs: 5,
+    overridesStore: new OverridesStore({ filePath: null }),
+    usageTracker: usage,
+    overlay,
+    logger: { log() {}, warn() {} },
+  })
+  // Teach the ExeMap how to resolve our fake path so the evaluator sees
+  // com.limited.example and reads its dailyLimitSeconds.
+  controller.exeMap.learn('limited.exe', 'com.limited.example')
+  controller.setPolicyJson(JSON.stringify(policy()))
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  // Under 600s limit → allow, no overlay.
+  assert.strictEqual(overlay.shows.length, 0)
+
+  // Cross the limit and ask for a re-eval; overlay should appear.
+  usage._used = 700
+  controller.reevaluate()
+  assert.strictEqual(overlay.shows.length, 1)
+  assert.strictEqual(overlay.shows[0].category, 'daily_limit')
+  assert.strictEqual(overlay.shows[0].packageName, 'com.limited.example')
 
   controller.stop()
 })

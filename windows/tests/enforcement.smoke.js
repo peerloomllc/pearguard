@@ -607,7 +607,11 @@ test('UsageTracker.takeSessions drains and re-opens the active session', () => {
   const first = u.takeSessions()
   assert.strictEqual(first.length, 2, 'expected discord-close + roblox-snapshot')
   assert.strictEqual(first[0].packageName, 'com.discord')
+  assert.strictEqual(first[0].displayName, 'Discord')
+  assert.strictEqual(first[0].durationSeconds, 30)
   assert.strictEqual(first[1].packageName, 'com.roblox.client')
+  assert.strictEqual(first[1].displayName, 'Roblox')
+  assert.strictEqual(first[1].durationSeconds, 20)
   // Accrued time lives on in daily after takeSessions.
   assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 30)
   assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 20)
@@ -617,6 +621,8 @@ test('UsageTracker.takeSessions drains and re-opens the active session', () => {
   const second = u.takeSessions()
   assert.strictEqual(second.length, 1)
   assert.strictEqual(second[0].packageName, 'com.roblox.client')
+  assert.strictEqual(second[0].displayName, 'Roblox')
+  assert.strictEqual(second[0].durationSeconds, 10)
   assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 30)
 })
 

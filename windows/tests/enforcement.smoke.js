@@ -8,7 +8,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { evaluate, isSystemExempt } = require('../src/enforcement/block-evaluator')
-const { ExeMap, UWP_HOST_BASENAMES } = require('../src/enforcement/exe-map')
+const { ExeMap, ALIAS_MAP, UWP_HOST_BASENAMES } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
@@ -384,6 +384,54 @@ test('ExeMap.learnUwp allows null exeBasename for pure UWP apps', () => {
 
 test('UWP_HOST_BASENAMES covers ApplicationFrameHost', () => {
   assert.strictEqual(UWP_HOST_BASENAMES.has('applicationframehost.exe'), true)
+})
+
+test('ExeMap resolves Steam helper processes to steam packageName', () => {
+  const m = new ExeMap()
+  const steamPkg = 'com.valvesoftware.android.steam.community'
+  assert.strictEqual(m.resolve('C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win7x64\\steamwebhelper.exe'), steamPkg)
+  assert.strictEqual(m.resolve('C:\\Program Files (x86)\\Steam\\steam_bpm.exe'), steamPkg)
+  assert.strictEqual(m.resolve('C:\\Program Files (x86)\\Steam\\bin\\steamservice.exe'), steamPkg)
+})
+
+test('ExeMap resolves EpicWebHelper to Epic Games Launcher packageName', () => {
+  const m = new ExeMap()
+  assert.strictEqual(
+    m.resolve('C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Extras\\WebHelper\\EpicWebHelper.exe'),
+    'com.epicgames.portal',
+  )
+})
+
+test('ExeMap alias lookup is case-insensitive', () => {
+  const m = new ExeMap()
+  assert.strictEqual(
+    m.resolve('C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win7x64\\SteamWebHelper.EXE'),
+    'com.valvesoftware.android.steam.community',
+  )
+})
+
+test('ExeMap.learnAlias adds runtime aliases that resolve through learned primaries', () => {
+  const m = new ExeMap({})
+  m.learnAlias('fooclient.exe', 'foo.exe')
+  // Primary not yet mapped — alias should resolve to null, not crash.
+  assert.strictEqual(m.resolve('C:\\fooclient.exe'), null)
+  m.learn('foo.exe', 'com.example.foo')
+  assert.strictEqual(m.resolve('C:\\fooclient.exe'), 'com.example.foo')
+})
+
+test('ExeMap direct mapping wins over alias for the same basename', () => {
+  const m = new ExeMap({ 'helper.exe': 'com.example.helper', 'primary.exe': 'com.example.primary' })
+  // If someone learned an alias but also has a direct mapping, the direct
+  // mapping is authoritative.
+  m.learnAlias('helper.exe', 'primary.exe')
+  assert.strictEqual(m.resolve('C:\\helper.exe'), 'com.example.helper')
+})
+
+test('ALIAS_MAP seeds Steam and Epic helpers', () => {
+  assert.strictEqual(ALIAS_MAP['steamwebhelper.exe'], 'steam.exe')
+  assert.strictEqual(ALIAS_MAP['steam_bpm.exe'], 'steam.exe')
+  assert.strictEqual(ALIAS_MAP['steamservice.exe'], 'steam.exe')
+  assert.strictEqual(ALIAS_MAP['epicwebhelper.exe'], 'epicgameslauncher.exe')
 })
 
 // --- PolicyCache ---------------------------------------------------------

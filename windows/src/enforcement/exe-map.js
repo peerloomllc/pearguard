@@ -52,22 +52,49 @@ const UWP_HOST_BASENAMES = new Set([
   'applicationframehost.exe',
 ])
 
+// Helper / sub-process exes that belong to a larger app. The foreground often
+// reports one of these (Steam's web helper renderers, Big Picture Mode, Epic's
+// web helper) rather than the primary exe a parent would block by name. When
+// resolve() misses on the direct basename, it consults this alias map and
+// retries against the primary basename before giving up.
+const ALIAS_MAP = {
+  // Steam family
+  'steamwebhelper.exe': 'steam.exe',
+  'steam_bpm.exe': 'steam.exe',
+  'steamservice.exe': 'steam.exe',
+
+  // Epic Games Launcher family
+  'epicwebhelper.exe': 'epicgameslauncher.exe',
+}
+
 class ExeMap {
-  constructor(initial = DEFAULT_MAP) {
+  constructor(initial = DEFAULT_MAP, initialAliases = ALIAS_MAP) {
     this._map = new Map()
+    this._aliasMap = new Map()     // child basename -> primary basename
     this._uwpByTitle = new Map()  // normalized title -> { packageName, exeBasename }
     for (const [exe, pkg] of Object.entries(initial)) {
       this._map.set(exe.toLowerCase(), pkg)
+    }
+    for (const [child, primary] of Object.entries(initialAliases)) {
+      this._aliasMap.set(child.toLowerCase(), primary.toLowerCase())
     }
   }
 
   // Look up a packageName from an exe path or basename. Returns null if
   // unmapped — the caller decides what to do (typically: allow, since policy
   // can't speak to apps it doesn't recognize).
+  //
+  // When the direct basename misses, retry through the alias map so helper
+  // processes (steamwebhelper.exe, steam_bpm.exe, EpicWebHelper.exe) resolve
+  // to the primary app's packageName.
   resolve(exePath) {
     if (!exePath) return null
     const basename = pathWin32.basename(exePath).toLowerCase()
-    return this._map.get(basename) || null
+    const direct = this._map.get(basename)
+    if (direct) return direct
+    const primary = this._aliasMap.get(basename)
+    if (primary) return this._map.get(primary) || null
+    return null
   }
 
   // Add or override a mapping. Used by the parent-side policy editor when the
@@ -75,6 +102,15 @@ class ExeMap {
   learn(exeBasename, packageName) {
     if (!exeBasename || !packageName) return
     this._map.set(exeBasename.toLowerCase(), packageName)
+  }
+
+  // Register a helper/sub-process basename as an alias of a primary basename.
+  // The primary does not have to be mapped at alias-learn time; resolve()
+  // looks it up on demand so a later learn() or a DEFAULT_MAP entry is
+  // picked up automatically.
+  learnAlias(childExeBasename, primaryExeBasename) {
+    if (!childExeBasename || !primaryExeBasename) return
+    this._aliasMap.set(childExeBasename.toLowerCase(), primaryExeBasename.toLowerCase())
   }
 
   // Register a UWP app by its display title. Populated from apps:sync rows
@@ -108,4 +144,4 @@ function normalizeTitle(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
-module.exports = { ExeMap, DEFAULT_MAP, UWP_HOST_BASENAMES }
+module.exports = { ExeMap, DEFAULT_MAP, ALIAS_MAP, UWP_HOST_BASENAMES }

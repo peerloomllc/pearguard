@@ -8,13 +8,14 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { evaluate, isSystemExempt } = require('../src/enforcement/block-evaluator')
-const { ExeMap } = require('../src/enforcement/exe-map')
+const { ExeMap, UWP_HOST_BASENAMES } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
 const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
-const { enumerateInstalledApps, extractExeBasename, slugify, parseAndShape } = require('../src/enforcement/apps-enumerator')
+const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, parseAndShape, parseUwpAndShape, mergeRows } = require('../src/enforcement/apps-enumerator')
+const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 
 const tests = []
@@ -50,6 +51,31 @@ test('isSystemExempt allows shell processes', () => {
   assert.strictEqual(isSystemExempt('explorer.exe'), true)
   assert.strictEqual(isSystemExempt('SearchApp.exe'), true)
   assert.strictEqual(isSystemExempt('chrome.exe'), false)
+})
+
+test('isSystemExempt covers Win11 host processes (ApplicationFrameHost, RuntimeBroker, etc.)', () => {
+  // These are Windows-owned host processes that briefly take focus when UWP
+  // apps launch or capability prompts appear. The raw host itself is not
+  // something a parent can meaningfully block — the hosted UWP needs to be
+  // resolved separately (title-based or subprocess-based) and evaluated on
+  // its own packageName. Case-insensitive to match Win32's filesystem rules.
+  assert.strictEqual(isSystemExempt('ApplicationFrameHost.exe'), true)
+  assert.strictEqual(isSystemExempt('RuntimeBroker.exe'), true)
+  assert.strictEqual(isSystemExempt('SearchHost.exe'), true)
+  assert.strictEqual(isSystemExempt('TextInputHost.exe'), true)
+  assert.strictEqual(isSystemExempt('Widgets.exe'), true)
+})
+
+test('exempt host exe short-circuits enforcement even under device lock', () => {
+  // Locks apply to everything non-exempt, so this confirms the host exempt
+  // is on the allow-always path — a UWP focus blip that reports as
+  // ApplicationFrameHost.exe won't trap the child behind a bedtime lock.
+  const r = evaluate({
+    policy: policy({ locked: true, lockMessage: 'Bedtime' }),
+    packageName: null,
+    exeBasename: 'ApplicationFrameHost.exe',
+  })
+  assert.strictEqual(r, null)
 })
 
 test('exempt exe short-circuits even without policy', () => {
@@ -328,6 +354,36 @@ test('ExeMap.learn adds runtime mappings', () => {
   const m = new ExeMap({})
   m.learn('foobar.exe', 'com.example.foobar')
   assert.strictEqual(m.resolve('C:\\foobar.exe'), 'com.example.foobar')
+})
+
+test('ExeMap.learnUwp/resolveUwpByTitle round-trip matches titles case- and punct-insensitively', () => {
+  const m = new ExeMap({})
+  m.learnUwp({ title: 'Calculator', packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', exeBasename: 'calculatorapp.exe' })
+  assert.deepStrictEqual(
+    m.resolveUwpByTitle('Calculator'),
+    { packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', exeBasename: 'calculatorapp.exe' },
+  )
+  // Case and punctuation drop out of normalization.
+  assert.deepStrictEqual(
+    m.resolveUwpByTitle('CALCULATOR'),
+    { packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', exeBasename: 'calculatorapp.exe' },
+  )
+  assert.strictEqual(m.resolveUwpByTitle('Unknown App'), null)
+  assert.strictEqual(m.resolveUwpByTitle(''), null)
+  assert.strictEqual(m.resolveUwpByTitle(null), null)
+})
+
+test('ExeMap.learnUwp allows null exeBasename for pure UWP apps', () => {
+  const m = new ExeMap({})
+  m.learnUwp({ title: 'Microsoft Store', packageName: 'uwp.microsoft_windowsstore_8wekyb3d8bbwe' })
+  assert.deepStrictEqual(
+    m.resolveUwpByTitle('Microsoft Store'),
+    { packageName: 'uwp.microsoft_windowsstore_8wekyb3d8bbwe', exeBasename: null },
+  )
+})
+
+test('UWP_HOST_BASENAMES covers ApplicationFrameHost', () => {
+  assert.strictEqual(UWP_HOST_BASENAMES.has('applicationframehost.exe'), true)
 })
 
 // --- PolicyCache ---------------------------------------------------------
@@ -900,6 +956,51 @@ test('Controller daily-limit crossing flips an in-flight session to blocked', as
   controller.stop()
 })
 
+test('Controller blocks UWP via ApplicationFrameHost + title fallback', async () => {
+  // Repro for #2: the kid opens Calculator. active-win reports
+  // ApplicationFrameHost.exe as the owner and "Calculator" as the title.
+  // ExeMap has no mapping for the host (and the host is SYSTEM_EXEMPT
+  // post-#1), so without the title fallback the evaluator would short-circuit
+  // to null and nothing would block. With learnUwp registered from apps:sync,
+  // resolveUwpByTitle recovers the UWP packageName and we enforce against it.
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Windows\\System32\\ApplicationFrameHost.exe', processId: 1, name: 'ApplicationFrameHost' },
+    title: 'Calculator',
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.exeMap.learnUwp({
+    title: 'Calculator',
+    packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe',
+    exeBasename: 'calculatorapp.exe',
+  })
+  const p = policy()
+  p.apps['uwp.microsoft_windowscalculator_8wekyb3d8bbwe'] = {
+    status: 'blocked', appName: 'Calculator',
+  }
+  controller.setPolicyJson(JSON.stringify(p))
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 1, 'expected overlay for blocked UWP')
+  assert.strictEqual(overlay.shows[0].packageName, 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe')
+  assert.strictEqual(overlay.shows[0].category, 'status')
+  controller.stop()
+})
+
+test('Controller allows UWP host when title does not match any registered UWP', async () => {
+  // Unknown UWP titles fall through to "unmapped → allow" rather than tripping
+  // over the host's own SYSTEM_EXEMPT entry.
+  const fakeActiveWin = async () => ({
+    owner: { path: 'C:\\Windows\\System32\\ApplicationFrameHost.exe', processId: 1, name: 'ApplicationFrameHost' },
+    title: 'SomeUnregisteredApp',
+  })
+  const { controller, overlay } = makeController(fakeActiveWin)
+  controller.setPolicyJson(JSON.stringify(policy({ locked: false })))
+  controller.start()
+  await new Promise(r => setTimeout(r, 20))
+  assert.strictEqual(overlay.shows.length, 0)
+  controller.stop()
+})
+
 // --- pin-verify ----------------------------------------------------------
 
 // Lazy-load sodium-native — the prebuild may not be present in every dev env.
@@ -1022,6 +1123,279 @@ test('verifyPinAndGrant without sodium → no-sodium', () => {
   })
   const r = controller.verifyPinAndGrant({ pin: '1234', packageName: 'com.foo' })
   assert.deepStrictEqual(r, { ok: false, reason: 'no-sodium' })
+})
+
+// --- ForegroundMonitor first-sighting dedupe -----------------------------
+
+function tmpSeenExesPath() {
+  return path.join(os.tmpdir(), 'pearguard-test-seen-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.json')
+}
+
+test('ForegroundMonitor emits app-first-seen once per basename', async () => {
+  const responses = [
+    { owner: { path: 'C:\\foo.exe', processId: 1, name: 'foo' }, title: 't1' },
+    { owner: { path: 'C:\\foo.exe', processId: 2, name: 'foo' }, title: 't1' },  // same basename, new pid
+    { owner: { path: 'C:\\bar.exe', processId: 3, name: 'bar' }, title: 't2' },
+    { owner: { path: 'C:\\FOO.EXE', processId: 4, name: 'foo' }, title: 't3' },  // case variant — still dup
+  ]
+  let calls = 0
+  const fakeActiveWin = async () => responses[Math.min(calls++, responses.length - 1)]
+  const m = new ForegroundMonitor({ activeWin: fakeActiveWin, intervalMs: 5 })
+  const firstSeen = []
+  m.on('app-first-seen', (info) => firstSeen.push(info))
+  m.start()
+  await new Promise(r => setTimeout(r, 80))
+  m.stop()
+  const basenames = firstSeen.map((x) => x.exeBasename)
+  assert.deepStrictEqual(new Set(basenames), new Set(['foo.exe', 'bar.exe']))
+})
+
+test('ForegroundMonitor seenExes persists across instances', async () => {
+  const filePath = tmpSeenExesPath()
+  try {
+    const first = new ForegroundMonitor({
+      activeWin: async () => ({ owner: { path: 'C:\\a.exe', processId: 1, name: 'a' }, title: '' }),
+      intervalMs: 5,
+      seenExesPath: filePath,
+    })
+    const firstEvents = []
+    first.on('app-first-seen', (info) => firstEvents.push(info))
+    first.start()
+    await new Promise(r => setTimeout(r, 30))
+    first.stop()
+    assert.strictEqual(firstEvents.length, 1, 'first instance should see a.exe once')
+
+    const second = new ForegroundMonitor({
+      activeWin: async () => ({ owner: { path: 'C:\\a.exe', processId: 2, name: 'a' }, title: '' }),
+      intervalMs: 5,
+      seenExesPath: filePath,
+    })
+    const secondEvents = []
+    second.on('app-first-seen', (info) => secondEvents.push(info))
+    second.start()
+    await new Promise(r => setTimeout(r, 30))
+    second.stop()
+    assert.strictEqual(secondEvents.length, 0, 'second instance should NOT re-fire for a.exe')
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})
+
+test('ForegroundMonitor.markSeen suppresses first-sighting for pre-seeded exes', async () => {
+  const m = new ForegroundMonitor({
+    activeWin: async () => ({ owner: { path: 'C:\\electron.exe', processId: 1, name: 'electron' }, title: '' }),
+    intervalMs: 5,
+  })
+  m.markSeen(['electron.exe'])
+  const events = []
+  m.on('app-first-seen', (info) => events.push(info))
+  m.start()
+  await new Promise(r => setTimeout(r, 30))
+  m.stop()
+  assert.strictEqual(events.length, 0)
+})
+
+// --- UWP / Get-StartApps -------------------------------------------------
+
+test('parseUwpAndShape extracts UWP packages via PackageFamilyName', () => {
+  const json = JSON.stringify([
+    { Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!Microsoft.XboxApp' },
+    { Name: 'Calculator', AppID: 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App' },
+    { Name: 'Notepad++', AppID: 'C:\\Program Files\\Notepad++\\notepad++.exe' },  // Win32 shortcut, ignored
+  ])
+  const rows = parseUwpAndShape(json)
+  assert.strictEqual(rows.length, 2)
+  const xbox = rows.find((r) => r.appName === 'Xbox')
+  assert.ok(xbox)
+  assert.strictEqual(xbox.packageName, 'uwp.microsoft_xboxapp_8wekyb3d8bbwe')
+  assert.strictEqual(xbox.exeBasename, null)
+})
+
+test('parseUwpAndShape handles empty/non-JSON gracefully', () => {
+  const quiet = { warn() {} }
+  assert.deepStrictEqual(parseUwpAndShape('', quiet), [])
+  assert.deepStrictEqual(parseUwpAndShape('[]', quiet), [])
+  assert.deepStrictEqual(parseUwpAndShape('garbage', quiet), [])
+})
+
+test('mergeRows prefers registry rows over UWP on packageName collision', () => {
+  const registry = [{ packageName: 'com.app', appName: 'App (Registry)', exeBasename: 'app.exe', isLauncher: false }]
+  const uwp = [
+    { packageName: 'com.app', appName: 'App (UWP)', exeBasename: null, isLauncher: false },
+    { packageName: 'uwp.unique', appName: 'Unique UWP', exeBasename: null, isLauncher: false },
+  ]
+  const merged = mergeRows(registry, uwp)
+  assert.strictEqual(merged.length, 2)
+  const shared = merged.find((r) => r.packageName === 'com.app')
+  assert.strictEqual(shared.appName, 'App (Registry)')
+  assert.strictEqual(shared.exeBasename, 'app.exe')
+})
+
+test('mergeRows fuzzy-merges UWP and Win32 twins by normalized display name', () => {
+  // Repro: Calculator ships both a registry Uninstall entry (win.calculator)
+  // and a Get-StartApps entry (uwp.<family>). Without fuzzy-merge, the parent
+  // sees two Calculators and has to block both; even then nothing enforces
+  // because the foreground owner for UWPs is ApplicationFrameHost.exe.
+  const registry = [
+    { packageName: 'win.calculator', appName: 'Calculator', exeBasename: 'calculatorapp.exe', isLauncher: false },
+    { packageName: 'win.notepad', appName: 'Notepad', exeBasename: 'notepad.exe', isLauncher: false },
+  ]
+  const uwp = [
+    { packageName: 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe', appName: 'Calculator', exeBasename: null, isLauncher: false },
+    { packageName: 'uwp.microsoft_store', appName: 'Microsoft Store', exeBasename: null, isLauncher: false },
+  ]
+  const merged = mergeRows(registry, uwp)
+  assert.strictEqual(merged.length, 3, 'calculator twin collapses; notepad + store pass through')
+  const calc = merged.find((r) => r.appName === 'Calculator')
+  assert.ok(calc, 'one calculator entry survives the merge')
+  assert.strictEqual(calc.packageName, 'uwp.microsoft_windowscalculator_8wekyb3d8bbwe',
+    'UWP ID wins as survivor (globally stable)')
+  assert.strictEqual(calc.exeBasename, 'calculatorapp.exe',
+    'Win32 twin exeBasename is absorbed so direct-exe launches still resolve')
+  assert.ok(merged.find((r) => r.packageName === 'win.notepad'), 'Win32-only app survives')
+  assert.ok(merged.find((r) => r.packageName === 'uwp.microsoft_store'), 'UWP-only app survives')
+})
+
+test('mergeRows fuzzy match ignores whitespace and punctuation differences', () => {
+  const registry = [{ packageName: 'win.visual_studio_code', appName: 'Visual Studio Code', exeBasename: 'code.exe', isLauncher: false }]
+  const uwp = [{ packageName: 'uwp.microsoft_vscode', appName: 'Visual-Studio-Code', exeBasename: null, isLauncher: false }]
+  const merged = mergeRows(registry, uwp)
+  assert.strictEqual(merged.length, 1)
+  assert.strictEqual(merged[0].packageName, 'uwp.microsoft_vscode')
+  assert.strictEqual(merged[0].exeBasename, 'code.exe')
+})
+
+test('enumerateInstalledApps merges registry and UWP exec calls', async () => {
+  let callIdx = 0
+  const fakeExec = async () => {
+    callIdx++
+    if (callIdx === 1) {
+      return JSON.stringify([{ DisplayName: 'Chrome', DisplayIcon: 'C:\\chrome.exe,0' }])
+    }
+    return JSON.stringify([{ Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!Microsoft.XboxApp' }])
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 2)
+  const pkgs = apps.map((a) => a.packageName)
+  assert.ok(pkgs.includes('com.android.chrome'))
+  assert.ok(pkgs.some((p) => p.startsWith('uwp.')))
+})
+
+// --- icon-extractor ------------------------------------------------------
+
+test('extractExePath strips quotes and icon index', () => {
+  assert.strictEqual(extractExePath('C:\\Program Files\\App\\app.exe,0'), 'C:\\Program Files\\App\\app.exe')
+  assert.strictEqual(extractExePath('"C:\\Program Files\\App\\app.exe",0'), 'C:\\Program Files\\App\\app.exe')
+  assert.strictEqual(extractExePath('C:\\App\\plain.exe'), 'C:\\App\\plain.exe')
+  assert.strictEqual(extractExePath('C:\\readme.txt'), null)
+  assert.strictEqual(extractExePath(null), null)
+})
+
+test('buildWin32Script escapes embedded single quotes', () => {
+  const script = buildWin32Script(["C:\\has'quote.exe", 'C:\\plain.exe'])
+  // Embedded ' must become '' inside the generated PS array literal.
+  assert.ok(script.includes("'C:\\has''quote.exe'"))
+  assert.ok(script.includes("'C:\\plain.exe'"))
+})
+
+test('buildUwpScript embeds families as single-quoted literals', () => {
+  const script = buildUwpScript(['Microsoft.XboxApp_8wekyb3d8bbwe'])
+  assert.ok(script.includes("'Microsoft.XboxApp_8wekyb3d8bbwe'"))
+})
+
+test('extractWin32Icons returns Map of path → base64 from canned PS JSON', async () => {
+  const fakeExec = async () => JSON.stringify([
+    { path: 'C:\\a.exe', icon: 'ZmFrZS1pY29uLWE=' },
+    { path: 'C:\\b.exe', icon: null },
+    { path: 'C:\\c.exe', icon: 'ZmFrZS1pY29uLWM=' },
+  ])
+  const map = await extractWin32Icons(['C:\\a.exe', 'C:\\b.exe', 'C:\\c.exe'], { exec: fakeExec })
+  assert.strictEqual(map.get('C:\\a.exe'), 'ZmFrZS1pY29uLWE=')
+  assert.strictEqual(map.has('C:\\b.exe'), false)  // null icons omitted
+  assert.strictEqual(map.get('C:\\c.exe'), 'ZmFrZS1pY29uLWM=')
+})
+
+test('extractWin32Icons returns empty Map on empty input', async () => {
+  const map = await extractWin32Icons([], { exec: async () => 'unused' })
+  assert.strictEqual(map.size, 0)
+})
+
+test('extractWin32Icons swallows exec failure and returns empty Map', async () => {
+  const fakeExec = async () => { throw new Error('ps boom') }
+  const map = await extractWin32Icons(['C:\\a.exe'], { exec: fakeExec, logger: { warn() {} } })
+  assert.strictEqual(map.size, 0)
+})
+
+test('extractUwpIcons returns Map of family → base64', async () => {
+  const fakeExec = async () => JSON.stringify([
+    { family: 'Microsoft.XboxApp_8wekyb3d8bbwe', icon: 'WGJveC1pY29u' },
+    { family: 'Missing.Package_deadbeef', icon: null },
+  ])
+  const map = await extractUwpIcons(['Microsoft.XboxApp_8wekyb3d8bbwe', 'Missing.Package_deadbeef'], { exec: fakeExec })
+  assert.strictEqual(map.get('Microsoft.XboxApp_8wekyb3d8bbwe'), 'WGJveC1pY29u')
+  assert.strictEqual(map.has('Missing.Package_deadbeef'), false)
+})
+
+test('parseRows handles empty, non-JSON, and single-object shapes', () => {
+  const quiet = { warn() {} }
+  assert.deepStrictEqual(parseRows('', quiet), [])
+  assert.deepStrictEqual(parseRows('not json', quiet), [])
+  assert.deepStrictEqual(parseRows('{"path":"x","icon":"y"}'), [{ path: 'x', icon: 'y' }])
+})
+
+test('enumerateInstalledApps attaches iconBase64 to registry rows', async () => {
+  let callIdx = 0
+  const fakeExec = async (script) => {
+    callIdx++
+    if (script.includes('Uninstall')) {
+      return JSON.stringify([{ DisplayName: 'Chrome', DisplayIcon: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe,0' }])
+    }
+    if (script.includes('Get-StartApps')) {
+      return JSON.stringify([])
+    }
+    if (script.includes('ExtractAssociatedIcon')) {
+      return JSON.stringify([{ path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', icon: 'Y2hyb21lLWljb24=' }])
+    }
+    if (script.includes('Get-AppxPackage')) {
+      return JSON.stringify([])
+    }
+    throw new Error('unexpected script: ' + script.slice(0, 40))
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].packageName, 'com.android.chrome')
+  assert.strictEqual(apps[0].iconBase64, 'Y2hyb21lLWljb24=')
+  assert.strictEqual(apps[0].exePath, undefined, 'exePath should be stripped from returned row')
+})
+
+test('enumerateInstalledApps attaches iconBase64 to UWP rows via family', async () => {
+  const fakeExec = async (script) => {
+    if (script.includes('Uninstall')) return JSON.stringify([])
+    if (script.includes('Get-StartApps')) {
+      return JSON.stringify([{ Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!App' }])
+    }
+    if (script.includes('ExtractAssociatedIcon')) return JSON.stringify([])
+    if (script.includes('Get-AppxPackage')) {
+      return JSON.stringify([{ family: 'Microsoft.XboxApp_8wekyb3d8bbwe', icon: 'WGJveC1pY29u' }])
+    }
+    throw new Error('unexpected script')
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].iconBase64, 'WGJveC1pY29u')
+  assert.strictEqual(apps[0].packageFamilyName, undefined)
+})
+
+test('enumerateInstalledApps leaves iconBase64 undefined when extraction returns nothing', async () => {
+  const fakeExec = async (script) => {
+    if (script.includes('Uninstall')) {
+      return JSON.stringify([{ DisplayName: 'Noicon', DisplayIcon: 'C:\\noicon\\noicon.exe' }])
+    }
+    return JSON.stringify([])  // empty for StartApps, icons, appx
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  assert.strictEqual(apps.length, 1)
+  assert.strictEqual(apps[0].iconBase64, undefined)
 })
 
 // --- Runner --------------------------------------------------------------

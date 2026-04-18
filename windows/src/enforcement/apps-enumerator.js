@@ -1,5 +1,6 @@
 const { execFile } = require('child_process')
 const { DEFAULT_MAP } = require('./exe-map')
+const { extractWin32Icons, extractUwpIcons } = require('./icon-extractor')
 
 // Read installed apps from the three Uninstall registry hives (HKLM, HKLM
 // Wow6432Node, HKCU) via PowerShell. Returns objects shaped like Android's
@@ -33,13 +34,28 @@ $paths = @(
   ConvertTo-Json -Compress -Depth 3
 `.trim()
 
+// Get-StartApps surfaces UWP/Store apps that don't leave Uninstall registry
+// entries (Xbox, Instagram, TikTok, etc.). AppID format is
+// `PackageFamilyName!PRAID` for UWP; Win32 shortcuts resolve to filesystem
+// paths, which we skip because the Uninstall hives already cover them.
+const PS_STARTAPPS_SCRIPT = `
+$ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+@(Get-StartApps |
+  Where-Object { $_.AppID -match '!' } |
+  Select-Object Name, AppID) |
+  ConvertTo-Json -Compress -Depth 3
+`.trim()
+
 // Default PowerShell invoker. Injectable so tests can feed canned JSON
-// without spawning a shell. Resolves to the raw stdout string.
-function defaultPowershellExec() {
+// without spawning a shell. Resolves to the raw stdout string. Takes the
+// script as an arg so we can reuse the same helper for Uninstall hives and
+// Get-StartApps.
+function defaultPowershellExec(script) {
   return new Promise((resolve, reject) => {
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', PS_SCRIPT],
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
       { maxBuffer: 16 * 1024 * 1024, windowsHide: true },
       (err, stdout) => {
         if (err) reject(err)
@@ -50,6 +66,8 @@ function defaultPowershellExec() {
 }
 
 // Entry point. `exec` is optional — pass a fake returning canned JSON in tests.
+// Tests pass a single function that receives the script string; production
+// uses defaultPowershellExec which binds it into the spawn.
 async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = console } = {}) {
   if (process.platform !== 'win32' && exec === defaultPowershellExec) {
     // Dev runs on Linux/macOS would crash trying to invoke powershell.exe. The
@@ -57,18 +75,135 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
     // else unless the caller swapped in a fake.
     return []
   }
-  let stdout
+  let registryStdout = ''
+  let startStdout = ''
   try {
-    stdout = await exec()
+    registryStdout = await exec(PS_SCRIPT)
   } catch (e) {
-    logger.warn('[apps-enumerator] powershell invocation failed:', e.message)
-    return []
+    logger.warn('[apps-enumerator] registry powershell invocation failed:', e.message)
   }
-  const raw = stdout || ''
-  logger.log('[apps-enumerator] ps stdout bytes=%d head=%j', raw.length, raw.slice(0, 200))
-  const shaped = parseAndShape(raw, logger)
-  logger.log('[apps-enumerator] shaped %d app rows', shaped.length)
-  return shaped
+  try {
+    startStdout = await exec(PS_STARTAPPS_SCRIPT)
+  } catch (e) {
+    // UWP enumeration is a best-effort add-on; failing here should not drop
+    // the registry results we already collected.
+    logger.warn('[apps-enumerator] get-startapps invocation failed:', e.message)
+  }
+  if (typeof logger.log === 'function') {
+    logger.log('[apps-enumerator] registry stdout bytes=%d startapps bytes=%d', registryStdout.length, startStdout.length)
+  }
+  const registryRows = parseAndShape(registryStdout, logger)
+  const uwpRows = parseUwpAndShape(startStdout, logger)
+  const merged = mergeRows(registryRows, uwpRows)
+
+  // Icon extraction piggybacks on the same PowerShell injector. Icons are
+  // best-effort — a failure here leaves iconBase64 undefined on the row and
+  // the parent UI falls back to the initials circle. Run Win32 + UWP in
+  // parallel since they each spawn their own PS child.
+  const win32Paths = []
+  const uwpFamilies = []
+  for (const row of merged) {
+    if (row.exePath) win32Paths.push(row.exePath)
+    if (row.packageFamilyName) uwpFamilies.push(row.packageFamilyName)
+  }
+  const [win32Icons, uwpIcons] = await Promise.all([
+    extractWin32Icons(win32Paths, { exec, logger }),
+    extractUwpIcons(uwpFamilies, { exec, logger }),
+  ])
+  for (const row of merged) {
+    if (row.exePath) {
+      const icon = win32Icons.get(row.exePath)
+      if (icon) row.iconBase64 = icon
+      delete row.exePath
+    }
+    if (row.packageFamilyName) {
+      const icon = uwpIcons.get(row.packageFamilyName)
+      if (icon) row.iconBase64 = icon
+      delete row.packageFamilyName
+    }
+  }
+
+  if (typeof logger.log === 'function') {
+    logger.log('[apps-enumerator] shaped %d registry + %d uwp -> %d unique rows (%d icons)',
+      registryRows.length, uwpRows.length, merged.length, win32Icons.size + uwpIcons.size)
+  }
+  return merged
+}
+
+// Union two shaped-row lists. Two-pass dedup:
+//   1. packageName-level: if the same packageName appears in both lists,
+//      primary wins (registry rows carry the exe path enforcement needs).
+//   2. Fuzzy-name merge: a UWP row ('uwp.<family>') and a Win32 row
+//      ('win.<slug>' or DEFAULT_MAP'd) with the same normalized display name
+//      are the same app — Calculator ships both a registry Uninstall entry
+//      and a Get-StartApps entry. The UWP ID wins as survivor because it's
+//      globally stable (Store family name), but we absorb the Win32 row's
+//      exeBasename/exePath so a direct-exe launch still resolves via ExeMap.
+function mergeRows(primary, secondary) {
+  const byPackage = new Map()
+  for (const row of primary) {
+    if (row && row.packageName) byPackage.set(row.packageName, row)
+  }
+  for (const row of secondary) {
+    if (row && row.packageName && !byPackage.has(row.packageName)) {
+      byPackage.set(row.packageName, row)
+    }
+  }
+  const rows = Array.from(byPackage.values())
+
+  const win32ByName = new Map()
+  for (const row of rows) {
+    if (row.packageName.startsWith('uwp.')) continue
+    const n = normalizeDisplayName(row.appName)
+    if (n && !win32ByName.has(n)) win32ByName.set(n, row)
+  }
+  const absorbed = new Set()
+  for (const row of rows) {
+    if (!row.packageName.startsWith('uwp.')) continue
+    const n = normalizeDisplayName(row.appName)
+    if (!n) continue
+    const win32 = win32ByName.get(n)
+    if (!win32 || absorbed.has(win32.packageName)) continue
+    if (!row.exeBasename && win32.exeBasename) row.exeBasename = win32.exeBasename
+    if (!row.exePath && win32.exePath) row.exePath = win32.exePath
+    absorbed.add(win32.packageName)
+  }
+  return rows.filter((r) => !absorbed.has(r.packageName))
+}
+
+function normalizeDisplayName(name) {
+  if (typeof name !== 'string') return ''
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+// Shape Get-StartApps JSON into the same row format as parseAndShape.
+// AppID is split on '!' to recover the Package Family Name, which becomes
+// the stable identifier for the synthesized packageName ("uwp.<family>").
+// We don't resolve an exe here: UWP apps run inside ApplicationFrameHost and
+// foreground enforcement has to match on window title / family name, not exe.
+function parseUwpAndShape(stdout, logger = console) {
+  const rows = parsePowershellJson(stdout, logger)
+  const byFamily = new Map()
+  for (const r of rows) {
+    if (!r || typeof r.Name !== 'string' || typeof r.AppID !== 'string') continue
+    const name = r.Name.trim()
+    const appId = r.AppID.trim()
+    if (!name || !appId.includes('!')) continue
+    const family = appId.split('!')[0]
+    if (!family) continue
+    const packageName = 'uwp.' + slugify(family)
+    if (byFamily.has(packageName)) continue
+    // packageFamilyName is kept on the row so enumerateInstalledApps can hand
+    // it to the UWP icon extractor. Stripped before the row leaves the module.
+    byFamily.set(packageName, {
+      packageName,
+      appName: name,
+      exeBasename: null,
+      isLauncher: false,
+      packageFamilyName: family,
+    })
+  }
+  return Array.from(byFamily.values())
 }
 
 function parseAndShape(stdout, logger = console) {
@@ -78,18 +213,23 @@ function parseAndShape(stdout, logger = console) {
   for (const r of rows) {
     const name = (r && typeof r.DisplayName === 'string') ? r.DisplayName.trim() : ''
     if (!name) continue
-    const exeBasename = extractExeBasename(r.DisplayIcon) || extractExeBasenameFromInstallLocation(r.InstallLocation, name)
+    const exePath = extractExePath(r.DisplayIcon)
+    const exeBasename = exePath ? exePath.split(/[\\/]/).pop().toLowerCase() : null
     const existing = byName.get(name)
     if (!existing || (!existing.exeBasename && exeBasename)) {
-      byName.set(name, { DisplayName: name, exeBasename })
+      byName.set(name, { DisplayName: name, exeBasename, exePath })
     }
   }
   const out = []
-  for (const { DisplayName, exeBasename } of byName.values()) {
+  for (const { DisplayName, exeBasename, exePath } of byName.values()) {
     const mapped = exeBasename ? DEFAULT_MAP[exeBasename.toLowerCase()] : null
     const packageName = mapped || ('win.' + slugify(DisplayName))
     if (!packageName) continue
-    out.push({ packageName, appName: DisplayName, exeBasename: exeBasename || null, isLauncher: false })
+    // exePath is kept on the row so enumerateInstalledApps can hand it to the
+    // Win32 icon extractor. Stripped before the row leaves the module.
+    const row = { packageName, appName: DisplayName, exeBasename: exeBasename || null, isLauncher: false }
+    if (exePath) row.exePath = exePath
+    out.push(row)
   }
   return out
 }
@@ -117,29 +257,26 @@ function parsePowershellJson(stdout, logger = console) {
 //   "C:\\Program Files\\App\\app.exe,0"
 //   "\"C:\\Program Files\\App\\app.exe\",0"
 //   "C:\\Program Files\\App\\app.exe"
-// Extract the last `.exe` path segment as a lowercased basename.
-function extractExeBasename(displayIcon) {
+// Return the full exe path (case-preserved) with quotes and the trailing
+// icon index stripped. Used both to derive the basename and as the argument
+// to the icon extractor.
+function extractExePath(displayIcon) {
   if (!displayIcon || typeof displayIcon !== 'string') return null
   let s = displayIcon.trim()
-  // Strip surrounding double-quotes
   if (s.startsWith('"')) {
     const end = s.indexOf('"', 1)
     if (end > 0) s = s.slice(1, end)
   } else {
-    // Strip trailing ",N" icon index
     s = s.replace(/,-?\d+\s*$/, '')
   }
-  const m = /([^\\/]+\.exe)/i.exec(s)
-  return m ? m[1].toLowerCase() : null
+  return /\.exe$/i.test(s) ? s : null
 }
 
-// Some installers populate InstallLocation but leave DisplayIcon empty. Best
-// effort: if the install dir contains an exe named similarly to the display
-// name, we still can't resolve without walking the directory. For now, return
-// null and let the synthesized packageName carry the entry — the parent still
-// gets an Apps tab row, just with no exe hook yet.
-function extractExeBasenameFromInstallLocation(_installLocation, _displayName) {
-  return null
+function extractExeBasename(displayIcon) {
+  const p = extractExePath(displayIcon)
+  if (!p) return null
+  const m = /([^\\/]+\.exe)/i.exec(p)
+  return m ? m[1].toLowerCase() : null
 }
 
 function slugify(name) {
@@ -150,4 +287,4 @@ function slugify(name) {
     .slice(0, 64) || 'unknown'
 }
 
-module.exports = { enumerateInstalledApps, parseAndShape, extractExeBasename, slugify }
+module.exports = { enumerateInstalledApps, parseAndShape, parseUwpAndShape, mergeRows, extractExeBasename, extractExePath, slugify, normalizeDisplayName }

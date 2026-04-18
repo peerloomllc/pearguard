@@ -7,12 +7,39 @@ if (process.platform === 'linux') {
 
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
 const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
+
+// Tee console output to a rolling log file. Desktop shortcuts launch
+// electron.exe directly with no stdout redirection, so without this the only
+// way to see logs is to run `npm start > pearguard.log`. File lives at
+// %USERPROFILE%/pearguard.log on Windows, $HOME/pearguard.log elsewhere.
+;(function installFileLogger() {
+  try {
+    const logPath = path.join(os.homedir(), 'pearguard.log')
+    // Truncate on each launch so the file stays bounded across restarts.
+    const stream = fs.createWriteStream(logPath, { flags: 'w' })
+    const tee = (orig) => (...args) => {
+      try {
+        const line = args.map((a) => typeof a === 'string' ? a : require('util').inspect(a, { depth: 4 })).join(' ')
+        stream.write(line + '\n')
+      } catch (_e) {}
+      orig.apply(console, args)
+    }
+    console.log = tee(console.log)
+    console.warn = tee(console.warn)
+    console.error = tee(console.error)
+  } catch (_e) { /* best-effort */ }
+})()
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')
 const { UsageTracker } = require('../enforcement/usage-tracker')
-const { enumerateInstalledApps } = require('../enforcement/apps-enumerator')
+const { enumerateInstalledApps, slugify } = require('../enforcement/apps-enumerator')
+const { readFileDescription } = require('../enforcement/exe-metadata')
+const { extractWin32Icons } = require('../enforcement/icon-extractor')
+const { DEFAULT_MAP } = require('../enforcement/exe-map')
+const { SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
 const { OverlayManager } = require('./overlay')
 
 // How often we hand usage telemetry to bare for replication to the parent.
@@ -124,11 +151,29 @@ async function runAppsSync() {
   // Seed the ExeMap so the foreground monitor can resolve apps the enumerator
   // reported with an exe path. Without this, a freshly-synced Windows-only
   // app (packageName=win.<slug>) wouldn't enforce because its exe wasn't in
-  // the starter DEFAULT_MAP.
+  // the starter DEFAULT_MAP. Also mark those basenames as seen so the kid's
+  // first launch after pairing doesn't re-notify the parent with app:installed
+  // for an app they already have in their Apps tab from the sync.
   if (enforcement) {
+    const basenames = []
     for (const a of apps) {
-      if (a.exeBasename && a.packageName) enforcement.exeMap.learn(a.exeBasename, a.packageName)
+      if (a.exeBasename && a.packageName) {
+        enforcement.exeMap.learn(a.exeBasename, a.packageName)
+        basenames.push(a.exeBasename)
+      }
+      // Register UWP rows by their display title so ApplicationFrameHost
+      // foreground ticks can resolve the hosted UWP. exeBasename is passed
+      // through when the enumerator fuzzy-merged a Win32 twin (Calculator),
+      // so a direct-exe launch gets the same packageName via ExeMap.resolve.
+      if (a.packageName && a.packageName.startsWith('uwp.') && a.appName) {
+        enforcement.exeMap.learnUwp({
+          title: a.appName,
+          packageName: a.packageName,
+          exeBasename: a.exeBasename || null,
+        })
+      }
     }
+    enforcement.monitor.markSeen(basenames)
   }
 }
 
@@ -325,7 +370,59 @@ app.whenReady().then(() => {
       }
       return false
     }
-    enforcement = new EnforcementController({ activeWin, overridesStore, usageTracker, overlay, sodium, isOwnWindow })
+    enforcement = new EnforcementController({
+      activeWin,
+      seenExesPath: path.join(app.getPath('userData'), 'seen-exes.json'),
+      overridesStore,
+      usageTracker,
+      overlay,
+      sodium,
+      isOwnWindow,
+    })
+
+    // Suppress first-sighting for our own running process, the starter
+    // DEFAULT_MAP, and Windows system/host processes. Without this, the very
+    // first foreground tick would fire app:installed for electron.exe (our
+    // window just took focus); the first chrome launch after pairing would
+    // re-notify the parent for a well-known mapped app; and every session
+    // would leak app:installed events for host processes like
+    // ApplicationFrameHost.exe and RuntimeBroker.exe that briefly steal focus.
+    enforcement.monitor.loadSeen()
+    const selfBasename = (process.execPath || '').split(/[\\/]/).pop()
+    enforcement.monitor.markSeen([
+      selfBasename,
+      ...Object.keys(DEFAULT_MAP),
+      ...SYSTEM_EXEMPT_BASENAMES,
+    ])
+
+    // New-exe sightings on the desktop are the closest analogue to Android's
+    // PACKAGE_ADDED broadcast: we can't observe installs directly, so we treat
+    // "first time we ever see this exe in the foreground" as "newly installed"
+    // and relay it to the parent with enough metadata to show a meaningful
+    // Activity notification.
+    enforcement.monitor.on('app-first-seen', async ({ exePath, exeBasename, title }) => {
+      try {
+        const [fileDescription, iconMap] = await Promise.all([
+          readFileDescription(exePath),
+          extractWin32Icons([exePath]),
+        ])
+        const packageName = enforcement.exeMap.resolve(exePath) || ('win.' + slugify(fileDescription || exeBasename))
+        const appName = fileDescription || exeBasename || packageName
+        const iconBase64 = iconMap.get(exePath) || null
+        console.log('[main] app:installed first-sighting', { exeBasename, packageName, appName, hasIcon: !!iconBase64 })
+        await callBare('app:installed', {
+          packageName,
+          appName,
+          exeBasename,
+          exePath,
+          windowTitle: title || '',
+          fileDescription: fileDescription || '',
+          ...(iconBase64 && { iconBase64 }),
+        })
+      } catch (e) {
+        console.warn('[main] app:installed first-sighting relay failed:', e.message)
+      }
+    })
 
     // Forward overlay button clicks to bare. The grant returned by pin:verify
     // arrives back through `native:grantOverride`, which is already wired to

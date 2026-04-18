@@ -47,6 +47,57 @@ $ErrorActionPreference = 'SilentlyContinue'
   ConvertTo-Json -Compress -Depth 3
 `.trim()
 
+// Walk both Start Menu directories and resolve every .lnk target to its exe.
+// This is the most reliable source for "what exe launches when the user
+// clicks the app tile" — the Uninstall registry's DisplayIcon is unreliable
+// (Steam's points at uninstall.exe) while Start Menu shortcuts by design
+// point at the real runtime exe. Output is [{Name, Target}] where Name is
+// the .lnk basename (no extension) and Target is the absolute exe path.
+const PS_SHORTCUTS_SCRIPT = `
+$ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$shell = New-Object -ComObject WScript.Shell
+$folders = @(
+  "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs",
+  "$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs"
+)
+@(Get-ChildItem -Path $folders -Recurse -Filter '*.lnk' -ErrorAction SilentlyContinue |
+  ForEach-Object {
+    $lnk = $shell.CreateShortcut($_.FullName)
+    $target = $lnk.TargetPath
+    if ($target -and $target.ToLower().EndsWith('.exe')) {
+      [PSCustomObject]@{ Name = $_.BaseName; Target = $target }
+    }
+  }) | ConvertTo-Json -Compress -Depth 3
+`.trim()
+
+// For every installed AppX (MSIX) package, read AppxManifest.xml and pull
+// the first <Application>'s Executable attribute. MSIX desktop apps like
+// Keet run their own exe at runtime (not ApplicationFrameHost), so the
+// catalog needs to know "family X ships exe Y" to build the runtime
+// mapping. Output is [{Family, Executable}] where Family is
+// PackageFamilyName and Executable is the manifest's raw value (e.g.
+// "App\\Keet.exe") — the subfolder prefix is stripped in the parser.
+const PS_MSIX_EXES_SCRIPT = `
+$ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+@(Get-AppxPackage | ForEach-Object {
+  $pkg = $_
+  if (-not $pkg.InstallLocation) { return }
+  $manifestPath = Join-Path $pkg.InstallLocation 'AppxManifest.xml'
+  if (-not (Test-Path $manifestPath)) { return }
+  try {
+    [xml]$m = Get-Content -Raw -Path $manifestPath
+    $apps = $m.Package.Applications.Application
+    if (-not $apps) { return }
+    $first = @($apps)[0]
+    if ($first -and $first.Executable) {
+      [PSCustomObject]@{ Family = $pkg.PackageFamilyName; Executable = $first.Executable }
+    }
+  } catch {}
+}) | ConvertTo-Json -Compress -Depth 3
+`.trim()
+
 // Default PowerShell invoker. Injectable so tests can feed canned JSON
 // without spawning a shell. Resolves to the raw stdout string. Takes the
 // script as an arg so we can reuse the same helper for Uninstall hives and
@@ -77,6 +128,8 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
   }
   let registryStdout = ''
   let startStdout = ''
+  let shortcutStdout = ''
+  let msixExeStdout = ''
   try {
     registryStdout = await exec(PS_SCRIPT)
   } catch (e) {
@@ -89,11 +142,27 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
     // the registry results we already collected.
     logger.warn('[apps-enumerator] get-startapps invocation failed:', e.message)
   }
-  if (typeof logger.log === 'function') {
-    logger.log('[apps-enumerator] registry stdout bytes=%d startapps bytes=%d', registryStdout.length, startStdout.length)
+  try {
+    shortcutStdout = await exec(PS_SHORTCUTS_SCRIPT)
+  } catch (e) {
+    // Start Menu enumeration is a refinement — if it fails, rows fall back
+    // to their registry DisplayIcon exe. Steam stays broken in that case,
+    // but everything that already worked keeps working.
+    logger.warn('[apps-enumerator] start-menu shortcut invocation failed:', e.message)
   }
-  const registryRows = parseAndShape(registryStdout, logger)
-  const uwpRows = parseUwpAndShape(startStdout, logger)
+  try {
+    msixExeStdout = await exec(PS_MSIX_EXES_SCRIPT)
+  } catch (e) {
+    logger.warn('[apps-enumerator] msix manifest invocation failed:', e.message)
+  }
+  if (typeof logger.log === 'function') {
+    logger.log('[apps-enumerator] bytes: registry=%d startapps=%d shortcuts=%d msix=%d',
+      registryStdout.length, startStdout.length, shortcutStdout.length, msixExeStdout.length)
+  }
+  const shortcutMap = parseShortcutMap(shortcutStdout, logger)
+  const msixExeMap = parseMsixExeMap(msixExeStdout, logger)
+  const registryRows = parseAndShape(registryStdout, logger, shortcutMap)
+  const uwpRows = parseUwpAndShape(startStdout, logger, msixExeMap)
   const merged = mergeRows(registryRows, uwpRows)
 
   // Icon extraction piggybacks on the same PowerShell injector. Icons are
@@ -179,9 +248,12 @@ function normalizeDisplayName(name) {
 // Shape Get-StartApps JSON into the same row format as parseAndShape.
 // AppID is split on '!' to recover the Package Family Name, which becomes
 // the stable identifier for the synthesized packageName ("uwp.<family>").
-// We don't resolve an exe here: UWP apps run inside ApplicationFrameHost and
-// foreground enforcement has to match on window title / family name, not exe.
-function parseUwpAndShape(stdout, logger = console) {
+//
+// msixExeMap (family -> lowercased exeBasename) is folded in when present so
+// MSIX desktop apps (Keet, modern Teams) carry the exe active-win actually
+// reports at runtime. Classic UWPs hosted by ApplicationFrameHost still have
+// exeBasename=null — they get resolved via learnUwp + window title instead.
+function parseUwpAndShape(stdout, logger = console, msixExeMap = new Map()) {
   const rows = parsePowershellJson(stdout, logger)
   const byFamily = new Map()
   for (const r of rows) {
@@ -193,12 +265,13 @@ function parseUwpAndShape(stdout, logger = console) {
     if (!family) continue
     const packageName = 'uwp.' + slugify(family)
     if (byFamily.has(packageName)) continue
+    const exeBasename = msixExeMap.get(family) || null
     // packageFamilyName is kept on the row so enumerateInstalledApps can hand
     // it to the UWP icon extractor. Stripped before the row leaves the module.
     byFamily.set(packageName, {
       packageName,
       appName: name,
-      exeBasename: null,
+      exeBasename,
       isLauncher: false,
       packageFamilyName: family,
     })
@@ -206,7 +279,7 @@ function parseUwpAndShape(stdout, logger = console) {
   return Array.from(byFamily.values())
 }
 
-function parseAndShape(stdout, logger = console) {
+function parseAndShape(stdout, logger = console, shortcutMap = new Map()) {
   const rows = parsePowershellJson(stdout, logger)
   // Dedupe by DisplayName, preferring entries that actually surface an exe.
   const byName = new Map()
@@ -222,16 +295,69 @@ function parseAndShape(stdout, logger = console) {
   }
   const out = []
   for (const { DisplayName, exeBasename, exePath } of byName.values()) {
-    const mapped = exeBasename ? DEFAULT_MAP[exeBasename.toLowerCase()] : null
+    // Start Menu shortcut wins over DisplayIcon: the .lnk target is the real
+    // runtime exe the user launches, while DisplayIcon can point at uninstallers
+    // (Steam's does). Only override when the shortcut actually surfaces an exe.
+    let finalBasename = exeBasename
+    let finalPath = exePath
+    const n = normalizeDisplayName(DisplayName)
+    const shortcut = n ? shortcutMap.get(n) : null
+    if (shortcut && shortcut.exeBasename) {
+      finalBasename = shortcut.exeBasename
+      finalPath = shortcut.exePath || finalPath
+    }
+    const mapped = finalBasename ? DEFAULT_MAP[finalBasename.toLowerCase()] : null
     const packageName = mapped || ('win.' + slugify(DisplayName))
     if (!packageName) continue
     // exePath is kept on the row so enumerateInstalledApps can hand it to the
     // Win32 icon extractor. Stripped before the row leaves the module.
-    const row = { packageName, appName: DisplayName, exeBasename: exeBasename || null, isLauncher: false }
-    if (exePath) row.exePath = exePath
+    const row = { packageName, appName: DisplayName, exeBasename: finalBasename || null, isLauncher: false }
+    if (finalPath) row.exePath = finalPath
     out.push(row)
   }
   return out
+}
+
+// Build a normalized-DisplayName -> { exeBasename, exePath } map from the
+// Start Menu PS output. Used by parseAndShape to override unreliable
+// DisplayIcon values. Case and punctuation are stripped so "Microsoft Edge"
+// matches a shortcut named "Microsoft-Edge".
+function parseShortcutMap(stdout, logger = console) {
+  const rows = parsePowershellJson(stdout, logger)
+  const map = new Map()
+  for (const r of rows) {
+    if (!r || typeof r.Name !== 'string' || typeof r.Target !== 'string') continue
+    const key = normalizeDisplayName(r.Name)
+    if (!key) continue
+    const target = r.Target.trim()
+    if (!/\.exe$/i.test(target)) continue
+    const basename = target.split(/[\\/]/).pop().toLowerCase()
+    if (!basename) continue
+    // First .lnk wins. Start Menu duplicates are rare but harmless — user-scope
+    // folder is walked before system-scope, which is a reasonable precedence.
+    if (map.has(key)) continue
+    map.set(key, { exeBasename: basename, exePath: target })
+  }
+  return map
+}
+
+// Build a PackageFamilyName -> lowercased exeBasename map from the MSIX
+// manifest PS output. AppxManifest's Executable attribute is typically
+// a relative path like "App\Keet.exe" — strip everything before the
+// last path separator so only the basename is stored.
+function parseMsixExeMap(stdout, logger = console) {
+  const rows = parsePowershellJson(stdout, logger)
+  const map = new Map()
+  for (const r of rows) {
+    if (!r || typeof r.Family !== 'string' || typeof r.Executable !== 'string') continue
+    const family = r.Family.trim()
+    if (!family) continue
+    const basename = r.Executable.split(/[\\/]/).pop().toLowerCase()
+    if (!basename || !/\.exe$/.test(basename)) continue
+    if (map.has(family)) continue
+    map.set(family, basename)
+  }
+  return map
 }
 
 // ConvertTo-Json returns either `[]`, a single object, or an array. Guard all
@@ -287,4 +413,4 @@ function slugify(name) {
     .slice(0, 64) || 'unknown'
 }
 
-module.exports = { enumerateInstalledApps, parseAndShape, parseUwpAndShape, mergeRows, extractExeBasename, extractExePath, slugify, normalizeDisplayName }
+module.exports = { enumerateInstalledApps, parseAndShape, parseUwpAndShape, parseShortcutMap, parseMsixExeMap, mergeRows, extractExeBasename, extractExePath, slugify, normalizeDisplayName }

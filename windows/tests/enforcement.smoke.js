@@ -14,7 +14,7 @@ const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
 const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
-const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, parseAndShape, parseUwpAndShape, mergeRows } = require('../src/enforcement/apps-enumerator')
+const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, parseAndShape, parseUwpAndShape, parseShortcutMap, parseMsixExeMap, mergeRows } = require('../src/enforcement/apps-enumerator')
 const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 
@@ -1327,6 +1327,113 @@ test('enumerateInstalledApps merges registry and UWP exec calls', async () => {
   const pkgs = apps.map((a) => a.packageName)
   assert.ok(pkgs.includes('com.android.chrome'))
   assert.ok(pkgs.some((p) => p.startsWith('uwp.')))
+})
+
+test('parseShortcutMap keys by normalized display name', () => {
+  const quiet = { warn() {} }
+  const json = JSON.stringify([
+    { Name: 'Steam', Target: 'C:\\Program Files (x86)\\Steam\\steam.exe' },
+    { Name: 'Microsoft Edge', Target: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' },
+    { Name: 'NoExe', Target: 'C:\\weird.dll' },  // non-exe targets are skipped
+  ])
+  const map = parseShortcutMap(json, quiet)
+  assert.deepStrictEqual(map.get('steam'), { exeBasename: 'steam.exe', exePath: 'C:\\Program Files (x86)\\Steam\\steam.exe' })
+  // Whitespace and punctuation drop out of the key so "Microsoft Edge" matches
+  // the registry DisplayName of the same app.
+  assert.strictEqual(map.get('microsoftedge').exeBasename, 'msedge.exe')
+  assert.strictEqual(map.has('noexe'), false)
+})
+
+test('parseShortcutMap handles empty and non-JSON gracefully', () => {
+  const quiet = { warn() {} }
+  assert.strictEqual(parseShortcutMap('', quiet).size, 0)
+  assert.strictEqual(parseShortcutMap('[]', quiet).size, 0)
+  assert.strictEqual(parseShortcutMap('not json', quiet).size, 0)
+})
+
+test('parseMsixExeMap strips subfolder from manifest Executable', () => {
+  const quiet = { warn() {} }
+  const json = JSON.stringify([
+    { Family: 'Keet_k5xf9864y0668', Executable: 'App\\Keet.exe' },
+    { Family: 'Microsoft.WindowsCalculator_8wekyb3d8bbwe', Executable: 'CalculatorApp.exe' },
+    { Family: 'Bogus.Package_deadbeef', Executable: 'not-an-exe.dll' },
+  ])
+  const map = parseMsixExeMap(json, quiet)
+  assert.strictEqual(map.get('Keet_k5xf9864y0668'), 'keet.exe')
+  assert.strictEqual(map.get('Microsoft.WindowsCalculator_8wekyb3d8bbwe'), 'calculatorapp.exe')
+  assert.strictEqual(map.has('Bogus.Package_deadbeef'), false)
+})
+
+test('parseAndShape prefers Start Menu shortcut exe over DisplayIcon (Steam case)', () => {
+  const quiet = { warn() {} }
+  // Reproduces the real Steam registry row: DisplayIcon points at the
+  // uninstaller. Without the shortcut override, the row packages as
+  // win.steam because uninstall.exe misses DEFAULT_MAP.
+  const stdout = JSON.stringify([
+    { DisplayName: 'Steam', DisplayIcon: 'C:\\Program Files (x86)\\Steam\\uninstall.exe' },
+  ])
+  const shortcutMap = new Map([
+    ['steam', { exeBasename: 'steam.exe', exePath: 'C:\\Program Files (x86)\\Steam\\steam.exe' }],
+  ])
+  const rows = parseAndShape(stdout, quiet, shortcutMap)
+  assert.strictEqual(rows.length, 1)
+  assert.strictEqual(rows[0].packageName, 'com.valvesoftware.android.steam.community')
+  assert.strictEqual(rows[0].exeBasename, 'steam.exe')
+  assert.strictEqual(rows[0].exePath, 'C:\\Program Files (x86)\\Steam\\steam.exe')
+})
+
+test('parseAndShape falls back to DisplayIcon when shortcut map misses', () => {
+  const quiet = { warn() {} }
+  const stdout = JSON.stringify([
+    { DisplayName: 'Firefox', DisplayIcon: 'C:\\Program Files\\Mozilla Firefox\\firefox.exe,0' },
+  ])
+  const rows = parseAndShape(stdout, quiet, new Map())
+  assert.strictEqual(rows.length, 1)
+  assert.strictEqual(rows[0].packageName, 'org.mozilla.firefox')
+  assert.strictEqual(rows[0].exeBasename, 'firefox.exe')
+})
+
+test('parseUwpAndShape attaches MSIX exeBasename when available (Keet case)', () => {
+  const quiet = { warn() {} }
+  const stdout = JSON.stringify([
+    { Name: 'Keet', AppID: 'Keet_k5xf9864y0668!App' },
+    { Name: 'Calculator', AppID: 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App' },
+  ])
+  const msixMap = new Map([['Keet_k5xf9864y0668', 'keet.exe']])
+  const rows = parseUwpAndShape(stdout, quiet, msixMap)
+  const keet = rows.find((r) => r.packageName.startsWith('uwp.keet'))
+  const calc = rows.find((r) => r.packageName.startsWith('uwp.microsoft_windowscalculator'))
+  assert.ok(keet && calc)
+  assert.strictEqual(keet.exeBasename, 'keet.exe')
+  assert.strictEqual(calc.exeBasename, null)
+})
+
+test('enumerateInstalledApps feeds shortcut + msix maps through to rows', async () => {
+  let callIdx = 0
+  const responses = [
+    // 1. registry
+    JSON.stringify([{ DisplayName: 'Steam', DisplayIcon: 'C:\\Program Files (x86)\\Steam\\uninstall.exe' }]),
+    // 2. Get-StartApps (UWP)
+    JSON.stringify([{ Name: 'Keet', AppID: 'Keet_k5xf9864y0668!App' }]),
+    // 3. Start Menu shortcuts
+    JSON.stringify([{ Name: 'Steam', Target: 'C:\\Program Files (x86)\\Steam\\steam.exe' }]),
+    // 4. MSIX manifests
+    JSON.stringify([{ Family: 'Keet_k5xf9864y0668', Executable: 'App\\Keet.exe' }]),
+  ]
+  const fakeExec = async () => {
+    const body = responses[callIdx] || '[]'
+    callIdx++
+    return body
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  const steam = apps.find((a) => a.appName === 'Steam')
+  const keet = apps.find((a) => a.appName === 'Keet')
+  assert.ok(steam, 'Steam row present')
+  assert.strictEqual(steam.packageName, 'com.valvesoftware.android.steam.community')
+  assert.strictEqual(steam.exeBasename, 'steam.exe')
+  assert.ok(keet, 'Keet row present')
+  assert.strictEqual(keet.packageName, 'uwp.keet_k5xf9864y0668')
+  assert.strictEqual(keet.exeBasename, 'keet.exe')
 })
 
 // --- icon-extractor ------------------------------------------------------

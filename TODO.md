@@ -9,7 +9,6 @@ Open items only. Completed items are in `DONE.md`.
 | 85 | Contacts overrides not working | Can't add contacts on Parent device; untested on Child device |
 | 98 | Investigate Tailscale VPN compatibility | Tailscale breaks Hyperswarm P2P connections; need to investigate split tunneling or relay options |
 | 124 | Android cold start notification tap goes to Dashboard instead of Activity tab | Warm open works correctly; cold start doesn't navigate to child. Rare edge case, non-blocking. |
-| 137 | Windows enforcement: packageName mismatch between apps catalog and runtime resolve | `apps-enumerator.parseAndShape` synthesizes `win.<slug>` (e.g. `win.steam`) when the registry row's exe misses `DEFAULT_MAP`, while `exe-map.resolve` maps foreground helpers to the Android-style packageName (e.g. `com.valvesoftware.android.steam.community`). Parent's `policy.apps[pkg]` lookup misses → block never fires. Also bites MSIX apps like Keet: catalog uses `uwp.keet_*`, active-win reports bare `keet.exe` → null. Edge works because both sides land on `com.microsoft.emmx`. Fix: reconcile so one canonical packageName is produced per app on both paths. Verified on Win11 VM 2026-04-17. |
 
 ## Features
 

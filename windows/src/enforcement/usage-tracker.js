@@ -134,8 +134,9 @@ class UsageTracker {
 
   // Drain the sessions buffer. Mirrors
   // NativeModules.UsageStatsModule.getSessionsSinceLastFlush() — each entry is
-  // { packageName, appName, startedAt, endedAt }. The active session is closed
-  // at `now` and re-opened with the same package so it continues to accrue.
+  // { packageName, displayName, startedAt, endedAt, durationSeconds }. The
+  // active session is closed at `now` and re-opened with the same package so
+  // it continues to accrue.
   takeSessions() {
     const ts = this._now()
     this._resolveRollovers(ts)
@@ -182,8 +183,17 @@ class UsageTracker {
     this._weekly.set(packageName, (this._weekly.get(packageName) || 0) + seconds)
   }
 
+  // Emit the same shape as Android's UsageStatsModule so parent-side
+  // aggregations (usage:getCategorySummary, usage:getDailySummaries) that sum
+  // durationSeconds and read displayName work identically across platforms.
   _pushSession(packageName, appName, startedAt, endedAt) {
-    this._sessions.push({ packageName, appName: appName || null, startedAt, endedAt })
+    this._sessions.push({
+      packageName,
+      displayName: appName || null,
+      startedAt,
+      endedAt,
+      durationSeconds: secondsBetween(startedAt, endedAt),
+    })
   }
 
   // If the current wall clock crossed a local midnight or Sunday boundary

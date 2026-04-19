@@ -1,6 +1,10 @@
 node_modules/
 dist/
 out/
-vendor/
+vendor/*
+# NSSM is a third-party vendored binary needed by the NSIS installer to
+# register the watchdog Windows Service. Keep it tracked. Build artifacts
+# copied into vendor/ by scripts/prepack.js (vendor/src/) stay ignored.
+!vendor/nssm/
 *.log
 .DS_Store

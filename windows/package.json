@@ -45,7 +45,9 @@
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples,docs,doc,.bin}"
     ],
     "extraResources": [
-      { "from": "build/watchdog.vbs", "to": "watchdog.vbs" }
+      { "from": "build/watchdog.vbs", "to": "watchdog.vbs" },
+      { "from": "build/watchdog.ps1", "to": "watchdog.ps1" },
+      { "from": "vendor/nssm/nssm.exe", "to": "nssm.exe" }
     ],
     "win": {
       "target": "nsis",

@@ -8,7 +8,7 @@ if (process.platform === 'linux') {
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
-const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, clipboard, dialog } = require('electron')
 
 // Tee console output to a rolling log file. Desktop shortcuts launch
 // electron.exe directly with no stdout redirection, so without this the only
@@ -31,6 +31,19 @@ const { app, BrowserWindow, ipcMain, Notification, clipboard, dialog } = require
     console.error = tee(console.error)
   } catch (_e) { /* best-effort */ }
 })()
+
+// Single-instance lock. Without this, every desktop-shortcut click spawns a
+// fresh Electron process - all of them init bare, bind enforcement timers,
+// and contend for the same userData dir. Quit any second instance and focus
+// the existing window instead.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  return
+}
+app.on('second-instance', () => {
+  if (mainWindow) showMainWindow()
+})
+
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')
@@ -51,6 +64,11 @@ if (process.platform === 'linux') {
 }
 
 let mainWindow = null
+let tray = null
+// Set on before-quit so the window's close handler knows to let the window go
+// rather than hiding it. Without this, app.quit() triggers close → hide and
+// the process never actually exits.
+let isQuitting = false
 let bare = null
 let pendingCalls = new Map()  // id -> { resolve, reject }
 let nextId = 1
@@ -258,6 +276,35 @@ ipcMain.handle('bare-call', async (_event, { method, args }) => {
   return callBare(method, args)
 })
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray() {
+  if (tray && !tray.isDestroyed()) return
+  // build/icon.ico is whitelisted in package.json's "files" so it lives inside
+  // the asar. In dev (electron .), the path resolves against the project root.
+  const iconPath = path.join(__dirname, '..', '..', 'build', 'icon.ico')
+  try {
+    tray = new Tray(iconPath)
+  } catch (e) {
+    console.error('[main] tray create failed:', e.message, 'path=', iconPath)
+    return
+  }
+  tray.setToolTip('PearGuard')
+  const menu = Menu.buildFromTemplate([
+    { label: 'Open PearGuard', click: showMainWindow },
+  ])
+  tray.setContextMenu(menu)
+  tray.on('click', showMainWindow)
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 420,
@@ -273,6 +320,16 @@ function createWindow() {
   })
   const entry = process.env.PEARGUARD_SMOKE ? 'smoke.html' : 'index.html'
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', entry))
+
+  // Clicking X should hide the window, not terminate the process. Enforcement
+  // needs to keep running in the background. before-quit flips isQuitting when
+  // a real shutdown (app.quit, OS shutdown) is underway so we actually close.
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
+  })
 
   // Mirror renderer console to the main process stdout when logging is on.
   if (process.env.PEARGUARD_SMOKE || process.env.PEARGUARD_UI_SMOKE || process.env.PEARGUARD_LOG_RENDERER) {
@@ -333,9 +390,16 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Autostart on user login. No user-facing toggle: this is a parental-control
+  // app and the child shouldn't be able to disable it. Dev launches (app.isPackaged
+  // === false) skip this so running `npm start` doesn't register the dev binary.
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: true })
+  }
+
   // Load bare AFTER shim is installed so its module-top IPC.on('data') binds
   // to our EventEmitter rather than throwing on undefined BareKit.
-  bare = require('../../../src/bare.js')
+  bare = require('../../vendor/src/bare.js')
 
   // active-win is required lazily so unit tests can run without the native
   // prebuild and so a missing module degrades to "no enforcement" rather than
@@ -486,6 +550,7 @@ app.whenReady().then(() => {
     }
 
     createWindow()
+    createTray()
     // Flush any buffered events to the renderer once it's loaded.
     mainWindow.webContents.once('did-finish-load', () => {
       for (const ev of bufferedEvents) {
@@ -539,6 +604,7 @@ function stopUsageFlushTimer() {
 }
 
 app.on('before-quit', () => {
+  isQuitting = true
   stopUsageFlushTimer()
   // Close the active session so its seconds land in takeSessions() before we
   // try to flush one last time.
@@ -546,11 +612,7 @@ app.on('before-quit', () => {
   flushUsageOnce()
 })
 
-app.on('window-all-closed', () => {
-  // On Windows the child app should stay running in the background for
-  // enforcement. For Phase 1 we quit on window close; watchdog arrives in
-  // Phase 5.
-  if (enforcement) enforcement.stop()
-  stopUsageFlushTimer()
-  if (process.platform !== 'darwin') app.quit()
-})
+// No window-all-closed handler: the main window's close event is intercepted
+// to hide instead of destroy, so this would only fire if something explicitly
+// destroyed the window. Even then, we want the process to survive so tray
+// menu + enforcement stay alive. An explicit quit path goes through the tray.

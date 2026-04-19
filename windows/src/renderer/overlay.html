@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'; font-src 'self';">
+  <title>PearGuard</title>
+  <style>
+    @font-face {
+      font-family: 'Nunito';
+      font-weight: 300;
+      src: url('./fonts/Nunito-Light.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Nunito';
+      font-weight: 400;
+      src: url('./fonts/Nunito-Regular.woff2') format('woff2');
+    }
+    :root {
+      color-scheme: dark;
+      --bg: #0D0D0D;
+      --card: #1A1A1A;
+      --elevated: #252525;
+      --input: #333333;
+      --border: #333333;
+      --divider: #2A2A2A;
+      --fg: #F0F0F0;
+      --muted: #A0A0A0;
+      --dim: #666666;
+      --primary: #4CAF50;
+      --primary-light: #81C784;
+      --danger: #EF5350;
+      --success: #66BB6A;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .card {
+      width: min(560px, 92vw);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 36px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .logo {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 20px;
+      display: block;
+      border-radius: 16px;
+    }
+    .app-name {
+      font-size: 20px;
+      font-weight: 300;
+      margin: 0 0 8px;
+      color: var(--fg);
+    }
+    .reason {
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--muted);
+      margin: 0 0 28px;
+      line-height: 1.5;
+    }
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    button {
+      font-family: inherit;
+      font-size: 16px;
+      font-weight: 400;
+      padding: 14px 18px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--elevated);
+      color: var(--fg);
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    button:hover { background: var(--input); }
+    button.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #0D0D0D;
+      font-weight: 400;
+    }
+    button.primary:hover { background: var(--primary-light); border-color: var(--primary-light); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .time-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .time-grid button { padding: 12px; }
+    .pin-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .pin-row input {
+      flex: 1;
+      padding: 14px;
+      font-size: 18px;
+      font-family: inherit;
+      letter-spacing: 6px;
+      text-align: center;
+      background: var(--input);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .pin-row input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .status {
+      font-size: 12px;
+      margin-top: 14px;
+      min-height: 16px;
+      color: var(--muted);
+    }
+    .status.error { color: var(--danger); }
+    .status.ok { color: var(--primary); }
+    .hidden { display: none !important; }
+    .back {
+      background: transparent;
+      color: var(--dim);
+      border: none;
+      padding: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .back:hover { color: var(--muted); background: transparent; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="./pearguard-logo.png" alt="PearGuard">
+    <p class="app-name" id="app-name">App blocked</p>
+    <p class="reason" id="reason">This app is blocked.</p>
+
+    <div id="main-actions" class="actions">
+      <button id="btn-request" class="primary">Request More Time</button>
+      <button id="btn-pin">Enter PIN</button>
+    </div>
+
+    <div id="time-actions" class="actions hidden">
+      <div class="time-grid" id="time-grid"></div>
+      <button class="back" id="time-back">Cancel</button>
+      <div class="status" id="time-status"></div>
+    </div>
+
+    <div id="pin-actions" class="actions hidden">
+      <div class="pin-row">
+        <input id="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="off" />
+        <button id="btn-pin-submit" class="primary">Unlock</button>
+      </div>
+      <button class="back" id="pin-back">Cancel</button>
+      <div class="status" id="pin-status"></div>
+    </div>
+  </div>
+
+  <script src="overlay-renderer.js"></script>
+</body>
+</html>

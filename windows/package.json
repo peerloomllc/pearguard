@@ -1,0 +1,64 @@
+{
+  "name": "pearguard-windows",
+  "version": "0.1.0",
+  "description": "PearGuard Windows desktop child client",
+  "private": true,
+  "main": "src/main/index.js",
+  "scripts": {
+    "prepack": "node scripts/prepack.js",
+    "postinstall": "node scripts/prepack.js",
+    "start": "electron .",
+    "test:enforcement": "node tests/enforcement.smoke.js",
+    "rebuild": "electron-rebuild",
+    "build": "node scripts/prepack.js && electron-builder --win",
+    "dist": "npm run build"
+  },
+  "dependencies": {
+    "active-win": "^8.2.1",
+    "b4a": "^1.8.0",
+    "hyperbee": "^2.27.3",
+    "hypercore": "^11.26.0",
+    "hypercore-errors": "^1.5.0",
+    "hyperdht": "^6.29.0",
+    "hyperswarm": "^4.17.0",
+    "sodium-native": "^4.3.3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.peerloomllc.pearguard",
+    "productName": "PearGuard",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "vendor/**/*",
+      "build/icon.ico",
+      "package.json",
+      "!**/*.test.js",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples,docs,doc,.bin}"
+    ],
+    "extraResources": [
+      { "from": "build/watchdog.vbs", "to": "watchdog.vbs" }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh"
+    }
+  }
+}

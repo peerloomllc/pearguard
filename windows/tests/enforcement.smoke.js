@@ -17,6 +17,7 @@ const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcem
 const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, parseAndShape, parseUwpAndShape, parseShortcutMap, parseMsixExeMap, mergeRows } = require('../src/enforcement/apps-enumerator')
 const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
+const { TamperDetector, STALE_MS } = require('../src/main/tamper-detector')
 
 const tests = []
 function test(name, fn) { tests.push({ name, fn }) }
@@ -1557,6 +1558,76 @@ test('enumerateInstalledApps leaves iconBase64 undefined when extraction returns
   const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
   assert.strictEqual(apps.length, 1)
   assert.strictEqual(apps[0].iconBase64, undefined)
+})
+
+// --- TamperDetector ------------------------------------------------------
+
+function makeTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'pg-tamper-'))
+}
+
+test('TamperDetector first run reports no tamper (no prior state file)', () => {
+  const dir = makeTempDir()
+  let fired = null
+  const td = new TamperDetector({ userDataDir: dir, onTamper: (r) => { fired = r }, now: () => 1000 })
+  const result = td.checkOnStartup()
+  assert.strictEqual(result.tampered, false)
+  assert.strictEqual(fired, null)
+  const state = JSON.parse(fs.readFileSync(path.join(dir, 'runtime-state.json'), 'utf8'))
+  assert.strictEqual(state.cleanQuit, false)
+  assert.strictEqual(state.lastHeartbeat, 1000)
+})
+
+test('TamperDetector clean quit on prior session → no tamper', () => {
+  const dir = makeTempDir()
+  fs.writeFileSync(path.join(dir, 'runtime-state.json'), JSON.stringify({ cleanQuit: true, lastHeartbeat: 500 }))
+  let fired = null
+  const td = new TamperDetector({ userDataDir: dir, onTamper: (r) => { fired = r }, now: () => 1000 })
+  const result = td.checkOnStartup()
+  assert.strictEqual(result.tampered, false)
+  assert.strictEqual(fired, null)
+})
+
+test('TamperDetector recent heartbeat + no clean quit → tamper fires', () => {
+  const dir = makeTempDir()
+  fs.writeFileSync(path.join(dir, 'runtime-state.json'), JSON.stringify({ cleanQuit: false, lastHeartbeat: 500 }))
+  let fired = null
+  const td = new TamperDetector({ userDataDir: dir, onTamper: (r) => { fired = r }, now: () => 1000 })
+  const result = td.checkOnStartup()
+  assert.strictEqual(result.tampered, true)
+  assert.strictEqual(result.reason, 'force_stopped')
+  assert.ok(fired !== null)
+  assert.strictEqual(fired.reason, 'force_stopped')
+})
+
+test('TamperDetector stale heartbeat (beyond window) → no tamper', () => {
+  const dir = makeTempDir()
+  const start = 10_000_000
+  fs.writeFileSync(path.join(dir, 'runtime-state.json'), JSON.stringify({ cleanQuit: false, lastHeartbeat: start }))
+  let fired = null
+  const td = new TamperDetector({ userDataDir: dir, onTamper: (r) => { fired = r }, now: () => start + STALE_MS + 1 })
+  const result = td.checkOnStartup()
+  assert.strictEqual(result.tampered, false)
+  assert.strictEqual(fired, null)
+})
+
+test('TamperDetector markCleanQuit persists cleanQuit=true', () => {
+  const dir = makeTempDir()
+  const td = new TamperDetector({ userDataDir: dir, onTamper: () => {}, now: () => 2000 })
+  td.checkOnStartup()
+  td.markCleanQuit()
+  const state = JSON.parse(fs.readFileSync(path.join(dir, 'runtime-state.json'), 'utf8'))
+  assert.strictEqual(state.cleanQuit, true)
+})
+
+test('TamperDetector corrupt state file is ignored (no tamper fire)', () => {
+  const dir = makeTempDir()
+  fs.writeFileSync(path.join(dir, 'runtime-state.json'), '{ not json')
+  let fired = null
+  const td = new TamperDetector({ userDataDir: dir, onTamper: (r) => { fired = r }, now: () => 1000 })
+  const result = td.checkOnStartup()
+  assert.strictEqual(result.tampered, false)
+  assert.strictEqual(fired, null)
 })
 
 // --- Runner --------------------------------------------------------------

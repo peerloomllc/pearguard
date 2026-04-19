@@ -55,6 +55,7 @@ const { DEFAULT_MAP } = require('../enforcement/exe-map')
 const { SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
 const { OverlayManager } = require('./overlay')
 const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
+const { TamperDetector } = require('./tamper-detector')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's 60s UsageFlushAlarm cadence.
@@ -75,6 +76,7 @@ let pendingCalls = new Map()  // id -> { resolve, reject }
 let nextId = 1
 let enforcement = null  // lazily constructed in app.whenReady so tests can stub active-win
 let usageFlushTimer = null
+let tamperDetector = null
 
 // Install the BareKit shim BEFORE requiring bare.js so its module-top
 // `BareKit.IPC.on('data', ...)` binds to our EventEmitter.
@@ -580,6 +582,29 @@ app.whenReady().then(() => {
       enforcement.start()
       startUsageFlushTimer()
     }
+
+    // Tamper detection: compare the previous runtime-state marker against
+    // now; if we were killed (no clean-quit flag, recent heartbeat), tell
+    // bare so it logs an alert and notifies every paired parent. Must run
+    // after bare is ready so callBare resolves. Skip during smoke runs so
+    // the state file doesn't accumulate spurious markers.
+    if (!process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
+      try {
+        tamperDetector = new TamperDetector({
+          userDataDir: dataDir,
+          onTamper: ({ reason, age }) => {
+            console.warn('[main] tamper detected:', reason, 'heartbeat age ms:', age)
+            callBare('bypass:detected', { reason }).catch((e) => {
+              console.warn('[main] bypass:detected dispatch failed:', e.message)
+            })
+          },
+        })
+        tamperDetector.checkOnStartup()
+        tamperDetector.startHeartbeat()
+      } catch (e) {
+        console.warn('[main] tamper detector init failed:', e.message)
+      }
+    }
   }
 
   if (bareReady) onReady()
@@ -624,6 +649,9 @@ app.on('before-quit', () => {
   // try to flush one last time.
   if (enforcement) enforcement.usage.endActive()
   flushUsageOnce()
+  // Stamp the runtime-state file so the next launch knows this was a clean
+  // quit (user chose Quit from tray / system shutdown) rather than a kill.
+  if (tamperDetector) tamperDetector.markCleanQuit()
 })
 
 // No window-all-closed handler: the main window's close event is intercepted

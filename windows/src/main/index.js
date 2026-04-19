@@ -54,6 +54,7 @@ const { extractWin32Icons } = require('../enforcement/icon-extractor')
 const { DEFAULT_MAP } = require('../enforcement/exe-map')
 const { SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
 const { OverlayManager } = require('./overlay')
+const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's 60s UsageFlushAlarm cadence.
@@ -395,6 +396,19 @@ app.whenReady().then(() => {
   // === false) skip this so running `npm start` doesn't register the dev binary.
   if (app.isPackaged) {
     app.setLoginItemSettings({ openAtLogin: true })
+  }
+
+  // Watchdog: register a scheduled task that relaunches PearGuard every two
+  // minutes if it isn't running. Registering from the app (rather than NSIS)
+  // means the task runs under the interactive user's account, so the relaunched
+  // process is visible in their session. Re-registered on every startup so a
+  // deleted task comes back as soon as the child opens the app.
+  if (app.isPackaged && process.platform === 'win32') {
+    const vbsPath = path.join(process.resourcesPath, 'watchdog.vbs')
+    ensureWatchdogRegistered(vbsPath).then(
+      ({ created }) => { if (created) console.log('[main] watchdog scheduled task registered') },
+      (e) => console.warn('[main] watchdog register failed:', e.message)
+    )
   }
 
   // Load bare AFTER shim is installed so its module-top IPC.on('data') binds

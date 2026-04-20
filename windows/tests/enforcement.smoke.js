@@ -1106,10 +1106,10 @@ withSodium('verifyPin: wrong pin → wrong-pin', () => {
   assert.deepStrictEqual(r, { ok: false, reason: 'wrong-pin' })
 })
 
-withSodium('verifyPinAndGrant applies override and re-evaluates', async () => {
-  // Repro for the second VM-test bug: PIN entry showed "No PIN set on this
-  // device" because bare's pin:verify only checked legacy policy.pinHash,
-  // which is stripped on the child. We verify locally instead.
+withSodium('verifyPinOnly + applyPinOverride applies kid-chosen duration', async () => {
+  // The PIN flow is split so the kid picks a duration post-verify, matching
+  // Android's AppBlockerModule picker. verifyPinOnly marks the controller
+  // verified without granting; applyPinOverride consumes that state.
   const fakeActiveWin = async () => ({
     owner: { path: 'C:\\Games\\Roblox\\RobloxPlayerBeta.exe', processId: 1, name: 'roblox' },
     title: 'Roblox',
@@ -1126,13 +1126,17 @@ withSodium('verifyPinAndGrant applies override and re-evaluates', async () => {
   const hash = hashPin(sodium, '1234')
   const p = policy()
   p.pinHashes = { 'parent-A': hash }
-  p.overrideDurationSeconds = 1800
   controller.setPolicyJson(JSON.stringify(p))
   controller.start()
   await new Promise(r => setTimeout(r, 20))
   assert.strictEqual(overlay.shows.length, 1)
 
-  const result = controller.verifyPinAndGrant({ pin: '1234', packageName: 'com.roblox.client' })
+  const verify = controller.verifyPinOnly({ pin: '1234' })
+  assert.strictEqual(verify.ok, true)
+  // No grant yet — overlay still shown.
+  assert.strictEqual(overlay.hides, 0)
+
+  const result = controller.applyPinOverride({ packageName: 'com.roblox.client', durationSeconds: 1800 })
   assert.strictEqual(result.ok, true)
   assert.strictEqual(result.durationSeconds, 1800)
   assert.ok(result.expiresAt > Date.now())
@@ -1141,7 +1145,7 @@ withSodium('verifyPinAndGrant applies override and re-evaluates', async () => {
   controller.stop()
 })
 
-withSodium('verifyPinAndGrant rejects wrong pin without granting', async () => {
+withSodium('verifyPinOnly rejects wrong pin and leaves verified-state empty', async () => {
   const fakeActiveWin = async () => ({
     owner: { path: 'C:\\Games\\Roblox\\RobloxPlayerBeta.exe', processId: 1, name: 'roblox' },
     title: 'Roblox',
@@ -1161,13 +1165,17 @@ withSodium('verifyPinAndGrant rejects wrong pin without granting', async () => {
   controller.start()
   await new Promise(r => setTimeout(r, 20))
 
-  const result = controller.verifyPinAndGrant({ pin: '0000', packageName: 'com.roblox.client' })
-  assert.deepStrictEqual(result, { ok: false, reason: 'wrong-pin' })
+  const verify = controller.verifyPinOnly({ pin: '0000' })
+  assert.deepStrictEqual(verify, { ok: false, reason: 'wrong-pin' })
+
+  // applyPinOverride should refuse — no PIN was verified.
+  const apply = controller.applyPinOverride({ packageName: 'com.roblox.client', durationSeconds: 1800 })
+  assert.deepStrictEqual(apply, { ok: false, reason: 'pin-not-verified' })
   assert.strictEqual(overlay.hides, 0)
   controller.stop()
 })
 
-test('verifyPinAndGrant without sodium → no-sodium', () => {
+test('verifyPinOnly without sodium → no-sodium', () => {
   const controller = new EnforcementController({
     activeWin: async () => null,
     intervalMs: 5,
@@ -1176,8 +1184,57 @@ test('verifyPinAndGrant without sodium → no-sodium', () => {
     sodium: null,
     logger: { log() {}, warn() {} },
   })
-  const r = controller.verifyPinAndGrant({ pin: '1234', packageName: 'com.foo' })
+  const r = controller.verifyPinOnly({ pin: '1234' })
   assert.deepStrictEqual(r, { ok: false, reason: 'no-sodium' })
+})
+
+withSodium('applyPinOverride rejects duration not in allowlist', async () => {
+  const overlay = makeFakeOverlay()
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    intervalMs: 5,
+    overridesStore: new OverridesStore({ filePath: null }),
+    overlay,
+    sodium,
+    logger: { log() {}, warn() {} },
+  })
+  const p = policy()
+  p.pinHashes = { 'parent-A': hashPin(sodium, '1234') }
+  controller.setPolicyJson(JSON.stringify(p))
+
+  assert.strictEqual(controller.verifyPinOnly({ pin: '1234' }).ok, true)
+  // 999s is not one of the default [900,1800,3600,7200].
+  const r = controller.applyPinOverride({ packageName: 'com.foo', durationSeconds: 999 })
+  assert.deepStrictEqual(r, { ok: false, reason: 'invalid-duration' })
+})
+
+const { getAllowedPinDurationSeconds } = require('../src/enforcement')
+
+test('getAllowedPinDurationSeconds: defaults when policy has no timeRequestMinutes', () => {
+  assert.deepStrictEqual(getAllowedPinDurationSeconds({}), [900, 1800, 3600, 7200])
+})
+
+test('getAllowedPinDurationSeconds: honors policy.settings.timeRequestMinutes', () => {
+  const r = getAllowedPinDurationSeconds({ settings: { timeRequestMinutes: [10, 20, 60] } })
+  assert.deepStrictEqual(r, [600, 1200, 3600])
+})
+
+test('getAllowedPinDurationSeconds: dedupes and drops bad entries', () => {
+  const r = getAllowedPinDurationSeconds({ settings: { timeRequestMinutes: [15, 15, 0, -5, 'bad', 30] } })
+  assert.deepStrictEqual(r, [900, 1800])
+})
+
+test('controller.getPinDurationSeconds returns allowlist', () => {
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    intervalMs: 5,
+    overridesStore: new OverridesStore({ filePath: null }),
+    overlay: makeFakeOverlay(),
+    sodium: null,
+    logger: { log() {}, warn() {} },
+  })
+  controller.setPolicyJson(JSON.stringify({ ...policy(), settings: { timeRequestMinutes: [15, 30] } }))
+  assert.deepStrictEqual(controller.getPinDurationSeconds(), [900, 1800])
 })
 
 // --- ForegroundMonitor first-sighting dedupe -----------------------------

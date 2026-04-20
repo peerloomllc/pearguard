@@ -26,6 +26,9 @@ class OverlayManager extends EventEmitter {
     ipcMain.on('overlay:verify-pin', (_e, payload) => {
       this.emit('verify-pin', payload)
     })
+    ipcMain.on('overlay:apply-pin-override', (_e, payload) => {
+      this.emit('apply-pin-override', payload)
+    })
   }
 
   // payload: { packageName, appName, reason, category }

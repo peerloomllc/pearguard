@@ -504,9 +504,10 @@ app.whenReady().then(() => {
       }
     })
 
-    // Forward overlay button clicks to bare. The grant returned by pin:verify
-    // arrives back through `native:grantOverride`, which is already wired to
-    // controller.applyGrant — that re-evaluates and dismisses the overlay.
+    // Forward overlay button clicks. Time-request grants come back from the
+    // parent via `native:grantOverride`, which is already wired to
+    // controller.applyGrant. PIN overrides apply locally inside
+    // enforcement.applyPinOverride once the kid picks a duration.
     overlay.on('request-time', async (payload) => {
       try {
         await callBare('time:request', payload)
@@ -520,10 +521,27 @@ app.whenReady().then(() => {
       // stripped on the child by handlePolicyUpdate. Verify locally against
       // the per-parent pinHashes map (mirroring AppBlockerModule on Android),
       // then route a pin:used audit through bare for parent-side logging.
-      const { pin, packageName } = payload || {}
-      const result = enforcement.verifyPinAndGrant({ pin, packageName })
+      const { pin } = payload || {}
+      const result = enforcement.verifyPinOnly({ pin })
       if (result.ok) {
-        overlay.notifyResult('overlay:pin-verify-result', { ok: true })
+        overlay.notifyResult('overlay:pin-verify-result', {
+          ok: true,
+          durationSeconds: enforcement.getPinDurationSeconds(),
+        })
+      } else {
+        const reason = result.reason === 'wrong-pin' ? 'Wrong PIN.'
+          : result.reason === 'no-pin' ? 'No PIN set on this device.'
+          : result.reason === 'no-policy' ? 'Policy not loaded yet.'
+          : result.reason === 'no-sodium' ? 'PIN verification unavailable.'
+          : 'Could not verify PIN.'
+        overlay.notifyResult('overlay:pin-verify-result', { ok: false, error: reason })
+      }
+    })
+    overlay.on('apply-pin-override', async (payload) => {
+      const { packageName, durationSeconds } = payload || {}
+      const result = enforcement.applyPinOverride({ packageName, durationSeconds })
+      if (result.ok) {
+        overlay.notifyResult('overlay:pin-override-result', { ok: true })
         try {
           await callBare('pin:used', {
             packageName: packageName || null,
@@ -534,12 +552,10 @@ app.whenReady().then(() => {
           console.warn('[main] pin:used audit relay failed:', e.message)
         }
       } else {
-        const reason = result.reason === 'wrong-pin' ? 'Wrong PIN.'
-          : result.reason === 'no-pin' ? 'No PIN set on this device.'
-          : result.reason === 'no-policy' ? 'Policy not loaded yet.'
-          : result.reason === 'no-sodium' ? 'PIN verification unavailable.'
-          : 'Could not verify PIN.'
-        overlay.notifyResult('overlay:pin-verify-result', { ok: false, error: reason })
+        const reason = result.reason === 'pin-not-verified' ? 'PIN verification expired. Try again.'
+          : result.reason === 'invalid-duration' ? 'Unsupported duration.'
+          : 'Could not apply override.'
+        overlay.notifyResult('overlay:pin-override-result', { ok: false, error: reason })
       }
     })
   } catch (e) {

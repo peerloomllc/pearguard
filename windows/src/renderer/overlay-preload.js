@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld('overlay', {
   onPinVerifyResult: (cb) => {
     ipcRenderer.on('overlay:pin-verify-result', (_e, result) => cb(result))
   },
+  onPinOverrideResult: (cb) => {
+    ipcRenderer.on('overlay:pin-override-result', (_e, result) => cb(result))
+  },
   requestTime: (payload) => ipcRenderer.send('overlay:request-time', payload),
   verifyPin: (payload) => ipcRenderer.send('overlay:verify-pin', payload),
+  applyPinOverride: (payload) => ipcRenderer.send('overlay:apply-pin-override', payload),
 })

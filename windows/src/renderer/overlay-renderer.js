@@ -14,10 +14,15 @@ const els = {
   pinSubmit: document.getElementById('btn-pin-submit'),
   pinStatus: document.getElementById('pin-status'),
   pinBack: document.getElementById('pin-back'),
+  pinDuration: document.getElementById('pin-duration-actions'),
+  pinDurationGrid: document.getElementById('pin-duration-grid'),
+  pinDurationStatus: document.getElementById('pin-duration-status'),
+  pinDurationBack: document.getElementById('pin-duration-back'),
   btnRequest: document.getElementById('btn-request'),
   btnPin: document.getElementById('btn-pin'),
 }
 
+// Time-request grid defaults (asking parent for more time).
 const DEFAULT_TIME_OPTIONS = [15, 30, 60, 120]
 let current = null  // { packageName, appName, reason, category, timeRequestMinutes? }
 
@@ -25,6 +30,7 @@ function showView(view) {
   els.main.classList.toggle('hidden', view !== 'main')
   els.time.classList.toggle('hidden', view !== 'time')
   els.pin.classList.toggle('hidden', view !== 'pin')
+  els.pinDuration.classList.toggle('hidden', view !== 'pin-duration')
   if (view === 'pin') {
     els.pinInput.value = ''
     els.pinStatus.textContent = ''
@@ -34,6 +40,10 @@ function showView(view) {
   if (view === 'time') {
     els.timeStatus.textContent = ''
     els.timeStatus.className = 'status'
+  }
+  if (view === 'pin-duration') {
+    els.pinDurationStatus.textContent = ''
+    els.pinDurationStatus.className = 'status'
   }
 }
 
@@ -121,9 +131,8 @@ window.overlay.onTimeRequestResult((result) => {
 
 window.overlay.onPinVerifyResult((result) => {
   if (result.ok) {
-    els.pinStatus.textContent = 'Unlocked.'
-    els.pinStatus.className = 'status ok'
-    // Overlay will be dismissed by main once the grant is applied.
+    renderPinDurationGrid(result.durationSeconds)
+    showView('pin-duration')
   } else {
     els.pinStatus.textContent = result.error || 'Wrong PIN.'
     els.pinStatus.className = 'status error'
@@ -132,6 +141,48 @@ window.overlay.onPinVerifyResult((result) => {
     els.pinInput.focus()
   }
 })
+
+window.overlay.onPinOverrideResult((result) => {
+  if (result.ok) {
+    els.pinDurationStatus.textContent = 'Unlocked.'
+    els.pinDurationStatus.className = 'status ok'
+  } else {
+    els.pinDurationStatus.textContent = result.error || 'Could not apply override.'
+    els.pinDurationStatus.className = 'status error'
+    for (const b of els.pinDurationGrid.querySelectorAll('button')) b.disabled = false
+  }
+})
+
+function renderPinDurationGrid(seconds) {
+  els.pinDurationGrid.innerHTML = ''
+  const options = Array.isArray(seconds) && seconds.length ? seconds : [900, 1800, 3600, 7200]
+  for (const s of options) {
+    const btn = document.createElement('button')
+    btn.textContent = formatDuration(s)
+    btn.addEventListener('click', () => sendPinOverride(s))
+    els.pinDurationGrid.appendChild(btn)
+  }
+}
+
+function formatDuration(seconds) {
+  const mins = Math.round(seconds / 60)
+  if (mins >= 60 && mins % 60 === 0) {
+    const h = mins / 60
+    return h + (h === 1 ? ' hour' : ' hours')
+  }
+  return mins + ' min'
+}
+
+function sendPinOverride(durationSeconds) {
+  if (!current) return
+  for (const b of els.pinDurationGrid.querySelectorAll('button')) b.disabled = true
+  els.pinDurationStatus.textContent = 'Applying...'
+  els.pinDurationStatus.className = 'status'
+  window.overlay.applyPinOverride({
+    packageName: current.packageName,
+    durationSeconds,
+  })
+}
 
 els.btnRequest.addEventListener('click', () => {
   if (current && current.category === 'status') {
@@ -144,6 +195,7 @@ els.btnRequest.addEventListener('click', () => {
 els.btnPin.addEventListener('click', () => showView('pin'))
 els.timeBack.addEventListener('click', () => showView('main'))
 els.pinBack.addEventListener('click', () => showView('main'))
+els.pinDurationBack.addEventListener('click', () => showView('main'))
 
 els.pinSubmit.addEventListener('click', () => {
   const pin = (els.pinInput.value || '').trim()

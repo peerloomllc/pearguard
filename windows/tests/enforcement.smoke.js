@@ -19,6 +19,10 @@ const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, pa
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 const { TamperDetector, STALE_MS } = require('../src/main/tamper-detector')
 const { WarningChecker, DEFAULT_WARNING_THRESHOLDS_MIN, GRACE_WINDOW_SECONDS } = require('../src/enforcement/warning-checker')
+const { parseVdf, scanSteam, isBlacklisted } = require('../src/enforcement/launchers/steam')
+const { scanEpic } = require('../src/enforcement/launchers/epic')
+const { enumerateRegistryLaunchers, buildUbisoftRow, buildEaRow, buildOriginRow, buildGogRow, extractExeFromDisplayIcon } = require('../src/enforcement/launchers/registry-scanner')
+const { enumerateLauncherApps } = require('../src/enforcement/launchers')
 
 const tests = []
 function test(name, fn) { tests.push({ name, fn }) }
@@ -1579,6 +1583,9 @@ test('enumerateInstalledApps attaches iconBase64 to registry rows', async () => 
     if (script.includes('Get-AppxPackage')) {
       return JSON.stringify([])
     }
+    if (script.includes('Valve') || script.includes('Ubisoft') || script.includes('Ubisoft') || script.includes('GOG.com') || script.includes('Electronic Arts') || script.includes('Origin Games')) {
+      return ''
+    }
     throw new Error('unexpected script: ' + script.slice(0, 40))
   }
   const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
@@ -1597,6 +1604,9 @@ test('enumerateInstalledApps attaches iconBase64 to UWP rows via family', async 
     if (script.includes('ExtractAssociatedIcon')) return JSON.stringify([])
     if (script.includes('Get-AppxPackage')) {
       return JSON.stringify([{ family: 'Microsoft.XboxApp_8wekyb3d8bbwe', icon: 'WGJveC1pY29u' }])
+    }
+    if (script.includes('Valve') || script.includes('Ubisoft') || script.includes('GOG.com') || script.includes('Electronic Arts') || script.includes('Origin Games')) {
+      return ''
     }
     throw new Error('unexpected script')
   }
@@ -1940,6 +1950,309 @@ test('EnforcementController emits warning events when checker returns events', (
   assert.strictEqual(fired.length, 1)
   assert.strictEqual(fired[0].kind, 'schedule')
   assert.strictEqual(fired[0].threshold, 10)
+})
+
+// --- Launcher scanners ---------------------------------------------------
+
+test('parseVdf parses flat key-value pairs', () => {
+  const text = '"AppState" { "appid" "391540" "name" "UNDERTALE" "installdir" "Undertale" }'
+  const tree = parseVdf(text)
+  assert.strictEqual(tree.AppState.appid, '391540')
+  assert.strictEqual(tree.AppState.name, 'UNDERTALE')
+  assert.strictEqual(tree.AppState.installdir, 'Undertale')
+})
+
+test('parseVdf parses nested objects', () => {
+  const text = '"libraryfolders" { "0" { "path" "C:\\\\Steam" } "1" { "path" "D:\\\\SteamLib" } }'
+  const tree = parseVdf(text)
+  assert.strictEqual(tree.libraryfolders['0'].path, 'C:\\Steam')
+  assert.strictEqual(tree.libraryfolders['1'].path, 'D:\\SteamLib')
+})
+
+test('parseVdf handles escape sequences', () => {
+  const text = '"root" { "message" "line1\\nline2" "quote" "he said \\"hi\\"" }'
+  const tree = parseVdf(text)
+  assert.strictEqual(tree.root.message, 'line1\nline2')
+  assert.strictEqual(tree.root.quote, 'he said "hi"')
+})
+
+test('parseVdf skips // comments', () => {
+  const text = '// top comment\n"root" { // inline\n "k" "v" }'
+  const tree = parseVdf(text)
+  assert.strictEqual(tree.root.k, 'v')
+})
+
+test('isBlacklisted catches installers and redistributables', () => {
+  assert.strictEqual(isBlacklisted('unins000.exe'), true)
+  assert.strictEqual(isBlacklisted('UnityCrashHandler64.exe'), true)
+  assert.strictEqual(isBlacklisted('vc_redist.x64.exe'), true)
+  assert.strictEqual(isBlacklisted('UE4PrereqSetup_x64.exe'), true)
+  assert.strictEqual(isBlacklisted('undertale.exe'), false)
+  assert.strictEqual(isBlacklisted('Game.exe'), false)
+})
+
+test('scanSteam returns empty when SteamPath is missing', async () => {
+  const fakeExec = async () => ''
+  const rows = await scanSteam({ exec: fakeExec, fs: { readFile: async () => { throw new Error('ENOENT') } }, logger: { warn() {}, log() {} } })
+  assert.deepStrictEqual(rows, [])
+})
+
+test('scanSteam discovers a game from fixture library + manifest', async () => {
+  const STEAM = 'C:\\Steam'
+  const libraryfolders = `
+"libraryfolders"
+{
+  "0"
+  {
+    "path"    "C:\\\\Steam"
+  }
+  "1"
+  {
+    "path"    "D:\\\\SteamLibrary"
+  }
+}`
+  const manifest = `
+"AppState"
+{
+  "appid"        "391540"
+  "name"         "UNDERTALE"
+  "installdir"   "Undertale"
+}`
+  const files = {
+    'C:\\Steam\\steamapps\\libraryfolders.vdf': libraryfolders,
+    'C:\\Steam\\steamapps\\appmanifest_391540.acf': manifest,
+  }
+  const dirs = {
+    'C:\\Steam\\steamapps': ['appmanifest_391540.acf'],
+    'D:\\SteamLibrary\\steamapps': [],
+    'C:\\Steam\\steamapps\\common\\Undertale': [
+      { name: 'UNDERTALE.exe', isFile: () => true, isDirectory: () => false },
+      { name: 'unins000.exe', isFile: () => true, isDirectory: () => false },
+      { name: 'data', isFile: () => false, isDirectory: () => true },
+    ],
+  }
+  const sizes = {
+    'C:\\Steam\\steamapps\\common\\Undertale\\UNDERTALE.exe': 12_000_000,
+  }
+  const fakeFs = {
+    readFile: async (p) => {
+      if (files[p] !== undefined) return files[p]
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+    },
+    readdir: async (p, opts) => {
+      if (dirs[p] === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      if (opts && opts.withFileTypes) return dirs[p]
+      return dirs[p].map((e) => typeof e === 'string' ? e : e.name)
+    },
+    stat: async (p) => {
+      if (sizes[p] !== undefined) return { size: sizes[p] }
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+    },
+  }
+  const fakeExec = async () => STEAM
+  const rows = await scanSteam({ exec: fakeExec, fs: fakeFs, logger: { warn() {}, log() {} } })
+  assert.strictEqual(rows.length, 1)
+  assert.strictEqual(rows[0].packageName, 'steam.app.391540')
+  assert.strictEqual(rows[0].appName, 'UNDERTALE')
+  assert.strictEqual(rows[0].exeBasename, 'undertale.exe')
+  assert.strictEqual(rows[0].isLauncher, false)
+})
+
+test('scanEpic returns empty when manifest dir is missing', async () => {
+  const fakeFs = { readdir: async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }) }, readFile: async () => '' }
+  const rows = await scanEpic({ fs: fakeFs, env: { ProgramData: 'C:\\ProgramData' }, logger: { warn() {}, log() {} } })
+  assert.deepStrictEqual(rows, [])
+})
+
+test('scanEpic parses a complete manifest', async () => {
+  const manifest = JSON.stringify({
+    DisplayName: 'Fall Guys',
+    LaunchExecutable: 'FallGuys_client.exe',
+    InstallLocation: 'C:\\Epic\\FallGuys',
+    CatalogItemId: '0a2d9f6403244d1b9e2b3f7a9fb9aa80',
+    AppName: '0a2d9f6403244d1b9e2b3f7a9fb9aa80',
+  })
+  const fakeFs = {
+    readdir: async () => ['fallguys.item', 'readme.txt'],
+    readFile: async (p) => {
+      if (/fallguys\.item$/.test(p)) return manifest
+      return ''
+    },
+  }
+  const rows = await scanEpic({ fs: fakeFs, env: { ProgramData: 'C:\\ProgramData' }, logger: { warn() {}, log() {} } })
+  assert.strictEqual(rows.length, 1)
+  assert.strictEqual(rows[0].appName, 'Fall Guys')
+  assert.strictEqual(rows[0].exeBasename, 'fallguys_client.exe')
+  assert.ok(rows[0].packageName.startsWith('epic.app.'))
+})
+
+test('scanEpic skips incomplete installs', async () => {
+  const manifest = JSON.stringify({
+    DisplayName: 'Half Installed',
+    LaunchExecutable: 'game.exe',
+    InstallLocation: 'C:\\Epic\\HalfInstalled',
+    bIsIncompleteInstall: true,
+  })
+  const fakeFs = {
+    readdir: async () => ['bad.item'],
+    readFile: async () => manifest,
+  }
+  const rows = await scanEpic({ fs: fakeFs, env: { ProgramData: 'C:\\ProgramData' }, logger: { warn() {}, log() {} } })
+  assert.deepStrictEqual(rows, [])
+})
+
+test('extractExeFromDisplayIcon parses quoted and indexed forms', () => {
+  assert.strictEqual(extractExeFromDisplayIcon('"C:\\EA\\sims4\\game.exe",0').basename, 'game.exe')
+  assert.strictEqual(extractExeFromDisplayIcon('C:\\EA\\sims4\\game.exe,0').basename, 'game.exe')
+  assert.strictEqual(extractExeFromDisplayIcon('C:\\EA\\sims4\\game.exe').basename, 'game.exe')
+  assert.strictEqual(extractExeFromDisplayIcon('C:\\readme.txt'), null)
+  assert.strictEqual(extractExeFromDisplayIcon(null), null)
+})
+
+test('buildGogRow produces row with stable gog.app.<id> packageName', () => {
+  const row = buildGogRow({
+    source: 'gog',
+    keyName: '1207658924',
+    gameID: '1207658924',
+    gameName: 'Baldur\'s Gate',
+    path: 'C:\\GOG Games\\Baldurs Gate',
+    exeFile: 'BGMain.exe',
+  }, {
+    fs: { statSync: () => ({ isDirectory: () => true, isFile: () => true }) },
+    logger: { warn() {} },
+  })
+  assert.strictEqual(row.packageName, 'gog.app.1207658924')
+  assert.strictEqual(row.appName, "Baldur's Gate")
+  assert.strictEqual(row.exeBasename, 'bgmain.exe')
+})
+
+test('buildGogRow rejects entries whose install dir is gone', () => {
+  const row = buildGogRow({
+    source: 'gog',
+    keyName: '123',
+    gameID: '123',
+    gameName: 'Old Game',
+    path: 'C:\\Stale',
+    exeFile: 'Game.exe',
+  }, {
+    fs: { statSync: () => { throw new Error('ENOENT') } },
+    logger: { warn() {} },
+  })
+  assert.strictEqual(row, null)
+})
+
+test('buildUbisoftRow guesses biggest non-blacklisted exe', () => {
+  const fakeFs = {
+    statSync(p) {
+      if (/\\Game\.exe$/.test(p)) return { size: 50_000_000 }
+      if (/\\tool\.exe$/.test(p)) return { size: 5_000_000 }
+      if (/\\unins000\.exe$/.test(p)) return { size: 1_000 }
+      return { isDirectory: () => true, isFile: () => true }
+    },
+    readdirSync(p, opts) {
+      if (/5595$/.test(p)) return [
+        { name: 'Game.exe', isFile: () => true, isDirectory: () => false },
+        { name: 'tool.exe', isFile: () => true, isDirectory: () => false },
+        { name: 'unins000.exe', isFile: () => true, isDirectory: () => false },
+      ]
+      return []
+    },
+  }
+  const row = buildUbisoftRow({
+    source: 'ubisoft',
+    keyName: '5595',
+    InstallDir: 'C:\\Ubisoft\\5595',
+  }, { fs: fakeFs, logger: { warn() {} } })
+  assert.strictEqual(row.packageName, 'ubisoft.app.5595')
+  assert.strictEqual(row.exeBasename, 'game.exe')
+})
+
+test('enumerateRegistryLaunchers dispatches rows by source tag', async () => {
+  const exec = async () => JSON.stringify([
+    { source: 'gog', keyName: '1', gameID: '1', gameName: 'G', path: 'C:\\G', exeFile: 'g.exe' },
+    { source: 'ubisoft', keyName: 'nope', InstallDir: 'C:\\missing' },
+    { source: 'unknown', keyName: 'x' },
+  ])
+  const fakeFs = {
+    statSync(p) {
+      if (p === 'C:\\G') return { isDirectory: () => true, isFile: () => true }
+      if (p === 'C:\\G\\g.exe') return { isFile: () => true }
+      throw new Error('ENOENT')
+    },
+    readdirSync: () => [],
+  }
+  const rows = await enumerateRegistryLaunchers({ exec, fs: fakeFs, logger: { warn() {} } })
+  assert.strictEqual(rows.length, 1)
+  assert.strictEqual(rows[0].packageName, 'gog.app.1')
+})
+
+test('enumerateLauncherApps returns [] when every scanner fails gracefully', async () => {
+  // No exec provided → registry scanner exits early; default fs finds no
+  // Epic manifests and no Steam libraryfolders.vdf on a non-Windows dev box.
+  const rows = await enumerateLauncherApps({ logger: { log() {}, warn() {} } })
+  assert.ok(Array.isArray(rows))
+  assert.strictEqual(rows.length, 0)
+})
+
+test('mergeRows launcher row wins over win.<slug> matching by appName', () => {
+  const registry = [
+    { packageName: 'win.undertale', appName: 'Undertale', exeBasename: 'undertale.exe', iconBase64: 'WElDT04=' },
+    { packageName: 'win.keep', appName: 'Keep Me', exeBasename: 'keep.exe' },
+  ]
+  const uwp = []
+  const launchers = [
+    { packageName: 'steam.app.391540', appName: 'Undertale', exeBasename: 'undertale.exe' },
+  ]
+  const merged = mergeRows(registry, uwp, launchers)
+  assert.strictEqual(merged.length, 2, 'duplicate win.<slug> absorbed by launcher')
+  const steam = merged.find((r) => r.packageName === 'steam.app.391540')
+  assert.ok(steam)
+  assert.strictEqual(steam.iconBase64, 'WElDT04=', 'registry icon carried over to launcher row')
+  assert.ok(merged.find((r) => r.packageName === 'win.keep'))
+})
+
+test('mergeRows launcher row wins over win.<slug> matching by exeBasename', () => {
+  // Fuzzy-name might miss if the registry display name differs from the
+  // launcher's app name (e.g. "UNDERTALE" vs "Undertale Deluxe Edition"),
+  // but the exe basename still catches the match.
+  const registry = [
+    { packageName: 'win.different_name', appName: 'Game (Steam Edition)', exeBasename: 'undertale.exe' },
+  ]
+  const launchers = [
+    { packageName: 'steam.app.391540', appName: 'UNDERTALE', exeBasename: 'undertale.exe' },
+  ]
+  const merged = mergeRows(registry, [], launchers)
+  assert.strictEqual(merged.length, 1)
+  assert.strictEqual(merged[0].packageName, 'steam.app.391540')
+})
+
+test('mergeRows keeps uncontested launcher rows', () => {
+  const launchers = [
+    { packageName: 'steam.app.1', appName: 'A', exeBasename: 'a.exe' },
+    { packageName: 'epic.app.b', appName: 'B', exeBasename: 'b.exe' },
+  ]
+  const merged = mergeRows([], [], launchers)
+  assert.strictEqual(merged.length, 2)
+})
+
+test('EnforcementController.setPolicyJson re-seeds ExeMap from policy.apps entries', () => {
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    overridesStore: new OverridesStore({ filePath: null }),
+    logger: { log() {}, warn() {} },
+  })
+  const json = JSON.stringify({
+    apps: {
+      'steam.app.391540': { status: 'pending', appName: 'UNDERTALE', exeBasename: 'undertale.exe' },
+      'win.noexe': { status: 'allowed', appName: 'No Exe Mapping' },
+    },
+    version: 1,
+  })
+  controller.setPolicyJson(json)
+  assert.strictEqual(
+    controller.exeMap.resolve('C:\\Steam\\steamapps\\common\\Undertale\\UNDERTALE.exe'),
+    'steam.app.391540',
+  )
 })
 
 // --- Runner --------------------------------------------------------------

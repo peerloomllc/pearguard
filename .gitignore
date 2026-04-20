@@ -4,6 +4,8 @@ DONE.md
 scripts/.env
 scripts/release.sh
 scripts/ios-appstore.sh
+scripts/build-windows.sh
+scripts/windows-remote-build.ps1
 .expo/
 # Android build artifacts only — source files are tracked
 android/build/

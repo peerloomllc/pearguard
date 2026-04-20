@@ -720,15 +720,25 @@ function createDispatch (ctx) {
       }
 
       case 'app:installed': {
-        const { packageName, appName, category } = args
+        const { packageName, appName, category, exeBasename, iconBase64 } = args
 
         const raw = await ctx.db.get('policy')
         const policy = raw ? raw.value : { apps: {} }
         if (!policy.apps) policy.apps = {}
 
-        // Mark as pending if not already in policy
+        // Mark as pending if not already in policy. Persisting exeBasename on
+        // the entry lets the child re-seed its in-memory ExeMap from policy at
+        // startup, so block-evaluator can still match the exe after a restart
+        // when seen-exes.json has already deduped away the first-sighting.
         if (!policy.apps[packageName]) {
-          policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: Date.now(), ...(category && { category }) }
+          policy.apps[packageName] = {
+            status: 'pending',
+            appName: appName || packageName,
+            addedAt: Date.now(),
+            ...(category && { category }),
+            ...(exeBasename && { exeBasename }),
+            ...(iconBase64 && { iconBase64 }),
+          }
           await ctx.db.put('policy', policy)
 
           // Notify native enforcement of updated policy
@@ -741,7 +751,7 @@ function createDispatch (ctx) {
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
 
           if (ctx.sendToAllParents) {
-            await ctx.sendToAllParents({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, detectedAt: Date.now() } })
+            await ctx.sendToAllParents({ type: 'app:installed', payload: { packageName, appName: appName || packageName, category, exeBasename, iconBase64, detectedAt: Date.now() } })
           }
         }
 
@@ -1774,7 +1784,7 @@ async function flushMessageQueue (db, writeMessage) {
  * Runs on the PARENT device.
  */
 async function handleIncomingAppInstalled (payload, childPublicKey, db, send, sendToPeer) {
-  const { packageName, appName, iconBase64, category } = payload
+  const { packageName, appName, iconBase64, category, exeBasename } = payload
   if (!packageName) {
     console.warn('[bare] app:installed from child: missing packageName')
     return
@@ -1792,7 +1802,7 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
 
   if (!policy.apps[packageName]) {
     const now = Date.now()
-    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }), ...(category && { category }) }
+    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }), ...(category && { category }), ...(exeBasename && { exeBasename }) }
     policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 

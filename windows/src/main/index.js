@@ -530,6 +530,13 @@ app.whenReady().then(() => {
           fileDescription: fileDescription || '',
           ...(iconBase64 && { iconBase64 }),
         })
+        // Without this, the next foreground tick of the same exe would
+        // resolve to null again (ExeMap is in-memory only, apps:sync is the
+        // only other path that populates it) and block-evaluator would allow
+        // the app regardless of the pending policy entry we just created.
+        if (exeBasename && packageName) {
+          enforcement.exeMap.learn(exeBasename, packageName)
+        }
       } catch (e) {
         console.warn('[main] app:installed first-sighting relay failed:', e.message)
       }

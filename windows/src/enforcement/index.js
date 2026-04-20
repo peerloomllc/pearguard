@@ -75,7 +75,23 @@ class EnforcementController extends EventEmitter {
   }
 
   setPolicyJson(json) {
-    return this.policyCache.setPolicyJson(json)
+    const result = this.policyCache.setPolicyJson(json)
+    // Re-seed ExeMap from the fresh policy. Policy entries carry exeBasename
+    // for apps we learned via first-sighting (see bare-dispatch app:installed
+    // handler); without this pass, a restart where apps:sync hasn't yet
+    // completed would leave those apps unresolvable and the evaluator would
+    // allow them regardless of the pending/blocked status on record.
+    try {
+      const policy = this.policyCache.getPolicy()
+      const apps = policy && policy.apps
+      if (apps) {
+        for (const pkg of Object.keys(apps)) {
+          const entry = apps[pkg]
+          if (entry && entry.exeBasename) this.exeMap.learn(entry.exeBasename, pkg)
+        }
+      }
+    } catch (_e) {}
+    return result
   }
 
   // Apply a grant from native:grantOverride. Re-evaluates the current

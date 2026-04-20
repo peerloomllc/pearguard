@@ -1,6 +1,7 @@
 const { execFile } = require('child_process')
 const { DEFAULT_MAP } = require('./exe-map')
 const { extractWin32Icons, extractUwpIcons } = require('./icon-extractor')
+const { enumerateLauncherApps } = require('./launchers')
 
 // Read installed apps from the three Uninstall registry hives (HKLM, HKLM
 // Wow6432Node, HKCU) via PowerShell. Returns objects shaped like Android's
@@ -163,7 +164,13 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
   const msixExeMap = parseMsixExeMap(msixExeStdout, logger)
   const registryRows = parseAndShape(registryStdout, logger, shortcutMap)
   const uwpRows = parseUwpAndShape(startStdout, logger, msixExeMap)
-  const merged = mergeRows(registryRows, uwpRows)
+  let launcherRows = []
+  try {
+    launcherRows = await enumerateLauncherApps({ exec, logger })
+  } catch (e) {
+    logger.warn('[apps-enumerator] launcher enumeration failed:', e.message)
+  }
+  const merged = mergeRows(registryRows, uwpRows, launcherRows)
 
   // Icon extraction piggybacks on the same PowerShell injector. Icons are
   // best-effort — a failure here leaves iconBase64 undefined on the row and
@@ -193,30 +200,67 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
   }
 
   if (typeof logger.log === 'function') {
-    logger.log('[apps-enumerator] shaped %d registry + %d uwp -> %d unique rows (%d icons)',
-      registryRows.length, uwpRows.length, merged.length, win32Icons.size + uwpIcons.size)
+    logger.log('[apps-enumerator] shaped %d registry + %d uwp + %d launcher -> %d unique rows (%d icons)',
+      registryRows.length, uwpRows.length, launcherRows.length, merged.length, win32Icons.size + uwpIcons.size)
   }
   return merged
 }
 
-// Union two shaped-row lists. Two-pass dedup:
-//   1. packageName-level: if the same packageName appears in both lists,
-//      primary wins (registry rows carry the exe path enforcement needs).
-//   2. Fuzzy-name merge: a UWP row ('uwp.<family>') and a Win32 row
-//      ('win.<slug>' or DEFAULT_MAP'd) with the same normalized display name
-//      are the same app — Calculator ships both a registry Uninstall entry
-//      and a Get-StartApps entry. The UWP ID wins as survivor because it's
-//      globally stable (Store family name), but we absorb the Win32 row's
-//      exeBasename/exePath so a direct-exe launch still resolves via ExeMap.
-function mergeRows(primary, secondary) {
+// Union three shaped-row lists. Passes, in order:
+//   1. Launcher vs registry/UWP: launcher rows carry stable, launcher-native
+//      packageNames like 'steam.app.391540'. If parseAndShape synthesized
+//      a 'win.<slug>' row for the same game (rare — most launcher games
+//      don't register Uninstall entries, but EA/Origin sometimes do), drop
+//      the win.<slug> and keep the launcher row. Carry the registry row's
+//      iconBase64 over if the launcher couldn't extract one.
+//   2. packageName-level: if the same packageName appears in both primary
+//      and secondary, primary wins.
+//   3. Fuzzy-name merge UWP vs Win32: a UWP row ('uwp.<family>') and a Win32
+//      row with the same normalized display name are the same app —
+//      Calculator ships both a registry Uninstall entry and a Get-StartApps
+//      entry. The UWP ID wins as survivor because it's globally stable.
+function mergeRows(primary, secondary, launchers = []) {
+  const launcherRows = Array.isArray(launchers) ? launchers.filter((r) => r && r.packageName) : []
+  const launcherByName = new Map()
+  for (const row of launcherRows) {
+    const n = normalizeDisplayName(row.appName)
+    if (n && !launcherByName.has(n)) launcherByName.set(n, row)
+  }
+  const launcherByBasename = new Map()
+  for (const row of launcherRows) {
+    if (row.exeBasename && !launcherByBasename.has(row.exeBasename)) {
+      launcherByBasename.set(row.exeBasename, row)
+    }
+  }
+  function absorbedByLauncher(row) {
+    if (!row || !row.packageName) return null
+    if (!row.packageName.startsWith('win.')) return null
+    const n = normalizeDisplayName(row.appName)
+    const byName = n ? launcherByName.get(n) : null
+    if (byName) return byName
+    if (row.exeBasename) {
+      const byBase = launcherByBasename.get(row.exeBasename)
+      if (byBase) return byBase
+    }
+    return null
+  }
+
   const byPackage = new Map()
+  for (const row of launcherRows) {
+    byPackage.set(row.packageName, row)
+  }
   for (const row of primary) {
-    if (row && row.packageName) byPackage.set(row.packageName, row)
+    if (!row || !row.packageName) continue
+    const absorbedInto = absorbedByLauncher(row)
+    if (absorbedInto) {
+      if (!absorbedInto.iconBase64 && row.iconBase64) absorbedInto.iconBase64 = row.iconBase64
+      continue
+    }
+    if (!byPackage.has(row.packageName)) byPackage.set(row.packageName, row)
   }
   for (const row of secondary) {
-    if (row && row.packageName && !byPackage.has(row.packageName)) {
-      byPackage.set(row.packageName, row)
-    }
+    if (!row || !row.packageName) continue
+    if (!byPackage.has(row.packageName)) byPackage.set(row.packageName, row)
   }
   const rows = Array.from(byPackage.values())
 

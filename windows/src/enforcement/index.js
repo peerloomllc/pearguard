@@ -1,3 +1,4 @@
+const EventEmitter = require('events')
 const { PolicyCache } = require('./policy-cache')
 const { ExeMap, UWP_HOST_BASENAMES } = require('./exe-map')
 const { ForegroundMonitor } = require('./foreground-monitor')
@@ -5,6 +6,7 @@ const { OverridesStore } = require('./overrides-store')
 const { UsageTracker } = require('./usage-tracker')
 const { evaluate } = require('./block-evaluator')
 const { verifyPin } = require('./pin-verify')
+const { WarningChecker } = require('./warning-checker')
 
 const DEFAULT_OVERRIDE_SECONDS = 3600
 // Matches Android's AppBlockerModule PIN picker (15/30/60/120 min). Used
@@ -19,7 +21,7 @@ const PIN_VERIFY_TTL_MS = 30_000
 // I/O-free: it doesn't open BrowserWindows itself. The host (main/index.js)
 // passes show/hide callbacks for the blocking overlay so the controller stays
 // testable with a fake overlay.
-class EnforcementController {
+class EnforcementController extends EventEmitter {
   constructor({
     activeWin,
     intervalMs,
@@ -29,14 +31,17 @@ class EnforcementController {
     overlay = null,        // { show({packageName, appName, reason, category}), hide() }
     sodium = null,         // sodium-native, optional — required only for PIN verification
     isOwnWindow = null,    // (info) => bool — used to ignore our own electron windows
+    warningChecker = new WarningChecker(),
     logger = console,
   } = {}) {
+    super()
     this._sodium = sodium
     this.policyCache = new PolicyCache()
     this.exeMap = new ExeMap()
     this.overrides = overridesStore
     this.usage = usageTracker
     this.monitor = new ForegroundMonitor({ activeWin, intervalMs, seenExesPath })
+    this._warningChecker = warningChecker
     this._overlay = overlay
     this._isOwnWindow = typeof isOwnWindow === 'function' ? isOwnWindow : () => false
     this._logger = logger
@@ -134,9 +139,28 @@ class EnforcementController {
   start() {
     this.monitor.start()
     if (!this._limitCheckTimer) {
-      this._limitCheckTimer = setInterval(() => this._reevaluateCurrent(), 5000)
+      this._limitCheckTimer = setInterval(() => {
+        this._reevaluateCurrent()
+        this._checkWarnings()
+      }, 5000)
       if (typeof this._limitCheckTimer.unref === 'function') this._limitCheckTimer.unref()
     }
+  }
+
+  // Compute countdown-warning events for the current foreground and policy,
+  // then emit each as a `warning` event. main/index.js subscribes and turns
+  // the event into an Electron toast. Separate method so tests can tick it
+  // without spinning up the 5s timer.
+  _checkWarnings() {
+    const policy = this.policyCache.getPolicy()
+    if (!policy) return
+    const fg = this._lastForeground
+    const events = this._warningChecker.check({
+      policy,
+      foregroundPackage: fg ? fg.packageName : null,
+      getUsageSeconds: this._getUsageSeconds,
+    })
+    for (const ev of events) this.emit('warning', ev)
   }
 
   stop() {

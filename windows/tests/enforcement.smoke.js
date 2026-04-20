@@ -18,6 +18,7 @@ const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, par
 const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 const { TamperDetector, STALE_MS } = require('../src/main/tamper-detector')
+const { WarningChecker, DEFAULT_WARNING_THRESHOLDS_MIN, GRACE_WINDOW_SECONDS } = require('../src/enforcement/warning-checker')
 
 const tests = []
 function test(name, fn) { tests.push({ name, fn }) }
@@ -1685,6 +1686,260 @@ test('TamperDetector corrupt state file is ignored (no tamper fire)', () => {
   const result = td.checkOnStartup()
   assert.strictEqual(result.tampered, false)
   assert.strictEqual(fired, null)
+})
+
+// --- WarningChecker tests ------------------------------------------------
+
+// Thursday 2026-04-16 at local time. Day-of-week 4 matches Android.
+function warningPolicy(extra = {}) {
+  return {
+    schedules: [],
+    apps: {},
+    ...extra,
+  }
+}
+
+test('WarningChecker: returns [] when policy is null', () => {
+  const wc = new WarningChecker({ now: () => THURSDAY_NOON })
+  assert.deepStrictEqual(wc.check({ policy: null, foregroundPackage: null, getUsageSeconds: () => 0 }), [])
+})
+
+test('WarningChecker: default thresholds when policy.settings.warningMinutes missing', () => {
+  assert.deepStrictEqual(DEFAULT_WARNING_THRESHOLDS_MIN, [10, 5, 1])
+})
+
+test('WarningChecker: schedule 10-min warning fires once per day', () => {
+  const scheduleStart = new Date('2026-04-16T13:00:00').getTime()
+  // 10 minutes out exactly, 12:50:00 local
+  const t = scheduleStart - 10 * 60 * 1000
+  let clock = t
+  const wc = new WarningChecker({ now: () => clock })
+  const policy = warningPolicy({
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Homework' }],
+  })
+  const events = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+  assert.strictEqual(events.length, 1)
+  assert.strictEqual(events[0].kind, 'schedule')
+  assert.strictEqual(events[0].threshold, 10)
+  assert.strictEqual(events[0].label, 'Homework')
+  assert.ok(events[0].title.includes('10 minutes'))
+  // Same tick repeated: dedupe keeps it empty.
+  assert.deepStrictEqual(wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 }), [])
+  // 5 seconds later (still inside 6s grace): still deduped.
+  clock += 5000
+  assert.deepStrictEqual(wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 }), [])
+})
+
+test('WarningChecker: schedule hits 10, 5, and 1 thresholds across the hour', () => {
+  const scheduleStart = new Date('2026-04-16T13:00:00').getTime()
+  let clock = scheduleStart - 10 * 60 * 1000  // 12:50
+  const wc = new WarningChecker({ now: () => clock })
+  const policy = warningPolicy({
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Bedtime' }],
+  })
+  const fired = []
+  for (let i = 0; i < 130; i++) {  // ~10.8 min of 5s ticks
+    const events = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+    for (const e of events) fired.push(e.threshold)
+    clock += 5000
+  }
+  assert.deepStrictEqual(fired.sort((a, b) => b - a), [10, 5, 1])
+})
+
+test('WarningChecker: skips schedule on wrong day-of-week', () => {
+  // THURSDAY_NOON is day 4; require day 0 (Sunday) only.
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T12:50:00').getTime() })
+  const policy = warningPolicy({
+    schedules: [{ days: [0], start: '13:00', end: '14:00', label: 'Sunday quiet' }],
+  })
+  assert.deepStrictEqual(wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 }), [])
+})
+
+test('WarningChecker: early-exit skips far-off schedules', () => {
+  // Schedule 2 hours out — no threshold (max 10 min) can fire this tick.
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T12:00:00').getTime() })
+  const policy = warningPolicy({
+    schedules: [{ days: [4], start: '14:00', end: '15:00', label: 'Far' }],
+  })
+  assert.deepStrictEqual(wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 }), [])
+})
+
+test('WarningChecker: limit warning fires for foreground app near expiry', () => {
+  // App has 10 min/day, used 9:55. 5 seconds remaining would be past the
+  // 1-min threshold. Use 4:55 used → 5:05 remaining → inside 5-min window.
+  let clock = new Date('2026-04-16T10:00:00').getTime()
+  const wc = new WarningChecker({ now: () => clock })
+  const policy = warningPolicy({
+    apps: { 'com.roblox.client': { status: 'allowed', appName: 'Roblox', dailyLimitSeconds: 600 } },
+  })
+  // remaining = 600 - used = 298 seconds → inside (300-6, 300] window
+  const events = wc.check({
+    policy,
+    foregroundPackage: 'com.roblox.client',
+    getUsageSeconds: () => 302,
+  })
+  assert.strictEqual(events.length, 1)
+  assert.strictEqual(events[0].kind, 'limit')
+  assert.strictEqual(events[0].threshold, 5)
+  assert.strictEqual(events[0].packageName, 'com.roblox.client')
+  assert.ok(events[0].title.includes('Roblox'))
+  assert.ok(events[0].title.includes('5 minutes'))
+})
+
+test('WarningChecker: limit warning uses 1-minute singular wording', () => {
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T10:00:00').getTime() })
+  const policy = warningPolicy({
+    apps: { 'com.roblox.client': { status: 'allowed', appName: 'Roblox', dailyLimitSeconds: 600 } },
+  })
+  const events = wc.check({
+    policy,
+    foregroundPackage: 'com.roblox.client',
+    getUsageSeconds: () => 600 - 58,  // remaining = 58s → threshold 1 (60-6,60]
+  })
+  assert.strictEqual(events.length, 1)
+  assert.strictEqual(events[0].threshold, 1)
+  assert.ok(events[0].title.includes('1 minute '))
+  assert.ok(!events[0].title.includes('1 minutes'))
+})
+
+test('WarningChecker: no limit warning when no foreground app', () => {
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T10:00:00').getTime() })
+  const policy = warningPolicy({
+    apps: { 'com.roblox.client': { status: 'allowed', appName: 'Roblox', dailyLimitSeconds: 600 } },
+  })
+  assert.deepStrictEqual(wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 298 }), [])
+})
+
+test('WarningChecker: no limit warning for app without dailyLimitSeconds', () => {
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T10:00:00').getTime() })
+  const policy = warningPolicy({
+    apps: { 'com.discord': { status: 'allowed', appName: 'Discord' } },
+  })
+  assert.deepStrictEqual(wc.check({
+    policy, foregroundPackage: 'com.discord', getUsageSeconds: () => 298,
+  }), [])
+})
+
+test('WarningChecker: honors custom policy.settings.warningMinutes', () => {
+  // Policy configures [30, 15] — the 5-min default must NOT fire.
+  const scheduleStart = new Date('2026-04-16T13:00:00').getTime()
+  let clock = scheduleStart - 30 * 60 * 1000  // 30 min out
+  const wc = new WarningChecker({ now: () => clock })
+  const policy = warningPolicy({
+    settings: { warningMinutes: [30, 15] },
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Homework' }],
+  })
+  const fired = []
+  for (let i = 0; i < 400; i++) {  // ~33 min of 5s ticks
+    const events = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+    for (const e of events) fired.push(e.threshold)
+    clock += 5000
+  }
+  assert.deepStrictEqual(fired.sort((a, b) => b - a), [30, 15])
+})
+
+test('WarningChecker: unsorted warningMinutes still fires all thresholds', () => {
+  // Ascending [1, 10] — checker must sort descending so the 10-min gate
+  // doesn't cut off the 10-min warning.
+  const scheduleStart = new Date('2026-04-16T13:00:00').getTime()
+  let clock = scheduleStart - 11 * 60 * 1000
+  const wc = new WarningChecker({ now: () => clock })
+  const policy = warningPolicy({
+    settings: { warningMinutes: [1, 10] },
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Homework' }],
+  })
+  const fired = []
+  for (let i = 0; i < 140; i++) {
+    const events = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+    for (const e of events) fired.push(e.threshold)
+    clock += 5000
+  }
+  assert.deepStrictEqual(fired.sort((a, b) => b - a), [10, 1])
+})
+
+test('WarningChecker: invalid warningMinutes falls back to defaults', () => {
+  const scheduleStart = new Date('2026-04-16T13:00:00').getTime()
+  const clock = scheduleStart - 10 * 60 * 1000
+  const wc = new WarningChecker({ now: () => clock })
+  const policy = warningPolicy({
+    settings: { warningMinutes: ['nope', -5, 0] },
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Homework' }],
+  })
+  const events = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+  assert.strictEqual(events.length, 1)
+  assert.strictEqual(events[0].threshold, 10)
+})
+
+test('WarningChecker: dedupe resets at midnight', () => {
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T12:50:00').getTime() })
+  const policy = warningPolicy({
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Homework' }],
+  })
+  // Fire once on Thursday.
+  const firstRun = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+  assert.strictEqual(firstRun.length, 1)
+  // Second tick same day — dedupe.
+  wc._now = () => new Date('2026-04-16T12:50:05').getTime()
+  assert.strictEqual(wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 }).length, 0)
+  // Next day at the same time — Friday (day 5), so schedule won't match days=[4] now.
+  // Use a schedule that matches Friday too so we can verify the reset.
+  const policyFriday = warningPolicy({
+    schedules: [{ days: [4, 5], start: '13:00', end: '14:00', label: 'Homework' }],
+  })
+  wc._now = () => new Date('2026-04-17T12:50:00').getTime()
+  const nextDay = wc.check({ policy: policyFriday, foregroundPackage: null, getUsageSeconds: () => 0 })
+  assert.strictEqual(nextDay.length, 1, 'dedupe should reset overnight')
+})
+
+test('WarningChecker: handles overnight wrap (schedule start before now modulo 24h)', () => {
+  // Now 23:50, schedule starts at 00:00 (midnight) → 10 min away via wrap.
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T23:50:00').getTime() })
+  const policy = warningPolicy({
+    schedules: [{ days: [4], start: '00:00', end: '06:00', label: 'Overnight' }],
+  })
+  const events = wc.check({ policy, foregroundPackage: null, getUsageSeconds: () => 0 })
+  assert.strictEqual(events.length, 1)
+  assert.strictEqual(events[0].threshold, 10)
+})
+
+test('WarningChecker: getUsageSeconds throwing is treated as 0', () => {
+  // remaining becomes 600 = 10min exactly → 10-min threshold should fire.
+  const wc = new WarningChecker({ now: () => new Date('2026-04-16T10:00:00').getTime() })
+  const policy = warningPolicy({
+    apps: { 'com.roblox.client': { status: 'allowed', appName: 'Roblox', dailyLimitSeconds: 600 } },
+  })
+  const events = wc.check({
+    policy,
+    foregroundPackage: 'com.roblox.client',
+    getUsageSeconds: () => { throw new Error('boom') },
+  })
+  assert.strictEqual(events.length, 1)
+  assert.strictEqual(events[0].threshold, 10)
+})
+
+test('EnforcementController emits warning events when checker returns events', () => {
+  // Drive the controller directly, no monitor tick — just force a foreground
+  // and tick _checkWarnings once. Verifies the pure module is correctly
+  // re-emitted as an 'warning' EventEmitter event.
+  const activeWin = async () => null
+  const ctrl = new EnforcementController({
+    activeWin,
+    overlay: { show() {}, hide() {} },
+    logger: { log() {}, warn() {} },
+  })
+  const scheduleStart = new Date('2026-04-16T13:00:00').getTime()
+  const policy = warningPolicy({
+    schedules: [{ days: [4], start: '13:00', end: '14:00', label: 'Bedtime' }],
+  })
+  // Replace the checker with one whose clock is fixed so the test is stable.
+  ctrl._warningChecker = new WarningChecker({ now: () => scheduleStart - 10 * 60 * 1000 })
+  ctrl.policyCache.setPolicyJson(JSON.stringify(policy))
+  const fired = []
+  ctrl.on('warning', (ev) => fired.push(ev))
+  ctrl._checkWarnings()
+  assert.strictEqual(fired.length, 1)
+  assert.strictEqual(fired[0].kind, 'schedule')
+  assert.strictEqual(fired[0].threshold, 10)
 })
 
 // --- Runner --------------------------------------------------------------

@@ -61,6 +61,19 @@ const { TamperDetector } = require('./tamper-detector')
 // Matches Android's 60s UsageFlushAlarm cadence.
 const USAGE_FLUSH_INTERVAL_MS = 60_000
 
+// Icon used in toast notifications. Same .ico the tray uses; electron-builder
+// whitelists build/icon.ico in the asar so this path resolves in both dev and
+// packaged runs.
+const NOTIFICATION_ICON_PATH = path.join(__dirname, '..', '..', 'build', 'icon.ico')
+
+// Windows derives the toast's "app name" header from the AppUserModelID.
+// electron-builder's NSIS stamps the Start Menu shortcut with build.appId
+// (com.peerloomllc.pearguard), so setting the same AUMID here makes Windows
+// show "PearGuard" in toasts instead of the default "electron.app.PearGuard".
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.peerloomllc.pearguard')
+}
+
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
 }
@@ -109,6 +122,7 @@ shim.onBareOut((buf) => {
       new Notification({
         title: 'PearGuard',
         body: `${appName || 'App'}: ${decision || ''}`,
+        icon: NOTIFICATION_ICON_PATH,
       }).show()
       return
     }
@@ -458,6 +472,23 @@ app.whenReady().then(() => {
       overlay,
       sodium,
       isOwnWindow,
+    })
+
+    // Countdown notifications for daily limits and approaching schedules.
+    // Mirrors Android's pre-expiry warnings (EnforcementService.check*Warnings)
+    // at the configured thresholds (policy.settings.warningMinutes, default
+    // 10/5/1 min). Dedupe lives in the WarningChecker so a toast fires once
+    // per threshold per day even though the 5s tick revisits it constantly.
+    enforcement.on('warning', (event) => {
+      try {
+        new Notification({
+          title: event.title,
+          body: event.body,
+          icon: NOTIFICATION_ICON_PATH,
+        }).show()
+      } catch (e) {
+        console.warn('[main] warning notification failed:', e.message)
+      }
     })
 
     // Suppress first-sighting for our own running process, the starter

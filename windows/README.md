@@ -32,6 +32,15 @@ On first run Electron downloads native prebuilds for `sodium-native`,
 `hypercore`, `hyperswarm`, etc. If any native module fails to load after an
 Electron upgrade, run `npm run rebuild`.
 
+### Scripts
+
+- `npm start` - production launch (Windows target)
+- `npm run start:dev-linux` - Linux dev launch with sandbox/GPU disabled
+  (Fedora Wayland's chrome-sandbox and GPU process don't play nice with Electron)
+- `npm run smoke` - headless bare-dispatch smoke test against `smoke.html`
+- `npm run smoke:ui` - headless boot check that loads the real `app-ui.bundle`
+  and dumps the rendered DOM to stdout
+
 ## Architecture
 
 ```

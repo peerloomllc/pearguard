@@ -210,10 +210,10 @@ async function init (dataDir, attempt = 0) {
   // as soon as the joins complete in the background.
   Promise.all(topicHexes.map(t => joinTopic(t).catch(e => console.error('[bare] rejoin failed:', e.message))))
 
-  // Clean up usage data older than 30 days
+  // Clean up usage data older than 7 days
   async function cleanupOldUsageData() {
     const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - 30)
+    cutoff.setDate(cutoff.getDate() - 7)
     const cutoffStr = localDateStr(cutoff)
     const cutoffMs = cutoff.getTime()
 
@@ -274,10 +274,31 @@ async function init (dataDir, attempt = 0) {
   }
 
   migrateSessionDatesToLocal().catch(e => console.error('[bare] session date migration error:', e))
-  cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
-  setInterval(() => {
-    cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
-  }, 24 * 60 * 60 * 1000)
+
+  // Auto-reclaim when the Hypercore on-disk footprint exceeds AUTO_RECLAIM_THRESHOLD.
+  // Hyperbee deletes leave tombstones in the append-only log, so scheduled cleanup
+  // alone cannot shrink disk use; a full core rebuild is required.
+  const AUTO_RECLAIM_THRESHOLD = 250 * 1024 * 1024
+  async function maybeAutoReclaim () {
+    try {
+      const { total } = await storageBreakdown()
+      if (total < AUTO_RECLAIM_THRESHOLD) return
+      console.log('[bare] auto-reclaim triggered: on-disk', total, 'bytes exceeds threshold')
+      const result = await rebuildLocalDb()
+      console.log('[bare] auto-reclaim freed', result.freed, 'bytes (kept', result.kept, 'dropped', result.dropped + ')')
+      send({ type: 'event', event: 'storage:autoReclaimed', data: result })
+    } catch (e) {
+      console.error('[bare] auto-reclaim error:', e.message)
+    }
+  }
+
+  async function runDailyMaintenance () {
+    await cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
+    await maybeAutoReclaim()
+  }
+
+  runDailyMaintenance()
+  setInterval(runDailyMaintenance, 24 * 60 * 60 * 1000)
 
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
@@ -526,7 +547,10 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       // over msg.from (the Hyperswarm noise key), which may differ from the Ed25519 identity key.
       // usage:getLatest queries by child.publicKey (identity key), so both sides must agree.
       const childPublicKey = msg.payload.childPublicKey || msg.from
-      await db.put('usageReport:' + childPublicKey + ':' + (msg.payload.timestamp || Date.now()), msg.payload)
+      // Overwrite a single "latest" key per child rather than timestamped keys.
+      // Append-only Hypercore log still grows with every put, but the live-key
+      // set stays O(1) per child so reclaim is aggressive and the B-tree stays flat.
+      await db.put('usageReport:' + childPublicKey + ':latest', msg.payload)
       // Store session-level data for reports.
       // Sessions now cover the full day (from midnight), so overwrite
       // previous entries for today to avoid stale/duplicate data.

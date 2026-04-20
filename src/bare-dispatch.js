@@ -1026,8 +1026,8 @@ function createDispatch (ctx) {
           resolvedRequests,
         }
 
-        // Persist report to Hyperbee
-        await ctx.db.put('usage:' + report.timestamp, report)
+        // Persist report to Hyperbee (single overwriting key per child's own copy).
+        await ctx.db.put('usage:latest', report)
 
         ctx.send({ type: 'event', event: 'usage:report', data: report })
 
@@ -1044,6 +1044,10 @@ function createDispatch (ctx) {
       case 'usage:getLatest': {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid usage:getLatest args')
+        // Fast path: single overwriting key.
+        const direct = await ctx.db.get('usageReport:' + childPublicKey + ':latest').catch(() => null)
+        if (direct?.value) return direct.value
+        // Fallback for pre-migration data that still uses timestamped keys.
         let latest = null
         for await (const { value } of ctx.db.createReadStream({
           gt: 'usageReport:' + childPublicKey + ':',

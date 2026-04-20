@@ -614,8 +614,11 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'unpair': {
       // A parent has removed this child.
       // Find which parent sent this by looking up the identity key for this noise key.
+      // Fall back to msg.from when identityKey is unset: handleHello is the only place
+      // that sets identityKey, and a blocked-peer rejection skips it. msg.from is already
+      // verified to equal remoteKeyHex above, and in this app noise key == identity key.
       const senderPeer = peers.get(remoteKeyHex)
-      const senderIdentityKey = senderPeer?.identityKey
+      const senderIdentityKey = senderPeer?.identityKey || msg.from
 
       // Remove this parent's peer record and topic
       if (senderIdentityKey) {
@@ -765,19 +768,39 @@ async function handleHello (msg, conn, remoteKeyHex) {
   }
 
   // Reject blocked peers (previously unpaired by parent).
-  // Send them the 'unpair' message before closing so they can wipe their state
-  // even if they were offline when the parent originally ran child:unpair.
+  // Exception: if the hello arrives on a pendingInviteTopic, the parent has issued
+  // a fresh invite and the block is obsolete — clear it and proceed. This unsticks
+  // re-pair attempts when the original child:unpair never reached the child (e.g.
+  // the connection dropped before the unpair flushed, so the child kept its old
+  // identity and still matches the block).
   const blockedEntry = await db.get('blocked:' + peerIdentityKeyHex).catch(() => null)
   if (blockedEntry) {
-    console.warn('[bare] rejected hello from blocked peer:', peerIdentityKeyHex.slice(0, 8))
-    // Send 'unpair' so the child can wipe its state even if it was offline when the
-    // parent originally ran child:unpair. Don't destroy immediately — let the write
-    // flush through. The child will close the connection after processing unpair.
-    try {
-      const signed = signMessage({ type: 'unpair', payload: {} }, identity)
-      conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
-    } catch (_e) { /* connection may already be closing */ }
-    return
+    const incomingTopic = (peers.get(remoteKeyHex) || {}).topicHex
+    let matchesFreshInvite = false
+    if (incomingTopic) {
+      const pending = await db.get('pendingInviteTopic:' + incomingTopic).catch(() => null)
+      if (pending) matchesFreshInvite = true
+    } else if (msg.payload && msg.payload.mode === 'child') {
+      // Topic not delivered on this connection (Hyperswarm dedup). If ANY
+      // pendingInviteTopic exists, treat this child-hello as a fresh invite ack.
+      for await (const { value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
+        if (value) { matchesFreshInvite = true; break }
+      }
+    }
+    if (matchesFreshInvite) {
+      console.log('[bare] clearing obsolete block on fresh invite for peer:', peerIdentityKeyHex.slice(0, 8))
+      await db.del('blocked:' + peerIdentityKeyHex).catch(() => {})
+    } else {
+      console.warn('[bare] rejected hello from blocked peer:', peerIdentityKeyHex.slice(0, 8))
+      // Send 'unpair' so the child can wipe its state even if it was offline when the
+      // parent originally ran child:unpair. Don't destroy immediately — let the write
+      // flush through. The child will close the connection after processing unpair.
+      try {
+        const signed = signMessage({ type: 'unpair', payload: {} }, identity)
+        conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+      } catch (_e) { /* connection may already be closing */ }
+      return
+    }
   }
 
   // Store peer identity — preserve original pairedAt, update lastSeen

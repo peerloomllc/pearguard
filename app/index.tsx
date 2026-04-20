@@ -193,18 +193,19 @@ function ScannerModal ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
       {permission?.granted ? (
-        <CameraView
-          style={{ flex: 1 }}
-          facing="back"
-          onBarcodeScanned={handleBarcode}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        >
-          <View style={scannerStyles.overlay}>
+        <View style={{ flex: 1 }}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            onBarcodeScanned={handleBarcode}
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          />
+          <View style={scannerStyles.overlay} pointerEvents="box-none">
             <TouchableOpacity style={scannerStyles.cancelBtn} onPress={onCancel}>
               <Text style={scannerStyles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </CameraView>
+        </View>
       ) : (
         <View style={scannerStyles.waiting}>
           <Text style={{ color: '#fff' }}>Requesting camera permission…</Text>
@@ -215,7 +216,7 @@ function ScannerModal ({
 }
 
 const scannerStyles = StyleSheet.create({
-  overlay:    { flex: 1, justifyContent: 'flex-end', padding: 32 },
+  overlay:    { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: 32 },
   cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderRadius: 8, alignItems: 'center' },
   cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },

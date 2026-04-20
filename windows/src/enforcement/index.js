@@ -7,6 +7,13 @@ const { evaluate } = require('./block-evaluator')
 const { verifyPin } = require('./pin-verify')
 
 const DEFAULT_OVERRIDE_SECONDS = 3600
+// Matches Android's AppBlockerModule PIN picker (15/30/60/120 min). Used
+// as the allowlist when policy.settings.timeRequestMinutes is missing.
+const DEFAULT_PIN_DURATION_MINUTES = [15, 30, 60, 120]
+// Window in which a PIN verification stays good for a subsequent
+// applyPinOverride call. Long enough for a kid to pick a duration button,
+// short enough that a forgotten overlay can't be exploited later.
+const PIN_VERIFY_TTL_MS = 30_000
 
 // Wires the enforcement primitives together. The controller is intentionally
 // I/O-free: it doesn't open BrowserWindows itself. The host (main/index.js)
@@ -44,6 +51,9 @@ class EnforcementController {
     // packageName === null when blocked by lock or schedule.
     this._overlayVisible = false
     this._currentOverlayKey = null  // packageName || exeBasename of currently shown block
+    // Set by verifyPinOnly on successful PIN, consumed by applyPinOverride.
+    // null when no PIN has been verified (or window expired).
+    this._pinVerified = null  // { expiresAt }
 
     this.monitor.on('foreground-changed', (info) => this._onForegroundChanged(info))
     this.monitor.on('error', (err) => this._logger.warn('[enforcement] active-win error:', err.message))
@@ -72,26 +82,49 @@ class EnforcementController {
     return expiry
   }
 
-  // Verify a PIN against the cached policy. Used by the overlay before
-  // routing audit logging through bare via pin:used. Returns:
-  //   { ok: true, expiresAt: number, durationSeconds: number }   on success
+  // Verify a PIN against the cached policy without applying a grant. Marks
+  // the controller as "PIN-verified" for a short window so a subsequent
+  // applyPinOverride can use the caller-supplied durationSeconds. Returns:
+  //   { ok: true }                                             on success
   //   { ok: false, reason: 'no-policy'|'no-pin'|'wrong-pin'|'no-sodium' }
-  verifyPinAndGrant({ pin, packageName }) {
+  verifyPinOnly({ pin }) {
     if (!this._sodium) return { ok: false, reason: 'no-sodium' }
     const policy = this.policyCache.getPolicy()
     const result = verifyPin({ sodium: this._sodium, policy, pin })
     if (!result.ok) return result
-    const durationSeconds = (policy && policy.overrideDurationSeconds) || DEFAULT_OVERRIDE_SECONDS
-    const expiresAt = Date.now() + durationSeconds * 1000
+    this._pinVerified = { expiresAt: Date.now() + PIN_VERIFY_TTL_MS }
+    return { ok: true }
+  }
+
+  // Apply the override grant for a PIN that verifyPinOnly has already
+  // validated within PIN_VERIFY_TTL_MS. durationSeconds must be one of the
+  // allowed options so a malicious renderer can't forge an arbitrary grant
+  // even if it bypasses the UI. Returns:
+  //   { ok: true, expiresAt, durationSeconds }                  on success
+  //   { ok: false, reason: 'pin-not-verified'|'invalid-duration' }
+  applyPinOverride({ packageName, durationSeconds }) {
+    const now = Date.now()
+    if (!this._pinVerified || this._pinVerified.expiresAt < now) {
+      this._pinVerified = null
+      return { ok: false, reason: 'pin-not-verified' }
+    }
+    const allowedSeconds = getAllowedPinDurationSeconds(this.policyCache.getPolicy())
+    if (!allowedSeconds.includes(durationSeconds)) {
+      return { ok: false, reason: 'invalid-duration' }
+    }
+    this._pinVerified = null
+    const expiresAt = now + durationSeconds * 1000
     if (packageName) {
       this.applyGrant({ packageName, expiresAt })
     } else {
-      // No app to grant against (unmapped exe). Still re-evaluate so a
-      // schedule-clearing policy push can dismiss; the kid won't get a
-      // persistent override but at least the dialog completes successfully.
       this._reevaluateCurrent()
     }
     return { ok: true, expiresAt, durationSeconds }
+  }
+
+  // Duration options surfaced to the renderer for the post-PIN picker.
+  getPinDurationSeconds() {
+    return getAllowedPinDurationSeconds(this.policyCache.getPolicy())
   }
 
   setOverlay(overlay) {
@@ -220,4 +253,22 @@ class EnforcementController {
   }
 }
 
-module.exports = { EnforcementController }
+function getAllowedPinDurationSeconds(policy) {
+  const settings = (policy && policy.settings) || {}
+  const raw = Array.isArray(settings.timeRequestMinutes) && settings.timeRequestMinutes.length
+    ? settings.timeRequestMinutes
+    : DEFAULT_PIN_DURATION_MINUTES
+  const seen = new Set()
+  const out = []
+  for (const m of raw) {
+    const n = Number(m)
+    if (!Number.isFinite(n) || n <= 0) continue
+    const seconds = Math.round(n * 60)
+    if (seen.has(seconds)) continue
+    seen.add(seconds)
+    out.push(seconds)
+  }
+  return out.length ? out : DEFAULT_PIN_DURATION_MINUTES.map((m) => m * 60)
+}
+
+module.exports = { EnforcementController, getAllowedPinDurationSeconds, DEFAULT_PIN_DURATION_MINUTES }

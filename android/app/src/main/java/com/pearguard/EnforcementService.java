@@ -9,6 +9,8 @@ import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -38,14 +40,18 @@ public class EnforcementService extends Service {
     private static final int NOTIFICATION_ID = 1000;
     private static final long POLL_INTERVAL_MS = 5_000;       // 5 seconds
     private static final long USAGE_FLUSH_INTERVAL_MS = 60_000; // 1 minute
+    private static final long RECONNECT_EMIT_INTERVAL_MS = 30_000; // 30 seconds
     private static final String WARNING_CHANNEL_ID = "pearguard_upcoming_warning";
     private static final int[] DEFAULT_WARNING_THRESHOLDS_MIN = {10, 5, 1};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastUsageFlushTime = 0;
+    private long lastReconnectEmitTime = 0;
     private boolean lastAccessibilityState = true;
     private final Set<String> shownWarnings = new HashSet<>();
     private int lastWarningDayOfYear = -1;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
 
     // --- Lifecycle ---
 
@@ -56,6 +62,7 @@ public class EnforcementService extends Service {
         createWarningNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
         lastAccessibilityState = isAccessibilityServiceEnabled();
+        registerNetworkCallback();
         handler.post(enforcementLoop);
     }
 
@@ -73,6 +80,7 @@ public class EnforcementService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacks(enforcementLoop);
+        unregisterNetworkCallback();
         super.onDestroy();
     }
 
@@ -87,6 +95,7 @@ public class EnforcementService extends Service {
                 checkForegroundEnforcement();
                 checkWarningNotifications();
                 maybeFlushUsageStats();
+                maybeEmitReconnectNeeded();
             } catch (Exception ignored) {
             } finally {
                 handler.postDelayed(this, POLL_INTERVAL_MS);
@@ -104,6 +113,59 @@ public class EnforcementService extends Service {
             .edit()
             .putLong("enforcement_heartbeat_ms", System.currentTimeMillis())
             .apply();
+    }
+
+    /**
+     * Periodically ask the Bare worklet to re-announce its Hyperswarm topics
+     * so the child stays discoverable after network drops/switches (WiFi loss,
+     * cellular handoff) that happen without the app being foregrounded.
+     * Complements the immediate emit from NetworkCallback.onAvailable as a
+     * safety net (callbacks can miss transitions on some OEMs / VPN setups).
+     */
+    private void maybeEmitReconnectNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastReconnectEmitTime < RECONNECT_EMIT_INTERVAL_MS) return;
+        lastReconnectEmitTime = now;
+        emitReconnectNeeded();
+    }
+
+    private void emitReconnectNeeded() {
+        ReactContext ctx = PearGuardReactHost.get();
+        if (ctx == null || !ctx.hasActiveReactInstance()) return;
+        ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+           .emit("onChildReconnectNeeded", null);
+    }
+
+    /**
+     * Listen for default-network changes (WiFi -> cellular, network regained
+     * after loss). onAvailable fires immediately when a new default network
+     * is ready, which is the right moment to re-announce to the DHT — the TCP
+     * connections Hyperswarm was holding are already dead at that point.
+     */
+    private void registerNetworkCallback() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) return;
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    emitReconnectNeeded();
+                }
+            };
+            connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void unregisterNetworkCallback() {
+        try {
+            if (connectivityManager != null && networkCallback != null) {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            }
+        } catch (Exception ignored) {
+        } finally {
+            networkCallback = null;
+        }
     }
 
     /**

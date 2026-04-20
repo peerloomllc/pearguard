@@ -640,6 +640,11 @@ export default function Root () {
           DeviceEventEmitter.addListener('onParentReconnectNeeded', () => {
             sendToWorklet({ method: 'swarm:reconnect' })
           }),
+
+          // EnforcementService: child-side reconnect (30s loop + network-change callback)
+          DeviceEventEmitter.addListener('onChildReconnectNeeded', () => {
+            sendToWorklet({ method: 'swarm:reconnect' })
+          }),
         )
       }
 

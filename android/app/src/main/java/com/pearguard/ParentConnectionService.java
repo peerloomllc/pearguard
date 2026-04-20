@@ -5,8 +5,11 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -44,6 +47,8 @@ public class ParentConnectionService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int loopTick = 0; // counts 30s ticks; heartbeat check runs every 2nd tick (60 s)
     private long serviceStartedAt = 0;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
 
     // --- Lifecycle ---
 
@@ -53,6 +58,7 @@ public class ParentConnectionService extends Service {
         createNotificationChannel();
         startForeground(NOTIF_ID, buildNotification());
         serviceStartedAt = System.currentTimeMillis();
+        registerNetworkCallback();
         handler.postDelayed(reconnectLoop, RECONNECT_INTERVAL_MS);
     }
 
@@ -69,6 +75,7 @@ public class ParentConnectionService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacks(reconnectLoop);
+        unregisterNetworkCallback();
         super.onDestroy();
     }
 
@@ -93,6 +100,37 @@ public class ParentConnectionService extends Service {
         if (ctx == null || !ctx.hasActiveReactInstance()) return;
         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
            .emit("onParentReconnectNeeded", null);
+    }
+
+    /**
+     * Re-announce to Hyperswarm immediately when the default network changes
+     * (WiFi -> cellular, network regained after loss). The 30s reconnect loop
+     * is a safety net; this is the fast path.
+     */
+    private void registerNetworkCallback() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) return;
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    emitReconnectNeeded();
+                }
+            };
+            connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void unregisterNetworkCallback() {
+        try {
+            if (connectivityManager != null && networkCallback != null) {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            }
+        } catch (Exception ignored) {
+        } finally {
+            networkCallback = null;
+        }
     }
 
     /**

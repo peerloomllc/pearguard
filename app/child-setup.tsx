@@ -98,18 +98,19 @@ function ScannerModal({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
       {permission?.granted ? (
-        <CameraView
-          style={{ flex: 1 }}
-          facing="back"
-          onBarcodeScanned={handleBarcode}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        >
-          <View style={scannerStyles.overlay}>
+        <View style={{ flex: 1 }}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            onBarcodeScanned={handleBarcode}
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          />
+          <View style={scannerStyles.overlay} pointerEvents="box-none">
             <TouchableOpacity style={scannerStyles.cancelBtn} onPress={onCancel}>
               <Text style={scannerStyles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </CameraView>
+        </View>
       ) : (
         <View style={scannerStyles.waiting}>
           <ActivityIndicator color={colors.accent} size="large" />
@@ -121,7 +122,7 @@ function ScannerModal({
 }
 
 const scannerStyles = StyleSheet.create({
-  overlay:    { flex: 1, justifyContent: 'flex-end', padding: spacing.xxl },
+  overlay:    { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: spacing.xxl },
   cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: spacing.base, borderRadius: radius.md, alignItems: 'center' },
   cancelText: { color: '#fff', fontSize: typography.subheading.fontSize, fontFamily: fontFamily.semibold },
   waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.base },

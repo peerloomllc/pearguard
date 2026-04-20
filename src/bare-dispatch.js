@@ -272,6 +272,25 @@ function createDispatch (ctx) {
         return { ok: true }
       }
 
+      case 'child:clearBlocked': {
+        // Clear a blocked: entry so a previously-unpaired child can re-pair without
+        // rotating its identity. Needed when the child missed the original 'unpair'
+        // message (e.g. offline during unpair, or connection dropped before wipe ran).
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('child:clearBlocked requires childPublicKey')
+        const existed = await ctx.db.get('blocked:' + childPublicKey).catch(() => null)
+        await ctx.db.del('blocked:' + childPublicKey).catch(() => {})
+        return { ok: true, cleared: !!existed }
+      }
+
+      case 'child:listBlocked': {
+        const blocked = []
+        for await (const { value } of ctx.db.createReadStream({ gt: 'blocked:', lt: 'blocked:~' })) {
+          if (value) blocked.push(value)
+        }
+        return { blocked }
+      }
+
       case 'invite:generate': {
         // Generate a random 32-byte swarm topic
         const topicBuf = Buffer.allocUnsafe(32)

@@ -984,18 +984,26 @@ function createDispatch (ctx) {
 
         const now = Date.now()
 
-        // Store session-level data for usage reports.
-        // Sessions now cover the full day (from midnight), so overwrite
-        // previous entries for today to avoid stale/duplicate data.
-        const sessions = args.sessions || []
+        // Store session-level data for usage reports as deltas.
+        // Native Android returns today's full session list each flush, but we
+        // filter down to sessions that closed after the last flush plus any
+        // still-open session (which we re-send on each flush with its growing
+        // duration — dedup on read prefers the longest snapshot). Windows'
+        // takeSessions() already drains a buffer, so the filter is a no-op
+        // there. Parent and child both append under a unique-timestamped key
+        // so today's storage footprint is bounded by actual session count
+        // rather than flushes × sessions.
+        const flushStateRaw = await ctx.db.get('sessions:flushState:' + (childPublicKey || 'local')).catch(() => null)
+        const lastFlushAt = flushStateRaw?.value?.lastFlushAt || 0
+        const allSessions = args.sessions || []
+        const sessionsDelta = allSessions.filter((s) => s.endedAt == null || s.endedAt > lastFlushAt)
+
         const dateStr = localDateStr(now)
         const sessionPrefix = 'sessions:' + (childPublicKey || 'local') + ':' + dateStr + ':'
-        for await (const { key } of ctx.db.createReadStream({ gt: sessionPrefix, lt: sessionPrefix + '~' })) {
-          await ctx.db.del(key)
+        if (sessionsDelta.length > 0) {
+          await ctx.db.put(sessionPrefix + now, sessionsDelta)
         }
-        if (sessions.length > 0) {
-          await ctx.db.put(sessionPrefix + now, sessions)
-        }
+        await ctx.db.put('sessions:flushState:' + (childPublicKey || 'local'), { lastFlushAt: now })
 
         // Piggyback resolved request statuses so co-parents get updates (#122).
         // Collect all non-pending req: entries from child's Hyperbee.
@@ -1017,7 +1025,7 @@ function createDispatch (ctx) {
           timestamp: now,
           lastSynced: now,
           apps,
-          sessions,
+          sessions: sessionsDelta,
           pinOverrides: pinLog,
           childPublicKey,
           currentApp,
@@ -1063,26 +1071,24 @@ function createDispatch (ctx) {
       case 'usage:getSessions': {
         const { childPublicKey, date } = args
         if (!childPublicKey || !date) throw new Error('invalid usage:getSessions args')
-        const allSessions = []
+        const bestByKey = new Map()
         for await (const { value } of ctx.db.createReadStream({
           gt: 'sessions:' + childPublicKey + ':' + date + ':',
           lt: 'sessions:' + childPublicKey + ':' + date + ':~',
         })) {
-          if (Array.isArray(value)) {
-            for (const s of value) allSessions.push(s)
+          if (!Array.isArray(value)) continue
+          for (const s of value) {
+            // Dedup prefers the longest snapshot for a given (pkg, startedAt):
+            // open-session snapshots from earlier flushes get replaced once the
+            // closed version arrives.
+            const key = s.packageName + ':' + s.startedAt
+            const existing = bestByKey.get(key)
+            if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
+              bestByKey.set(key, s)
+            }
           }
         }
-        // Deduplicate by packageName + startedAt
-        const seen = new Set()
-        const deduped = []
-        for (const s of allSessions) {
-          const key = s.packageName + ':' + s.startedAt
-          if (!seen.has(key)) {
-            seen.add(key)
-            deduped.push(s)
-          }
-        }
-        return deduped
+        return Array.from(bestByKey.values())
       }
 
       case 'usage:getDailySummaries': {
@@ -1094,26 +1100,28 @@ function createDispatch (ctx) {
           const d = new Date(now)
           d.setDate(d.getDate() - i)
           const dateStr = localDateStr(d)
-          let totalSeconds = 0
-          let sessionCount = 0
-          const seen = new Set()
+          // Collect best-duration snapshot per (pkg, startedAt) first so
+          // open-session deltas collapse into their closed counterparts before
+          // we sum.
+          const bestByKey = new Map()
           for await (const { value } of ctx.db.createReadStream({
             gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
             lt: 'sessions:' + childPublicKey + ':' + dateStr + ':~',
           })) {
-            if (Array.isArray(value)) {
-              for (const s of value) {
-                if (packageName && s.packageName !== packageName) continue
-                if (isSystemPackage(s.packageName)) continue
-                const key = s.packageName + ':' + s.startedAt
-                if (seen.has(key)) continue
-                seen.add(key)
-                totalSeconds += s.durationSeconds || 0
-                sessionCount++
+            if (!Array.isArray(value)) continue
+            for (const s of value) {
+              if (packageName && s.packageName !== packageName) continue
+              if (isSystemPackage(s.packageName)) continue
+              const key = s.packageName + ':' + s.startedAt
+              const existing = bestByKey.get(key)
+              if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
+                bestByKey.set(key, s)
               }
             }
           }
-          summaries.push({ date: dateStr, totalSeconds, sessionCount })
+          let totalSeconds = 0
+          for (const s of bestByKey.values()) totalSeconds += s.durationSeconds || 0
+          summaries.push({ date: dateStr, totalSeconds, sessionCount: bestByKey.size })
         }
         return summaries
       }
@@ -1124,30 +1132,28 @@ function createDispatch (ctx) {
         let entryCount = 0
         let rawCount = 0
         let rawSeconds = 0
-        const seen = new Set()
-        let dedupCount = 0
-        let dedupSeconds = 0
+        const bestByKey = new Map()
         const samples = []
         for await (const { key, value } of ctx.db.createReadStream({
           gt: 'sessions:' + childPublicKey + ':' + date + ':',
           lt: 'sessions:' + childPublicKey + ':' + date + ':~',
         })) {
           entryCount++
-          if (Array.isArray(value)) {
-            for (const s of value) {
-              rawCount++
-              rawSeconds += s.durationSeconds || 0
-              const dk = s.packageName + ':' + s.startedAt
-              if (!seen.has(dk)) {
-                seen.add(dk)
-                dedupCount++
-                dedupSeconds += s.durationSeconds || 0
-              }
-              if (samples.length < 20) samples.push({ pkg: s.packageName, startedAt: s.startedAt, dur: s.durationSeconds, startType: typeof s.startedAt })
+          if (!Array.isArray(value)) continue
+          for (const s of value) {
+            rawCount++
+            rawSeconds += s.durationSeconds || 0
+            const dk = s.packageName + ':' + s.startedAt
+            const existing = bestByKey.get(dk)
+            if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
+              bestByKey.set(dk, s)
             }
+            if (samples.length < 20) samples.push({ pkg: s.packageName, startedAt: s.startedAt, dur: s.durationSeconds, startType: typeof s.startedAt })
           }
         }
-        return { entryCount, rawCount, rawSeconds, dedupCount, dedupSeconds, samples }
+        let dedupSeconds = 0
+        for (const s of bestByKey.values()) dedupSeconds += s.durationSeconds || 0
+        return { entryCount, rawCount, rawSeconds, dedupCount: bestByKey.size, dedupSeconds, samples }
       }
 
       case 'usage:getCategorySummary': {
@@ -1182,15 +1188,18 @@ function createDispatch (ctx) {
             }
           }
         }
-        // Deduplicate by packageName + startedAt
-        const seen = new Set()
-        const deduped = []
+        // Dedup prefers the longest snapshot so open-session deltas collapse
+        // into the final closed version.
+        const bestByKey = new Map()
         for (const s of sessions) {
           const key = s.packageName + ':' + s.startedAt
-          if (!seen.has(key)) { seen.add(key); deduped.push(s) }
+          const existing = bestByKey.get(key)
+          if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
+            bestByKey.set(key, s)
+          }
         }
         const categories = {}
-        for (const s of deduped) {
+        for (const s of bestByKey.values()) {
           const appInfo = policyApps[s.packageName]
           // Skip apps not in policy (system apps that slipped through)
           if (!appInfo) continue

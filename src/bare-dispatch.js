@@ -1579,7 +1579,10 @@ function createDispatch (ctx) {
 
       case 'storage:rebuild': {
         if (!ctx.rebuildLocalDb) throw new Error('rebuildLocalDb unavailable')
-        return await ctx.rebuildLocalDb()
+        // This handler itself is counted in _inflightHandlers; tell rebuild
+        // to exclude 1 from its drain target so it doesn't time out waiting
+        // on its own caller.
+        return await ctx.rebuildLocalDb({ selfInflight: 1 })
       }
 
       default:

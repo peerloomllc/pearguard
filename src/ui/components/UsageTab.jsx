@@ -94,7 +94,7 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
 
   if (loading) return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>Loading usage data...</div>;
   if (!report || !report.apps || report.apps.length === 0) {
-    return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>No usage data yet. Data syncs every 5 minutes.</div>;
+    return <div style={{ padding: `${spacing.base}px`, color: colors.text.muted, fontSize: '14px' }}>No usage data yet. Data syncs every 15 minutes.</div>;
   }
 
   return (

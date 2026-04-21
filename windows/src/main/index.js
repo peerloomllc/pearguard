@@ -58,8 +58,8 @@ const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 const { TamperDetector } = require('./tamper-detector')
 
 // How often we hand usage telemetry to bare for replication to the parent.
-// Matches Android's UsageFlushAlarm cadence.
-const USAGE_FLUSH_INTERVAL_MS = 300_000
+// Matches Android's UsageFlushWorker cadence (15 min).
+const USAGE_FLUSH_INTERVAL_MS = 15 * 60 * 1000
 
 // Icon used in toast notifications. Same .ico the tray uses; electron-builder
 // whitelists build/icon.ico in the asar so this path resolves in both dev and

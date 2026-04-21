@@ -16179,8 +16179,8 @@
         ))
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.subheading, color: colors.text.primary, marginBottom: `${spacing2.sm}px` }, children: "Activity Log" }),
-        history.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.body, color: colors.text.muted }, children: "No activity yet." }) : history.map((item) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ActivityRow, { item }, item.id))
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.subheading, color: colors.text.primary, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Activity Log" }),
+        history.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.body, color: colors.text.muted, textAlign: "center" }, children: "No activity yet." }) : history.map((item) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ActivityRow, { item }, item.id))
       ] })
     ] });
   }
@@ -16324,7 +16324,7 @@
       boxSizing: "border-box"
     };
     return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.sm}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.sm}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: { ...typography2.subheading, fontWeight: "600", color: colors.text.primary, margin: 0 }, children: "Active Rules" }),
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
           "button",
@@ -16344,7 +16344,7 @@
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("strong", { children: "blackout windows" }),
         " - times when apps are blocked. Apps are allowed outside these windows."
       ] }),
-      schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: { ...typography2.body, color: colors.text.muted }, children: "No blackout rules yet." }),
+      schedules.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: { ...typography2.body, color: colors.text.muted, textAlign: "center" }, children: "No blackout rules yet." }),
       schedules.map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
         RuleRow,
         {
@@ -19096,17 +19096,17 @@ ${invite.inviteLink}`
         ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "SUPPORT DEVELOPMENT" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "PearGuard is free and open source. If you find it valuable, please consider supporting its development." }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "VALUE FOR VALUE" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "PearGuard is free and open source. If you receive value from it, please consider returning value." }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: handleDonateBTC, style: flexOne, children: [
             /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "Lightning", size: 14, color: colors.primary }),
-            " Donate BTC ",
+            " BTC ",
             /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "Lightning", size: 14, color: colors.primary })
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: () => openURL("https://buymeacoffee.com/peerloomllc"), style: flexOne, children: [
             /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "CurrencyDollar", size: 14, color: colors.primary }),
-            " Donate USD ",
+            " USD ",
             /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "CurrencyDollar", size: 14, color: colors.primary })
           ] })
         ] })

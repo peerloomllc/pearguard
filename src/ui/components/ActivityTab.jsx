@@ -228,11 +228,11 @@ export default function ActivityTab({ childPublicKey }) {
       )}
 
       <div>
-        <div style={{ ...typography.subheading, color: colors.text.primary, marginBottom: `${spacing.sm}px` }}>
+        <div style={{ ...typography.subheading, color: colors.text.primary, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
           Activity Log
         </div>
         {history.length === 0 ? (
-          <div style={{ ...typography.body, color: colors.text.muted }}>No activity yet.</div>
+          <div style={{ ...typography.body, color: colors.text.muted, textAlign: 'center' }}>No activity yet.</div>
         ) : (
           history.map((item) => (
             <ActivityRow key={item.id} item={item} />

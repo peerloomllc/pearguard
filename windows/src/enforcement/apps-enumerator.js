@@ -2,6 +2,7 @@ const { execFile } = require('child_process')
 const { DEFAULT_MAP } = require('./exe-map')
 const { extractWin32Icons, extractUwpIcons } = require('./icon-extractor')
 const { enumerateLauncherApps } = require('./launchers')
+const { categorizeApp } = require('./app-category')
 
 // Read installed apps from the three Uninstall registry hives (HKLM, HKLM
 // Wow6432Node, HKCU) via PowerShell. Returns objects shaped like Android's
@@ -197,6 +198,15 @@ async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = c
       if (icon) row.iconBase64 = icon
       delete row.packageFamilyName
     }
+    // Belt-and-suspenders: launcher rows and any path that skipped
+    // parseAndShape/parseUwpAndShape still get a category assigned.
+    if (!row.category) {
+      row.category = categorizeApp({
+        exeBasename: row.exeBasename,
+        appName: row.appName,
+        packageName: row.packageName,
+      })
+    }
   }
 
   if (typeof logger.log === 'function') {
@@ -317,6 +327,7 @@ function parseUwpAndShape(stdout, logger = console, msixExeMap = new Map()) {
       appName: name,
       exeBasename,
       isLauncher: false,
+      category: categorizeApp({ exeBasename, appName: name, packageFamilyName: family, packageName }),
       packageFamilyName: family,
     })
   }
@@ -356,6 +367,7 @@ function parseAndShape(stdout, logger = console, shortcutMap = new Map()) {
     // exePath is kept on the row so enumerateInstalledApps can hand it to the
     // Win32 icon extractor. Stripped before the row leaves the module.
     const row = { packageName, appName: DisplayName, exeBasename: finalBasename || null, isLauncher: false }
+    row.category = categorizeApp({ exeBasename: finalBasename, appName: DisplayName, packageName })
     if (finalPath) row.exePath = finalPath
     out.push(row)
   }

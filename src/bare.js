@@ -551,17 +551,18 @@ async function handlePeerMessage (msg, conn, remoteKeyHex) {
       // Append-only Hypercore log still grows with every put, but the live-key
       // set stays O(1) per child so reclaim is aggressive and the B-tree stays flat.
       await db.put('usageReport:' + childPublicKey + ':latest', msg.payload)
-      // Store session-level data for reports.
-      // Sessions now cover the full day (from midnight), so overwrite
-      // previous entries for today to avoid stale/duplicate data.
+      // Store session-level data for reports. Sessions are now deltas (only
+      // sessions closed since the child's last flush, plus still-open sessions)
+      // so we append under a unique-timestamped key instead of wiping today's
+      // prefix. Dedup on read keeps the snapshot with the highest duration for
+      // any (packageName, startedAt) pair, so repeated open-session snapshots
+      // collapse into the final closed version.
       const incomingSessions = msg.payload.sessions || []
-      const dateStr = localDateStr(msg.payload.timestamp || Date.now())
+      const reportTs = msg.payload.timestamp || Date.now()
+      const dateStr = localDateStr(reportTs)
       const sessionPrefix = 'sessions:' + childPublicKey + ':' + dateStr + ':'
-      for await (const { key } of db.createReadStream({ gt: sessionPrefix, lt: sessionPrefix + '~' })) {
-        await db.del(key)
-      }
       if (incomingSessions.length > 0) {
-        await db.put(sessionPrefix + (msg.payload.timestamp || Date.now()), incomingSessions)
+        await db.put(sessionPrefix + reportTs, incomingSessions)
       }
       // Look up icon for the current foreground app from parent's policy store
       let currentAppIcon = null

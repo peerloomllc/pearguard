@@ -14991,7 +14991,7 @@
     }, [childPublicKey]);
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { padding: `${spacing2.base}px`, color: colors.text.muted, fontSize: "14px" }, children: "Loading usage data..." });
     if (!report || !report.apps || report.apps.length === 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { padding: `${spacing2.base}px`, color: colors.text.muted, fontSize: "14px" }, children: "No usage data yet. Data syncs every 5 minutes." });
+      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { padding: `${spacing2.base}px`, color: colors.text.muted, fontSize: "14px" }, children: "No usage data yet. Data syncs every 15 minutes." });
     }
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.base}px` }, children: [

@@ -30,7 +30,8 @@ let mode         = null   // 'parent' | 'child' | null
 let dispatch     = null   // method dispatch function
 let _initialized = false  // guard against re-running init on component remount
 let _dataDir     = null   // Absolute data dir (set in init); used by storage breakdown/reclaim
-let _rebuildBusy = false  // Single-flight guard for storage reclaim
+let _rebuildBusy = null   // Promise while reclaim is running, null otherwise; gates handlers
+let _inflightHandlers = 0 // Active handleDispatch + handlePeerMessage calls; reclaim waits for 0
 let _dispatchCtx = null   // Captured ctx object so storage rebuild can swap db reference
 
 // Peers map: hex(publicKey) → { publicKey: Buffer, displayName: string, conn: object }
@@ -70,12 +71,16 @@ BareKit.IPC.on('data', chunk => {
 })
 
 async function handleDispatch (method, args, id) {
+  if (_rebuildBusy) await _rebuildBusy
+  _inflightHandlers++
   try {
     const result = await dispatch(method, args)
     send({ type: 'response', id, result })
   } catch (e) {
     console.error('[bare] dispatch error:', method, e.message)
     send({ type: 'response', id, error: e.message })
+  } finally {
+    _inflightHandlers--
   }
 }
 
@@ -280,11 +285,17 @@ async function init (dataDir, attempt = 0) {
   // alone cannot shrink disk use; a full core rebuild is required.
   const AUTO_RECLAIM_THRESHOLD = 75 * 1024 * 1024
   async function maybeAutoReclaim () {
+    // bare-fs/bare-path read `Bare.platform` at module load, so storageBreakdown
+    // throws on the Electron Windows child client where the global is absent.
+    if (typeof Bare === 'undefined') return
     try {
       const { total } = await storageBreakdown()
       if (total < AUTO_RECLAIM_THRESHOLD) return
       console.log('[bare] auto-reclaim triggered: on-disk', total, 'bytes exceeds threshold')
-      const result = await rebuildLocalDb()
+      // keepAll: compact the append-only log but preserve all live keys. The
+      // user-facing "Reclaim Storage" button is documented as destructive;
+      // the automatic path must not silently drop usage reports or sessions.
+      const result = await rebuildLocalDb({ keepAll: true })
       console.log('[bare] auto-reclaim freed', result.freed, 'bytes (kept', result.kept, 'dropped', result.dropped + ')')
       send({ type: 'event', event: 'storage:autoReclaimed', data: result })
     } catch (e) {
@@ -294,11 +305,16 @@ async function init (dataDir, attempt = 0) {
 
   async function runDailyMaintenance () {
     await cleanupOldUsageData().catch(e => console.error('[bare] cleanup error:', e))
-    await maybeAutoReclaim()
   }
 
+  // Cleanup runs daily (cutoff-based, so interval doesn't affect result).
+  // Reclaim runs hourly so the 75 MB threshold is actually enforced between
+  // daily ticks — with two paired children, parent can accrue hundreds of MB
+  // per day from usage flushes.
   runDailyMaintenance()
+  maybeAutoReclaim()
   setInterval(runDailyMaintenance, 24 * 60 * 60 * 1000)
+  setInterval(maybeAutoReclaim, 60 * 60 * 1000)
 
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
@@ -440,6 +456,16 @@ async function onPeerConnection (conn, info) {
  * Verifies signature against known peer identity. Drops unknown/invalid messages.
  */
 async function handlePeerMessage (msg, conn, remoteKeyHex) {
+  if (_rebuildBusy) await _rebuildBusy
+  _inflightHandlers++
+  try {
+    return await _handlePeerMessage(msg, conn, remoteKeyHex)
+  } finally {
+    _inflightHandlers--
+  }
+}
+
+async function _handlePeerMessage (msg, conn, remoteKeyHex) {
   // Require the 'from' field to match the connection's remote key
   if (!msg.from || msg.from !== remoteKeyHex) {
     console.warn('[bare] dropped message: from mismatch')
@@ -1203,10 +1229,28 @@ async function analyzeStorage () {
   }
 }
 
-async function rebuildLocalDb () {
+async function rebuildLocalDb (opts = {}) {
   if (_rebuildBusy) throw new Error('rebuild already running')
   if (!_dataDir) throw new Error('dataDir not set')
-  _rebuildBusy = true
+  let resolveBusy
+  _rebuildBusy = new Promise(r => { resolveBusy = r })
+  // When called from a dispatch handler (UI-triggered reclaim), that handler
+  // already counts in _inflightHandlers — exclude it from the drain target.
+  const selfInflight = opts.selfInflight || 0
+  // Auto-reclaim passes keepAll=true so log compaction doesn't nuke
+  // usageReport/sessions/alerts/etc. Only the user-facing Reclaim button
+  // (which is documented as destructive) drops wipeable data.
+  const keepAll = !!opts.keepAll
+  // Wait for any in-flight handlers to finish their db writes before we
+  // close the core; new handler entries are already blocked on _rebuildBusy.
+  const drainStart = Date.now()
+  while (_inflightHandlers > selfInflight) {
+    if (Date.now() - drainStart > 10000) {
+      console.warn('[bare] reclaim drain timeout with', _inflightHandlers, 'inflight; proceeding')
+      break
+    }
+    await new Promise(r => setTimeout(r, 25))
+  }
   const fs = require('bare-fs')
   async function dirSize (dir) {
     let total = 0
@@ -1236,6 +1280,11 @@ async function rebuildLocalDb () {
     let kept = 0
     let dropped = 0
     for await (const entry of db.createReadStream()) {
+      if (keepAll) {
+        await newDb.put(entry.key, entry.value)
+        kept++
+        continue
+      }
       const cls = classifyKey(entry.key)
       if (cls === 'keep') {
         await newDb.put(entry.key, entry.value)
@@ -1274,7 +1323,9 @@ async function rebuildLocalDb () {
     const after = await dirSize(coreDir)
     return { before, after, freed: Math.max(0, before - after), kept, dropped }
   } finally {
-    _rebuildBusy = false
+    const done = resolveBusy
+    _rebuildBusy = null
+    done()
   }
 }
 

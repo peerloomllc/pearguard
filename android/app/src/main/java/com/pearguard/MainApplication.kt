@@ -56,7 +56,7 @@ class MainApplication : Application(), ReactApplication {
     // Schedule periodic WorkManager task to wake app and flush queued usage reports.
     // Registered here (not in EnforcementService) so it survives service restarts.
     val flushWork = PeriodicWorkRequest.Builder(
-        UsageFlushWorker::class.java, 30, TimeUnit.MINUTES)
+        UsageFlushWorker::class.java, 15, TimeUnit.MINUTES)
         .build()
     WorkManager.getInstance(this).enqueueUniquePeriodicWork(
         "usage_flush",

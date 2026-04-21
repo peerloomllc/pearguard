@@ -15,6 +15,7 @@ const { OverridesStore } = require('../src/enforcement/overrides-store')
 const { EnforcementController } = require('../src/enforcement')
 const { UsageTracker, localDayStart, localWeekStart } = require('../src/enforcement/usage-tracker')
 const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, parseAndShape, parseUwpAndShape, parseShortcutMap, parseMsixExeMap, mergeRows } = require('../src/enforcement/apps-enumerator')
+const { categorizeApp } = require('../src/enforcement/app-category')
 const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
 const { TamperDetector, STALE_MS } = require('../src/main/tamper-detector')
@@ -1503,6 +1504,104 @@ test('enumerateInstalledApps feeds shortcut + msix maps through to rows', async 
   assert.ok(keet, 'Keet row present')
   assert.strictEqual(keet.packageName, 'uwp.keet_k5xf9864y0668')
   assert.strictEqual(keet.exeBasename, 'keet.exe')
+})
+
+// --- app-category --------------------------------------------------------
+
+test('categorizeApp classifies known exe basenames', () => {
+  assert.strictEqual(categorizeApp({ exeBasename: 'chrome.exe' }), 'Productivity')
+  assert.strictEqual(categorizeApp({ exeBasename: 'discord.exe' }), 'Social')
+  assert.strictEqual(categorizeApp({ exeBasename: 'spotify.exe' }), 'Video & Music')
+  assert.strictEqual(categorizeApp({ exeBasename: 'steam.exe' }), 'Games')
+  assert.strictEqual(categorizeApp({ exeBasename: 'teams.exe' }), 'Communication')
+  assert.strictEqual(categorizeApp({ exeBasename: 'code.exe' }), 'Productivity')
+  assert.strictEqual(categorizeApp({ exeBasename: 'RobloxPlayerBeta.exe' }), 'Games')
+})
+
+test('categorizeApp classifies known UWP families', () => {
+  assert.strictEqual(categorizeApp({ packageFamilyName: 'Microsoft.XboxApp_8wekyb3d8bbwe' }), 'Games')
+  assert.strictEqual(categorizeApp({ packageFamilyName: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0' }), 'Video & Music')
+  assert.strictEqual(categorizeApp({ packageFamilyName: 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' }), 'Productivity')
+  assert.strictEqual(categorizeApp({ packageFamilyName: 'Microsoft.BingNews_8wekyb3d8bbwe' }), 'News')
+  assert.strictEqual(categorizeApp({ packageFamilyName: 'Microsoft.WindowsStore_8wekyb3d8bbwe' }), 'System')
+})
+
+test('categorizeApp classifies launcher-prefixed packageNames as Games', () => {
+  assert.strictEqual(categorizeApp({ packageName: 'steam.app.391540' }), 'Games')
+  assert.strictEqual(categorizeApp({ packageName: 'epic.fortnite' }), 'Games')
+  assert.strictEqual(categorizeApp({ packageName: 'ubisoft.assassinscreed' }), 'Games')
+  assert.strictEqual(categorizeApp({ packageName: 'ea.battlefield' }), 'Games')
+  assert.strictEqual(categorizeApp({ packageName: 'gog.witcher3' }), 'Games')
+})
+
+test('categorizeApp falls back to display-name keywords', () => {
+  assert.strictEqual(categorizeApp({ appName: 'Some Game Studios' }), 'Games')
+  assert.strictEqual(categorizeApp({ appName: 'Khan Academy Kids' }), 'Education')
+  assert.strictEqual(categorizeApp({ appName: 'YouTube Music' }), 'Video & Music')
+  assert.strictEqual(categorizeApp({ appName: 'Totally Unknown Utility' }), 'Other')
+})
+
+test('categorizeApp prefers exe basename over fallback name match', () => {
+  // exe wins over name keyword, which would otherwise pick Games from 'Steam'.
+  assert.strictEqual(categorizeApp({ exeBasename: 'chrome.exe', appName: 'Steam' }), 'Productivity')
+})
+
+test('parseAndShape rows carry category derived from exe basename', () => {
+  const quiet = { warn() {} }
+  const stdout = JSON.stringify([
+    { DisplayName: 'Spotify', DisplayIcon: 'C:\\Spotify\\Spotify.exe,0' },
+    { DisplayName: 'Discord', DisplayIcon: 'C:\\Discord\\Discord.exe' },
+    { DisplayName: 'Steam', DisplayIcon: 'C:\\Steam\\steam.exe' },
+  ])
+  const rows = parseAndShape(stdout, quiet)
+  const byName = Object.fromEntries(rows.map((r) => [r.appName, r.category]))
+  assert.strictEqual(byName['Spotify'], 'Video & Music')
+  assert.strictEqual(byName['Discord'], 'Social')
+  assert.strictEqual(byName['Steam'], 'Games')
+})
+
+test('parseUwpAndShape rows carry category derived from family', () => {
+  const quiet = { warn() {} }
+  const stdout = JSON.stringify([
+    { Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!Microsoft.XboxApp' },
+    { Name: 'Spotify', AppID: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify' },
+  ])
+  const rows = parseUwpAndShape(stdout, quiet)
+  const xbox = rows.find((r) => r.appName === 'Xbox')
+  const spotify = rows.find((r) => r.appName === 'Spotify')
+  assert.strictEqual(xbox.category, 'Games')
+  assert.strictEqual(spotify.category, 'Video & Music')
+})
+
+test('enumerateInstalledApps assigns category to every row', async () => {
+  let callIdx = 0
+  const responses = [
+    // registry
+    JSON.stringify([
+      { DisplayName: 'Spotify', DisplayIcon: 'C:\\Spotify\\Spotify.exe,0' },
+      { DisplayName: 'Mystery Tool', DisplayIcon: 'C:\\weird\\nothing_known.exe' },
+    ]),
+    // UWP
+    JSON.stringify([{ Name: 'Xbox', AppID: 'Microsoft.XboxApp_8wekyb3d8bbwe!Microsoft.XboxApp' }]),
+    // shortcuts
+    '[]',
+    // msix manifests
+    '[]',
+  ]
+  const fakeExec = async () => {
+    const body = responses[callIdx] || '[]'
+    callIdx++
+    return body
+  }
+  const apps = await enumerateInstalledApps({ exec: fakeExec, logger: { log() {}, warn() {} } })
+  for (const row of apps) {
+    assert.ok(typeof row.category === 'string' && row.category.length > 0,
+      'every row has a category: ' + row.appName)
+  }
+  const byName = Object.fromEntries(apps.map((r) => [r.appName, r.category]))
+  assert.strictEqual(byName['Spotify'], 'Video & Music')
+  assert.strictEqual(byName['Xbox'], 'Games')
+  assert.strictEqual(byName['Mystery Tool'], 'Other')
 })
 
 // --- icon-extractor ------------------------------------------------------

@@ -278,7 +278,7 @@ async function init (dataDir, attempt = 0) {
   // Auto-reclaim when the Hypercore on-disk footprint exceeds AUTO_RECLAIM_THRESHOLD.
   // Hyperbee deletes leave tombstones in the append-only log, so scheduled cleanup
   // alone cannot shrink disk use; a full core rebuild is required.
-  const AUTO_RECLAIM_THRESHOLD = 250 * 1024 * 1024
+  const AUTO_RECLAIM_THRESHOLD = 75 * 1024 * 1024
   async function maybeAutoReclaim () {
     try {
       const { total } = await storageBreakdown()

@@ -152,7 +152,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`, marginBottom: `${spacing.sm}px` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.xs}px`, marginBottom: `${spacing.sm}px` }}>
         <h3 style={{ ...typography.subheading, fontWeight: '600', color: colors.text.primary, margin: 0 }}>
           Active Rules
         </h3>
@@ -170,7 +170,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
         </p>
       )}
       {schedules.length === 0 && (
-        <p style={{ ...typography.body, color: colors.text.muted }}>No blackout rules yet.</p>
+        <p style={{ ...typography.body, color: colors.text.muted, textAlign: 'center' }}>No blackout rules yet.</p>
       )}
       {schedules.map((rule, i) => (
         <RuleRow

@@ -74,17 +74,17 @@ export default function AboutTab() {
       </div>
 
       <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>SUPPORT DEVELOPMENT</div>
+        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>VALUE FOR VALUE</div>
         <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
-          PearGuard is free and open source. If you find it valuable, please consider
-          supporting its development.
+          PearGuard is free and open source. If you receive value from it, please
+          consider returning value.
         </p>
         <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           <Button variant="secondary" onClick={handleDonateBTC} style={flexOne}>
-            <Icon name="Lightning" size={14} color={colors.primary} /> Donate BTC <Icon name="Lightning" size={14} color={colors.primary} />
+            <Icon name="Lightning" size={14} color={colors.primary} /> BTC <Icon name="Lightning" size={14} color={colors.primary} />
           </Button>
           <Button variant="secondary" onClick={() => openURL('https://buymeacoffee.com/peerloomllc')} style={flexOne}>
-            <Icon name="CurrencyDollar" size={14} color={colors.primary} /> Donate USD <Icon name="CurrencyDollar" size={14} color={colors.primary} />
+            <Icon name="CurrencyDollar" size={14} color={colors.primary} /> USD <Icon name="CurrencyDollar" size={14} color={colors.primary} />
           </Button>
         </div>
       </div>

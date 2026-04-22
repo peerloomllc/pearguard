@@ -2,9 +2,11 @@
 //
 // Invite link builder and parser for PearGuard.
 //
-// Invite payload: { parentPublicKey: hex(32 bytes), swarmTopic: hex(32 bytes) }
+// Invite payload: { p: hex(32 bytes pubkey), t: hex(32 bytes topic), r: 'p' | 'c' }
+//   r = 'p' → invite is parent-hosted (p is parentPublicKey). Legacy default.
+//   r = 'c' → invite is child-hosted  (p is childPublicKey).
 // Encoded as base64url (URL-safe, no padding).
-// Full link format: pearguard://join/<base64url-payload>
+// Full link format: pear://pearguard/join?t=<base64url-payload>
 //
 // This module runs in both the Bare worklet (src/bare.js) and in the
 // React Native shell (app/join.tsx). It uses only built-in JS APIs.
@@ -35,21 +37,29 @@ function fromBase64url (str) {
 
 /**
  * Encode an invite payload to a base64url string.
- * @param {{ parentPublicKey?: string, swarmTopic?: string }} payload
+ * Accepts either parent-hosted or child-hosted payloads.
+ * @param {{ parentPublicKey?: string, childPublicKey?: string, swarmTopic?: string, role?: 'p'|'c' }} payload
  * @returns {string}
  */
 function encodeInvite (payload) {
-  const json = JSON.stringify({
-    p: payload.parentPublicKey ?? '',
+  const role = payload.role === 'c' ? 'c' : 'p'
+  const hostPublicKey = role === 'c'
+    ? (payload.childPublicKey ?? payload.parentPublicKey ?? '')
+    : (payload.parentPublicKey ?? payload.childPublicKey ?? '')
+  const obj = {
+    p: hostPublicKey,
     t: payload.swarmTopic ?? '',
-  })
-  return toBase64url(json)
+  }
+  // Only include role field for non-default (child-hosted) invites so legacy
+  // parent-hosted invite payloads remain byte-identical to prior versions.
+  if (role === 'c') obj.r = 'c'
+  return toBase64url(JSON.stringify(obj))
 }
 
 /**
  * Decode a base64url invite string.
  * @param {string} encoded
- * @returns {{ ok: boolean, parentPublicKey?: string, swarmTopic?: string, error?: string }}
+ * @returns {{ ok: boolean, role?: 'p'|'c', hostPublicKey?: string, parentPublicKey?: string, childPublicKey?: string, swarmTopic?: string, error?: string }}
  */
 function decodeInvite (encoded) {
   if (!encoded || typeof encoded !== 'string') {
@@ -67,23 +77,30 @@ function decodeInvite (encoded) {
   } catch {
     return { ok: false, error: 'JSON parse failed' }
   }
-  const parentPublicKey = payload.p
-  const swarmTopic      = payload.t
-  if (!parentPublicKey || typeof parentPublicKey !== 'string') {
+  const hostPublicKey = payload.p
+  const swarmTopic    = payload.t
+  const role = payload.r === 'c' ? 'c' : 'p'
+  if (!hostPublicKey || typeof hostPublicKey !== 'string') {
     return { ok: false, error: 'missing parentPublicKey' }
   }
-  if (!HEX_64.test(parentPublicKey)) {
+  if (!HEX_64.test(hostPublicKey)) {
     return { ok: false, error: 'invalid parentPublicKey length (expected 64 hex chars)' }
   }
   if (!swarmTopic || !HEX_64.test(swarmTopic)) {
     return { ok: false, error: 'invalid swarmTopic' }
   }
-  return { ok: true, parentPublicKey, swarmTopic }
+  const result = { ok: true, role, hostPublicKey, swarmTopic }
+  if (role === 'c') {
+    result.childPublicKey = hostPublicKey
+  } else {
+    result.parentPublicKey = hostPublicKey
+  }
+  return result
 }
 
 /**
- * Build a full pearguard://join?t=<encoded> deep link.
- * @param {{ parentPublicKey: string, swarmTopic: string }} payload
+ * Build a full pear://pearguard/join?t=<encoded> deep link.
+ * @param {{ parentPublicKey?: string, childPublicKey?: string, swarmTopic: string, role?: 'p'|'c' }} payload
  * @returns {string}
  */
 function buildInviteLink (payload) {
@@ -91,17 +108,17 @@ function buildInviteLink (payload) {
 }
 
 /**
- * Parse a pearguard://join deep link — supports both query param (?t=) and legacy path formats.
+ * Parse a pear://pearguard/join deep link — supports both query param (?t=) and legacy path formats.
  * @param {string} url
- * @returns {{ ok: boolean, parentPublicKey?: string, swarmTopic?: string, error?: string }}
+ * @returns {{ ok: boolean, role?: 'p'|'c', hostPublicKey?: string, parentPublicKey?: string, childPublicKey?: string, swarmTopic?: string, error?: string }}
  */
 function parseInviteLink (url) {
   if (typeof url !== 'string') return { ok: false, error: 'not a string' }
-  // Query param format: pearguard://join?t=<encoded>
+  // Query param format: pear://pearguard/join?t=<encoded>
   if (url.startsWith(SCHEME_QUERY)) {
     return decodeInvite(url.slice(SCHEME_QUERY.length))
   }
-  // Legacy path format: pearguard://join/<encoded>
+  // Legacy path format: pear://pearguard/join/<encoded>
   if (url.startsWith(SCHEME_PATH)) {
     return decodeInvite(url.slice(SCHEME_PATH.length))
   }

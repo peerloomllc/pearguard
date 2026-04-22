@@ -61,7 +61,7 @@ export default function ChildInviteCard({ onConnected, onDismiss }) {
   if (!invite) {
     return (
       <div style={cardStyle}>
-        <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0 }}>Generating invite...</p>
+        <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, textAlign: 'center' }}>Generating invite...</p>
       </div>
     );
   }

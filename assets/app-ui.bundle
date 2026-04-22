@@ -19145,6 +19145,7 @@ ${invite.inviteLink}`
   function AboutTab() {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const [walletModal, setWalletModal] = (0, import_react18.useState)(false);
+    const isIOS = window.__pearPlatform === "ios";
     async function handleDonateBTC() {
       window.callBare("haptic:tap");
       try {
@@ -19179,7 +19180,7 @@ ${invite.inviteLink}`
           /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 14, color: colors.primary })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
+      !isIOS && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
         /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "VALUE FOR VALUE" }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "PearGuard is free and open source. If you receive value from it, please consider returning value." }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
@@ -19489,6 +19490,7 @@ ${invite.inviteLink}`
     }, []);
     (0, import_react19.useEffect)(() => {
       if (pinCheckState !== "done") return;
+      if (window.__pearPlatform === "ios") return;
       window.callBare("donation:check").then(({ createdAt, dismissed }) => {
         if (dismissed) return;
         if (!createdAt || Date.now() - createdAt >= TWO_WEEKS) setShowDonation(true);

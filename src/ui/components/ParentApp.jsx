@@ -172,6 +172,8 @@ export default function ParentApp() {
 
   useEffect(() => {
     if (pinCheckState !== 'done') return;
+    // App Store guideline 3.1.1 forbids non-IAP digital purchases, including donations.
+    if (window.__pearPlatform === 'ios') return;
     window.callBare('donation:check')
       .then(({ createdAt, dismissed }) => {
         if (dismissed) return;

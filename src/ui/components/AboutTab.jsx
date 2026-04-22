@@ -28,6 +28,8 @@ function shareApp() {
 export default function AboutTab() {
   const { colors, spacing, radius } = useTheme();
   const [walletModal, setWalletModal] = useState(false);
+  // App Store guideline 3.1.1 forbids non-IAP digital purchases, including donations.
+  const isIOS = window.__pearPlatform === 'ios';
 
   async function handleDonateBTC() {
     window.callBare('haptic:tap');
@@ -73,21 +75,23 @@ export default function AboutTab() {
         </Button>
       </div>
 
-      <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>VALUE FOR VALUE</div>
-        <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
-          PearGuard is free and open source. If you receive value from it, please
-          consider returning value.
-        </p>
-        <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <Button variant="secondary" onClick={handleDonateBTC} style={flexOne}>
-            <Icon name="Lightning" size={14} color={colors.primary} /> BTC <Icon name="Lightning" size={14} color={colors.primary} />
-          </Button>
-          <Button variant="secondary" onClick={() => openURL('https://buymeacoffee.com/peerloomllc')} style={flexOne}>
-            <Icon name="CurrencyDollar" size={14} color={colors.primary} /> USD <Icon name="CurrencyDollar" size={14} color={colors.primary} />
-          </Button>
+      {!isIOS && (
+        <div style={cardStyle}>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>VALUE FOR VALUE</div>
+          <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+            PearGuard is free and open source. If you receive value from it, please
+            consider returning value.
+          </p>
+          <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+            <Button variant="secondary" onClick={handleDonateBTC} style={flexOne}>
+              <Icon name="Lightning" size={14} color={colors.primary} /> BTC <Icon name="Lightning" size={14} color={colors.primary} />
+            </Button>
+            <Button variant="secondary" onClick={() => openURL('https://buymeacoffee.com/peerloomllc')} style={flexOne}>
+              <Icon name="CurrencyDollar" size={14} color={colors.primary} /> USD <Icon name="CurrencyDollar" size={14} color={colors.primary} />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={cardStyle}>
         <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>LEARN ABOUT BITCOIN</div>

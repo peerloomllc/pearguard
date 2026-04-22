@@ -6,6 +6,7 @@ import AvatarPicker from './AvatarPicker.jsx'
 import { pickPhoto } from './avatarUtils.js'
 import Button from './primitives/Button.jsx'
 import Collapsible from './primitives/Collapsible.jsx'
+import ChildInviteCard from './ChildInviteCard.jsx'
 
 export default function Profile({ mode }) {
   const { colors, typography, spacing, radius } = useTheme()
@@ -18,7 +19,7 @@ export default function Profile({ mode }) {
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
   const [pairError, setPairError] = useState(null)
-  const [pairUiMode, setPairUiMode] = useState('initial') // 'initial' | 'methodPicker' | 'paste'
+  const [pairUiMode, setPairUiMode] = useState('initial') // 'initial' | 'methodPicker' | 'paste' | 'showQr'
   const [pasteUrl, setPasteUrl] = useState('')
   const [parents, setParents] = useState([]) // child mode: list of paired parents
   const [pairedBanner, setPairedBanner] = useState(null) // string message or null
@@ -292,6 +293,9 @@ export default function Profile({ mode }) {
                     Paste from Clipboard
                   </Button>
                 </div>
+                <Button icon="QrCode" variant="secondary" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('showQr'); }}>
+                  Show My QR Code
+                </Button>
                 <button
                   onClick={() => setPairUiMode('initial')}
                   style={{ background: 'none', border: 'none', color: colors.text.secondary, fontSize: '13px', cursor: 'pointer', padding: 0, alignSelf: 'center' }}
@@ -299,6 +303,13 @@ export default function Profile({ mode }) {
                   Cancel
                 </button>
               </div>
+            )}
+
+            {pairState === 'idle' && pairUiMode === 'showQr' && (
+              <ChildInviteCard
+                onConnected={() => { setPairUiMode('initial') }}
+                onDismiss={() => setPairUiMode('initial')}
+              />
             )}
 
             {pairState === 'idle' && pairUiMode === 'paste' && (

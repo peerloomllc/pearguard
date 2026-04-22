@@ -852,16 +852,34 @@ async function handleHello (msg, conn, remoteKeyHex) {
   // identity and still matches the block).
   const blockedEntry = await db.get('blocked:' + peerIdentityKeyHex).catch(() => null)
   if (blockedEntry) {
+    // Only a pending invite issued AFTER the block counts as "fresh". Without the
+    // timestamp guard, a stale pendingInviteTopic from an earlier invite attempt
+    // (e.g. the parent opened Add Child, pivoted to scanning the child's QR, and
+    // never completed the host-side pair) would auto-clear every future block —
+    // making unpair immediately self-reverse when the child reconnects.
+    const blockedAt = blockedEntry.value?.blockedAt || 0
     const incomingTopic = (peers.get(remoteKeyHex) || {}).topicHex
+    const isChildHello = msg.payload && msg.payload.mode === 'child'
     let matchesFreshInvite = false
+    // 1. pendingInviteTopic matching this connection's topic (parent-hosted invite).
     if (incomingTopic) {
       const pending = await db.get('pendingInviteTopic:' + incomingTopic).catch(() => null)
-      if (pending) matchesFreshInvite = true
-    } else if (msg.payload && msg.payload.mode === 'child') {
-      // Topic not delivered on this connection (Hyperswarm dedup). If ANY
-      // pendingInviteTopic exists, treat this child-hello as a fresh invite ack.
+      if (pending && (pending.value?.createdAt || 0) > blockedAt) matchesFreshInvite = true
+    }
+    // 2. pendingChild for this peer — parent accepted a child-hosted invite (QR scan).
+    // Check regardless of incomingTopic: when the parent and child already share a
+    // stale connection from a prior pair, Hyperswarm may deliver the re-discovery
+    // on that existing connection rather than opening a fresh one on the new topic.
+    if (!matchesFreshInvite && isChildHello) {
+      const pendingChild = await db.get('pendingChild:' + peerIdentityKeyHex).catch(() => null)
+      if (pendingChild && (pendingChild.value?.ts || 0) > blockedAt) matchesFreshInvite = true
+    }
+    // 3. Fallback: any pendingInviteTopic newer than the block, when the topic was
+    // not delivered on this connection (Hyperswarm dedup can deliver empty
+    // info.topics[] on reconnect paths).
+    if (!matchesFreshInvite && isChildHello && !incomingTopic) {
       for await (const { value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
-        if (value) { matchesFreshInvite = true; break }
+        if (value && (value.createdAt || 0) > blockedAt) { matchesFreshInvite = true; break }
       }
     }
     if (matchesFreshInvite) {
@@ -869,13 +887,16 @@ async function handleHello (msg, conn, remoteKeyHex) {
       await db.del('blocked:' + peerIdentityKeyHex).catch(() => {})
     } else {
       console.warn('[bare] rejected hello from blocked peer:', peerIdentityKeyHex.slice(0, 8))
-      // Send 'unpair' so the child can wipe its state even if it was offline when the
-      // parent originally ran child:unpair. Don't destroy immediately — let the write
-      // flush through. The child will close the connection after processing unpair.
+      // Send 'unpair' so the child can wipe its state even if it was offline when
+      // the parent originally ran child:unpair, then destroy the stream after a
+      // short flush window. Without the destroy, Hyperswarm caches the dead
+      // connection and refuses to open a new one when the parent joins a fresh
+      // invite topic, blocking re-pair for ~4 minutes until TCP keepalive fires.
       try {
         const signed = signMessage({ type: 'unpair', payload: {} }, identity)
         conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
       } catch (_e) { /* connection may already be closing */ }
+      setTimeout(() => { try { conn.destroy() } catch (_e) {} }, 500)
       return
     }
   }
@@ -908,22 +929,42 @@ async function handleHello (msg, conn, remoteKeyHex) {
       || null
   if (!resolvedTopic) {
     if (msg.payload && msg.payload.mode === 'child') {
-      // Parent receiving hello from a child: bind to the most recent pending invite topic.
-      const pendingTopics = []
-      for await (const { key, value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
-        if (value && value.topicHex) pendingTopics.push({ key, ...value })
-      }
-      if (pendingTopics.length === 1) {
-        resolvedTopic = pendingTopics[0].topicHex
-      } else if (pendingTopics.length > 1) {
-        pendingTopics.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-        resolvedTopic = pendingTopics[0].topicHex
+      // Parent receiving hello from a child. Prefer pendingChild (parent-accepted
+      // child-hosted invite) since it's keyed by the specific child pubkey; fall
+      // back to pendingInviteTopic (parent-hosted invite issuance).
+      const pendingChild = await db.get('pendingChild:' + peerIdentityKeyHex).catch(() => null)
+      if (pendingChild && pendingChild.value && pendingChild.value.swarmTopic) {
+        resolvedTopic = pendingChild.value.swarmTopic
+      } else {
+        const pendingTopics = []
+        for await (const { key, value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
+          if (value && value.topicHex) pendingTopics.push({ key, ...value })
+        }
+        if (pendingTopics.length === 1) {
+          resolvedTopic = pendingTopics[0].topicHex
+        } else if (pendingTopics.length > 1) {
+          pendingTopics.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+          resolvedTopic = pendingTopics[0].topicHex
+        }
       }
     } else {
-      // Child receiving hello from a parent: read swarmTopic from pendingParent.
+      // Child receiving hello from a parent. Prefer pendingParent (parent-hosted
+      // invite accepted by child); fall back to pendingInviteTopic (child-hosted
+      // invite published by this child — only one active topic expected).
       const pending = await db.get('pendingParent:' + peerIdentityKeyHex).catch(() => null)
       if (pending && pending.value && pending.value.swarmTopic) {
         resolvedTopic = pending.value.swarmTopic
+      } else {
+        const pendingTopics = []
+        for await (const { key, value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
+          if (value && value.topicHex) pendingTopics.push({ key, ...value })
+        }
+        if (pendingTopics.length === 1) {
+          resolvedTopic = pendingTopics[0].topicHex
+        } else if (pendingTopics.length > 1) {
+          pendingTopics.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+          resolvedTopic = pendingTopics[0].topicHex
+        }
       }
     }
   }
@@ -937,8 +978,10 @@ async function handleHello (msg, conn, remoteKeyHex) {
     noiseKey:    remoteKeyHex,
     ...(resolvedTopic ? { swarmTopic: resolvedTopic } : {}),
   }
-  // Clear the one-shot pending invite topic record once it's bound.
-  if (resolvedTopic && msg.payload && msg.payload.mode === 'child') {
+  // Clear the one-shot pending invite topic record once it's bound. Applies to
+  // both directions: parent-hosted invites (parent clears on child hello) and
+  // child-hosted invites (child clears on parent hello).
+  if (resolvedTopic) {
     await db.del('pendingInviteTopic:' + resolvedTopic).catch(() => {})
   }
   await db.put('peers:' + peerIdentityKeyHex, peerRecord)
@@ -990,6 +1033,9 @@ async function handleHello (msg, conn, remoteKeyHex) {
       console.log('[bare] ignoring hello from fellow parent:', peerIdentityKeyHex.slice(0, 12))
       return
     }
+
+    // Clear pendingChild record if this parent accepted a child-hosted invite.
+    await db.del('pendingChild:' + peerIdentityKeyHex).catch(() => {})
 
     // Emit child:connected only for first-time pairings; child:reconnected for subsequent reconnects
     const eventName = isFirstPairing ? 'child:connected' : 'child:reconnected'

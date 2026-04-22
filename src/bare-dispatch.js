@@ -347,16 +347,45 @@ function createDispatch (ctx) {
 
         // Build and return the invite link
         const { buildInviteLink } = require('./invite')
-        const inviteLink = buildInviteLink({ parentPublicKey, swarmTopic: topicHex })
+        const inviteLink = buildInviteLink({ parentPublicKey, swarmTopic: topicHex, role: 'p' })
 
         return { inviteLink, inviteString: inviteLink, qrData: inviteLink, swarmTopic: topicHex, parentPublicKey }
       }
 
+      case 'child-invite:generate': {
+        // Child-hosted pairing invite: the child generates a topic and publishes a QR
+        // the parent can scan. Inverse of 'invite:generate'. Runs in child mode only.
+        const liveMode = ctx.getMode ? ctx.getMode() : ctx.mode
+        if (liveMode && liveMode !== 'child') {
+          throw new Error('child-invite:generate requires child mode')
+        }
+        const topicBuf = Buffer.allocUnsafe(32)
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          crypto.getRandomValues(topicBuf)
+        } else {
+          require('sodium-native').randombytes_buf(topicBuf)
+        }
+        const topicHex = topicBuf.toString('hex')
+        const childPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
+
+        await ctx.db.put('pendingInviteTopic:' + topicHex, { topicHex, createdAt: Date.now(), role: 'c' }).catch(() => {})
+
+        await ctx.joinTopic(topicHex)
+
+        const { buildInviteLink } = require('./invite')
+        const inviteLink = buildInviteLink({ childPublicKey, swarmTopic: topicHex, role: 'c' })
+
+        return { inviteLink, inviteString: inviteLink, qrData: inviteLink, swarmTopic: topicHex, childPublicKey }
+      }
+
       case 'acceptInvite': {
-        // args[0]: full pearguard://join/... URL
+        // args[0]: full pear://pearguard/join?t=... URL
         const { parseInviteLink } = require('./invite')
         const parsed = parseInviteLink(args[0])
         if (!parsed.ok) throw new Error('invalid invite: ' + parsed.error)
+        if (parsed.role === 'c') {
+          throw new Error('This is a child device QR code. Use the Add Child → Scan option on the parent device.')
+        }
 
         const { parentPublicKey, swarmTopic } = parsed
 
@@ -380,6 +409,32 @@ function createDispatch (ctx) {
         }
 
         return { ok: true, swarmTopic, parentPublicKey }
+      }
+
+      case 'acceptChildInvite': {
+        const liveMode = ctx.getMode ? ctx.getMode() : ctx.mode
+        if (liveMode && liveMode !== 'parent') {
+          throw new Error('acceptChildInvite requires parent mode')
+        }
+        const { parseInviteLink } = require('./invite')
+        const parsed = parseInviteLink(args[0])
+        if (!parsed.ok) throw new Error('invalid invite: ' + parsed.error)
+        if (parsed.role !== 'c') {
+          throw new Error('This is a parent device QR code. Use Profile → Pair to Parent on the child device.')
+        }
+
+        const { childPublicKey, swarmTopic } = parsed
+
+        await ctx.db.put('pendingChild:' + childPublicKey, { publicKey: childPublicKey, swarmTopic, ts: Date.now() })
+
+        await ctx.joinTopic(swarmTopic)
+
+        const existing = await ctx.db.get('peers:' + childPublicKey)
+        if (existing) {
+          return { ok: true, alreadyPaired: true, childPublicKey, swarmTopic }
+        }
+
+        return { ok: true, swarmTopic, childPublicKey }
       }
 
       case 'policy:getCurrent': {

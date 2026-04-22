@@ -773,7 +773,7 @@
   var require_react_dom_production = __commonJS({
     "node_modules/react-dom/cjs/react-dom.production.js"(exports) {
       "use strict";
-      var React23 = require_react();
+      var React24 = require_react();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
         if (1 < arguments.length) {
@@ -813,7 +813,7 @@
           implementation
         };
       }
-      var ReactSharedInternals = React23.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React24.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       function getCrossOriginStringAs(as, input) {
         if ("font" === as) return "";
         if ("string" === typeof input)
@@ -949,7 +949,7 @@
     "node_modules/react-dom/cjs/react-dom-client.production.js"(exports) {
       "use strict";
       var Scheduler = require_scheduler();
-      var React23 = require_react();
+      var React24 = require_react();
       var ReactDOM = require_react_dom();
       function formatProdErrorMessage(code) {
         var url = "https://react.dev/errors/" + code;
@@ -1133,7 +1133,7 @@
         return null;
       }
       var isArrayImpl = Array.isArray;
-      var ReactSharedInternals = React23.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      var ReactSharedInternals = React24.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       var sharedNotPendingObject = {
         pending: false,
@@ -12125,7 +12125,7 @@
           0 === i && attemptExplicitHydrationTarget(target);
         }
       };
-      var isomorphicReactPackageVersion$jscomp$inline_1785 = React23.version;
+      var isomorphicReactPackageVersion$jscomp$inline_1785 = React24.version;
       if ("19.1.4" !== isomorphicReactPackageVersion$jscomp$inline_1785)
         throw Error(
           formatProdErrorMessage(
@@ -14304,7 +14304,7 @@
   var require_browser = __commonJS({
     "node_modules/qrcode/lib/browser.js"(exports) {
       var canPromise = require_can_promise();
-      var QRCode2 = require_qrcode();
+      var QRCode3 = require_qrcode();
       var CanvasRenderer = require_canvas();
       var SvgRenderer = require_svg_tag();
       function renderCanvas(renderFunc, canvas, text, opts, cb) {
@@ -14347,7 +14347,7 @@
           }
           return new Promise(function(resolve, reject) {
             try {
-              const data = QRCode2.create(text, opts);
+              const data = QRCode3.create(text, opts);
               resolve(renderFunc(data, canvas, opts));
             } catch (e) {
               reject(e);
@@ -14355,13 +14355,13 @@
           });
         }
         try {
-          const data = QRCode2.create(text, opts);
+          const data = QRCode3.create(text, opts);
           cb(null, renderFunc(data, canvas, opts));
         } catch (e) {
           cb(e);
         }
       }
-      exports.create = QRCode2.create;
+      exports.create = QRCode3.create;
       exports.toCanvas = renderCanvas.bind(null, CanvasRenderer.render);
       exports.toDataURL = renderCanvas.bind(null, CanvasRenderer.renderToDataURL);
       exports.toString = renderCanvas.bind(null, function(data, _, opts) {
@@ -14371,7 +14371,7 @@
   });
 
   // src/ui/main.jsx
-  var import_react24 = __toESM(require_react());
+  var import_react25 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/ui/fonts.js
@@ -14399,7 +14399,7 @@
   }
 
   // src/ui/App.jsx
-  var import_react23 = __toESM(require_react());
+  var import_react24 = __toESM(require_react());
 
   // src/ui/theme.js
   var import_react = __toESM(require_react());
@@ -17709,23 +17709,34 @@
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
     const [invite, setInvite] = (0, import_react12.useState)(null);
     const [error, setError] = (0, import_react12.useState)(null);
+    const [uiMode, setUiMode] = (0, import_react12.useState)("show");
+    const [scanState, setScanState] = (0, import_react12.useState)("idle");
+    const [scanError, setScanError] = (0, import_react12.useState)(null);
     const canvasRef = (0, import_react12.useRef)(null);
     (0, import_react12.useEffect)(() => {
+      if (uiMode !== "show") return;
       window.callBare("invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
       const unsub = window.onBareEvent("child:connected", (data) => {
         onConnected(data);
       });
       return unsub;
-    }, [onConnected]);
+    }, [uiMode, onConnected]);
     (0, import_react12.useEffect)(() => {
-      if (invite?.inviteLink && canvasRef.current) {
+      if (uiMode !== "scan") return;
+      const unsub = window.onBareEvent("child:connected", (data) => {
+        onConnected(data);
+      });
+      return unsub;
+    }, [uiMode, onConnected]);
+    (0, import_react12.useEffect)(() => {
+      if (uiMode === "show" && invite?.inviteLink && canvasRef.current) {
         import_qrcode.default.toCanvas(canvasRef.current, invite.inviteLink, {
           width: 200,
           margin: 2,
           color: { dark: "#000000", light: "#ffffff" }
         }).catch(console.error);
       }
-    }, [invite]);
+    }, [uiMode, invite]);
     const handleShare = () => {
       if (!invite?.inviteLink) return;
       window.callBare("haptic:tap");
@@ -17735,6 +17746,25 @@
 ${invite.inviteLink}`
       });
     };
+    async function handleScan() {
+      setScanError(null);
+      setScanState("scanning");
+      try {
+        const url = await window.callBare("qr:scan");
+        setScanState("connecting");
+        const result = await window.callBare("acceptChildInvite", [url]);
+        if (result && result.alreadyPaired) {
+          onConnected(result);
+        }
+      } catch (e) {
+        if (e.message === "cancelled") {
+          setScanState("idle");
+        } else {
+          setScanState("error");
+          setScanError(e.message);
+        }
+      }
+    }
     const cardStyle = {
       position: "relative",
       backgroundColor: colors.surface.card,
@@ -17744,10 +17774,64 @@ ${invite.inviteLink}`
       marginBottom: `${spacing2.md}px`,
       boxShadow: shadow2
     };
+    const dismissButton = /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+      "button",
+      {
+        onClick: onDismiss,
+        style: {
+          position: "absolute",
+          top: `${spacing2.base}px`,
+          right: `${spacing2.base}px`,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: `${spacing2.xs}px`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        },
+        "aria-label": "Dismiss invite",
+        children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Icon, { name: "X", size: 20, color: colors.text.muted })
+      }
+    );
     if (error) {
       return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: cardStyle, children: [
         /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.body, color: colors.error, margin: 0, marginBottom: `${spacing2.md}px` }, children: error }),
         /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { variant: "secondary", onClick: onDismiss, children: "Dismiss" })
+      ] });
+    }
+    if (uiMode === "scan") {
+      return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: cardStyle, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Scan Child's QR Code" }),
+        dismissButton,
+        scanState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: 'Ask your child to open PearGuard and tap "Show My QR Code", then scan it here.' }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { icon: "QrCode", onClick: () => {
+            window.callBare("haptic:tap");
+            handleScan();
+          }, children: "Scan QR Code" }) })
+        ] }),
+        scanState === "scanning" && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center", margin: 0 }, children: "Opening camera..." }),
+        scanState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center", margin: 0 }, children: "Connecting to child..." }),
+        scanState === "error" && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0, textAlign: "center" }, children: scanError }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { onClick: () => {
+            window.callBare("haptic:tap");
+            setScanState("idle");
+          }, children: "Try Again" }) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+          "button",
+          {
+            onClick: () => {
+              setScanState("idle");
+              setScanError(null);
+              setUiMode("show");
+            },
+            style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: "pointer", padding: 0 },
+            children: "Show my QR instead"
+          }
+        ) })
       ] });
     }
     if (!invite) {
@@ -17755,26 +17839,7 @@ ${invite.inviteLink}`
     }
     return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: cardStyle, children: [
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Add a Child Device" }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
-        "button",
-        {
-          onClick: onDismiss,
-          style: {
-            position: "absolute",
-            top: `${spacing2.base}px`,
-            right: `${spacing2.base}px`,
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: `${spacing2.xs}px`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          },
-          "aria-label": "Dismiss invite",
-          children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Icon, { name: "X", size: 20, color: colors.text.muted })
-        }
-      ),
+      dismissButton,
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: "Scan this QR code on the child's device." }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: {
         display: "flex",
@@ -17786,7 +17851,15 @@ ${invite.inviteLink}`
       }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("canvas", { ref: canvasRef }) }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Or share the link directly (for devices without a camera):" }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { variant: "secondary", icon: "ShareNetwork", onClick: handleShare, children: "Share Link" }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, textAlign: "center" }, children: "Waiting for child to connect..." })
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Waiting for child to connect..." }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+        "button",
+        {
+          onClick: () => setUiMode("scan"),
+          style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: "pointer", padding: 0 },
+          children: "Or scan child's QR instead"
+        }
+      ) })
     ] });
   }
 
@@ -19487,7 +19560,7 @@ ${invite.inviteLink}`
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_react22 = __toESM(require_react());
+  var import_react23 = __toESM(require_react());
 
   // src/ui/components/ChildHome.jsx
   var import_react20 = __toESM(require_react());
@@ -19703,27 +19776,118 @@ ${invite.inviteLink}`
   }
 
   // src/ui/components/Profile.jsx
+  var import_react22 = __toESM(require_react());
+
+  // src/ui/components/ChildInviteCard.jsx
   var import_react21 = __toESM(require_react());
+  var import_qrcode2 = __toESM(require_browser());
   var import_jsx_runtime28 = __toESM(require_jsx_runtime());
+  function ChildInviteCard({ onConnected, onDismiss }) {
+    const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
+    const [invite, setInvite] = (0, import_react21.useState)(null);
+    const [error, setError] = (0, import_react21.useState)(null);
+    const canvasRef = (0, import_react21.useRef)(null);
+    (0, import_react21.useEffect)(() => {
+      window.callBare("child-invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
+      const unsub = window.onBareEvent("peer:paired", (data) => {
+        onConnected(data);
+      });
+      return unsub;
+    }, [onConnected]);
+    (0, import_react21.useEffect)(() => {
+      if (invite?.inviteLink && canvasRef.current) {
+        import_qrcode2.default.toCanvas(canvasRef.current, invite.inviteLink, {
+          width: 200,
+          margin: 2,
+          color: { dark: "#000000", light: "#ffffff" }
+        }).catch(console.error);
+      }
+    }, [invite]);
+    const handleShare = () => {
+      if (!invite?.inviteLink) return;
+      window.callBare("haptic:tap");
+      window.callBare("share:text", {
+        text: `Tap this link on the parent device to pair with PearGuard:
+
+${invite.inviteLink}`
+      });
+    };
+    const cardStyle = {
+      position: "relative",
+      backgroundColor: colors.surface.card,
+      border: `1px solid ${colors.border}`,
+      borderRadius: `${radius2.lg}px`,
+      padding: `${spacing2.base}px`,
+      marginBottom: `${spacing2.md}px`,
+      boxShadow: shadow2
+    };
+    if (error) {
+      return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { ...cardStyle, display: "flex", flexDirection: "column", alignItems: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.body, color: colors.error, margin: 0, marginBottom: `${spacing2.md}px`, textAlign: "center" }, children: error }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { variant: "secondary", onClick: onDismiss, children: "Dismiss" })
+      ] });
+    }
+    if (!invite) {
+      return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: cardStyle, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0 }, children: "Generating invite..." }) });
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: cardStyle, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Pair with Parent" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+        "button",
+        {
+          onClick: onDismiss,
+          style: {
+            position: "absolute",
+            top: `${spacing2.base}px`,
+            right: `${spacing2.base}px`,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: `${spacing2.xs}px`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          },
+          "aria-label": "Dismiss invite",
+          children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "X", size: 20, color: colors.text.muted })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: "Scan this QR code on the parent's device." }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: {
+        display: "flex",
+        justifyContent: "center",
+        marginBottom: `${spacing2.base}px`,
+        padding: `${spacing2.md}px`,
+        backgroundColor: "#ffffff",
+        borderRadius: `${radius2.md}px`
+      }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("canvas", { ref: canvasRef }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Or share the link directly (for devices without a camera):" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { variant: "secondary", icon: "ShareNetwork", onClick: handleShare, children: "Share Link" }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, textAlign: "center" }, children: "Waiting for parent to scan..." })
+    ] });
+  }
+
+  // src/ui/components/Profile.jsx
+  var import_jsx_runtime29 = __toESM(require_jsx_runtime());
   function Profile({ mode }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [name, setName] = (0, import_react21.useState)("");
-    const [savedName, setSavedName] = (0, import_react21.useState)("");
-    const [avatar, setAvatar] = (0, import_react21.useState)(null);
-    const [showPicker, setShowPicker] = (0, import_react21.useState)(false);
-    const [saving, setSaving] = (0, import_react21.useState)(false);
-    const [photoLoading, setPhotoLoading] = (0, import_react21.useState)(false);
-    const [status, setStatus] = (0, import_react21.useState)(null);
-    const [pairState, setPairState] = (0, import_react21.useState)("idle");
-    const [pairError, setPairError] = (0, import_react21.useState)(null);
-    const [pairUiMode, setPairUiMode] = (0, import_react21.useState)("initial");
-    const [pasteUrl, setPasteUrl] = (0, import_react21.useState)("");
-    const [parents, setParents] = (0, import_react21.useState)([]);
-    const [pairedBanner, setPairedBanner] = (0, import_react21.useState)(null);
-    const [parentsOpen, setParentsOpen] = (0, import_react21.useState)(true);
-    const pairDoneRef = (0, import_react21.useRef)(false);
-    const pairTimeoutRef = (0, import_react21.useRef)(null);
-    (0, import_react21.useEffect)(() => {
+    const [name, setName] = (0, import_react22.useState)("");
+    const [savedName, setSavedName] = (0, import_react22.useState)("");
+    const [avatar, setAvatar] = (0, import_react22.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react22.useState)(false);
+    const [saving, setSaving] = (0, import_react22.useState)(false);
+    const [photoLoading, setPhotoLoading] = (0, import_react22.useState)(false);
+    const [status, setStatus] = (0, import_react22.useState)(null);
+    const [pairState, setPairState] = (0, import_react22.useState)("idle");
+    const [pairError, setPairError] = (0, import_react22.useState)(null);
+    const [pairUiMode, setPairUiMode] = (0, import_react22.useState)("initial");
+    const [pasteUrl, setPasteUrl] = (0, import_react22.useState)("");
+    const [parents, setParents] = (0, import_react22.useState)([]);
+    const [pairedBanner, setPairedBanner] = (0, import_react22.useState)(null);
+    const [parentsOpen, setParentsOpen] = (0, import_react22.useState)(true);
+    const pairDoneRef = (0, import_react22.useRef)(false);
+    const pairTimeoutRef = (0, import_react22.useRef)(null);
+    (0, import_react22.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
         setName(n);
@@ -19732,7 +19896,7 @@ ${invite.inviteLink}`
       }).catch(() => {
       });
     }, []);
-    (0, import_react21.useEffect)(() => {
+    (0, import_react22.useEffect)(() => {
       if (mode !== "child") return;
       const refresh = () => window.callBare("children:list").then(setParents).catch(() => {
       });
@@ -19875,12 +20039,12 @@ ${invite.inviteLink}`
       backgroundColor: colors.surface.input,
       color: colors.text.primary
     };
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.xl}px`, textAlign: "center" }, children: "Profile" }),
-      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.xl}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
-        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.xl}px`, textAlign: "center" }, children: "Profile" }),
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.xl}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
             "button",
             {
               onClick: () => {
@@ -19890,12 +20054,12 @@ ${invite.inviteLink}`
               disabled: photoLoading,
               style: { fontSize: "12px", padding: "5px 14px", borderRadius: `${radius2.md}px`, border: `1px solid ${colors.border}`, background: "transparent", color: colors.text.primary, cursor: photoLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "5px", opacity: photoLoading ? 0.5 : 1 },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Icon, { name: "ImageSquare", size: 14, color: colors.text.primary }),
                 " Photo"
               ]
             }
           ),
-          avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+          avatar && avatar.type === "custom" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
             "button",
             {
               onClick: () => {
@@ -19909,7 +20073,7 @@ ${invite.inviteLink}`
           )
         ] })
       ] }),
-      showPicker && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+      showPicker && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
         AvatarPicker,
         {
           currentAvatar: avatar,
@@ -19918,10 +20082,10 @@ ${invite.inviteLink}`
           onCancel: () => setShowPicker(false)
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
           label,
-          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
             "input",
             {
               type: "text",
@@ -19936,12 +20100,12 @@ ${invite.inviteLink}`
             }
           )
         ] }),
-        saving && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.text.muted, fontSize: "13px", margin: 0 }, children: "Saving..." }),
-        !saving && status === "success" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, children: "Saved." }),
-        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, children: "Failed to save name." })
+        saving && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.text.muted, fontSize: "13px", margin: 0 }, children: "Saving..." }),
+        !saving && status === "success" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, children: "Saved." }),
+        status === "error" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, children: "Failed to save name." })
       ] }),
-      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
+      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
           Collapsible,
           {
             title: "Paired Parents",
@@ -19953,35 +20117,39 @@ ${invite.inviteLink}`
             spacing: spacing2,
             radius: radius2,
             children: [
-              parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { marginBottom: `${spacing2.base}px` }, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: {
+              parents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { marginBottom: `${spacing2.base}px` }, children: parents.map((p) => /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: {
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
                 padding: "10px 0",
                 borderBottom: `1px solid ${colors.divider}`
               }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border } }),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { fontSize: "15px", fontWeight: "500", flex: 1, color: colors.text.primary }, children: p.displayName || "Parent Device" }),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { fontSize: "12px", color: colors.text.muted }, children: p.isOnline ? "Connected" : "Offline" })
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Avatar, { avatar: p.avatarThumb, name: p.displayName || "Parent", size: 32 }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0, backgroundColor: p.isOnline ? colors.success : colors.border } }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { fontSize: "15px", fontWeight: "500", flex: 1, color: colors.text.primary }, children: p.displayName || "Parent Device" }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { fontSize: "12px", color: colors.text.muted }, children: p.isOnline ? "Connected" : "Offline" })
               ] }, p.publicKey)) }),
-              pairState === "idle" && pairUiMode === "initial" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { onClick: () => {
+              pairState === "idle" && pairUiMode === "initial" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { onClick: () => {
                 window.callBare("haptic:tap");
                 setPairUiMode("methodPicker");
               }, children: parents.length > 0 ? "Pair Another Parent" : "Pair to Parent" }) }),
-              pairState === "idle" && pairUiMode === "methodPicker" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, icon: "QrCode", onClick: () => {
+              pairState === "idle" && pairUiMode === "methodPicker" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { style: { flex: 1 }, icon: "QrCode", onClick: () => {
                     window.callBare("haptic:tap");
                     setPairUiMode("initial");
                     handlePair();
                   }, children: "Scan QR Code" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, icon: "ClipboardText", onClick: () => {
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { style: { flex: 1 }, icon: "ClipboardText", onClick: () => {
                     window.callBare("haptic:tap");
                     setPairUiMode("paste");
                   }, children: "Paste from Clipboard" })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { icon: "QrCode", variant: "secondary", onClick: () => {
+                  window.callBare("haptic:tap");
+                  setPairUiMode("showQr");
+                }, children: "Show My QR Code" }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
                   "button",
                   {
                     onClick: () => setPairUiMode("initial"),
@@ -19990,8 +20158,17 @@ ${invite.inviteLink}`
                   }
                 )
               ] }),
-              pairState === "idle" && pairUiMode === "paste" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+              pairState === "idle" && pairUiMode === "showQr" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+                ChildInviteCard,
+                {
+                  onConnected: () => {
+                    setPairUiMode("initial");
+                  },
+                  onDismiss: () => setPairUiMode("initial")
+                }
+              ),
+              pairState === "idle" && pairUiMode === "paste" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
                   "input",
                   {
                     type: "text",
@@ -20002,22 +20179,22 @@ ${invite.inviteLink}`
                     autoFocus: true
                   }
                 ),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, variant: "secondary", onClick: () => {
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { style: { flex: 1 }, variant: "secondary", onClick: () => {
                     setPairUiMode("methodPicker");
                     setPasteUrl("");
                   }, children: "Cancel" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { style: { flex: 1 }, onClick: () => {
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { style: { flex: 1 }, onClick: () => {
                     window.callBare("haptic:tap");
                     handlePasteAndPair();
                   }, disabled: !pasteUrl.trim(), children: "Pair" })
                 ] })
               ] }),
-              pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center" }, children: "Connecting to parent..." }),
-              pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0, textAlign: "center" }, children: "Pairing in progress..." }),
-              pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0, textAlign: "center" }, children: pairError }),
-                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Button, { onClick: () => {
+              pairState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center" }, children: "Connecting to parent..." }),
+              pairState === "success" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0, textAlign: "center" }, children: "Pairing in progress..." }),
+              pairState === "error" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(import_jsx_runtime29.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0, textAlign: "center" }, children: pairError }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { onClick: () => {
                   window.callBare("haptic:tap");
                   setPairState("idle");
                 }, children: "Try Again" }) })
@@ -20025,7 +20202,7 @@ ${invite.inviteLink}`
             ]
           }
         ),
-        pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: {
+        pairedBanner && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: {
           backgroundColor: `${colors.success}22`,
           color: colors.success,
           border: `1px solid ${colors.success}44`,
@@ -20041,42 +20218,42 @@ ${invite.inviteLink}`
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_jsx_runtime29 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime30 = __toESM(require_jsx_runtime());
   var TABS3 = [
-    { key: "home", label: "Home", icon: "House", Component: () => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ChildHome, { openDetail: true }) },
-    { key: "profile", label: "Profile", icon: "User", Component: () => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Profile, { mode: "child" }) }
+    { key: "home", label: "Home", icon: "House", Component: () => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ChildHome, { openDetail: true }) },
+    { key: "profile", label: "Profile", icon: "User", Component: () => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Profile, { mode: "child" }) }
   ];
   function ChildApp() {
     const { colors, typography: typography2 } = useTheme();
-    const [tab, setTab] = (0, import_react22.useState)(() => typeof window !== "undefined" && window.__pearScreenshotChildTab || "home");
-    (0, import_react22.useEffect)(() => {
+    const [tab, setTab] = (0, import_react23.useState)(() => typeof window !== "undefined" && window.__pearScreenshotChildTab || "home");
+    (0, import_react23.useEffect)(() => {
       const unsub = window.onBareEvent("navigate:child:requests", () => setTab("home"));
       return unsub;
     }, []);
     const ActiveTab = TABS3.find((t) => t.key === tab)?.Component || TABS3[0].Component;
-    return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
       display: "flex",
       flexDirection: "column",
       height: "100vh",
       backgroundColor: colors.surface.base,
       ...typography2.body
     }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ActiveTab, {}) }),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(TabBar, { tabs: TABS3, activeTab: tab, onTabChange: setTab })
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { flex: 1, overflowY: "auto" }, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ActiveTab, {}) }),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(TabBar, { tabs: TABS3, activeTab: tab, onTabChange: setTab })
     ] });
   }
 
   // src/ui/App.jsx
-  var import_jsx_runtime30 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime31 = __toESM(require_jsx_runtime());
   function ModeSetup() {
     const { colors, typography: typography2 } = useTheme();
-    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", backgroundColor: colors.surface.base }, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { style: { ...typography2.body, color: colors.text.secondary }, children: "Waiting for setup..." }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", backgroundColor: colors.surface.base }, children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("p", { style: { ...typography2.body, color: colors.text.secondary }, children: "Waiting for setup..." }) });
   }
   function App() {
-    const [mode, setMode] = (0, import_react23.useState)(null);
-    const [ready, setReady] = (0, import_react23.useState)(false);
+    const [mode, setMode] = (0, import_react24.useState)(null);
+    const [ready, setReady] = (0, import_react24.useState)(false);
     const { colors } = useTheme();
-    (0, import_react23.useEffect)(() => {
+    (0, import_react24.useEffect)(() => {
       initTheme();
       window.callBare("identity:getMode").then(({ mode: m }) => setMode(m)).catch(() => {
       });
@@ -20088,7 +20265,7 @@ ${invite.inviteLink}`
       return unsub;
     }, []);
     if (!ready) return null;
-    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { height: "100vh", backgroundColor: colors.surface.base, color: colors.text.primary }, children: mode === "parent" ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ParentApp, {}) : mode === "child" ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ChildApp, {}) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ModeSetup, {}) });
+    return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { style: { height: "100vh", backgroundColor: colors.surface.base, color: colors.text.primary }, children: mode === "parent" ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ParentApp, {}) : mode === "child" ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ChildApp, {}) : /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ModeSetup, {}) });
   }
 
   // src/ui/screenshot-fixtures.js
@@ -20501,7 +20678,7 @@ ${invite.inviteLink}`
   }
 
   // src/ui/main.jsx
-  var import_jsx_runtime31 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime32 = __toESM(require_jsx_runtime());
   injectFonts();
   var pending = {};
   var nextId = 1;
@@ -20564,7 +20741,7 @@ ${invite.inviteLink}`
     installFixtures(_screenshotScene);
   }
   var root = (0, import_client.createRoot)(document.getElementById("root"));
-  root.render(/* @__PURE__ */ (0, import_jsx_runtime31.jsx)(App, {}));
+  root.render(/* @__PURE__ */ (0, import_jsx_runtime32.jsx)(App, {}));
 })();
 /*! Bundled license information:
 

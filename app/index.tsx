@@ -49,6 +49,10 @@ let _webViewLoaded = false
 const _pendingWebViewEvents: { event: string; data: any }[] = []
 // Stable inject function updated each render so buffered events reach current WebView ref.
 let _injectToWebView: ((js: string) => void) | null = null
+// 60s child-mode ticker that pushes fresh app/usage into bare's heartbeat cache.
+// bare.js owns the actual 60s heartbeat send (native worklet thread, survives
+// Android JS-thread suspension); this just keeps the cache fresh when RN is alive.
+let _heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
 // ── Module-level deep link listeners ──────────────────────────────────────────
 // These must live outside the component so they are never removed on unmount.
@@ -91,6 +95,35 @@ function sendToWorklet (msg: object, pendingId?: number) {
       const resolve = _pending.get(pendingId)
       if (resolve) { _pending.delete(pendingId); resolve({ error: 'IPC write failed' }) }
     }
+  }
+}
+
+async function pushHeartbeatDataOnce () {
+  try {
+    const [usageList, currentAppPackage] = await Promise.all([
+      NativeModules.UsageStatsModule?.getDailyUsageAllEvents?.(),
+      NativeModules.UsageStatsModule?.getLastForegroundPackage?.(),
+    ])
+    const usage: { packageName: string; appName: string; secondsToday: number }[] = usageList || []
+    const todayScreenTimeSeconds = usage.reduce((sum, a) => sum + (a.secondsToday || 0), 0)
+    const foregroundEntry = currentAppPackage ? usage.find((a) => a.packageName === currentAppPackage) : null
+    const currentApp = foregroundEntry ? foregroundEntry.appName : null
+    sendToWorklet({ method: 'heartbeat:updateData', args: { currentApp, currentAppPackage: currentAppPackage || null, todayScreenTimeSeconds } })
+  } catch (e) {
+    console.warn('[PearGuard] heartbeat data push failed:', e)
+  }
+}
+
+function startHeartbeatTimer () {
+  if (_heartbeatTimer) return
+  pushHeartbeatDataOnce()
+  _heartbeatTimer = setInterval(pushHeartbeatDataOnce, 60 * 1000)
+}
+
+function stopHeartbeatTimer () {
+  if (_heartbeatTimer) {
+    clearInterval(_heartbeatTimer)
+    _heartbeatTimer = null
   }
 }
 
@@ -917,6 +950,16 @@ export default function Root () {
               if (pending) sendToWorklet({ method: 'swarm:reconnect' })
             }).catch?.(() => {})
           }
+        }
+
+        // Push fresh currentApp and screen-time into bare's heartbeat cache
+        // every 60s while RN's JS thread is alive. bare.js owns the actual
+        // heartbeat send on its native-thread setInterval; this just keeps
+        // the cache fresh whenever RN is awake. Gated on Android + child mode.
+        if (data.mode === 'child' && isAndroid) {
+          startHeartbeatTimer()
+        } else {
+          stopHeartbeatTimer()
         }
 
         // Force-stop and background-bypass detection (child only).

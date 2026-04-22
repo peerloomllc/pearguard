@@ -29,6 +29,16 @@ function isSystemPackage(pkg) {
   return false
 }
 
+// RN shells push fresh app/usage values into this cache via 'heartbeat:updateData'
+// whenever the JS thread is alive. bare.js's native-thread setInterval calls
+// 'heartbeat:send', which reads from this cache so heartbeats stay reliable
+// even when the RN JS thread is suspended (backgrounded child on Android).
+const heartbeatCache = {
+  currentApp: null,
+  currentAppPackage: null,
+  todayScreenTimeSeconds: null,
+}
+
 /**
  * Create a dispatch function bound to the given context (db, swarm, etc.)
  * @param {object} ctx — { db, identity, swarm, peers }
@@ -875,6 +885,17 @@ function createDispatch (ctx) {
         return { rejoined: topicHexes.length }
       }
 
+      case 'heartbeat:updateData': {
+        if (args && typeof args === 'object') {
+          if ('currentApp' in args) heartbeatCache.currentApp = args.currentApp
+          if ('currentAppPackage' in args) heartbeatCache.currentAppPackage = args.currentAppPackage
+          if (typeof args.todayScreenTimeSeconds === 'number') {
+            heartbeatCache.todayScreenTimeSeconds = args.todayScreenTimeSeconds
+          }
+        }
+        return { ok: true }
+      }
+
       case 'heartbeat:send': {
         const identityRaw = await ctx.db.get('identity')
         const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
@@ -887,6 +908,9 @@ function createDispatch (ctx) {
             // TODO: enforcementActive should come from native:getEnforcementState via RN.
             // Since we lack a synchronous callRN helper, default to null (unknown) for now.
             enforcementActive: null,
+            currentApp: heartbeatCache.currentApp,
+            currentAppPackage: heartbeatCache.currentAppPackage,
+            todayScreenTimeSeconds: heartbeatCache.todayScreenTimeSeconds,
             timestamp: Date.now(),
           },
         }

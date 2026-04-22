@@ -98,6 +98,17 @@ export default forwardRef(function Dashboard(_props, ref) {
             : c
         ));
       }),
+      window.onBareEvent('heartbeat:received', (data) => {
+        setChildren((prev) => prev.map((c) => {
+          if (c.publicKey !== data.childPublicKey) return c;
+          const next = { ...c, isOnline: true };
+          if (data.currentApp != null) next.currentApp = data.currentApp;
+          if (data.currentAppPackage != null) next.currentAppPackage = data.currentAppPackage;
+          if (data.currentAppIcon != null) next.currentAppIcon = data.currentAppIcon;
+          if (typeof data.todayScreenTimeSeconds === 'number') next.todayScreenTimeSeconds = data.todayScreenTimeSeconds;
+          return next;
+        }));
+      }),
       window.onBareEvent('child:timeRequest', (data) => {
         setChildren((prev) => prev.map((c) =>
           c.publicKey === data.childPublicKey ? { ...c, pendingTimeRequests: c.pendingTimeRequests + 1 } : c

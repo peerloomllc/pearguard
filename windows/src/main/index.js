@@ -89,6 +89,7 @@ let pendingCalls = new Map()  // id -> { resolve, reject }
 let nextId = 1
 let enforcement = null  // lazily constructed in app.whenReady so tests can stub active-win
 let usageFlushTimer = null
+let heartbeatTimer = null
 let tamperDetector = null
 
 // Install the BareKit shim BEFORE requiring bare.js so its module-top
@@ -635,6 +636,7 @@ app.whenReady().then(() => {
     if (enforcement && !process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
       enforcement.start()
       startUsageFlushTimer()
+      startHeartbeatTimer()
     }
 
     // Tamper detection: compare the previous runtime-state marker against
@@ -683,6 +685,20 @@ async function flushUsageOnce() {
   }
 }
 
+async function pushHeartbeatDataOnce() {
+  if (!enforcement || !bareReady) return
+  const usage = enforcement.usage.getDailyUsageAll()
+  const currentAppPackage = enforcement.usage.getLastForegroundPackage()
+  const todayScreenTimeSeconds = usage.reduce((sum, a) => sum + (a.secondsToday || 0), 0)
+  const foregroundEntry = currentAppPackage ? usage.find((a) => a.packageName === currentAppPackage) : null
+  const currentApp = foregroundEntry ? (foregroundEntry.appName || foregroundEntry.displayName) : null
+  try {
+    await callBare('heartbeat:updateData', { currentApp, currentAppPackage: currentAppPackage || null, todayScreenTimeSeconds })
+  } catch (e) {
+    console.warn('[main] heartbeat:updateData failed:', e.message)
+  }
+}
+
 function startUsageFlushTimer() {
   if (usageFlushTimer) return
   usageFlushTimer = setInterval(flushUsageOnce, USAGE_FLUSH_INTERVAL_MS)
@@ -696,9 +712,24 @@ function stopUsageFlushTimer() {
   }
 }
 
+function startHeartbeatTimer() {
+  if (heartbeatTimer) return
+  pushHeartbeatDataOnce()
+  heartbeatTimer = setInterval(pushHeartbeatDataOnce, 60 * 1000)
+  if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref()
+}
+
+function stopHeartbeatTimer() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = null
+  }
+}
+
 app.on('before-quit', () => {
   isQuitting = true
   stopUsageFlushTimer()
+  stopHeartbeatTimer()
   // Close the active session so its seconds land in takeSessions() before we
   // try to flush one last time.
   if (enforcement) enforcement.usage.endActive()

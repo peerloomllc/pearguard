@@ -316,17 +316,25 @@ async function init (dataDir, attempt = 0) {
   setInterval(runDailyMaintenance, 24 * 60 * 60 * 1000)
   setInterval(maybeAutoReclaim, 60 * 60 * 1000)
 
+  // Child-only 60s heartbeat. Native worklet thread keeps ticking even when
+  // the RN JS thread is suspended (backgrounded child). RN pushes fresh app
+  // and usage data into bare via 'heartbeat:updateData'; this timer sends
+  // from that cache so isOnline stays current and data refreshes whenever
+  // RN is awake.
+  if (mode === 'child') {
+    setInterval(() => {
+      handleDispatch('heartbeat:send', {}, null).catch(e =>
+        console.warn('[bare] scheduled heartbeat failed:', e.message)
+      )
+    }, 60 * 1000)
+  }
+
   // Signal ready
   send({ type: 'event', event: 'ready', data: {
     publicKey: b4a.toString(identity.publicKey, 'hex'),
     mode,
     pairedKeys: [...knownPeerKeys],
   }})
-
-  // Start 60-second heartbeat timer
-  setInterval(() => {
-    handleDispatch('heartbeat:send', {}, null)
-  }, 60 * 1000)
 }
 
 // ── P2P / Hyperswarm ──────────────────────────────────────────────────────────
@@ -610,7 +618,13 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       const childPublicKey = msg.from
       const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
       const childDisplayName = peerRecord?.value?.displayName || 'Child'
-      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey, childDisplayName } })
+      let currentAppIcon = null
+      if (msg.payload.currentAppPackage) {
+        const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
+        const policyApps = policyRaw?.value?.apps || {}
+        currentAppIcon = policyApps[msg.payload.currentAppPackage]?.iconBase64 || null
+      }
+      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey, childDisplayName, currentAppIcon } })
       break
     }
     case 'bypass:alert': {

@@ -7,18 +7,34 @@ if (process.platform === 'linux') {
 
 const path = require('path')
 const fs = require('fs')
-const os = require('os')
 const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, clipboard, dialog } = require('electron')
 
 // Tee console output to a rolling log file. Desktop shortcuts launch
 // electron.exe directly with no stdout redirection, so without this the only
-// way to see logs is to run `npm start > pearguard.log`. File lives at
-// %USERPROFILE%/pearguard.log on Windows, $HOME/pearguard.log elsewhere.
+// way to see logs is to run `npm start > pearguard.log`. File lives under
+// app.getPath('userData') + '/logs/', matching the electron-log convention
+// and keeping logs next to the Hyperbee store (same backup/deletion boundary).
+// Windows: %APPDATA%\pearguard-windows\logs\pearguard.log
 ;(function installFileLogger() {
   try {
-    const logPath = path.join(os.homedir(), 'pearguard.log')
-    // Truncate on each launch so the file stays bounded across restarts.
-    const stream = fs.createWriteStream(logPath, { flags: 'w' })
+    const dir = path.join(app.getPath('userData'), 'logs')
+    fs.mkdirSync(dir, { recursive: true })
+    const logPath = path.join(dir, 'pearguard.log')
+    // Rotate once at startup: if the existing log is over 5 MB, move it to
+    // pearguard.log.1 (overwriting any prior rotation) so we keep one
+    // previous-session log for crash forensics without unbounded growth.
+    // Append across launches so the watchdog-triggered restart after a crash
+    // preserves the crash evidence instead of wiping it on next open.
+    const MAX_BYTES = 5 * 1024 * 1024
+    try {
+      const stat = fs.statSync(logPath)
+      if (stat.size > MAX_BYTES) {
+        const prev = logPath + '.1'
+        try { fs.unlinkSync(prev) } catch (_e) {}
+        fs.renameSync(logPath, prev)
+      }
+    } catch (_e) { /* no existing log yet */ }
+    const stream = fs.createWriteStream(logPath, { flags: 'a' })
     const tee = (orig) => (...args) => {
       try {
         const line = args.map((a) => typeof a === 'string' ? a : require('util').inspect(a, { depth: 4 })).join(' ')

@@ -196,12 +196,24 @@ async function init (dataDir, attempt = 0) {
     }
   }
   const topicHexSet = new Set()
+  // Conservative prune: only drop an orphan topic if it was joined >7d ago (#147).
+  // A topics:* entry not referenced by any peer can still belong to a live
+  // pairing whose peer record was written without a swarmTopic; keeping recent
+  // joins protects that pairing until explicit unpair.
+  const PRUNE_ORPHAN_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+  const now = Date.now()
   for await (const { key, value } of db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
     if (!value || !value.topicHex) continue
-    if (activePeerTopics.size > 0 && !activePeerTopics.has(value.topicHex)) {
+    const isOrphan = activePeerTopics.size > 0 && !activePeerTopics.has(value.topicHex)
+    const joinedAt = typeof value.joinedAt === 'number' ? value.joinedAt : 0
+    const ageMs = joinedAt > 0 ? now - joinedAt : Infinity
+    if (isOrphan && ageMs >= PRUNE_ORPHAN_AFTER_MS) {
       console.log('[bare] pruning orphaned topic at startup:', value.topicHex.slice(0, 8))
       await db.del(key).catch(() => {})
     } else {
+      if (isOrphan) {
+        console.log('[bare] keeping recent orphan topic (joined <7d ago):', value.topicHex.slice(0, 8))
+      }
       topicHexSet.add(value.topicHex)
     }
   }

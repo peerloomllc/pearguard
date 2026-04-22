@@ -160,6 +160,13 @@ shim.onBareOut((buf) => {
         flushUsageOnce().catch((e) => console.warn('[main] usage:flush failed:', e.message))
         return
       }
+      // First parent pairing flips the device into "supervised" mode. Until
+      // this fires we leave enforcement dormant so a fresh install on a new
+      // PC doesn't block apps the parent has never seen. Idempotent — re-pair
+      // and reconnect both refire peer:paired and the start helpers no-op.
+      if (msg.event === 'peer:paired') {
+        startEnforcementIfNeeded()
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bare-event', msg)
       } else {
@@ -630,13 +637,20 @@ app.whenReady().then(() => {
       bufferedEvents.length = 0
     })
 
-    // Start the foreground monitor only after bare is ready and we know we're
-    // in child mode. Skip during smoke tests so they don't spin up a poller
-    // they don't need.
-    if (enforcement && !process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
-      enforcement.start()
-      startUsageFlushTimer()
-      startHeartbeatTimer()
+    // Start the foreground monitor only after bare is ready, we know we're in
+    // child mode, AND at least one parent is paired. Without the pairing gate,
+    // a fresh install on a new PC would mark every newly-sighted exe as
+    // 'pending' in the local policy (see bare-dispatch app:installed) and the
+    // overlay would block apps the parent has never seen. peer:paired (handled
+    // in the bare-out router above) starts enforcement on the first pair.
+    if (!process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
+      try {
+        const { hasPeers } = await callBare('peers:hasParent')
+        if (hasPeers) startEnforcementIfNeeded()
+        else console.log('[main] enforcement deferred: no paired parent yet')
+      } catch (e) {
+        console.warn('[main] peers:hasParent check failed, deferring enforcement:', e.message)
+      }
     }
 
     // Tamper detection: compare the previous runtime-state marker against
@@ -697,6 +711,19 @@ async function pushHeartbeatDataOnce() {
   } catch (e) {
     console.warn('[main] heartbeat:updateData failed:', e.message)
   }
+}
+
+// Idempotent: safe to call from both the startup path and the peer:paired
+// listener. enforcement.start() guards its own internal timer, the timer
+// helpers below do too.
+let enforcementStarted = false
+function startEnforcementIfNeeded() {
+  if (enforcementStarted || !enforcement) return
+  enforcementStarted = true
+  console.log('[main] starting enforcement (parent paired)')
+  enforcement.start()
+  startUsageFlushTimer()
+  startHeartbeatTimer()
 }
 
 function startUsageFlushTimer() {

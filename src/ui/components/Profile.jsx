@@ -21,6 +21,7 @@ export default function Profile({ mode }) {
   const [pairError, setPairError] = useState(null)
   const [pairUiMode, setPairUiMode] = useState('initial') // 'initial' | 'methodPicker' | 'paste' | 'showQr'
   const [pasteUrl, setPasteUrl] = useState('')
+  const [sharingLink, setSharingLink] = useState(false)
   const [parents, setParents] = useState([]) // child mode: list of paired parents
   const [pairedBanner, setPairedBanner] = useState(null) // string message or null
   const [parentsOpen, setParentsOpen] = useState(true)
@@ -164,6 +165,23 @@ export default function Profile({ mode }) {
     }
   }
 
+  async function handleShareLink() {
+    if (sharingLink) return
+    window.callBare('haptic:tap')
+    setSharingLink(true)
+    try {
+      const invite = await window.callBare('child-invite:generate')
+      if (!invite?.inviteLink) return
+      await window.callBare('share:text', {
+        text: `Tap this link on the parent device to pair with PearGuard:\n\n${invite.inviteLink}`,
+      })
+    } catch {
+      // silently fail; user can retry
+    } finally {
+      setSharingLink(false)
+    }
+  }
+
   async function handlePasteAndPair() {
     const url = pasteUrl.trim()
     if (!url) return
@@ -289,13 +307,26 @@ export default function Profile({ mode }) {
                   <Button style={{ flex: 1 }} icon="QrCode" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('initial'); handlePair(); }}>
                     Scan QR Code
                   </Button>
-                  <Button style={{ flex: 1 }} icon="ClipboardText" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('paste'); }}>
-                    Paste from Clipboard
+                  <Button style={{ flex: 1 }} icon="QrCode" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('showQr'); }}>
+                    Show QR Code
                   </Button>
                 </div>
-                <Button icon="QrCode" variant="secondary" onClick={() => { window.callBare('haptic:tap'); setPairUiMode('showQr'); }}>
-                  Show My QR Code
-                </Button>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: `${spacing.sm}px`, marginTop: `${spacing.xs}px` }}>
+                  <button
+                    onClick={handleShareLink}
+                    disabled={sharingLink}
+                    style={{ background: 'none', border: 'none', color: colors.primary, fontSize: '13px', cursor: sharingLink ? 'wait' : 'pointer', padding: 0, opacity: sharingLink ? 0.6 : 1 }}
+                  >
+                    {sharingLink ? 'Generating...' : 'Share Link'}
+                  </button>
+                  <span style={{ color: colors.text.muted, fontSize: '13px' }}>·</span>
+                  <button
+                    onClick={() => { window.callBare('haptic:tap'); setPairUiMode('paste'); }}
+                    style={{ background: 'none', border: 'none', color: colors.primary, fontSize: '13px', cursor: 'pointer', padding: 0 }}
+                  >
+                    Paste Link
+                  </button>
+                </div>
                 <button
                   onClick={() => setPairUiMode('initial')}
                   style={{ background: 'none', border: 'none', color: colors.text.secondary, fontSize: '13px', cursor: 'pointer', padding: 0, alignSelf: 'center' }}

@@ -51,7 +51,7 @@ test('child mode: Pair to Parent opens method picker with QR and Paste options',
   render(<Profile mode="child" />);
   fireEvent.click(screen.getByText(/pair to parent/i));
   expect(screen.getByText(/scan qr code/i)).toBeInTheDocument();
-  expect(screen.getByText(/paste from clipboard/i)).toBeInTheDocument();
+  expect(screen.getByText(/paste link/i)).toBeInTheDocument();
 });
 
 // ── Child mode — QR happy path ────────────────────────────────────────────────
@@ -165,7 +165,7 @@ test('child mode: permission denied shows error message', async () => {
 test('child mode: Paste from Clipboard opens paste input', () => {
   render(<Profile mode="child" />);
   fireEvent.click(screen.getByText(/pair to parent/i));
-  fireEvent.click(screen.getByText(/paste from clipboard/i));
+  fireEvent.click(screen.getByText(/paste link/i));
   expect(screen.getByPlaceholderText(/pear:\/\/pearguard\/join/i)).toBeInTheDocument();
 });
 
@@ -174,7 +174,7 @@ test('child mode: paste + Pair calls acceptInvite with pasted URL', async () => 
 
   render(<Profile mode="child" />);
   fireEvent.click(screen.getByText(/pair to parent/i));
-  fireEvent.click(screen.getByText(/paste from clipboard/i));
+  fireEvent.click(screen.getByText(/paste link/i));
 
   const input = screen.getByPlaceholderText(/pear:\/\/pearguard\/join/i);
   fireEvent.change(input, { target: { value: 'pear://pearguard/join?t=pasted' } });
@@ -189,7 +189,7 @@ test('child mode: paste + Pair calls acceptInvite with pasted URL', async () => 
 test('child mode: paste Pair button is disabled when input is empty', () => {
   render(<Profile mode="child" />);
   fireEvent.click(screen.getByText(/pair to parent/i));
-  fireEvent.click(screen.getByText(/paste from clipboard/i));
+  fireEvent.click(screen.getByText(/paste link/i));
   const pairBtn = screen.getByRole('button', { name: /^pair$/i });
   expect(pairBtn).toBeDisabled();
 });

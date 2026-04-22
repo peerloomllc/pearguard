@@ -17709,27 +17709,25 @@
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
     const [invite, setInvite] = (0, import_react12.useState)(null);
     const [error, setError] = (0, import_react12.useState)(null);
-    const [uiMode, setUiMode] = (0, import_react12.useState)("show");
+    const [uiMode, setUiMode] = (0, import_react12.useState)("methodPicker");
     const [scanState, setScanState] = (0, import_react12.useState)("idle");
     const [scanError, setScanError] = (0, import_react12.useState)(null);
+    const [pasteUrl, setPasteUrl] = (0, import_react12.useState)("");
+    const [sharing, setSharing] = (0, import_react12.useState)(false);
     const canvasRef = (0, import_react12.useRef)(null);
     (0, import_react12.useEffect)(() => {
-      if (uiMode !== "show") return;
+      const unsub = window.onBareEvent("child:connected", (data) => {
+        onConnected(data);
+      });
+      return unsub;
+    }, [onConnected]);
+    (0, import_react12.useEffect)(() => {
+      if (uiMode !== "showQr") return;
+      if (invite) return;
       window.callBare("invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
-      const unsub = window.onBareEvent("child:connected", (data) => {
-        onConnected(data);
-      });
-      return unsub;
-    }, [uiMode, onConnected]);
+    }, [uiMode, invite]);
     (0, import_react12.useEffect)(() => {
-      if (uiMode !== "scan") return;
-      const unsub = window.onBareEvent("child:connected", (data) => {
-        onConnected(data);
-      });
-      return unsub;
-    }, [uiMode, onConnected]);
-    (0, import_react12.useEffect)(() => {
-      if (uiMode === "show" && invite?.inviteLink && canvasRef.current) {
+      if (uiMode === "showQr" && invite?.inviteLink && canvasRef.current) {
         import_qrcode.default.toCanvas(canvasRef.current, invite.inviteLink, {
           width: 200,
           margin: 2,
@@ -17737,15 +17735,30 @@
         }).catch(console.error);
       }
     }, [uiMode, invite]);
-    const handleShare = () => {
-      if (!invite?.inviteLink) return;
+    async function ensureInvite() {
+      if (invite?.inviteLink) return invite;
+      const generated = await window.callBare("invite:generate");
+      setInvite(generated);
+      return generated;
+    }
+    async function handleShare() {
+      if (sharing) return;
       window.callBare("haptic:tap");
-      window.callBare("share:text", {
-        text: `Tap this link on the child device to pair with PearGuard:
+      setSharing(true);
+      try {
+        const inv = await ensureInvite();
+        if (!inv?.inviteLink) return;
+        await window.callBare("share:text", {
+          text: `Tap this link on the child device to pair with PearGuard:
 
-${invite.inviteLink}`
-      });
-    };
+${inv.inviteLink}`
+        });
+      } catch {
+        setError("Failed to generate invite. Please try again.");
+      } finally {
+        setSharing(false);
+      }
+    }
     async function handleScan() {
       setScanError(null);
       setScanState("scanning");
@@ -17759,10 +17772,27 @@ ${invite.inviteLink}`
       } catch (e) {
         if (e.message === "cancelled") {
           setScanState("idle");
+          setUiMode("methodPicker");
         } else {
           setScanState("error");
           setScanError(e.message);
         }
+      }
+    }
+    async function handlePasteAndPair() {
+      const url = pasteUrl.trim();
+      if (!url) return;
+      window.callBare("haptic:tap");
+      setScanError(null);
+      setScanState("connecting");
+      try {
+        const result = await window.callBare("acceptChildInvite", [url]);
+        if (result && result.alreadyPaired) {
+          onConnected(result);
+        }
+      } catch (e) {
+        setScanState("error");
+        setScanError(e.message);
       }
     }
     const cardStyle = {
@@ -17773,6 +17803,14 @@ ${invite.inviteLink}`
       padding: `${spacing2.base}px`,
       marginBottom: `${spacing2.md}px`,
       boxShadow: shadow2
+    };
+    const inputStyle = {
+      padding: "10px",
+      border: `1px solid ${colors.border}`,
+      borderRadius: `${radius2.md}px`,
+      fontSize: "15px",
+      backgroundColor: colors.surface.input,
+      color: colors.text.primary
     };
     const dismissButton = /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
       "button",
@@ -17826,40 +17864,123 @@ ${invite.inviteLink}`
             onClick: () => {
               setScanState("idle");
               setScanError(null);
-              setUiMode("show");
+              setUiMode("methodPicker");
             },
-            style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: "pointer", padding: 0 },
-            children: "Show my QR instead"
+            style: { background: "none", border: "none", color: colors.text.secondary, fontSize: "13px", cursor: "pointer", padding: 0 },
+            children: "Back"
           }
         ) })
       ] });
     }
-    if (!invite) {
-      return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: cardStyle, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0 }, children: "Generating invite..." }) });
+    if (uiMode === "paste") {
+      return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: cardStyle, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Paste Invite Link" }),
+        dismissButton,
+        scanState === "idle" && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+            "input",
+            {
+              type: "text",
+              value: pasteUrl,
+              onChange: (e) => setPasteUrl(e.target.value),
+              placeholder: "pear://pearguard/join?...",
+              style: inputStyle,
+              autoFocus: true
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { style: { flex: 1 }, variant: "secondary", onClick: () => {
+              setUiMode("methodPicker");
+              setPasteUrl("");
+            }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { style: { flex: 1 }, onClick: handlePasteAndPair, disabled: !pasteUrl.trim(), children: "Pair" })
+          ] })
+        ] }),
+        scanState === "connecting" && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center", margin: 0 }, children: "Connecting to child..." }),
+        scanState === "error" && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0, textAlign: "center" }, children: scanError }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { onClick: () => {
+            window.callBare("haptic:tap");
+            setScanState("idle");
+          }, children: "Try Again" }) })
+        ] })
+      ] });
+    }
+    if (uiMode === "showQr") {
+      return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: cardStyle, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Add a Child Device" }),
+        dismissButton,
+        !invite ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, textAlign: "center" }, children: "Generating invite..." }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: "Scan this QR code on the child's device." }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: {
+            display: "flex",
+            justifyContent: "center",
+            marginBottom: `${spacing2.base}px`,
+            padding: `${spacing2.md}px`,
+            backgroundColor: "#ffffff",
+            borderRadius: `${radius2.md}px`
+          }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("canvas", { ref: canvasRef }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Waiting for child to connect..." })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginTop: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+          "button",
+          {
+            onClick: () => setUiMode("methodPicker"),
+            style: { background: "none", border: "none", color: colors.text.secondary, fontSize: "13px", cursor: "pointer", padding: 0 },
+            children: "Back"
+          }
+        ) })
+      ] });
     }
     return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: cardStyle, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Add a Child Device" }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: "Add a Child Device" }),
       dismissButton,
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.base}px`, textAlign: "center" }, children: "Scan this QR code on the child's device." }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: {
-        display: "flex",
-        justifyContent: "center",
-        marginBottom: `${spacing2.base}px`,
-        padding: `${spacing2.md}px`,
-        backgroundColor: "#ffffff",
-        borderRadius: `${radius2.md}px`
-      }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("canvas", { ref: canvasRef }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Or share the link directly (for devices without a camera):" }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center", marginBottom: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { variant: "secondary", icon: "ShareNetwork", onClick: handleShare, children: "Share Link" }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { style: { ...typography2.caption, color: colors.text.muted, fontStyle: "italic", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Waiting for child to connect..." }),
-      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
-        "button",
-        {
-          onClick: () => setUiMode("scan"),
-          style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: "pointer", padding: 0 },
-          children: "Or scan child's QR instead"
-        }
-      ) })
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { style: { flex: 1 }, icon: "QrCode", onClick: () => {
+            window.callBare("haptic:tap");
+            setUiMode("scan");
+            setScanState("idle");
+            handleScan();
+          }, children: "Scan QR Code" }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Button, { style: { flex: 1 }, icon: "QrCode", onClick: () => {
+            window.callBare("haptic:tap");
+            setUiMode("showQr");
+          }, children: "Show QR Code" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", gap: `${spacing2.sm}px`, marginTop: `${spacing2.xs}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+            "button",
+            {
+              onClick: handleShare,
+              disabled: sharing,
+              style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: sharing ? "wait" : "pointer", padding: 0, opacity: sharing ? 0.6 : 1 },
+              children: sharing ? "Generating..." : "Share Link"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { style: { color: colors.text.muted, fontSize: "13px" }, children: "\xB7" }),
+          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+            "button",
+            {
+              onClick: () => {
+                window.callBare("haptic:tap");
+                setUiMode("paste");
+                setScanState("idle");
+              },
+              style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: "pointer", padding: 0 },
+              children: "Paste Link"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+          "button",
+          {
+            onClick: onDismiss,
+            style: { background: "none", border: "none", color: colors.text.secondary, fontSize: "13px", cursor: "pointer", padding: 0, alignSelf: "center" },
+            children: "Cancel"
+          }
+        )
+      ] })
     ] });
   }
 
@@ -19830,7 +19951,7 @@ ${invite.inviteLink}`
       ] });
     }
     if (!invite) {
-      return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: cardStyle, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0 }, children: "Generating invite..." }) });
+      return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: cardStyle, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, margin: 0, textAlign: "center" }, children: "Generating invite..." }) });
     }
     return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: cardStyle, children: [
       /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", margin: 0, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Pair with Parent" }),
@@ -19884,6 +20005,7 @@ ${invite.inviteLink}`
     const [pairError, setPairError] = (0, import_react22.useState)(null);
     const [pairUiMode, setPairUiMode] = (0, import_react22.useState)("initial");
     const [pasteUrl, setPasteUrl] = (0, import_react22.useState)("");
+    const [sharingLink, setSharingLink] = (0, import_react22.useState)(false);
     const [parents, setParents] = (0, import_react22.useState)([]);
     const [pairedBanner, setPairedBanner] = (0, import_react22.useState)(null);
     const [parentsOpen, setParentsOpen] = (0, import_react22.useState)(true);
@@ -20014,6 +20136,23 @@ ${invite.inviteLink}`
         }
       }
     }
+    async function handleShareLink() {
+      if (sharingLink) return;
+      window.callBare("haptic:tap");
+      setSharingLink(true);
+      try {
+        const invite = await window.callBare("child-invite:generate");
+        if (!invite?.inviteLink) return;
+        await window.callBare("share:text", {
+          text: `Tap this link on the parent device to pair with PearGuard:
+
+${invite.inviteLink}`
+        });
+      } catch {
+      } finally {
+        setSharingLink(false);
+      }
+    }
     async function handlePasteAndPair() {
       const url = pasteUrl.trim();
       if (!url) return;
@@ -20142,15 +20281,34 @@ ${invite.inviteLink}`
                     setPairUiMode("initial");
                     handlePair();
                   }, children: "Scan QR Code" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { style: { flex: 1 }, icon: "ClipboardText", onClick: () => {
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { style: { flex: 1 }, icon: "QrCode", onClick: () => {
                     window.callBare("haptic:tap");
-                    setPairUiMode("paste");
-                  }, children: "Paste from Clipboard" })
+                    setPairUiMode("showQr");
+                  }, children: "Show QR Code" })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Button, { icon: "QrCode", variant: "secondary", onClick: () => {
-                  window.callBare("haptic:tap");
-                  setPairUiMode("showQr");
-                }, children: "Show My QR Code" }),
+                /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", gap: `${spacing2.sm}px`, marginTop: `${spacing2.xs}px` }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+                    "button",
+                    {
+                      onClick: handleShareLink,
+                      disabled: sharingLink,
+                      style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: sharingLink ? "wait" : "pointer", padding: 0, opacity: sharingLink ? 0.6 : 1 },
+                      children: sharingLink ? "Generating..." : "Share Link"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { style: { color: colors.text.muted, fontSize: "13px" }, children: "\xB7" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+                    "button",
+                    {
+                      onClick: () => {
+                        window.callBare("haptic:tap");
+                        setPairUiMode("paste");
+                      },
+                      style: { background: "none", border: "none", color: colors.primary, fontSize: "13px", cursor: "pointer", padding: 0 },
+                      children: "Paste Link"
+                    }
+                  )
+                ] }),
                 /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
                   "button",
                   {

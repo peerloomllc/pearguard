@@ -8,33 +8,30 @@ export default function InviteCard({ onConnected, onDismiss }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
-  const [uiMode, setUiMode] = useState('show'); // 'show' | 'scan'
+  const [uiMode, setUiMode] = useState('methodPicker'); // 'methodPicker' | 'showQr' | 'scan' | 'paste'
   const [scanState, setScanState] = useState('idle'); // 'idle' | 'scanning' | 'connecting' | 'error'
   const [scanError, setScanError] = useState(null);
+  const [pasteUrl, setPasteUrl] = useState('');
+  const [sharing, setSharing] = useState(false);
   const canvasRef = useRef(null);
 
   useEffect(() => {
-    if (uiMode !== 'show') return;
+    const unsub = window.onBareEvent('child:connected', (data) => {
+      onConnected(data);
+    });
+    return unsub;
+  }, [onConnected]);
+
+  useEffect(() => {
+    if (uiMode !== 'showQr') return;
+    if (invite) return;
     window.callBare('invite:generate')
       .then(setInvite)
       .catch(() => setError('Failed to generate invite. Please try again.'));
-
-    const unsub = window.onBareEvent('child:connected', (data) => {
-      onConnected(data);
-    });
-    return unsub;
-  }, [uiMode, onConnected]);
+  }, [uiMode, invite]);
 
   useEffect(() => {
-    if (uiMode !== 'scan') return;
-    const unsub = window.onBareEvent('child:connected', (data) => {
-      onConnected(data);
-    });
-    return unsub;
-  }, [uiMode, onConnected]);
-
-  useEffect(() => {
-    if (uiMode === 'show' && invite?.inviteLink && canvasRef.current) {
+    if (uiMode === 'showQr' && invite?.inviteLink && canvasRef.current) {
       QRCode.toCanvas(canvasRef.current, invite.inviteLink, {
         width: 200,
         margin: 2,
@@ -43,13 +40,29 @@ export default function InviteCard({ onConnected, onDismiss }) {
     }
   }, [uiMode, invite]);
 
-  const handleShare = () => {
-    if (!invite?.inviteLink) return;
+  async function ensureInvite() {
+    if (invite?.inviteLink) return invite;
+    const generated = await window.callBare('invite:generate');
+    setInvite(generated);
+    return generated;
+  }
+
+  async function handleShare() {
+    if (sharing) return;
     window.callBare('haptic:tap');
-    window.callBare('share:text', {
-      text: `Tap this link on the child device to pair with PearGuard:\n\n${invite.inviteLink}`,
-    });
-  };
+    setSharing(true);
+    try {
+      const inv = await ensureInvite();
+      if (!inv?.inviteLink) return;
+      await window.callBare('share:text', {
+        text: `Tap this link on the child device to pair with PearGuard:\n\n${inv.inviteLink}`,
+      });
+    } catch {
+      setError('Failed to generate invite. Please try again.');
+    } finally {
+      setSharing(false);
+    }
+  }
 
   async function handleScan() {
     setScanError(null);
@@ -65,10 +78,28 @@ export default function InviteCard({ onConnected, onDismiss }) {
     } catch (e) {
       if (e.message === 'cancelled') {
         setScanState('idle');
+        setUiMode('methodPicker');
       } else {
         setScanState('error');
         setScanError(e.message);
       }
+    }
+  }
+
+  async function handlePasteAndPair() {
+    const url = pasteUrl.trim();
+    if (!url) return;
+    window.callBare('haptic:tap');
+    setScanError(null);
+    setScanState('connecting');
+    try {
+      const result = await window.callBare('acceptChildInvite', [url]);
+      if (result && result.alreadyPaired) {
+        onConnected(result);
+      }
+    } catch (e) {
+      setScanState('error');
+      setScanError(e.message);
     }
   }
 
@@ -80,6 +111,15 @@ export default function InviteCard({ onConnected, onDismiss }) {
     padding: `${spacing.base}px`,
     marginBottom: `${spacing.md}px`,
     boxShadow: shadow,
+  };
+
+  const inputStyle = {
+    padding: '10px',
+    border: `1px solid ${colors.border}`,
+    borderRadius: `${radius.md}px`,
+    fontSize: '15px',
+    backgroundColor: colors.surface.input,
+    color: colors.text.primary,
   };
 
   const dismissButton = (
@@ -149,61 +189,139 @@ export default function InviteCard({ onConnected, onDismiss }) {
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: `${spacing.base}px` }}>
           <button
-            onClick={() => { setScanState('idle'); setScanError(null); setUiMode('show'); }}
-            style={{ background: 'none', border: 'none', color: colors.primary, fontSize: '13px', cursor: 'pointer', padding: 0 }}
+            onClick={() => { setScanState('idle'); setScanError(null); setUiMode('methodPicker'); }}
+            style={{ background: 'none', border: 'none', color: colors.text.secondary, fontSize: '13px', cursor: 'pointer', padding: 0 }}
           >
-            Show my QR instead
+            Back
           </button>
         </div>
       </div>
     );
   }
 
-  if (!invite) {
+  if (uiMode === 'paste') {
     return (
       <div style={cardStyle}>
-        <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0 }}>Generating invite...</p>
+        <h3 style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+          Paste Invite Link
+        </h3>
+        {dismissButton}
+
+        {scanState === 'idle' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+            <input
+              type="text"
+              value={pasteUrl}
+              onChange={(e) => setPasteUrl(e.target.value)}
+              placeholder="pear://pearguard/join?..."
+              style={inputStyle}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+              <Button style={{ flex: 1 }} variant="secondary" onClick={() => { setUiMode('methodPicker'); setPasteUrl(''); }}>Cancel</Button>
+              <Button style={{ flex: 1 }} onClick={handlePasteAndPair} disabled={!pasteUrl.trim()}>Pair</Button>
+            </div>
+          </div>
+        )}
+
+        {scanState === 'connecting' && (
+          <p style={{ color: colors.text.muted, fontSize: '14px', textAlign: 'center', margin: 0 }}>
+            Connecting to child...
+          </p>
+        )}
+
+        {scanState === 'error' && (
+          <>
+            <p style={{ color: colors.error, fontSize: '13px', margin: 0, textAlign: 'center' }}>{scanError}</p>
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: `${spacing.sm}px` }}>
+              <Button onClick={() => { window.callBare('haptic:tap'); setScanState('idle'); }}>Try Again</Button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
 
+  if (uiMode === 'showQr') {
+    return (
+      <div style={cardStyle}>
+        <h3 style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+          Add a Child Device
+        </h3>
+        {dismissButton}
+
+        {!invite ? (
+          <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, textAlign: 'center' }}>Generating invite...</p>
+        ) : (
+          <>
+            <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing.base}px`, textAlign: 'center' }}>
+              Scan this QR code on the child's device.
+            </p>
+
+            <div style={{
+              display: 'flex', justifyContent: 'center',
+              marginBottom: `${spacing.base}px`, padding: `${spacing.md}px`,
+              backgroundColor: '#ffffff', borderRadius: `${radius.md}px`,
+            }}>
+              <canvas ref={canvasRef} />
+            </div>
+
+            <p style={{ ...typography.caption, color: colors.text.muted, fontStyle: 'italic', margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+              Waiting for child to connect...
+            </p>
+          </>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: `${spacing.base}px` }}>
+          <button
+            onClick={() => setUiMode('methodPicker')}
+            style={{ background: 'none', border: 'none', color: colors.text.secondary, fontSize: '13px', cursor: 'pointer', padding: 0 }}
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // uiMode === 'methodPicker'
   return (
     <div style={cardStyle}>
-      <h3 style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+      <h3 style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', margin: 0, marginBottom: `${spacing.base}px`, textAlign: 'center' }}>
         Add a Child Device
       </h3>
       {dismissButton}
 
-      <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing.base}px`, textAlign: 'center' }}>
-        Scan this QR code on the child's device.
-      </p>
-
-      <div style={{
-        display: 'flex', justifyContent: 'center',
-        marginBottom: `${spacing.base}px`, padding: `${spacing.md}px`,
-        backgroundColor: '#ffffff', borderRadius: `${radius.md}px`,
-      }}>
-        <canvas ref={canvasRef} />
-      </div>
-
-      <p style={{ ...typography.caption, color: colors.text.secondary, margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
-        Or share the link directly (for devices without a camera):
-      </p>
-
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.base}px` }}>
-        <Button variant="secondary" icon="ShareNetwork" onClick={handleShare}>Share Link</Button>
-      </div>
-
-      <p style={{ ...typography.caption, color: colors.text.muted, fontStyle: 'italic', margin: 0, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
-        Waiting for child to connect...
-      </p>
-
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px` }}>
+        <div style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+          <Button style={{ flex: 1 }} icon="QrCode" onClick={() => { window.callBare('haptic:tap'); setUiMode('scan'); setScanState('idle'); handleScan(); }}>
+            Scan QR Code
+          </Button>
+          <Button style={{ flex: 1 }} icon="QrCode" onClick={() => { window.callBare('haptic:tap'); setUiMode('showQr'); }}>
+            Show QR Code
+          </Button>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: `${spacing.sm}px`, marginTop: `${spacing.xs}px` }}>
+          <button
+            onClick={handleShare}
+            disabled={sharing}
+            style={{ background: 'none', border: 'none', color: colors.primary, fontSize: '13px', cursor: sharing ? 'wait' : 'pointer', padding: 0, opacity: sharing ? 0.6 : 1 }}
+          >
+            {sharing ? 'Generating...' : 'Share Link'}
+          </button>
+          <span style={{ color: colors.text.muted, fontSize: '13px' }}>·</span>
+          <button
+            onClick={() => { window.callBare('haptic:tap'); setUiMode('paste'); setScanState('idle'); }}
+            style={{ background: 'none', border: 'none', color: colors.primary, fontSize: '13px', cursor: 'pointer', padding: 0 }}
+          >
+            Paste Link
+          </button>
+        </div>
         <button
-          onClick={() => setUiMode('scan')}
-          style={{ background: 'none', border: 'none', color: colors.primary, fontSize: '13px', cursor: 'pointer', padding: 0 }}
+          onClick={onDismiss}
+          style={{ background: 'none', border: 'none', color: colors.text.secondary, fontSize: '13px', cursor: 'pointer', padding: 0, alignSelf: 'center' }}
         >
-          Or scan child's QR instead
+          Cancel
         </button>
       </div>
     </div>

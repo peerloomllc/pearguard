@@ -6,7 +6,7 @@ import Profile from './Profile.jsx';
 import Button from './primitives/Button.jsx';
 import Icon from '../icons.js';
 import { TourProvider, useTour } from './Tour.jsx';
-import { CHILD_TOUR_SLIDES, CHILD_TOUR_AFTER_PAIR_SLIDES } from './childTourSlides.js';
+import { CHILD_TOUR_AFTER_PAIR_SLIDES } from './childTourSlides.js';
 
 const TABS = [
   { key: 'home', label: 'Home', icon: 'House', Component: () => <ChildHome openDetail /> },
@@ -79,17 +79,6 @@ function ChildAppInner() {
       .then((seen) => { if (!seen) setShowWelcome(true); })
       .catch(() => {});
   }, []);
-
-  // Replay button handler (wired from Profile).
-  useEffect(() => {
-    function onReplay() {
-      tour.start(CHILD_TOUR_SLIDES, {
-        onFinish: () => window.callBare('pref:set', { key: 'onboarding:tourSeen', value: true }).catch(() => {}),
-      });
-    }
-    window.__pearReplayTour = onReplay;
-    return () => { delete window.__pearReplayTour; };
-  }, [tour]);
 
   // Auto-start tour on first pairing.
   useEffect(() => {

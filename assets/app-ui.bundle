@@ -19447,6 +19447,12 @@ ${inv.inviteLink}`
   function AboutTab() {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const [walletModal, setWalletModal] = (0, import_react18.useState)(false);
+    const [howOpen, setHowOpen] = (0, import_react18.useState)(false);
+    const [tutorialOpen, setTutorialOpen] = (0, import_react18.useState)(false);
+    const [valueOpen, setValueOpen] = (0, import_react18.useState)(false);
+    const [bitcoinOpen, setBitcoinOpen] = (0, import_react18.useState)(false);
+    const [shareOpen, setShareOpen] = (0, import_react18.useState)(false);
+    const [contactOpen, setContactOpen] = (0, import_react18.useState)(false);
     const isIOS = window.__pearPlatform === "ios";
     async function handleDonateBTC() {
       window.callBare("haptic:tap");
@@ -19461,22 +19467,24 @@ ${inv.inviteLink}`
         setWalletModal(true);
       }
     }
-    const cardStyle = {
-      backgroundColor: colors.surface.elevated,
-      borderRadius: `${radius2.lg}px`,
-      padding: "14px 16px",
-      marginBottom: `${spacing2.md}px`
-    };
     const fullWidth = { width: "100%" };
     const flexOne = { flex: 1 };
+    const bodyStyle = { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 };
+    const collapsibleProps = { colors, spacing: spacing2, radius: radius2 };
     return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { padding: `${spacing2.base}px`, overflowY: "auto", flex: 1 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.lg}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "20px", fontWeight: "600", color: colors.text.primary }, children: "PearGuard" }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "12px", color: colors.text.muted }, children: "Private. Peer-to-Peer. No Servers." })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "TUTORIAL" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Replay the in-app walkthrough that introduces the Dashboard, Apps, Rules, and Activity tabs." }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Collapsible, { title: "How it works", icon: "Info", open: howOpen, onToggle: () => setHowOpen((v) => !v), maxHeight: "240px", ...collapsibleProps, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: bodyStyle, children: "PearGuard connects parent and child devices directly using peer-to-peer technology. Your data never touches a server - policies, usage reports, and requests stay between your devices. No accounts. No subscriptions. No data collection." }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: () => openURL("https://pears.com/"), style: fullWidth, children: [
+          "Learn about P2P ",
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 14, color: colors.primary })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Collapsible, { title: "Tutorial", icon: "BookOpen", open: tutorialOpen, onToggle: () => setTutorialOpen((v) => !v), maxHeight: "200px", ...collapsibleProps, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: bodyStyle, children: "Replay the in-app walkthrough that introduces the Dashboard, Apps, Rules, and Activity tabs." }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: () => {
           window.callBare("haptic:tap");
           window.__pearReplayTour?.();
@@ -19485,17 +19493,8 @@ ${inv.inviteLink}`
           " Replay Tutorial"
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "HOW IT WORKS" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "PearGuard connects parent and child devices directly using peer-to-peer technology. Your data never touches a server - policies, usage reports, and requests stay between your devices. No accounts. No subscriptions. No data collection." }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: () => openURL("https://pears.com/"), style: fullWidth, children: [
-          "Learn about P2P ",
-          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 14, color: colors.primary })
-        ] })
-      ] }),
-      !isIOS && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "VALUE FOR VALUE" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "PearGuard is free and open source. If you receive value from it, please consider returning value." }),
+      !isIOS && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Collapsible, { title: "Value for value", icon: "Lightning", open: valueOpen, onToggle: () => setValueOpen((v) => !v), maxHeight: "200px", ...collapsibleProps, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: bodyStyle, children: "PearGuard is free and open source. If you receive value from it, please consider returning value." }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: handleDonateBTC, style: flexOne, children: [
             /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "Lightning", size: 14, color: colors.primary }),
@@ -19509,52 +19508,47 @@ ${inv.inviteLink}`
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "LEARN ABOUT BITCOIN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "New to Bitcoin? The Satoshi Nakamoto Institute has a free, concise crash course explaining how Bitcoin works and why it matters." }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Collapsible, { title: "Learn about Bitcoin", icon: "BookOpen", open: bitcoinOpen, onToggle: () => setBitcoinOpen((v) => !v), maxHeight: "220px", ...collapsibleProps, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: bodyStyle, children: "New to Bitcoin? The Satoshi Nakamoto Institute has a free, concise crash course explaining how Bitcoin works and why it matters." }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: () => openURL("https://nakamotoinstitute.org/crash-course/"), style: fullWidth, children: [
           /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "BookOpen", size: 16, color: colors.primary }),
           " Bitcoin Crash Course ",
           /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 14, color: colors.primary })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "SHARE THE APP" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, lineHeight: "1.6", marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Know someone who could use private, serverless parental controls? Share PearGuard with them." }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Collapsible, { title: "Share the app", icon: "ShareNetwork", open: shareOpen, onToggle: () => setShareOpen((v) => !v), maxHeight: "200px", ...collapsibleProps, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: bodyStyle, children: "Know someone who could use private, serverless parental controls? Share PearGuard with them." }),
         /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(Button, { variant: "secondary", onClick: shareApp, style: fullWidth, children: [
           /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ShareNetwork", size: 16, color: colors.primary }),
           " Share PearGuard"
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: cardStyle, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { fontSize: "11px", fontWeight: "600", color: colors.text.secondary, letterSpacing: "0.04em", textAlign: "center", marginBottom: `${spacing2.sm}px` }, children: "CONTACT" }),
-        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, justifyContent: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
-            Button,
-            {
-              variant: "secondary",
-              onClick: () => openURL("mailto:peerloomllc@proton.me?subject=%5BPearGuard%5D%20Feedback"),
-              children: [
-                /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "EnvelopeSimple", size: 14, color: colors.primary }),
-                " Send Email ",
-                /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 13, color: colors.primary })
-              ]
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
-            Button,
-            {
-              variant: "secondary",
-              onClick: () => openURL("https://github.com/peerloomllc/pearguard/issues"),
-              children: [
-                /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "Bug", size: 14, color: colors.primary }),
-                " Report Issue ",
-                /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 13, color: colors.primary })
-              ]
-            }
-          )
-        ] })
-      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Collapsible, { title: "Contact", icon: "EnvelopeSimple", open: contactOpen, onToggle: () => setContactOpen((v) => !v), maxHeight: "120px", ...collapsibleProps, children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, justifyContent: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
+          Button,
+          {
+            variant: "secondary",
+            onClick: () => openURL("mailto:peerloomllc@proton.me?subject=%5BPearGuard%5D%20Feedback"),
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "EnvelopeSimple", size: 14, color: colors.primary }),
+              " Send Email ",
+              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 13, color: colors.primary })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
+          Button,
+          {
+            variant: "secondary",
+            onClick: () => openURL("https://github.com/peerloomllc/pearguard/issues"),
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "Bug", size: 14, color: colors.primary }),
+              " Report Issue ",
+              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Icon, { name: "ArrowSquareOut", size: 13, color: colors.primary })
+            ]
+          }
+        )
+      ] }) }),
       /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { textAlign: "center", fontSize: "11px", color: colors.text.muted, paddingTop: `${spacing2.md}px`, paddingBottom: `${spacing2.sm}px` }, children: "v0.1.0" }),
       /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
         Modal,
@@ -20961,14 +20955,7 @@ ${invite.inviteLink}`
           fontWeight: "500",
           textAlign: "center"
         }, children: pairedBanner })
-      ] }),
-      mode === "child" && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { marginTop: `${spacing2.lg}px`, display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(Button, { variant: "secondary", onClick: () => {
-        window.callBare("haptic:tap");
-        window.__pearReplayTour?.();
-      }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Icon, { name: "BookOpen", size: 16, color: colors.primary }),
-        " Replay Tutorial"
-      ] }) })
+      ] })
     ] });
   }
 
@@ -21059,18 +21046,6 @@ ${invite.inviteLink}`
       }).catch(() => {
       });
     }, []);
-    (0, import_react24.useEffect)(() => {
-      function onReplay() {
-        tour.start(CHILD_TOUR_SLIDES, {
-          onFinish: () => window.callBare("pref:set", { key: "onboarding:tourSeen", value: true }).catch(() => {
-          })
-        });
-      }
-      window.__pearReplayTour = onReplay;
-      return () => {
-        delete window.__pearReplayTour;
-      };
-    }, [tour]);
     (0, import_react24.useEffect)(() => {
       const unsub = window.onBareEvent("peer:paired", () => {
         if (tourStartedRef.current) return;

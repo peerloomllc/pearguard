@@ -139,7 +139,7 @@ export default function AboutTab() {
         </div>
       </Collapsible>
 
-      <div style={{ textAlign: 'center', fontSize: '11px', color: colors.text.muted, paddingTop: `${spacing.md}px`, paddingBottom: `${spacing.sm}px` }}>v0.1.0</div>
+      <div style={{ textAlign: 'center', fontSize: '11px', color: colors.text.muted, paddingTop: `${spacing.md}px`, paddingBottom: `${spacing.sm}px` }}>v{window.__pearVersion || ''}</div>
 
       <Modal
         visible={walletModal}

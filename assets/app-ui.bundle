@@ -19549,7 +19549,10 @@ ${inv.inviteLink}`
           }
         )
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { style: { textAlign: "center", fontSize: "11px", color: colors.text.muted, paddingTop: `${spacing2.md}px`, paddingBottom: `${spacing2.sm}px` }, children: "v0.1.0" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { style: { textAlign: "center", fontSize: "11px", color: colors.text.muted, paddingTop: `${spacing2.md}px`, paddingBottom: `${spacing2.sm}px` }, children: [
+        "v",
+        window.__pearVersion || ""
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
         Modal,
         {

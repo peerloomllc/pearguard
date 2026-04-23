@@ -1050,7 +1050,7 @@ export default function Root () {
         source={{ html }}
         style={styles.webview}
         onMessage={onWebViewMessage}
-        injectedJavaScriptBeforeContentLoaded={`window.__pearPlatform=${JSON.stringify(Platform.OS)};${_pendingAlertsNav ? `window.__pendingAlertsNav=${JSON.stringify(_pendingAlertsNav)};` : ''}${(() => {
+        injectedJavaScriptBeforeContentLoaded={`window.__pearPlatform=${JSON.stringify(Platform.OS)};window.__pearVersion=${JSON.stringify(Constants.expoConfig?.version ?? '')};${_pendingAlertsNav ? `window.__pendingAlertsNav=${JSON.stringify(_pendingAlertsNav)};` : ''}${(() => {
           const mod = (NativeModules as any).PearGuardScreenshot
           const scene = mod?.scene ?? 0
           const dark = mod?.dark ?? -1

@@ -1,17 +1,103 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
+import { APP_CATEGORIES, CATEGORY_COLORS } from './appCategories.js';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const BLANK_RULE = { label: '', days: [], start: '21:00', end: '07:00', exemptApps: [] };
 
-function RuleRow({ rule, appNames, onEdit, onDelete, colors, typography, spacing, radius }) {
+function ExemptCategoryGroup({ categoryName, apps, exemptSet, onToggle, onSelectAll, onClear, expanded, onToggleExpanded, colors, typography, spacing, radius }) {
+  const color = CATEGORY_COLORS[categoryName] || '#aaa';
+  const selectedCount = apps.reduce((n, a) => n + (exemptSet.has(a.packageName) ? 1 : 0), 0);
+  const allSelected = selectedCount === apps.length;
+
+  return (
+    <div style={{ marginBottom: `${spacing.xs}px` }}>
+      <button
+        type="button"
+        onClick={() => { window.callBare('haptic:tap'); onToggleExpanded(); }}
+        aria-expanded={expanded}
+        aria-label={`${categoryName} category, ${selectedCount} of ${apps.length} exempt`}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: `${spacing.sm}px`,
+          padding: `8px ${spacing.sm}px`,
+          background: colors.surface.elevated,
+          border: `1px solid ${colors.border}`,
+          borderLeft: `4px solid ${color}`,
+          borderRadius: `${radius.md}px`,
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ flex: 1, ...typography.caption, fontWeight: '600', color: colors.text.primary }}>{categoryName}</span>
+        <span style={{ ...typography.caption, color: selectedCount > 0 ? colors.primary : colors.text.muted, fontWeight: selectedCount > 0 ? '600' : '400' }}>
+          {selectedCount}/{apps.length}
+        </span>
+        <span style={{ fontSize: '16px', color: colors.text.muted, lineHeight: 1 }}>{expanded ? '⌄' : '›'}</span>
+      </button>
+      {expanded && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px`,
+          padding: `${spacing.sm}px`,
+        }}>
+          <div style={{ display: 'flex', gap: `${spacing.xs}px` }}>
+            <button
+              type="button"
+              onClick={() => { window.callBare('haptic:tap'); onSelectAll(); }}
+              disabled={allSelected}
+              style={{
+                ...typography.caption,
+                padding: `2px ${spacing.sm}px`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: `${radius.sm}px`,
+                background: 'transparent',
+                color: allSelected ? colors.text.muted : colors.primary,
+                cursor: allSelected ? 'default' : 'pointer',
+              }}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={() => { window.callBare('haptic:tap'); onClear(); }}
+              disabled={selectedCount === 0}
+              style={{
+                ...typography.caption,
+                padding: `2px ${spacing.sm}px`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: `${radius.sm}px`,
+                background: 'transparent',
+                color: selectedCount === 0 ? colors.text.muted : colors.text.secondary,
+                cursor: selectedCount === 0 ? 'default' : 'pointer',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          {apps.map(({ packageName, appName }) => (
+            <label key={packageName} style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, ...typography.caption, color: colors.text.primary, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={exemptSet.has(packageName)}
+                onChange={() => onToggle(packageName)}
+                aria-label={`Exempt ${appName}`}
+              />
+              {appName}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RuleRow({ rule, onEdit, onDelete, colors, typography, spacing, radius }) {
   const activeDays = DAY_LABELS.filter((_, i) => rule.days.includes(i)).join(', ');
   const exemptCount = (rule.exemptApps || []).length;
-  const exemptLabel = exemptCount > 0
-    ? (rule.exemptApps || []).map(pkg => appNames[pkg] || pkg).join(', ')
-    : null;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`,
@@ -24,9 +110,9 @@ function RuleRow({ rule, appNames, onEdit, onDelete, colors, typography, spacing
         <span style={{ ...typography.caption, color: colors.text.secondary }}>
           {activeDays || 'No days'} &bull; {rule.start}&ndash;{rule.end}
         </span>
-        {exemptLabel && (
+        {exemptCount > 0 && (
           <span style={{ ...typography.caption, color: colors.primary, display: 'block', marginTop: '2px' }}>
-            Exempt: {exemptLabel}
+            {exemptCount} exempt app{exemptCount === 1 ? '' : 's'}
           </span>
         )}
       </div>
@@ -70,16 +156,25 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState({});
 
-  const appNames = {};
-  const appList = [];
-  if (policy && policy.apps) {
-    for (const [pkg, data] of Object.entries(policy.apps)) {
-      appNames[pkg] = data.appName || pkg;
-      appList.push({ packageName: pkg, appName: data.appName || pkg });
+  const { appsByCategory, totalAppCount } = useMemo(() => {
+    const grouped = {};
+    let total = 0;
+    if (policy && policy.apps) {
+      for (const [pkg, data] of Object.entries(policy.apps)) {
+        const name = data.appName || pkg;
+        const cat = data.category || 'Other';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push({ packageName: pkg, appName: name });
+        total++;
+      }
+      for (const cat of Object.keys(grouped)) {
+        grouped[cat].sort((a, b) => a.appName.localeCompare(b.appName));
+      }
     }
-    appList.sort((a, b) => a.appName.localeCompare(b.appName));
-  }
+    return { appsByCategory: grouped, totalAppCount: total };
+  }, [policy]);
 
   function saveSchedules(schedules) {
     const updated = { ...policy, schedules };
@@ -93,10 +188,18 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
   }
 
   function handleEditRule(index) {
+    const rule = policy.schedules[index];
+    const exempt = rule.exemptApps || [];
     setEditingIndex(index);
-    setNewRule({ ...policy.schedules[index], exemptApps: policy.schedules[index].exemptApps || [] });
+    setNewRule({ ...rule, exemptApps: exempt });
     setSubmitAttempted(false);
     setShowForm(true);
+    const exemptSet = new Set(exempt);
+    const expanded = {};
+    for (const cat of Object.keys(appsByCategory)) {
+      if (appsByCategory[cat].some((a) => exemptSet.has(a.packageName))) expanded[cat] = true;
+    }
+    setExpandedCategories(expanded);
   }
 
   function handleCancelEdit() {
@@ -104,6 +207,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
     setNewRule(BLANK_RULE);
     setSubmitAttempted(false);
     setShowForm(false);
+    setExpandedCategories({});
   }
 
   function handleSaveRule() {
@@ -120,6 +224,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
     setEditingIndex(null);
     setSubmitAttempted(false);
     setShowForm(false);
+    setExpandedCategories({});
   }
 
   function toggleDay(dayIndex) {
@@ -135,6 +240,25 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
       ? exempt.filter((p) => p !== packageName)
       : [...exempt, packageName];
     setNewRule({ ...newRule, exemptApps: updated });
+  }
+
+  function selectAllInCategory(categoryName) {
+    const apps = appsByCategory[categoryName] || [];
+    const exempt = newRule.exemptApps || [];
+    const set = new Set(exempt);
+    for (const a of apps) set.add(a.packageName);
+    setNewRule({ ...newRule, exemptApps: Array.from(set) });
+  }
+
+  function clearCategory(categoryName) {
+    const apps = appsByCategory[categoryName] || [];
+    const pkgs = new Set(apps.map((a) => a.packageName));
+    const exempt = (newRule.exemptApps || []).filter((p) => !pkgs.has(p));
+    setNewRule({ ...newRule, exemptApps: exempt });
+  }
+
+  function toggleCategoryExpanded(categoryName) {
+    setExpandedCategories((prev) => ({ ...prev, [categoryName]: !prev[categoryName] }));
   }
 
   const schedules = (policy && policy.schedules) || [];
@@ -176,7 +300,6 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
         <RuleRow
           key={i}
           rule={rule}
-          appNames={appNames}
           onEdit={() => handleEditRule(i)}
           onDelete={() => handleDeleteRule(i)}
           colors={colors}
@@ -280,28 +403,38 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
           </label>
         </div>
 
-        {appList.length > 0 && (
+        {totalAppCount > 0 && (
           <div>
             <div style={{ ...typography.caption, color: colors.text.secondary, marginBottom: `${spacing.xs}px` }}>Exempt apps</div>
             <p style={{ ...typography.caption, color: colors.text.muted, margin: `2px 0 ${spacing.sm}px` }}>
               These apps will not be blocked during this window.
             </p>
             <div style={{
-              display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`,
-              maxHeight: '160px', overflowY: 'auto',
+              display: 'flex', flexDirection: 'column',
+              maxHeight: '320px', overflowY: 'auto',
               border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: `${spacing.sm}px`,
             }}>
-              {appList.map(({ packageName, appName }) => (
-                <label key={packageName} style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, ...typography.caption, color: colors.text.primary, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={(newRule.exemptApps || []).includes(packageName)}
-                    onChange={() => toggleExemptApp(packageName)}
-                    aria-label={`Exempt ${appName}`}
+              {APP_CATEGORIES.filter((cat) => (appsByCategory[cat] || []).length > 0).map((cat) => {
+                const apps = appsByCategory[cat];
+                const exemptSet = new Set(newRule.exemptApps || []);
+                return (
+                  <ExemptCategoryGroup
+                    key={cat}
+                    categoryName={cat}
+                    apps={apps}
+                    exemptSet={exemptSet}
+                    onToggle={toggleExemptApp}
+                    onSelectAll={() => selectAllInCategory(cat)}
+                    onClear={() => clearCategory(cat)}
+                    expanded={!!expandedCategories[cat]}
+                    onToggleExpanded={() => toggleCategoryExpanded(cat)}
+                    colors={colors}
+                    typography={typography}
+                    spacing={spacing}
+                    radius={radius}
                   />
-                  {appName}
-                </label>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

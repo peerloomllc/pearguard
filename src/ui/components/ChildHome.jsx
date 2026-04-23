@@ -171,7 +171,7 @@ export default function ChildHome({ openDetail }) {
       </h2>
 
       {/* Summary row */}
-      <div style={{ display: 'flex', gap: `${spacing.md}px` }}>
+      <div data-tour-id="child-home-tiles" style={{ display: 'flex', gap: `${spacing.md}px` }}>
         <SummaryTile
           value={homeData.blockedCount}
           label="Blocked"

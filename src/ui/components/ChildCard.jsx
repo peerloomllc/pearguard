@@ -12,7 +12,7 @@ function formatSeconds(seconds) {
   return `${seconds}s`;
 }
 
-export default function ChildCard({ child, onPress, onLockToggle }) {
+export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
     displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
@@ -46,6 +46,7 @@ export default function ChildCard({ child, onPress, onLockToggle }) {
       }}
       onClick={onPress}
       aria-label={`Open ${displayName}`}
+      data-tour-id={tourId}
     >
       <div
         style={{ position: 'absolute', top: `${spacing.sm}px`, right: `${spacing.sm}px` }}

@@ -438,6 +438,7 @@ export default function Settings() {
       </section>
 
       {/* Override PIN */}
+      <div data-tour-id="settings-override-pin">
       <Collapsible title="Override PIN" icon="LockSimple" open={pinOpen} onToggle={() => setPinOpen(o => !o)} maxHeight="350px" {...collapsibleProps}>
         <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
           Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device.
@@ -501,6 +502,7 @@ export default function Settings() {
           </Button>
         </form>
       </Collapsible>
+      </div>
 
       {/* Appearance */}
       {settingsLoaded && (

@@ -63,6 +63,16 @@ export default function AboutTab() {
       </div>
 
       <div style={cardStyle}>
+        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>TUTORIAL</div>
+        <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+          Replay the in-app walkthrough that introduces the Dashboard, Apps, Rules, and Activity tabs.
+        </p>
+        <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); window.__pearReplayTour?.(); }} style={fullWidth}>
+          <Icon name="BookOpen" size={16} color={colors.primary} /> Replay Tutorial
+        </Button>
+      </div>
+
+      <div style={cardStyle}>
         <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>HOW IT WORKS</div>
         <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
           PearGuard connects parent and child devices directly using peer-to-peer

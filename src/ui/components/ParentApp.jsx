@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Dashboard from './Dashboard.jsx';
 import Settings from './Settings.jsx';
 import AboutTab from './AboutTab.jsx';
@@ -7,6 +7,8 @@ import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
 import Icon from '../icons.js';
 import { useTheme } from '../theme.js';
+import { TourProvider, useTour } from './Tour.jsx';
+import { PARENT_TOUR_SLIDES, PARENT_TOUR_AFTER_PAIR_SLIDES } from './parentTourSlides.js';
 
 const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
 
@@ -65,6 +67,41 @@ const TABS = [
   { key: 'settings', label: 'Settings', icon: 'GearSix', Component: Settings },
   { key: 'about', label: 'About', icon: 'Info', Component: AboutTab },
 ];
+
+function WelcomeCard({ onDismiss }) {
+  const { colors, typography, spacing, radius } = useTheme();
+  return (
+    <div style={{
+      position: 'fixed', inset: 0,
+      backgroundColor: 'rgba(0,0,0,0.72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: `${spacing.xl}px`, zIndex: 600,
+    }}>
+      <div style={{
+        backgroundColor: colors.surface.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: `${radius.lg}px`,
+        padding: `${spacing.xxl}px ${spacing.xl}px`,
+        width: '100%', maxWidth: '360px',
+        textAlign: 'center',
+      }}>
+        <Icon name="Shield" size={36} color={colors.primary} />
+        <h2 style={{ ...typography.heading, color: colors.text.primary, marginTop: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
+          Welcome to PearGuard
+        </h2>
+        <p style={{ ...typography.body, color: colors.text.secondary, lineHeight: '1.5', marginTop: 0, marginBottom: `${spacing.xl}px` }}>
+          A private parental control app that runs peer-to-peer between your device and your child's. No servers, no accounts, no data collected.
+        </p>
+        <p style={{ ...typography.body, color: colors.text.secondary, lineHeight: '1.5', marginTop: 0, marginBottom: `${spacing.xl}px` }}>
+          Pair your first child to get started. We'll walk you through the rest right after.
+        </p>
+        <Button onClick={onDismiss} style={{ width: '100%' }}>
+          Got it
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function PinSetupOverlay({ onDone }) {
   const { colors, typography, spacing, radius } = useTheme();
@@ -152,11 +189,45 @@ function PinSetupOverlay({ onDone }) {
 }
 
 export default function ParentApp() {
+  return (
+    <TourProvider>
+      <ParentAppInner />
+    </TourProvider>
+  );
+}
+
+function ParentAppInner() {
   const { colors, typography, spacing } = useTheme();
   const [tab, setTab] = useState('dashboard');
   const [banner, setBanner] = useState(null);
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
   const [showDonation, setShowDonation] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const tour = useTour();
+  const tourStartedRef = useRef(false);
+
+  // Tour navigation hook: lets slides switch top-level tab and open ChildDetail.
+  useEffect(() => {
+    window.__pearTourNavigate = (target) => {
+      if (target === 'dashboard' || target === 'settings' || target === 'about') {
+        setTab(target);
+        return;
+      }
+      if (target.startsWith('child:')) {
+        const innerTab = target.slice('child:'.length);
+        setTab('dashboard');
+        window.callBare('children:list')
+          .then((list) => {
+            const first = (list || [])[0];
+            if (first && window.__pearEvent) {
+              window.__pearEvent('navigate:child:alerts', { childPublicKey: first.publicKey, tab: innerTab });
+            }
+          })
+          .catch(() => {});
+      }
+    };
+    return () => { delete window.__pearTourNavigate; };
+  }, []);
 
   useEffect(() => {
     function checkPin() {
@@ -169,6 +240,25 @@ export default function ParentApp() {
     // set during the setup flow is picked up without requiring a full remount.
     return window.onBareEvent('ready', checkPin);
   }, []);
+
+  // Show the welcome card on first launch (after PIN setup), gated by Hyperbee pref.
+  useEffect(() => {
+    if (pinCheckState !== 'done') return;
+    window.callBare('pref:get', { key: 'onboarding:welcomeSeen' })
+      .then((seen) => { if (!seen) setShowWelcome(true); })
+      .catch(() => {});
+  }, [pinCheckState]);
+
+  // Listen for "replay tutorial" requests from the About tab.
+  useEffect(() => {
+    function onReplay() {
+      tour.start(PARENT_TOUR_SLIDES, {
+        onFinish: () => window.callBare('pref:set', { key: 'onboarding:tourSeen', value: true }).catch(() => {}),
+      });
+    }
+    window.__pearReplayTour = onReplay;
+    return () => { delete window.__pearReplayTour; };
+  }, [tour]);
 
   useEffect(() => {
     if (pinCheckState !== 'done') return;
@@ -198,10 +288,21 @@ export default function ParentApp() {
       setTimeout(() => {
         setBanner(null);
         setTab('dashboard');
+        // Auto-start the tour after the first successful pairing, gated by Hyperbee pref.
+        if (tourStartedRef.current) return;
+        window.callBare('pref:get', { key: 'onboarding:tourSeen' })
+          .then((seen) => {
+            if (seen || tourStartedRef.current) return;
+            tourStartedRef.current = true;
+            tour.start(PARENT_TOUR_AFTER_PAIR_SLIDES, {
+              onFinish: () => window.callBare('pref:set', { key: 'onboarding:tourSeen', value: true }).catch(() => {}),
+            });
+          })
+          .catch(() => {});
       }, 3000);
     });
     return unsub;
-  }, []);
+  }, [tour]);
 
   if (pinCheckState === 'loading') {
     return null;
@@ -253,6 +354,12 @@ export default function ParentApp() {
             setShowDonation(false);
           }}
         />
+      )}
+      {showWelcome && (
+        <WelcomeCard onDismiss={() => {
+          window.callBare('pref:set', { key: 'onboarding:welcomeSeen', value: true }).catch(() => {});
+          setShowWelcome(false);
+        }} />
       )}
     </div>
   );

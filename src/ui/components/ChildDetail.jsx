@@ -122,6 +122,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           return (
             <button
               key={t.key}
+              data-tour-id={`child-tab-${t.key}`}
               onClick={() => { window.callBare('haptic:tap'); setTab(t.key); }}
               style={{
                 flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: `${spacing.xs}px`,

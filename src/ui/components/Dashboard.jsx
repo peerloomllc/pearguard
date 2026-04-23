@@ -221,6 +221,7 @@ export default forwardRef(function Dashboard(_props, ref) {
         </h2>
         {!inviteActive && !loading && children.length > 0 && (
           <button
+            data-tour-id="dashboard-add-child"
             onClick={() => { window.callBare('haptic:tap'); setInviteActive(true); }}
             style={{
               position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
@@ -246,7 +247,7 @@ export default forwardRef(function Dashboard(_props, ref) {
           <p style={{ ...typography.caption, color: colors.text.muted, marginBottom: `${spacing.xl}px` }}>
             Add your first child to get started
           </p>
-          <Button variant="primary" icon="Plus" onClick={() => setInviteActive(true)} style={{ width: '220px' }}>
+          <Button data-tour-id="dashboard-add-child" variant="primary" icon="Plus" onClick={() => setInviteActive(true)} style={{ width: '220px' }}>
             Add Child
           </Button>
         </div>
@@ -259,10 +260,11 @@ export default forwardRef(function Dashboard(_props, ref) {
         />
       )}
 
-      {children.map((child) => (
+      {children.map((child, idx) => (
         <ChildCard
           key={child.publicKey}
           child={child}
+          tourId={idx === 0 ? 'dashboard-child-card' : undefined}
           onPress={() => navigateToChild(child.publicKey)}
           onLockToggle={() => handleLockToggle(child)}
         />

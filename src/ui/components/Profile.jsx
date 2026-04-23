@@ -397,13 +397,6 @@ export default function Profile({ mode }) {
           )}
         </div>
       )}
-      {mode === 'child' && (
-        <div style={{ marginTop: `${spacing.lg}px`, display: 'flex', justifyContent: 'center' }}>
-          <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); window.__pearReplayTour?.(); }}>
-            <Icon name="BookOpen" size={16} color={colors.primary} /> Replay Tutorial
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

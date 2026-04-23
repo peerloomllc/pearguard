@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTheme } from '../theme.js';
 import Button from './primitives/Button.jsx';
 import Modal from './primitives/Modal.jsx';
+import Collapsible from './primitives/Collapsible.jsx';
 import Icon from '../icons.js';
 
 const LIGHTNING_ADDRESS = 'peerloomllc@strike.me';
@@ -28,6 +29,12 @@ function shareApp() {
 export default function AboutTab() {
   const { colors, spacing, radius } = useTheme();
   const [walletModal, setWalletModal] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [valueOpen, setValueOpen] = useState(false);
+  const [bitcoinOpen, setBitcoinOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   // App Store guideline 3.1.1 forbids non-IAP digital purchases, including donations.
   const isIOS = window.__pearPlatform === 'ios';
 
@@ -45,15 +52,10 @@ export default function AboutTab() {
     }
   }
 
-  const cardStyle = {
-    backgroundColor: colors.surface.elevated,
-    borderRadius: `${radius.lg}px`,
-    padding: '14px 16px',
-    marginBottom: `${spacing.md}px`,
-  };
-
   const fullWidth = { width: '100%' };
   const flexOne = { flex: 1 };
+  const bodyStyle = { fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 };
+  const collapsibleProps = { colors, spacing, radius };
 
   return (
     <div style={{ padding: `${spacing.base}px`, overflowY: 'auto', flex: 1 }}>
@@ -62,19 +64,8 @@ export default function AboutTab() {
         <div style={{ fontSize: '12px', color: colors.text.muted }}>Private. Peer-to-Peer. No Servers.</div>
       </div>
 
-      <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>TUTORIAL</div>
-        <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
-          Replay the in-app walkthrough that introduces the Dashboard, Apps, Rules, and Activity tabs.
-        </p>
-        <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); window.__pearReplayTour?.(); }} style={fullWidth}>
-          <Icon name="BookOpen" size={16} color={colors.primary} /> Replay Tutorial
-        </Button>
-      </div>
-
-      <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>HOW IT WORKS</div>
-        <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+      <Collapsible title="How it works" icon="Info" open={howOpen} onToggle={() => setHowOpen(v => !v)} maxHeight="240px" {...collapsibleProps}>
+        <p style={bodyStyle}>
           PearGuard connects parent and child devices directly using peer-to-peer
           technology. Your data never touches a server - policies, usage reports, and
           requests stay between your devices. No accounts. No subscriptions. No data
@@ -83,12 +74,20 @@ export default function AboutTab() {
         <Button variant="secondary" onClick={() => openURL('https://pears.com/')} style={fullWidth}>
           Learn about P2P <Icon name="ArrowSquareOut" size={14} color={colors.primary} />
         </Button>
-      </div>
+      </Collapsible>
+
+      <Collapsible title="Tutorial" icon="BookOpen" open={tutorialOpen} onToggle={() => setTutorialOpen(v => !v)} maxHeight="200px" {...collapsibleProps}>
+        <p style={bodyStyle}>
+          Replay the in-app walkthrough that introduces the Dashboard, Apps, Rules, and Activity tabs.
+        </p>
+        <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); window.__pearReplayTour?.(); }} style={fullWidth}>
+          <Icon name="BookOpen" size={16} color={colors.primary} /> Replay Tutorial
+        </Button>
+      </Collapsible>
 
       {!isIOS && (
-        <div style={cardStyle}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>VALUE FOR VALUE</div>
-          <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+        <Collapsible title="Value for value" icon="Lightning" open={valueOpen} onToggle={() => setValueOpen(v => !v)} maxHeight="200px" {...collapsibleProps}>
+          <p style={bodyStyle}>
             PearGuard is free and open source. If you receive value from it, please
             consider returning value.
           </p>
@@ -100,33 +99,30 @@ export default function AboutTab() {
               <Icon name="CurrencyDollar" size={14} color={colors.primary} /> USD <Icon name="CurrencyDollar" size={14} color={colors.primary} />
             </Button>
           </div>
-        </div>
+        </Collapsible>
       )}
 
-      <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>LEARN ABOUT BITCOIN</div>
-        <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+      <Collapsible title="Learn about Bitcoin" icon="BookOpen" open={bitcoinOpen} onToggle={() => setBitcoinOpen(v => !v)} maxHeight="220px" {...collapsibleProps}>
+        <p style={bodyStyle}>
           New to Bitcoin? The Satoshi Nakamoto Institute has a free, concise crash
           course explaining how Bitcoin works and why it matters.
         </p>
         <Button variant="secondary" onClick={() => openURL('https://nakamotoinstitute.org/crash-course/')} style={fullWidth}>
           <Icon name="BookOpen" size={16} color={colors.primary} /> Bitcoin Crash Course <Icon name="ArrowSquareOut" size={14} color={colors.primary} />
         </Button>
-      </div>
+      </Collapsible>
 
-      <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>SHARE THE APP</div>
-        <p style={{ fontSize: '13px', color: colors.text.muted, lineHeight: '1.6', marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+      <Collapsible title="Share the app" icon="ShareNetwork" open={shareOpen} onToggle={() => setShareOpen(v => !v)} maxHeight="200px" {...collapsibleProps}>
+        <p style={bodyStyle}>
           Know someone who could use private, serverless parental controls? Share
           PearGuard with them.
         </p>
         <Button variant="secondary" onClick={shareApp} style={fullWidth}>
           <Icon name="ShareNetwork" size={16} color={colors.primary} /> Share PearGuard
         </Button>
-      </div>
+      </Collapsible>
 
-      <div style={cardStyle}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: colors.text.secondary, letterSpacing: '0.04em', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>CONTACT</div>
+      <Collapsible title="Contact" icon="EnvelopeSimple" open={contactOpen} onToggle={() => setContactOpen(v => !v)} maxHeight="120px" {...collapsibleProps}>
         <div style={{ display: 'flex', gap: `${spacing.sm}px`, justifyContent: 'center' }}>
           <Button
             variant="secondary"
@@ -141,7 +137,7 @@ export default function AboutTab() {
             <Icon name="Bug" size={14} color={colors.primary} /> Report Issue <Icon name="ArrowSquareOut" size={13} color={colors.primary} />
           </Button>
         </div>
-      </div>
+      </Collapsible>
 
       <div style={{ textAlign: 'center', fontSize: '11px', color: colors.text.muted, paddingTop: `${spacing.md}px`, paddingBottom: `${spacing.sm}px` }}>v0.1.0</div>
 

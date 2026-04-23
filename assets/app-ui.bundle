@@ -16191,6 +16191,7 @@
 
   // src/ui/components/RulesTab.jsx
   var import_react7 = __toESM(require_react());
+  var import_react_dom = __toESM(require_react_dom());
   var import_jsx_runtime12 = __toESM(require_jsx_runtime());
   var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var BLANK_RULE = { label: "", days: [], start: "21:00", end: "07:00", exemptApps: [] };
@@ -16359,7 +16360,7 @@
       )
     ] });
   }
-  function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+  function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
     const [newRule, setNewRule] = (0, import_react7.useState)(BLANK_RULE);
     const [editingIndex, setEditingIndex] = (0, import_react7.useState)(null);
     const [submitAttempted, setSubmitAttempted] = (0, import_react7.useState)(false);
@@ -16603,6 +16604,7 @@
               flexDirection: "column",
               maxHeight: "320px",
               overflowY: "auto",
+              overflowX: "hidden",
               border: `1px solid ${colors.border}`,
               borderRadius: `${radius2.md}px`,
               padding: `${spacing2.sm}px`
@@ -16628,51 +16630,66 @@
                 cat
               );
             }) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", justifyContent: "center", gap: `${spacing2.sm}px` }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-              "button",
-              {
-                onClick: handleSaveRule,
-                "aria-label": editingIndex !== null ? "Save schedule rule" : "Add schedule rule",
-                style: {
-                  padding: `${spacing2.sm}px ${spacing2.base}px`,
-                  border: "none",
-                  borderRadius: `${radius2.md}px`,
-                  backgroundColor: colors.primary,
-                  color: "#FFFFFF",
-                  cursor: "pointer",
-                  ...typography2.body
-                },
-                children: editingIndex !== null ? "Save Changes" : "Add Rule"
-              }
-            ),
-            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-              "button",
-              {
-                onClick: handleCancelEdit,
-                "aria-label": "Cancel",
-                style: {
-                  padding: `${spacing2.sm}px ${spacing2.base}px`,
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: `${radius2.md}px`,
-                  background: "transparent",
-                  cursor: "pointer",
-                  ...typography2.body,
-                  color: colors.text.secondary
-                },
-                children: "Cancel"
-              }
-            )
           ] })
         ] })
-      ] })
+      ] }),
+      showForm && footerEl && (0, import_react_dom.createPortal)(
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: {
+          display: "flex",
+          gap: `${spacing2.sm}px`,
+          padding: `${spacing2.sm}px ${spacing2.base}px`,
+          background: colors.surface.base,
+          borderTop: `1px solid ${colors.divider}`
+        }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+            "button",
+            {
+              onClick: handleSaveRule,
+              "aria-label": editingIndex !== null ? "Save schedule rule" : "Add schedule rule",
+              style: {
+                flex: 1,
+                padding: `${spacing2.sm}px ${spacing2.base}px`,
+                border: "none",
+                borderRadius: `${radius2.md}px`,
+                backgroundColor: colors.primary,
+                color: "#FFFFFF",
+                cursor: "pointer",
+                ...typography2.body,
+                textAlign: "center"
+              },
+              children: editingIndex !== null ? "Save Changes" : "Add Rule"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+            "button",
+            {
+              onClick: handleCancelEdit,
+              "aria-label": "Cancel",
+              style: {
+                flex: 1,
+                padding: `${spacing2.sm}px ${spacing2.base}px`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: `${radius2.md}px`,
+                background: "transparent",
+                cursor: "pointer",
+                ...typography2.body,
+                color: colors.text.secondary,
+                textAlign: "center"
+              },
+              children: "Cancel"
+            }
+          )
+        ] }),
+        footerEl
+      )
     ] });
   }
   function RulesTab({ childPublicKey }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
     const [policy, setPolicy] = (0, import_react7.useState)(null);
     const [loading, setLoading] = (0, import_react7.useState)(true);
+    const [footerEl, setFooterEl] = (0, import_react7.useState)(null);
+    const footerRef = (0, import_react7.useCallback)((node) => setFooterEl(node), []);
     const loadPolicy = (0, import_react7.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
@@ -16691,8 +16708,11 @@
     if (loading) {
       return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { padding: `${spacing2.base}px`, ...typography2.body, color: colors.text.secondary }, children: "Loading rules..." });
     }
-    const sectionProps = { policy, setPolicy, childPublicKey, colors, typography: typography2, spacing: spacing2, radius: radius2 };
-    return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { padding: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ScheduleSection, { ...sectionProps }) });
+    const sectionProps = { policy, setPolicy, childPublicKey, footerEl, colors, typography: typography2, spacing: spacing2, radius: radius2 };
+    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ScheduleSection, { ...sectionProps }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { ref: footerRef })
+    ] });
   }
 
   // src/ui/components/AdvancedTab.jsx

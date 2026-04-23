@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import { APP_CATEGORIES, CATEGORY_COLORS } from './appCategories.js';
@@ -150,7 +151,7 @@ function RuleRow({ rule, onEdit, onDelete, colors, typography, spacing, radius }
   );
 }
 
-function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography, spacing, radius }) {
+function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, typography, spacing, radius }) {
   const [newRule, setNewRule] = useState(BLANK_RULE);
   const [editingIndex, setEditingIndex] = useState(null);
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -411,7 +412,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
             </p>
             <div style={{
               display: 'flex', flexDirection: 'column',
-              maxHeight: '320px', overflowY: 'auto',
+              maxHeight: '320px', overflowY: 'auto', overflowX: 'hidden',
               border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: `${spacing.sm}px`,
             }}>
               {APP_CATEGORIES.filter((cat) => (appsByCategory[cat] || []).length > 0).map((cat) => {
@@ -439,11 +440,21 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: `${spacing.sm}px` }}>
+      </div>
+      </>)}
+      {showForm && footerEl && createPortal(
+        <div style={{
+          display: 'flex',
+          gap: `${spacing.sm}px`,
+          padding: `${spacing.sm}px ${spacing.base}px`,
+          background: colors.surface.base,
+          borderTop: `1px solid ${colors.divider}`,
+        }}>
           <button
             onClick={handleSaveRule}
             aria-label={editingIndex !== null ? 'Save schedule rule' : 'Add schedule rule'}
             style={{
+              flex: 1,
               padding: `${spacing.sm}px ${spacing.base}px`,
               border: 'none',
               borderRadius: `${radius.md}px`,
@@ -451,6 +462,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
               color: '#FFFFFF',
               cursor: 'pointer',
               ...typography.body,
+              textAlign: 'center',
             }}
           >
             {editingIndex !== null ? 'Save Changes' : 'Add Rule'}
@@ -459,6 +471,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
             onClick={handleCancelEdit}
             aria-label="Cancel"
             style={{
+              flex: 1,
               padding: `${spacing.sm}px ${spacing.base}px`,
               border: `1px solid ${colors.border}`,
               borderRadius: `${radius.md}px`,
@@ -466,13 +479,14 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, colors, typography
               cursor: 'pointer',
               ...typography.body,
               color: colors.text.secondary,
+              textAlign: 'center',
             }}
           >
             Cancel
           </button>
-        </div>
-      </div>
-      </>)}
+        </div>,
+        footerEl
+      )}
     </div>
   );
 }
@@ -572,6 +586,8 @@ export default function RulesTab({ childPublicKey }) {
   const { colors, typography, spacing, radius } = useTheme();
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [footerEl, setFooterEl] = useState(null);
+  const footerRef = useCallback((node) => setFooterEl(node), []);
 
   const loadPolicy = useCallback(() => {
     window.callBare('policy:get', { childPublicKey })
@@ -596,11 +612,14 @@ export default function RulesTab({ childPublicKey }) {
     );
   }
 
-  const sectionProps = { policy, setPolicy, childPublicKey, colors, typography, spacing, radius };
+  const sectionProps = { policy, setPolicy, childPublicKey, footerEl, colors, typography, spacing, radius };
 
   return (
-    <div style={{ padding: `${spacing.base}px` }}>
-      <ScheduleSection {...sectionProps} />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: `${spacing.base}px` }}>
+        <ScheduleSection {...sectionProps} />
+      </div>
+      <div ref={footerRef} />
     </div>
   );
 }

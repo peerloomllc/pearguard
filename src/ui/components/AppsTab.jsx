@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../theme.js';
 import Modal from './primitives/Modal.jsx';
 import Button from './primitives/Button.jsx';
+import { APP_CATEGORIES, CATEGORY_COLORS } from './appCategories.js';
 
 const ANIMATION_STYLES = `
 @keyframes pgFadeSlideOut {
@@ -23,20 +24,6 @@ const ANIMATION_STYLES = `
 `;
 
 const ICON_COLORS = ['#4285f4','#ea4335','#fbbc05','#34a853','#ff6d00','#46bdc6','#7b1fa2','#c62828'];
-
-const APP_CATEGORIES = ['Games', 'Social', 'Video & Music', 'Communication', 'Education', 'Productivity', 'News', 'System', 'Other'];
-
-const CATEGORY_COLORS = {
-  Games: '#ea4335',
-  Social: '#4285f4',
-  'Video & Music': '#7b1fa2',
-  Communication: '#34a853',
-  Education: '#fbbc05',
-  Productivity: '#46bdc6',
-  News: '#ff6d00',
-  System: '#888',
-  Other: '#aaa',
-};
 
 function getInitials(name) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');

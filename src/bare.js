@@ -811,8 +811,8 @@ async function sendToAllParents (message, excludeKey) {
       parentPeers.delete(ik)
     }
   }
-  if (!sentToAny && !excludeKey) {
-    console.log('[bare] sendToAllParents: all writes failed, queuing', message.type)
+  if (!sentToAny) {
+    console.log('[bare] sendToAllParents: no eligible recipients, queuing', message.type)
     await queueMessage(message, db)
   }
 }
@@ -1123,6 +1123,22 @@ async function handleHello (msg, conn, remoteKeyHex) {
       topicHex,
     })
     await flushPendingMessages(conn)
+
+    // Push the child's current policy back up to this parent so a co-parent
+    // that was offline during another parent's edits is brought current on
+    // reconnect. Without this, sendToAllParents drops the relay (the absent
+    // parent isn't in parentPeers at edit time) and the parent's local
+    // policy:{childPK} stays stale (#multi-parent-sync).
+    try {
+      const currentPolicy = await db.get('policy').catch(() => null)
+      if (currentPolicy && currentPolicy.value) {
+        const signed = signMessage({ type: 'policy:update', payload: currentPolicy.value }, identity)
+        conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+        console.log('[bare] pushed current policy to reconnecting parent', peerIdentityKeyHex.slice(0, 8), 'v' + currentPolicy.value.version)
+      }
+    } catch (e) {
+      console.warn('[bare] could not push current policy to parent:', e.message)
+    }
 
     // Re-send any pending time requests from the child's own Hyperbee.
     // If the parent was force-stopped while the TCP socket appeared alive, the

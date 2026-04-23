@@ -1741,6 +1741,17 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
     payload.pinHashes = { [senderKey]: payload.pinHash }
   }
   const existing = await db.get('policy').catch(() => null)
+  const existingVersion = (existing && existing.value && typeof existing.value.version === 'number')
+    ? existing.value.version
+    : -1
+  // Reject pushes older than what we already have. A parent reconnecting with
+  // stale local state (its co-parent edited while it was offline) would otherwise
+  // overwrite the newer policy and the relay would propagate the rollback to
+  // every other parent.
+  if (payload.version < existingVersion) {
+    console.warn('[bare] policy:update ignored: stale version', payload.version, '<', existingVersion, 'from', senderKey?.slice(0, 8))
+    return
+  }
   const existingPinHashes = (existing && existing.value && existing.value.pinHashes) || {}
   const incomingPinHashes = payload.pinHashes || {}
   payload.pinHashes = { ...existingPinHashes, ...incomingPinHashes }

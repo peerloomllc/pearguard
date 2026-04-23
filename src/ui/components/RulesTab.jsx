@@ -581,6 +581,13 @@ export default function RulesTab({ childPublicKey }) {
 
   useEffect(() => { loadPolicy(); }, [loadPolicy]);
 
+  useEffect(() => {
+    const unsub = window.onBareEvent('policy:updated', (data) => {
+      if (data && data.childPublicKey === childPublicKey) loadPolicy();
+    });
+    return () => unsub && unsub();
+  }, [childPublicKey, loadPolicy]);
+
   if (loading) {
     return (
       <div style={{ padding: `${spacing.base}px`, ...typography.body, color: colors.text.secondary }}>

@@ -16682,6 +16682,12 @@
     (0, import_react7.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
+    (0, import_react7.useEffect)(() => {
+      const unsub = window.onBareEvent("policy:updated", (data) => {
+        if (data && data.childPublicKey === childPublicKey) loadPolicy();
+      });
+      return () => unsub && unsub();
+    }, [childPublicKey, loadPolicy]);
     if (loading) {
       return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { padding: `${spacing2.base}px`, ...typography2.body, color: colors.text.secondary }, children: "Loading rules..." });
     }

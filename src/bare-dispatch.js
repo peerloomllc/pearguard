@@ -29,6 +29,24 @@ function isSystemPackage(pkg) {
   return false
 }
 
+// Merge two session arrays, keying on (packageName, startedAt) and preferring
+// the snapshot with the longest durationSeconds. Used by usage:flush on the
+// child and the parent's usage:report handler so a single overwriting key per
+// (child, date) can accumulate incoming sessions from either an Android full
+// list or a Windows drained buffer.
+function mergeSessions(existing, incoming) {
+  const byKey = new Map()
+  const add = (s) => {
+    if (!s || !s.packageName) return
+    const k = s.packageName + ':' + s.startedAt
+    const prev = byKey.get(k)
+    if (!prev || (s.durationSeconds || 0) > (prev.durationSeconds || 0)) byKey.set(k, s)
+  }
+  if (Array.isArray(existing)) for (const s of existing) add(s)
+  if (Array.isArray(incoming)) for (const s of incoming) add(s)
+  return Array.from(byKey.values())
+}
+
 // RN shells push fresh app/usage values into this cache via 'heartbeat:updateData'
 // whenever the JS thread is alive. bare.js's native-thread setInterval calls
 // 'heartbeat:send', which reads from this cache so heartbeats stay reliable
@@ -1063,26 +1081,21 @@ function createDispatch (ctx) {
 
         const now = Date.now()
 
-        // Store session-level data for usage reports as deltas.
-        // Native Android returns today's full session list each flush, but we
-        // filter down to sessions that closed after the last flush plus any
-        // still-open session (which we re-send on each flush with its growing
-        // duration — dedup on read prefers the longest snapshot). Windows'
-        // takeSessions() already drains a buffer, so the filter is a no-op
-        // there. Parent and child both append under a unique-timestamped key
-        // so today's storage footprint is bounded by actual session count
-        // rather than flushes × sessions.
-        const flushStateRaw = await ctx.db.get('sessions:flushState:' + (childPublicKey || 'local')).catch(() => null)
-        const lastFlushAt = flushStateRaw?.value?.lastFlushAt || 0
-        const allSessions = args.sessions || []
-        const sessionsDelta = allSessions.filter((s) => s.endedAt == null || s.endedAt > lastFlushAt)
-
+        // Store today's full session list under a single overwriting key per
+        // (child, date). Android returns today's full list each flush; Windows'
+        // takeSessions() drains new events only, so we merge incoming with any
+        // existing snapshot (dedup on packageName+startedAt, keep longest
+        // duration) before writing. Sending the full list downstream means a
+        // parent that missed earlier flushes still gets the complete day on
+        // reconnect.
+        const incomingSessions = args.sessions || []
         const dateStr = localDateStr(now)
-        const sessionPrefix = 'sessions:' + (childPublicKey || 'local') + ':' + dateStr + ':'
-        if (sessionsDelta.length > 0) {
-          await ctx.db.put(sessionPrefix + now, sessionsDelta)
+        const sessionKey = 'sessions:' + (childPublicKey || 'local') + ':' + dateStr + ':full'
+        const existingRaw = await ctx.db.get(sessionKey).catch(() => null)
+        const mergedSessions = mergeSessions(existingRaw?.value, incomingSessions)
+        if (mergedSessions.length > 0) {
+          await ctx.db.put(sessionKey, mergedSessions)
         }
-        await ctx.db.put('sessions:flushState:' + (childPublicKey || 'local'), { lastFlushAt: now })
 
         // Piggyback resolved request statuses so co-parents get updates (#122).
         // Collect all non-pending req: entries from child's Hyperbee.
@@ -1104,7 +1117,7 @@ function createDispatch (ctx) {
           timestamp: now,
           lastSynced: now,
           apps,
-          sessions: sessionsDelta,
+          sessions: mergedSessions,
           pinOverrides: pinLog,
           childPublicKey,
           currentApp,
@@ -2172,4 +2185,4 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions }

@@ -29,6 +29,29 @@ function isSystemPackage(pkg) {
   return false
 }
 
+// Parent-local per-child package exclusion list. Hidden packages are filtered
+// out of Dashboard totals, the Usage tab list, and Usage Reports. Storage only
+// persists the packages the user explicitly hid — the set is empty by default.
+async function getExclusions(db, childPublicKey) {
+  if (!db || !childPublicKey) return new Set()
+  const raw = await db.get('usageExclusions:' + childPublicKey).catch(() => null)
+  const map = raw?.value?.packages || {}
+  const s = new Set()
+  for (const pkg of Object.keys(map)) if (map[pkg]) s.add(pkg)
+  return s
+}
+
+// Apply an exclusion set to a usage report payload, stripping hidden packages
+// from apps and sessions and recomputing the per-day total so every consumer
+// (Dashboard event, usage:getLatest response, children:list) sees one number.
+function applyExclusionsToReport(report, exclusions) {
+  if (!report || !exclusions || exclusions.size === 0) return report
+  const apps = Array.isArray(report.apps) ? report.apps.filter((a) => !exclusions.has(a.packageName)) : report.apps
+  const sessions = Array.isArray(report.sessions) ? report.sessions.filter((s) => !exclusions.has(s.packageName)) : report.sessions
+  const todayScreenTimeSeconds = Array.isArray(apps) ? apps.reduce((sum, a) => sum + (a.todaySeconds || 0), 0) : report.todayScreenTimeSeconds
+  return { ...report, apps, sessions, todayScreenTimeSeconds }
+}
+
 // Merge two session arrays, keying on (packageName, startedAt) and preferring
 // the snapshot with the longest durationSeconds. Used by usage:flush on the
 // child and the parent's usage:report handler so a single overwriting key per
@@ -168,21 +191,29 @@ function createDispatch (ctx) {
             locked: !!(policyRaw?.value?.locked),
             lockMessage: policyRaw?.value?.lockMessage || '',
           }
+          const exclusions = await getExclusions(ctx.db, value.publicKey)
           for await (const { value: report } of ctx.db.createReadStream({
             gt: 'usageReport:' + value.publicKey + ':',
             lt: 'usageReport:' + value.publicKey + ':~',
             reverse: true,
             limit: 1,
           })) {
+            const filtered = applyExclusionsToReport(report, exclusions)
+            // If the currently foregrounded app is excluded, drop it from the
+            // Dashboard surface so the exclusion is consistent everywhere.
+            const currentAppPackage = filtered.currentAppPackage && !exclusions.has(filtered.currentAppPackage)
+              ? filtered.currentAppPackage
+              : null
+            const currentApp = currentAppPackage ? filtered.currentApp : null
             let currentAppIcon = null
-            if (report.currentAppPackage) {
-              currentAppIcon = policyApps[report.currentAppPackage]?.iconBase64 || null
+            if (currentAppPackage) {
+              currentAppIcon = policyApps[currentAppPackage]?.iconBase64 || null
             }
             usageFields = {
-              currentApp: report.currentApp || null,
-              currentAppPackage: report.currentAppPackage || null,
+              currentApp,
+              currentAppPackage,
               currentAppIcon,
-              todayScreenTimeSeconds: report.todayScreenTimeSeconds || 0,
+              todayScreenTimeSeconds: filtered.todayScreenTimeSeconds || 0,
             }
           }
           seenKeys.add(value.publicKey)
@@ -1141,12 +1172,43 @@ function createDispatch (ctx) {
         return { flushed: true, timestamp: report.timestamp }
       }
 
+      case 'usage:getExclusions': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid usage:getExclusions args')
+        const raw = await ctx.db.get('usageExclusions:' + childPublicKey).catch(() => null)
+        const map = raw?.value?.packages || {}
+        return Object.keys(map).filter((p) => map[p]).map((p) => {
+          const entry = map[p]
+          return { packageName: p, displayName: (entry && entry.displayName) || p }
+        })
+      }
+
+      case 'usage:setExclusion': {
+        const { childPublicKey, packageName, displayName, excluded } = args
+        if (!childPublicKey || !packageName) throw new Error('invalid usage:setExclusion args')
+        const raw = await ctx.db.get('usageExclusions:' + childPublicKey).catch(() => null)
+        const map = { ...(raw?.value?.packages || {}) }
+        if (excluded) map[packageName] = { displayName: displayName || packageName, excludedAt: Date.now() }
+        else delete map[packageName]
+        await ctx.db.put('usageExclusions:' + childPublicKey, { packages: map, updatedAt: Date.now() })
+        // Re-emit the latest usage report with the new exclusion applied so
+        // Dashboard and Usage tab update without waiting for the next flush.
+        const latestRaw = await ctx.db.get('usageReport:' + childPublicKey + ':latest').catch(() => null)
+        if (latestRaw?.value) {
+          const exclusions = await getExclusions(ctx.db, childPublicKey)
+          const filtered = applyExclusionsToReport(latestRaw.value, exclusions)
+          ctx.send({ type: 'event', event: 'usage:report', data: { ...filtered, childPublicKey } })
+        }
+        return { packages: Object.keys(map).filter((p) => map[p]) }
+      }
+
       case 'usage:getLatest': {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid usage:getLatest args')
+        const exclusions = await getExclusions(ctx.db, childPublicKey)
         // Fast path: single overwriting key.
         const direct = await ctx.db.get('usageReport:' + childPublicKey + ':latest').catch(() => null)
-        if (direct?.value) return direct.value
+        if (direct?.value) return applyExclusionsToReport(direct.value, exclusions)
         // Fallback for pre-migration data that still uses timestamped keys.
         let latest = null
         for await (const { value } of ctx.db.createReadStream({
@@ -1157,12 +1219,13 @@ function createDispatch (ctx) {
         })) {
           latest = value
         }
-        return latest || null
+        return latest ? applyExclusionsToReport(latest, exclusions) : null
       }
 
       case 'usage:getSessions': {
         const { childPublicKey, date } = args
         if (!childPublicKey || !date) throw new Error('invalid usage:getSessions args')
+        const exclusions = await getExclusions(ctx.db, childPublicKey)
         const bestByKey = new Map()
         for await (const { value } of ctx.db.createReadStream({
           gt: 'sessions:' + childPublicKey + ':' + date + ':',
@@ -1170,6 +1233,7 @@ function createDispatch (ctx) {
         })) {
           if (!Array.isArray(value)) continue
           for (const s of value) {
+            if (exclusions.has(s.packageName)) continue
             // Dedup prefers the longest snapshot for a given (pkg, startedAt):
             // open-session snapshots from earlier flushes get replaced once the
             // closed version arrives.
@@ -1186,6 +1250,7 @@ function createDispatch (ctx) {
       case 'usage:getDailySummaries': {
         const { childPublicKey, days, packageName } = args
         if (!childPublicKey || !days) throw new Error('invalid usage:getDailySummaries args')
+        const exclusions = await getExclusions(ctx.db, childPublicKey)
         const summaries = []
         const now = new Date()
         for (let i = 0; i < days; i++) {
@@ -1204,6 +1269,7 @@ function createDispatch (ctx) {
             for (const s of value) {
               if (packageName && s.packageName !== packageName) continue
               if (isSystemPackage(s.packageName)) continue
+              if (exclusions.has(s.packageName)) continue
               const key = s.packageName + ':' + s.startedAt
               const existing = bestByKey.get(key)
               if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
@@ -1221,6 +1287,7 @@ function createDispatch (ctx) {
       case 'usage:debugSessions': {
         const { childPublicKey, date } = args
         if (!childPublicKey || !date) throw new Error('invalid args')
+        const exclusions = await getExclusions(ctx.db, childPublicKey)
         let entryCount = 0
         let rawCount = 0
         let rawSeconds = 0
@@ -1233,6 +1300,7 @@ function createDispatch (ctx) {
           entryCount++
           if (!Array.isArray(value)) continue
           for (const s of value) {
+            if (exclusions.has(s.packageName)) continue
             rawCount++
             rawSeconds += s.durationSeconds || 0
             const dk = s.packageName + ':' + s.startedAt
@@ -1253,6 +1321,7 @@ function createDispatch (ctx) {
         if (!childPublicKey || (!date && !days)) throw new Error('invalid usage:getCategorySummary args')
         const policyRaw = await ctx.db.get('policy:' + childPublicKey)
         const policyApps = policyRaw?.value?.apps || {}
+        const exclusions = await getExclusions(ctx.db, childPublicKey)
         const sessions = []
         if (days && days > 1) {
           const now = new Date()
@@ -1292,6 +1361,7 @@ function createDispatch (ctx) {
         }
         const categories = {}
         for (const s of bestByKey.values()) {
+          if (exclusions.has(s.packageName)) continue
           const appInfo = policyApps[s.packageName]
           // Skip apps not in policy (system apps that slipped through)
           if (!appInfo) continue
@@ -2185,4 +2255,4 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, getExclusions, applyExclusionsToReport }

@@ -17,7 +17,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -611,12 +611,24 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         const merged = mergeSessions(existingRaw?.value, incomingSessions)
         if (merged.length > 0) await db.put(sessionKey, merged)
       }
+      // Apply parent-local exclusions to the event payload so Dashboard and
+      // Usage tab subscribers see hidden packages stripped and the recomputed
+      // todayScreenTimeSeconds. Storage above keeps the unfiltered data so
+      // toggling a package back on restores it instantly.
+      const exclusions = await getExclusions(db, childPublicKey)
+      const filteredPayload = applyExclusionsToReport(msg.payload, exclusions)
       // Look up icon for the current foreground app from parent's policy store
       let currentAppIcon = null
-      if (msg.payload.currentAppPackage) {
+      let currentAppPackage = filteredPayload.currentAppPackage
+      let currentApp = filteredPayload.currentApp
+      if (currentAppPackage && exclusions.has(currentAppPackage)) {
+        currentAppPackage = null
+        currentApp = null
+      }
+      if (currentAppPackage) {
         const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
         const policyApps = policyRaw?.value?.apps || {}
-        currentAppIcon = policyApps[msg.payload.currentAppPackage]?.iconBase64 || null
+        currentAppIcon = policyApps[currentAppPackage]?.iconBase64 || null
       }
       // Process piggybacked resolved requests so co-parents see status updates (#122).
       if (Array.isArray(msg.payload.resolvedRequests) && msg.payload.resolvedRequests.length > 0) {
@@ -624,7 +636,7 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
           await handleRequestResolved(rr, db, send, childPublicKey)
         }
       }
-      send({ type: 'event', event: 'usage:report', data: { ...msg.payload, childPublicKey, currentAppIcon } })
+      send({ type: 'event', event: 'usage:report', data: { ...filteredPayload, childPublicKey, currentApp, currentAppPackage, currentAppIcon } })
       break
     }
     case 'heartbeat': {

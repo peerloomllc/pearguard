@@ -14921,7 +14921,7 @@
     if (m > 0) return `${m}m`;
     return `${s}s`;
   }
-  function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index }) {
+  function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index, onHide }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const [animated, setAnimated] = (0, import_react4.useState)(false);
     (0, import_react4.useEffect)(() => {
@@ -14934,7 +14934,19 @@
     const weekPct = Math.min(100, weekSeconds / weekScale * 100);
     const overLimit = dailyLimitSeconds && todaySeconds > dailyLimitSeconds;
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginBottom: `${spacing2.lg}px` }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { fontSize: "14px", fontWeight: "600", marginBottom: "6px", color: colors.text.primary }, children: appName }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { fontSize: "14px", fontWeight: "600", color: colors.text.primary }, children: appName }),
+        onHide && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          "button",
+          {
+            onClick: onHide,
+            title: "Hide from usage",
+            "aria-label": `Hide ${appName} from usage`,
+            style: { background: "none", border: "none", padding: "4px", cursor: "pointer", color: colors.text.muted, display: "flex", alignItems: "center", borderRadius: `${radius2.sm}px` },
+            children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon, { name: "EyeSlash", size: 18 })
+          }
+        )
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
         /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { fontSize: "12px", color: colors.text.secondary, marginBottom: "3px", marginTop: "6px" }, children: [
           "Today: ",
@@ -14974,48 +14986,92 @@
     ] });
   }
   function UsageTab({ childPublicKey, onShowReports }) {
-    const { colors, spacing: spacing2 } = useTheme();
+    const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const [report, setReport] = (0, import_react4.useState)(null);
     const [loading, setLoading] = (0, import_react4.useState)(true);
+    const [hidden, setHidden] = (0, import_react4.useState)([]);
+    const [showHidden, setShowHidden] = (0, import_react4.useState)(false);
+    const refreshHidden = (0, import_react4.useCallback)(() => {
+      window.callBare("usage:getExclusions", { childPublicKey }).then((list) => setHidden(Array.isArray(list) ? list : [])).catch(() => setHidden([]));
+    }, [childPublicKey]);
     (0, import_react4.useEffect)(() => {
       window.callBare("usage:getLatest", { childPublicKey }).then((data) => {
         setReport(data);
         setLoading(false);
       }).catch(() => setLoading(false));
+      refreshHidden();
       const unsub = window.onBareEvent("usage:report", (data) => {
-        if (data && data.childPublicKey === childPublicKey && data.apps && data.apps.length > 0) {
+        if (data && data.childPublicKey === childPublicKey && data.apps) {
           setReport(data);
           setLoading(false);
         }
       });
       return unsub;
-    }, [childPublicKey]);
+    }, [childPublicKey, refreshHidden]);
+    const handleHide = (0, import_react4.useCallback)((packageName, displayName) => {
+      window.callBare("haptic:tap");
+      window.callBare("usage:setExclusion", { childPublicKey, packageName, displayName, excluded: true }).then(refreshHidden).catch((e) => console.error("[UsageTab] hide failed:", e));
+    }, [childPublicKey, refreshHidden]);
+    const handleUnhide = (0, import_react4.useCallback)((packageName) => {
+      window.callBare("haptic:tap");
+      window.callBare("usage:setExclusion", { childPublicKey, packageName, excluded: false }).then(refreshHidden).catch((e) => console.error("[UsageTab] unhide failed:", e));
+    }, [childPublicKey, refreshHidden]);
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { padding: `${spacing2.base}px`, color: colors.text.muted, fontSize: "14px" }, children: "Loading usage data..." });
-    if (!report || !report.apps || report.apps.length === 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { padding: `${spacing2.base}px`, color: colors.text.muted, fontSize: "14px" }, children: "No usage data yet. Data syncs every 15 minutes." });
-    }
+    const apps = report && Array.isArray(report.apps) ? report.apps : [];
+    const hasApps = apps.length > 0;
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { padding: `${spacing2.base}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.base}px` }, children: [
         onShowReports && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Button, { variant: "secondary", onClick: () => {
           window.callBare("haptic:tap");
           onShowReports();
         }, style: { fontSize: "12px", padding: "4px 12px" }, children: "See Reports" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { style: { fontSize: "12px", color: colors.text.muted, margin: 0 }, children: [
+        report && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { style: { fontSize: "12px", color: colors.text.muted, margin: 0 }, children: [
           "Last synced: ",
           timeAgo(report.lastSynced || report.timestamp)
         ] })
       ] }),
-      [...report.apps].sort((a, b) => b.todaySeconds - a.todaySeconds).map((app, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      !hasApps && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { color: colors.text.muted, fontSize: "14px", textAlign: "center", marginBottom: `${spacing2.base}px` }, children: "No usage data yet. Data syncs every 15 minutes." }),
+      hasApps && [...apps].sort((a, b) => b.todaySeconds - a.todaySeconds).map((app, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         UsageBar,
         {
           appName: app.displayName || app.packageName,
           todaySeconds: app.todaySeconds,
           weekSeconds: app.weekSeconds,
           dailyLimitSeconds: app.dailyLimitSeconds,
-          index: i
+          index: i,
+          onHide: () => handleHide(app.packageName, app.displayName || app.packageName)
         },
         app.packageName
-      ))
+      )),
+      hidden.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginTop: `${spacing2.lg}px`, paddingTop: `${spacing2.base}px`, borderTop: `1px solid ${colors.border}` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+          "button",
+          {
+            onClick: () => {
+              window.callBare("haptic:tap");
+              setShowHidden((s) => !s);
+            },
+            style: { background: "none", border: "none", padding: 0, cursor: "pointer", color: colors.text.secondary, fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon, { name: showHidden ? "Eye" : "EyeSlash", size: 16 }),
+              hidden.length,
+              " hidden ",
+              hidden.length === 1 ? "app" : "apps"
+            ]
+          }
+        ),
+        showHidden && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { marginTop: `${spacing2.sm}px`, display: "flex", flexDirection: "column", gap: `${spacing2.xs}px` }, children: hidden.map((h) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: `${spacing2.xs}px ${spacing2.sm}px`, backgroundColor: colors.surface.elevated, borderRadius: `${radius2.sm}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { fontSize: "13px", color: colors.text.primary }, children: h.displayName }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+            "button",
+            {
+              onClick: () => handleUnhide(h.packageName),
+              style: { background: "none", border: `1px solid ${colors.border}`, padding: "4px 10px", cursor: "pointer", color: colors.text.secondary, fontSize: "12px", borderRadius: `${radius2.sm}px` },
+              children: "Unhide"
+            }
+          )
+        ] }, h.packageName)) })
+      ] })
     ] });
   }
 

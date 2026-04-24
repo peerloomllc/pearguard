@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../theme.js';
 import Button from './primitives/Button.jsx';
 import Icon from '../icons.js';
+import { useLocalDate } from '../useLocalDate.js';
 
 function timeAgo(timestamp) {
   if (!timestamp) return 'Never';
@@ -89,6 +90,7 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState([]);
   const [showHidden, setShowHidden] = useState(false);
+  const localDate = useLocalDate();
 
   const refreshHidden = useCallback(() => {
     window.callBare('usage:getExclusions', { childPublicKey })
@@ -97,6 +99,8 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
   }, [childPublicKey]);
 
   useEffect(() => {
+    // Re-fetch on mount and at midnight rollover so the date-gated server
+    // response overwrites any payload cached from the previous local day.
     window.callBare('usage:getLatest', { childPublicKey })
       .then((data) => {
         setReport(data);
@@ -113,7 +117,7 @@ export default function UsageTab({ childPublicKey, onShowReports }) {
       }
     });
     return unsub;
-  }, [childPublicKey, refreshHidden]);
+  }, [childPublicKey, refreshHidden, localDate]);
 
   const handleHide = useCallback((packageName, displayName) => {
     window.callBare('haptic:tap');

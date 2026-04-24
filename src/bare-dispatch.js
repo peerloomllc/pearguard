@@ -52,6 +52,20 @@ function applyExclusionsToReport(report, exclusions) {
   return { ...report, apps, sessions, todayScreenTimeSeconds }
 }
 
+// Zero out today-scoped fields on a stored usage report if its timestamp is
+// from a previous local day. The Hyperbee row is not mutated — this runs at
+// the IPC read boundary so every consumer of the latest-report snapshot sees
+// 0 until a new sync arrives for the current local date. `stale` is set so
+// callers can distinguish "no data today yet" from "today, zero usage".
+function dateGateReport(report) {
+  if (!report || !report.timestamp) return report
+  if (localDateStr(report.timestamp) === localDateStr()) return report
+  const apps = Array.isArray(report.apps)
+    ? report.apps.map((a) => ({ ...a, todaySeconds: 0 }))
+    : report.apps
+  return { ...report, apps, sessions: [], todayScreenTimeSeconds: 0, stale: true }
+}
+
 // Merge two session arrays, keying on (packageName, startedAt) and preferring
 // the snapshot with the longest durationSeconds. Used by usage:flush on the
 // child and the parent's usage:report handler so a single overwriting key per
@@ -198,7 +212,7 @@ function createDispatch (ctx) {
             reverse: true,
             limit: 1,
           })) {
-            const filtered = applyExclusionsToReport(report, exclusions)
+            const filtered = dateGateReport(applyExclusionsToReport(report, exclusions))
             // If the currently foregrounded app is excluded, drop it from the
             // Dashboard surface so the exclusion is consistent everywhere.
             const currentAppPackage = filtered.currentAppPackage && !exclusions.has(filtered.currentAppPackage)
@@ -1196,7 +1210,7 @@ function createDispatch (ctx) {
         const latestRaw = await ctx.db.get('usageReport:' + childPublicKey + ':latest').catch(() => null)
         if (latestRaw?.value) {
           const exclusions = await getExclusions(ctx.db, childPublicKey)
-          const filtered = applyExclusionsToReport(latestRaw.value, exclusions)
+          const filtered = dateGateReport(applyExclusionsToReport(latestRaw.value, exclusions))
           ctx.send({ type: 'event', event: 'usage:report', data: { ...filtered, childPublicKey } })
         }
         return { packages: Object.keys(map).filter((p) => map[p]) }
@@ -1208,7 +1222,7 @@ function createDispatch (ctx) {
         const exclusions = await getExclusions(ctx.db, childPublicKey)
         // Fast path: single overwriting key.
         const direct = await ctx.db.get('usageReport:' + childPublicKey + ':latest').catch(() => null)
-        if (direct?.value) return applyExclusionsToReport(direct.value, exclusions)
+        if (direct?.value) return dateGateReport(applyExclusionsToReport(direct.value, exclusions))
         // Fallback for pre-migration data that still uses timestamped keys.
         let latest = null
         for await (const { value } of ctx.db.createReadStream({
@@ -1219,7 +1233,7 @@ function createDispatch (ctx) {
         })) {
           latest = value
         }
-        return latest ? applyExclusionsToReport(latest, exclusions) : null
+        return latest ? dateGateReport(applyExclusionsToReport(latest, exclusions)) : null
       }
 
       case 'usage:getSessions': {

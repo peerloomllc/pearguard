@@ -660,7 +660,7 @@ describe('bare dispatch', () => {
     }
 
     test('returns the latest usageReport for childPublicKey', async () => {
-      const report = { type: 'usage:report', timestamp: 5000, apps: [], childPublicKey: 'pk-child' }
+      const report = { type: 'usage:report', timestamp: Date.now(), apps: [], childPublicKey: 'pk-child' }
       const mockDb = makeMockDb()
       mockDb.createReadStream = jest.fn(async function * () {
         yield { value: report }
@@ -671,6 +671,31 @@ describe('bare dispatch', () => {
 
       const result = await dispatch('usage:getLatest', { childPublicKey: 'pk-child' })
       expect(result).toEqual(report)
+    })
+
+    test('zeros out today-scoped fields when stored report is from a previous local day', async () => {
+      const yesterday = Date.now() - 36 * 60 * 60 * 1000
+      const stored = {
+        type: 'usage:report',
+        timestamp: yesterday,
+        todayScreenTimeSeconds: 3600,
+        apps: [{ packageName: 'com.example.chrome', displayName: 'Chrome', todaySeconds: 3600, weekSeconds: 7200 }],
+        sessions: [{ packageName: 'com.example.chrome', startedAt: yesterday, durationSeconds: 3600 }],
+        childPublicKey: 'pk-child',
+      }
+      const mockDb = makeMockDb({ ['usageReport:pk-child:latest']: stored })
+      mockDb.createReadStream = jest.fn(async function * () {})
+      const mockSend = jest.fn()
+      const ctx = { db: mockDb, send: mockSend }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('usage:getLatest', { childPublicKey: 'pk-child' })
+      expect(result.todayScreenTimeSeconds).toBe(0)
+      expect(result.apps[0].todaySeconds).toBe(0)
+      expect(result.apps[0].weekSeconds).toBe(7200)
+      expect(result.sessions).toEqual([])
+      expect(result.stale).toBe(true)
+      expect(result.timestamp).toBe(yesterday)
     })
 
     test('returns null when no report exists', async () => {

@@ -7,6 +7,7 @@ import Input from './primitives/Input.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
 import InviteCard from './InviteCard.jsx';
+import { useLocalDate } from '../useLocalDate.js';
 
 export default forwardRef(function Dashboard(_props, ref) {
   const { colors, typography, spacing, radius } = useTheme();
@@ -19,6 +20,7 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [lockMessage, setLockMessage] = useState('');
   const childrenRef = useRef(children);
   childrenRef.current = children;
+  const localDate = useLocalDate();
 
   function loadChildren() {
     window.callBare('children:list')
@@ -37,7 +39,13 @@ export default forwardRef(function Dashboard(_props, ref) {
       .catch(() => setLoading(false));
   }
 
-  useEffect(() => { loadChildren(); }, []);
+  // Mount plus midnight rollover: zero cached "today" values optimistically,
+  // then re-fetch from bare (which date-gates the stored snapshot server-side
+  // so stale reports come back with todayScreenTimeSeconds=0).
+  useEffect(() => {
+    setChildren((prev) => prev.map((c) => ({ ...c, todayScreenTimeSeconds: 0 })));
+    loadChildren();
+  }, [localDate]);
 
   // Handle notification deep link navigation from window global (set by RN shell)
   useEffect(() => {

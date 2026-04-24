@@ -14371,7 +14371,7 @@
   });
 
   // src/ui/main.jsx
-  var import_react26 = __toESM(require_react());
+  var import_react27 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // src/ui/fonts.js
@@ -14399,7 +14399,7 @@
   }
 
   // src/ui/App.jsx
-  var import_react25 = __toESM(require_react());
+  var import_react26 = __toESM(require_react());
 
   // src/ui/theme.js
   var import_react = __toESM(require_react());
@@ -14503,10 +14503,10 @@
   }
 
   // src/ui/components/ParentApp.jsx
-  var import_react20 = __toESM(require_react());
+  var import_react21 = __toESM(require_react());
 
   // src/ui/components/Dashboard.jsx
-  var import_react13 = __toESM(require_react());
+  var import_react14 = __toESM(require_react());
 
   // src/ui/icons.js
   var import_jsx_runtime = __toESM(require_jsx_runtime());
@@ -14899,10 +14899,43 @@
   }
 
   // src/ui/components/ChildDetail.jsx
-  var import_react11 = __toESM(require_react());
+  var import_react12 = __toESM(require_react());
 
   // src/ui/components/UsageTab.jsx
+  var import_react5 = __toESM(require_react());
+
+  // src/ui/useLocalDate.js
   var import_react4 = __toESM(require_react());
+  function localDateStr(ts) {
+    const d = new Date(ts || Date.now());
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function useLocalDate() {
+    const [date, setDate] = (0, import_react4.useState)(() => localDateStr());
+    (0, import_react4.useEffect)(() => {
+      let timeoutId = null;
+      let cancelled = false;
+      function schedule() {
+        if (cancelled) return;
+        const now = /* @__PURE__ */ new Date();
+        const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1, 0);
+        const delay = Math.max(1e3, nextMidnight.getTime() - now.getTime());
+        timeoutId = setTimeout(() => {
+          if (cancelled) return;
+          setDate(localDateStr());
+          schedule();
+        }, delay);
+      }
+      schedule();
+      return () => {
+        cancelled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+      };
+    }, []);
+    return date;
+  }
+
+  // src/ui/components/UsageTab.jsx
   var import_jsx_runtime8 = __toESM(require_jsx_runtime());
   function timeAgo(timestamp) {
     if (!timestamp) return "Never";
@@ -14923,8 +14956,8 @@
   }
   function UsageBar({ appName, todaySeconds, weekSeconds, dailyLimitSeconds, index, onHide }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
-    const [animated, setAnimated] = (0, import_react4.useState)(false);
-    (0, import_react4.useEffect)(() => {
+    const [animated, setAnimated] = (0, import_react5.useState)(false);
+    (0, import_react5.useEffect)(() => {
       const timer = setTimeout(() => setAnimated(true), 80 * index);
       return () => clearTimeout(timer);
     }, [index]);
@@ -14987,14 +15020,15 @@
   }
   function UsageTab({ childPublicKey, onShowReports }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
-    const [report, setReport] = (0, import_react4.useState)(null);
-    const [loading, setLoading] = (0, import_react4.useState)(true);
-    const [hidden, setHidden] = (0, import_react4.useState)([]);
-    const [showHidden, setShowHidden] = (0, import_react4.useState)(false);
-    const refreshHidden = (0, import_react4.useCallback)(() => {
+    const [report, setReport] = (0, import_react5.useState)(null);
+    const [loading, setLoading] = (0, import_react5.useState)(true);
+    const [hidden, setHidden] = (0, import_react5.useState)([]);
+    const [showHidden, setShowHidden] = (0, import_react5.useState)(false);
+    const localDate = useLocalDate();
+    const refreshHidden = (0, import_react5.useCallback)(() => {
       window.callBare("usage:getExclusions", { childPublicKey }).then((list) => setHidden(Array.isArray(list) ? list : [])).catch(() => setHidden([]));
     }, [childPublicKey]);
-    (0, import_react4.useEffect)(() => {
+    (0, import_react5.useEffect)(() => {
       window.callBare("usage:getLatest", { childPublicKey }).then((data) => {
         setReport(data);
         setLoading(false);
@@ -15007,12 +15041,12 @@
         }
       });
       return unsub;
-    }, [childPublicKey, refreshHidden]);
-    const handleHide = (0, import_react4.useCallback)((packageName, displayName) => {
+    }, [childPublicKey, refreshHidden, localDate]);
+    const handleHide = (0, import_react5.useCallback)((packageName, displayName) => {
       window.callBare("haptic:tap");
       window.callBare("usage:setExclusion", { childPublicKey, packageName, displayName, excluded: true }).then(refreshHidden).catch((e) => console.error("[UsageTab] hide failed:", e));
     }, [childPublicKey, refreshHidden]);
-    const handleUnhide = (0, import_react4.useCallback)((packageName) => {
+    const handleUnhide = (0, import_react5.useCallback)((packageName) => {
       window.callBare("haptic:tap");
       window.callBare("usage:setExclusion", { childPublicKey, packageName, excluded: false }).then(refreshHidden).catch((e) => console.error("[UsageTab] unhide failed:", e));
     }, [childPublicKey, refreshHidden]);
@@ -15076,7 +15110,7 @@
   }
 
   // src/ui/components/AppsTab.jsx
-  var import_react5 = __toESM(require_react());
+  var import_react6 = __toESM(require_react());
 
   // src/ui/components/appCategories.js
   var APP_CATEGORIES = ["Games", "Social", "Video & Music", "Communication", "Education", "Productivity", "News", "System", "Other"];
@@ -15132,13 +15166,13 @@
     const hasOwnLimit = typeof appData.dailyLimitSeconds === "number";
     const inherits = !hasOwnLimit && typeof categoryLimitSeconds === "number";
     const savedMinutes = hasOwnLimit ? String(Math.round(appData.dailyLimitSeconds / 60)) : "";
-    const [limitInput, setLimitInput] = (0, import_react5.useState)(savedMinutes);
-    const [editingLimit, setEditingLimit] = (0, import_react5.useState)(false);
+    const [limitInput, setLimitInput] = (0, import_react6.useState)(savedMinutes);
+    const [editingLimit, setEditingLimit] = (0, import_react6.useState)(false);
     const limitDirty = limitInput !== savedMinutes;
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       setLimitInput(savedMinutes);
     }, [savedMinutes]);
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       if (hasOwnLimit) setEditingLimit(false);
     }, [hasOwnLimit]);
     function revertToCategory() {
@@ -15426,9 +15460,9 @@
   function CategoryLimitControls({ categoryName, savedSeconds, onSave, onApplyToAll, onClear }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
     const savedMinutes = typeof savedSeconds === "number" ? String(Math.round(savedSeconds / 60)) : "";
-    const [input, setInput] = (0, import_react5.useState)(savedMinutes);
+    const [input, setInput] = (0, import_react6.useState)(savedMinutes);
     const dirty = input !== savedMinutes;
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       setInput(savedMinutes);
     }, [savedMinutes]);
     function commit() {
@@ -15608,38 +15642,38 @@
   }
   function AppsTab({ childPublicKey }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
-    const [policy, setPolicy] = (0, import_react5.useState)(null);
-    const [loading, setLoading] = (0, import_react5.useState)(true);
-    const [sortOrder, setSortOrder] = (0, import_react5.useState)("alpha");
-    const [search, setSearch] = (0, import_react5.useState)("");
-    const [viewMode, setViewMode] = (0, import_react5.useState)("category");
-    const [collapsed, setCollapsed] = (0, import_react5.useState)({});
-    const [overrides, setOverrides] = (0, import_react5.useState)([]);
-    const [animatingItems, setAnimatingItems] = (0, import_react5.useState)({});
-    const [animatingSection, setAnimatingSection] = (0, import_react5.useState)(null);
-    const [confirmDialog, setConfirmDialog] = (0, import_react5.useState)(null);
-    const timersRef = (0, import_react5.useRef)([]);
-    const loadPolicy = (0, import_react5.useCallback)(() => {
+    const [policy, setPolicy] = (0, import_react6.useState)(null);
+    const [loading, setLoading] = (0, import_react6.useState)(true);
+    const [sortOrder, setSortOrder] = (0, import_react6.useState)("alpha");
+    const [search, setSearch] = (0, import_react6.useState)("");
+    const [viewMode, setViewMode] = (0, import_react6.useState)("category");
+    const [collapsed, setCollapsed] = (0, import_react6.useState)({});
+    const [overrides, setOverrides] = (0, import_react6.useState)([]);
+    const [animatingItems, setAnimatingItems] = (0, import_react6.useState)({});
+    const [animatingSection, setAnimatingSection] = (0, import_react6.useState)(null);
+    const [confirmDialog, setConfirmDialog] = (0, import_react6.useState)(null);
+    const timersRef = (0, import_react6.useRef)([]);
+    const loadPolicy = (0, import_react6.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [childPublicKey]);
-    const loadOverrides = (0, import_react5.useCallback)(() => {
+    const loadOverrides = (0, import_react6.useCallback)(() => {
       window.callBare("overrides:list", { childPublicKey }).then(({ overrides: overrides2 }) => setOverrides(overrides2 || [])).catch(() => {
       });
     }, [childPublicKey]);
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       loadPolicy();
       loadOverrides();
     }, [loadPolicy, loadOverrides]);
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       window.callBare("pref:get", { key: "appsTab:viewMode" }).then((v) => {
         if (v) setViewMode(v);
       }).catch(() => {
       });
     }, []);
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       const unsub = window.onBareEvent("apps:synced", (data) => {
         if (data.childPublicKey === childPublicKey) {
           loadPolicy();
@@ -15661,7 +15695,7 @@
         clearInterval(timer);
       };
     }, [childPublicKey, loadPolicy, loadOverrides]);
-    (0, import_react5.useEffect)(() => {
+    (0, import_react6.useEffect)(() => {
       return () => timersRef.current.forEach(clearTimeout);
     }, []);
     function scheduleTimer(fn, ms) {
@@ -16017,7 +16051,7 @@
   }
 
   // src/ui/components/ActivityTab.jsx
-  var import_react6 = __toESM(require_react());
+  var import_react7 = __toESM(require_react());
 
   // src/ui/components/primitives/Card.jsx
   var import_jsx_runtime10 = __toESM(require_jsx_runtime());
@@ -16078,7 +16112,7 @@
   }
   function PendingRequestCard({ req, childPublicKey, onResolved }) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
-    const [acting, setActing] = (0, import_react6.useState)(false);
+    const [acting, setActing] = (0, import_react7.useState)(false);
     const isExtraTime = req.requestType === "extra_time";
     async function handleApprove() {
       setActing(true);
@@ -16194,15 +16228,15 @@
   }
   function ActivityTab({ childPublicKey }) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
-    const [allAlerts, setAllAlerts] = (0, import_react6.useState)([]);
-    const [loading, setLoading] = (0, import_react6.useState)(true);
+    const [allAlerts, setAllAlerts] = (0, import_react7.useState)([]);
+    const [loading, setLoading] = (0, import_react7.useState)(true);
     function reload() {
       window.callBare("alerts:list", { childPublicKey }).then((list) => {
         setAllAlerts(list || []);
         setLoading(false);
       }).catch(() => setLoading(false));
     }
-    (0, import_react6.useEffect)(() => {
+    (0, import_react7.useEffect)(() => {
       reload();
       const unsubBypass = window.onBareEvent("alert:bypass", reload);
       const unsubRequest = window.onBareEvent("time:request:received", reload);
@@ -16247,7 +16281,7 @@
   }
 
   // src/ui/components/RulesTab.jsx
-  var import_react7 = __toESM(require_react());
+  var import_react8 = __toESM(require_react());
   var import_react_dom = __toESM(require_react_dom());
   var import_jsx_runtime12 = __toESM(require_jsx_runtime());
   var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -16418,13 +16452,13 @@
     ] });
   }
   function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
-    const [newRule, setNewRule] = (0, import_react7.useState)(BLANK_RULE);
-    const [editingIndex, setEditingIndex] = (0, import_react7.useState)(null);
-    const [submitAttempted, setSubmitAttempted] = (0, import_react7.useState)(false);
-    const [showForm, setShowForm] = (0, import_react7.useState)(false);
-    const [showInfo, setShowInfo] = (0, import_react7.useState)(false);
-    const [expandedCategories, setExpandedCategories] = (0, import_react7.useState)({});
-    const { appsByCategory, totalAppCount } = (0, import_react7.useMemo)(() => {
+    const [newRule, setNewRule] = (0, import_react8.useState)(BLANK_RULE);
+    const [editingIndex, setEditingIndex] = (0, import_react8.useState)(null);
+    const [submitAttempted, setSubmitAttempted] = (0, import_react8.useState)(false);
+    const [showForm, setShowForm] = (0, import_react8.useState)(false);
+    const [showInfo, setShowInfo] = (0, import_react8.useState)(false);
+    const [expandedCategories, setExpandedCategories] = (0, import_react8.useState)({});
+    const { appsByCategory, totalAppCount } = (0, import_react8.useMemo)(() => {
       const grouped = {};
       let total = 0;
       if (policy && policy.apps) {
@@ -16743,20 +16777,20 @@
   }
   function RulesTab({ childPublicKey }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [policy, setPolicy] = (0, import_react7.useState)(null);
-    const [loading, setLoading] = (0, import_react7.useState)(true);
-    const [footerEl, setFooterEl] = (0, import_react7.useState)(null);
-    const footerRef = (0, import_react7.useCallback)((node) => setFooterEl(node), []);
-    const loadPolicy = (0, import_react7.useCallback)(() => {
+    const [policy, setPolicy] = (0, import_react8.useState)(null);
+    const [loading, setLoading] = (0, import_react8.useState)(true);
+    const [footerEl, setFooterEl] = (0, import_react8.useState)(null);
+    const footerRef = (0, import_react8.useCallback)((node) => setFooterEl(node), []);
+    const loadPolicy = (0, import_react8.useCallback)(() => {
       window.callBare("policy:get", { childPublicKey }).then((p) => {
         setPolicy(p);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [childPublicKey]);
-    (0, import_react7.useEffect)(() => {
+    (0, import_react8.useEffect)(() => {
       loadPolicy();
     }, [loadPolicy]);
-    (0, import_react7.useEffect)(() => {
+    (0, import_react8.useEffect)(() => {
       const unsub = window.onBareEvent("policy:updated", (data) => {
         if (data && data.childPublicKey === childPublicKey) loadPolicy();
       });
@@ -16773,18 +16807,18 @@
   }
 
   // src/ui/components/AdvancedTab.jsx
-  var import_react9 = __toESM(require_react());
+  var import_react10 = __toESM(require_react());
 
   // src/ui/components/RulesTransferModal.jsx
-  var import_react8 = __toESM(require_react());
+  var import_react9 = __toESM(require_react());
   var import_jsx_runtime13 = __toESM(require_jsx_runtime());
   function RulesTransferModal({ visible, mode, child, onClose }) {
     const { colors, spacing: spacing2, typography: typography2 } = useTheme();
-    const [stage, setStage] = (0, import_react8.useState)("idle");
-    const [json, setJson] = (0, import_react8.useState)("");
-    const [preview, setPreview] = (0, import_react8.useState)(null);
-    const [error, setError] = (0, import_react8.useState)("");
-    import_react8.default.useEffect(() => {
+    const [stage, setStage] = (0, import_react9.useState)("idle");
+    const [json, setJson] = (0, import_react9.useState)("");
+    const [preview, setPreview] = (0, import_react9.useState)(null);
+    const [error, setError] = (0, import_react9.useState)("");
+    import_react9.default.useEffect(() => {
       if (!visible) {
         setStage("idle");
         setJson("");
@@ -16965,8 +16999,8 @@
   var import_jsx_runtime14 = __toESM(require_jsx_runtime());
   function AdvancedTab({ child, onUnpair }) {
     const { colors, spacing: spacing2, typography: typography2, radius: radius2 } = useTheme();
-    const [transferMode, setTransferMode] = (0, import_react9.useState)(null);
-    const [confirmRemove, setConfirmRemove] = (0, import_react9.useState)(false);
+    const [transferMode, setTransferMode] = (0, import_react10.useState)(null);
+    const [confirmRemove, setConfirmRemove] = (0, import_react10.useState)(false);
     function openTransfer(mode) {
       window.callBare("haptic:tap");
       setTransferMode(mode);
@@ -17046,9 +17080,9 @@
   }
 
   // src/ui/components/UsageReports.jsx
-  var import_react10 = __toESM(require_react());
+  var import_react11 = __toESM(require_react());
   var import_jsx_runtime15 = __toESM(require_jsx_runtime());
-  function localDateStr(d) {
+  function localDateStr2(d) {
     if (!(d instanceof Date)) d = new Date(d || Date.now());
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
@@ -17094,10 +17128,10 @@
   function formatDate(dateStr) {
     const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00");
     const today = /* @__PURE__ */ new Date();
-    const todayStr = localDateStr(today);
+    const todayStr = localDateStr2(today);
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = localDateStr(yesterday);
+    const yesterdayStr = localDateStr2(yesterday);
     if (dateStr === todayStr) return "Today";
     if (dateStr === yesterdayStr) return "Yesterday";
     return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -17105,11 +17139,11 @@
   function dateOffset(dateStr, offset) {
     const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00");
     d.setDate(d.getDate() + offset);
-    return localDateStr(d);
+    return localDateStr2(d);
   }
   function HourlyChart({ sessions, colors }) {
-    const [animated, setAnimated] = (0, import_react10.useState)(false);
-    (0, import_react10.useEffect)(() => {
+    const [animated, setAnimated] = (0, import_react11.useState)(false);
+    (0, import_react11.useEffect)(() => {
       setAnimated(false);
       const t = requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimated(true));
@@ -17181,13 +17215,13 @@
     ] });
   }
   function DailySummary({ childPublicKey, colors, spacing: spacing2, radius: radius2 }) {
-    const [date, setDate] = (0, import_react10.useState)(() => localDateStr());
-    const [sessions, setSessions] = (0, import_react10.useState)([]);
-    const [loading, setLoading] = (0, import_react10.useState)(true);
-    const [fadeDir, setFadeDir] = (0, import_react10.useState)(null);
-    const today = localDateStr();
+    const [date, setDate] = (0, import_react11.useState)(() => localDateStr2());
+    const [sessions, setSessions] = (0, import_react11.useState)([]);
+    const [loading, setLoading] = (0, import_react11.useState)(true);
+    const [fadeDir, setFadeDir] = (0, import_react11.useState)(null);
+    const today = localDateStr2();
     const minDate = dateOffset(today, -29);
-    const fetchSessions = (0, import_react10.useCallback)((d) => {
+    const fetchSessions = (0, import_react11.useCallback)((d) => {
       setLoading(true);
       window.callBare("usage:getSessions", { childPublicKey, date: d }).then((data) => {
         setSessions(filterSessions(data));
@@ -17197,7 +17231,7 @@
         setLoading(false);
       });
     }, [childPublicKey]);
-    (0, import_react10.useEffect)(() => {
+    (0, import_react11.useEffect)(() => {
       fetchSessions(date);
     }, [date, fetchSessions]);
     function navigate(dir) {
@@ -17262,12 +17296,12 @@
     ] });
   }
   function WeeklyTrends({ childPublicKey, colors, spacing: spacing2, radius: radius2 }) {
-    const [period, setPeriod] = (0, import_react10.useState)(7);
-    const [summaries, setSummaries] = (0, import_react10.useState)([]);
-    const [prevSummaries, setPrevSummaries] = (0, import_react10.useState)([]);
-    const [loading, setLoading] = (0, import_react10.useState)(true);
-    const [animated, setAnimated] = (0, import_react10.useState)(false);
-    (0, import_react10.useEffect)(() => {
+    const [period, setPeriod] = (0, import_react11.useState)(7);
+    const [summaries, setSummaries] = (0, import_react11.useState)([]);
+    const [prevSummaries, setPrevSummaries] = (0, import_react11.useState)([]);
+    const [loading, setLoading] = (0, import_react11.useState)(true);
+    const [animated, setAnimated] = (0, import_react11.useState)(false);
+    (0, import_react11.useEffect)(() => {
       setLoading(true);
       setAnimated(false);
       Promise.all([
@@ -17398,14 +17432,14 @@
     return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("svg", { viewBox: `0 0 ${width} ${height}`, style: { width: `${width}px`, height: `${height}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("polyline", { points, fill: "none", stroke: colors.primary, strokeWidth: 1.5, strokeLinejoin: "round", strokeLinecap: "round" }) });
   }
   function AppDrillDown({ childPublicKey, colors, spacing: spacing2, radius: radius2 }) {
-    const [date, setDate] = (0, import_react10.useState)(() => localDateStr());
-    const [sessions, setSessions] = (0, import_react10.useState)([]);
-    const [loading, setLoading] = (0, import_react10.useState)(true);
-    const [expanded, setExpanded] = (0, import_react10.useState)(null);
-    const [sparkData, setSparkData] = (0, import_react10.useState)({});
-    const today = localDateStr();
+    const [date, setDate] = (0, import_react11.useState)(() => localDateStr2());
+    const [sessions, setSessions] = (0, import_react11.useState)([]);
+    const [loading, setLoading] = (0, import_react11.useState)(true);
+    const [expanded, setExpanded] = (0, import_react11.useState)(null);
+    const [sparkData, setSparkData] = (0, import_react11.useState)({});
+    const today = localDateStr2();
     const minDate = dateOffset(today, -29);
-    (0, import_react10.useEffect)(() => {
+    (0, import_react11.useEffect)(() => {
       setLoading(true);
       window.callBare("usage:getSessions", { childPublicKey, date }).then((data) => {
         setSessions(filterSessions(data));
@@ -17569,8 +17603,8 @@
     "Other": "#B0B0B0"
   };
   function DonutChart({ categories, colors, totalSeconds }) {
-    const [animated, setAnimated] = (0, import_react10.useState)(false);
-    (0, import_react10.useEffect)(() => {
+    const [animated, setAnimated] = (0, import_react11.useState)(false);
+    (0, import_react11.useEffect)(() => {
       setAnimated(false);
       const t = requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimated(true));
@@ -17618,13 +17652,13 @@
     ] });
   }
   function CategoryBreakdown({ childPublicKey, colors, spacing: spacing2, radius: radius2 }) {
-    const [period, setPeriod] = (0, import_react10.useState)(1);
-    const [categories, setCategories] = (0, import_react10.useState)([]);
-    const [loading, setLoading] = (0, import_react10.useState)(true);
-    const [expanded, setExpanded] = (0, import_react10.useState)(null);
-    (0, import_react10.useEffect)(() => {
+    const [period, setPeriod] = (0, import_react11.useState)(1);
+    const [categories, setCategories] = (0, import_react11.useState)([]);
+    const [loading, setLoading] = (0, import_react11.useState)(true);
+    const [expanded, setExpanded] = (0, import_react11.useState)(null);
+    (0, import_react11.useEffect)(() => {
       setLoading(true);
-      const params = period === 1 ? { childPublicKey, date: localDateStr() } : { childPublicKey, days: period };
+      const params = period === 1 ? { childPublicKey, date: localDateStr2() } : { childPublicKey, days: period };
       window.callBare("usage:getCategorySummary", params).then((data) => {
         setCategories(data || []);
         setLoading(false);
@@ -17715,7 +17749,7 @@
   }
   function UsageReports({ childPublicKey, onBack }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [view, setView] = (0, import_react10.useState)(() => window.__pearScreenshotReportsView || "daily");
+    const [view, setView] = (0, import_react11.useState)(() => window.__pearScreenshotReportsView || "daily");
     return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100%", backgroundColor: colors.surface.base }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { style: {
         display: "flex",
@@ -17784,17 +17818,17 @@
   var TAB_COMPONENTS = { usage: UsageTab, apps: AppsTab, activity: ActivityTab, rules: RulesTab };
   function ChildDetail({ child, initialTab, onBack }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [tab, setTab] = (0, import_react11.useState)(initialTab || "usage");
-    (0, import_react11.useEffect)(() => {
+    const [tab, setTab] = (0, import_react12.useState)(initialTab || "usage");
+    (0, import_react12.useEffect)(() => {
       const unsub = window.onBareEvent("navigate:child:alerts", (data) => {
         if (data?.tab) setTab(data.tab);
       });
       return () => unsub();
     }, []);
-    const [showReports, setShowReports] = (0, import_react11.useState)(() => !!window.__pearScreenshotShowReports);
-    const [confirmLock, setConfirmLock] = (0, import_react11.useState)(false);
-    const [locked, setLocked] = (0, import_react11.useState)(child.locked || false);
-    const [lockMessage, setLockMessage] = (0, import_react11.useState)("");
+    const [showReports, setShowReports] = (0, import_react12.useState)(() => !!window.__pearScreenshotShowReports);
+    const [confirmLock, setConfirmLock] = (0, import_react12.useState)(false);
+    const [locked, setLocked] = (0, import_react12.useState)(child.locked || false);
+    const [lockMessage, setLockMessage] = (0, import_react12.useState)("");
     function onLockButtonClick() {
       window.callBare("haptic:tap");
       if (locked) {
@@ -17813,14 +17847,14 @@
       await applyLock(true, lockMessage);
       setLockMessage("");
     }
-    const backHandler = (0, import_react11.useCallback)(() => {
+    const backHandler = (0, import_react12.useCallback)(() => {
       if (showReports) {
         setShowReports(false);
         return true;
       }
       return false;
     }, [showReports]);
-    (0, import_react11.useEffect)(() => {
+    (0, import_react12.useEffect)(() => {
       window.__registerBackHandler?.(backHandler);
       return () => window.__unregisterBackHandler?.(backHandler);
     }, [backHandler]);
@@ -17937,31 +17971,31 @@
   }
 
   // src/ui/components/InviteCard.jsx
-  var import_react12 = __toESM(require_react());
+  var import_react13 = __toESM(require_react());
   var import_qrcode = __toESM(require_browser());
   var import_jsx_runtime17 = __toESM(require_jsx_runtime());
   function InviteCard({ onConnected, onDismiss }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
-    const [invite, setInvite] = (0, import_react12.useState)(null);
-    const [error, setError] = (0, import_react12.useState)(null);
-    const [uiMode, setUiMode] = (0, import_react12.useState)("methodPicker");
-    const [scanState, setScanState] = (0, import_react12.useState)("idle");
-    const [scanError, setScanError] = (0, import_react12.useState)(null);
-    const [pasteUrl, setPasteUrl] = (0, import_react12.useState)("");
-    const [sharing, setSharing] = (0, import_react12.useState)(false);
-    const canvasRef = (0, import_react12.useRef)(null);
-    (0, import_react12.useEffect)(() => {
+    const [invite, setInvite] = (0, import_react13.useState)(null);
+    const [error, setError] = (0, import_react13.useState)(null);
+    const [uiMode, setUiMode] = (0, import_react13.useState)("methodPicker");
+    const [scanState, setScanState] = (0, import_react13.useState)("idle");
+    const [scanError, setScanError] = (0, import_react13.useState)(null);
+    const [pasteUrl, setPasteUrl] = (0, import_react13.useState)("");
+    const [sharing, setSharing] = (0, import_react13.useState)(false);
+    const canvasRef = (0, import_react13.useRef)(null);
+    (0, import_react13.useEffect)(() => {
       const unsub = window.onBareEvent("child:connected", (data) => {
         onConnected(data);
       });
       return unsub;
     }, [onConnected]);
-    (0, import_react12.useEffect)(() => {
+    (0, import_react13.useEffect)(() => {
       if (uiMode !== "showQr") return;
       if (invite) return;
       window.callBare("invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
     }, [uiMode, invite]);
-    (0, import_react12.useEffect)(() => {
+    (0, import_react13.useEffect)(() => {
       if (uiMode === "showQr" && invite?.inviteLink && canvasRef.current) {
         import_qrcode.default.toCanvas(canvasRef.current, invite.inviteLink, {
           width: 200,
@@ -18221,17 +18255,18 @@ ${inv.inviteLink}`
 
   // src/ui/components/Dashboard.jsx
   var import_jsx_runtime18 = __toESM(require_jsx_runtime());
-  var Dashboard_default = (0, import_react13.forwardRef)(function Dashboard(_props, ref) {
+  var Dashboard_default = (0, import_react14.forwardRef)(function Dashboard(_props, ref) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [children, setChildren] = (0, import_react13.useState)([]);
-    const [loading, setLoading] = (0, import_react13.useState)(true);
-    const [selectedChild, setSelectedChild] = (0, import_react13.useState)(null);
-    const [selectedTab, setSelectedTab] = (0, import_react13.useState)(null);
-    const [inviteActive, setInviteActive] = (0, import_react13.useState)(false);
-    const [lockTarget, setLockTarget] = (0, import_react13.useState)(null);
-    const [lockMessage, setLockMessage] = (0, import_react13.useState)("");
-    const childrenRef = (0, import_react13.useRef)(children);
+    const [children, setChildren] = (0, import_react14.useState)([]);
+    const [loading, setLoading] = (0, import_react14.useState)(true);
+    const [selectedChild, setSelectedChild] = (0, import_react14.useState)(null);
+    const [selectedTab, setSelectedTab] = (0, import_react14.useState)(null);
+    const [inviteActive, setInviteActive] = (0, import_react14.useState)(false);
+    const [lockTarget, setLockTarget] = (0, import_react14.useState)(null);
+    const [lockMessage, setLockMessage] = (0, import_react14.useState)("");
+    const childrenRef = (0, import_react14.useRef)(children);
     childrenRef.current = children;
+    const localDate = useLocalDate();
     function loadChildren() {
       window.callBare("children:list").then((list) => {
         setChildren((list || []).map((c) => ({
@@ -18246,10 +18281,11 @@ ${inv.inviteLink}`
         setLoading(false);
       }).catch(() => setLoading(false));
     }
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
+      setChildren((prev) => prev.map((c) => ({ ...c, todayScreenTimeSeconds: 0 })));
       loadChildren();
-    }, []);
-    (0, import_react13.useEffect)(() => {
+    }, [localDate]);
+    (0, import_react14.useEffect)(() => {
       if (children.length === 0) return;
       const nav3 = window.__pendingAlertsNav;
       if (nav3?.childPublicKey) {
@@ -18261,10 +18297,10 @@ ${inv.inviteLink}`
         }
       }
     }, [children]);
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
       if (window.__pearScreenshotInvite) setInviteActive(true);
     }, []);
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
       if (children.length === 0) return;
       const ss = window.__pearScreenshotOpenChild;
       if (ss?.publicKey) {
@@ -18275,7 +18311,7 @@ ${inv.inviteLink}`
         }
       }
     }, [children]);
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
       function handleNav(data) {
         const key = data?.childPublicKey;
         if (!key) return;
@@ -18294,7 +18330,7 @@ ${inv.inviteLink}`
         unsub2();
       };
     }, []);
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
       const unsubs = [
         window.onBareEvent("usage:report", (data) => {
           setChildren((prev) => prev.map(
@@ -18362,14 +18398,14 @@ ${inv.inviteLink}`
       ];
       return () => unsubs.forEach((u) => u());
     }, []);
-    const navigateToChild = (0, import_react13.useCallback)((publicKey, tab) => {
+    const navigateToChild = (0, import_react14.useCallback)((publicKey, tab) => {
       const child = children.find((c) => c.publicKey === publicKey);
       if (child) {
         setSelectedChild(child);
         if (tab) setSelectedTab(tab);
       }
     }, [children]);
-    (0, import_react13.useImperativeHandle)(ref, () => ({
+    (0, import_react14.useImperativeHandle)(ref, () => ({
       navigateToChild
     }));
     async function handleLockToggle(child) {
@@ -18387,7 +18423,7 @@ ${inv.inviteLink}`
       setLockTarget(null);
       setLockMessage("");
     }
-    const backHandler = (0, import_react13.useCallback)(() => {
+    const backHandler = (0, import_react14.useCallback)(() => {
       if (selectedChild) {
         setSelectedChild(null);
         setSelectedTab(null);
@@ -18396,7 +18432,7 @@ ${inv.inviteLink}`
       }
       return false;
     }, [selectedChild]);
-    (0, import_react13.useEffect)(() => {
+    (0, import_react14.useEffect)(() => {
       window.__registerBackHandler?.(backHandler);
       return () => window.__unregisterBackHandler?.(backHandler);
     }, [backHandler]);
@@ -18517,7 +18553,7 @@ ${inv.inviteLink}`
   });
 
   // src/ui/components/Settings.jsx
-  var import_react17 = __toESM(require_react());
+  var import_react18 = __toESM(require_react());
 
   // src/ui/components/primitives/Toggle.jsx
   var import_jsx_runtime19 = __toESM(require_jsx_runtime());
@@ -18569,11 +18605,11 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/AvatarPicker.jsx
-  var import_react14 = __toESM(require_react());
+  var import_react15 = __toESM(require_react());
   var import_jsx_runtime20 = __toESM(require_jsx_runtime());
   function AvatarPicker({ currentAvatar, name, onSave, onCancel }) {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
-    const [selected, setSelected] = (0, import_react14.useState)(currentAvatar);
+    const [selected, setSelected] = (0, import_react15.useState)(currentAvatar);
     function selectPreset(id) {
       setSelected({ type: "preset", id });
     }
@@ -18690,14 +18726,14 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/DeviceBackupModal.jsx
-  var import_react15 = __toESM(require_react());
+  var import_react16 = __toESM(require_react());
   var import_jsx_runtime21 = __toESM(require_jsx_runtime());
   function DeviceBackupModal({ visible, mode, onClose }) {
     const { colors, spacing: spacing2, typography: typography2 } = useTheme();
-    const [stage, setStage] = (0, import_react15.useState)("idle");
-    const [summary, setSummary] = (0, import_react15.useState)(null);
-    const [error, setError] = (0, import_react15.useState)("");
-    (0, import_react15.useEffect)(() => {
+    const [stage, setStage] = (0, import_react16.useState)("idle");
+    const [summary, setSummary] = (0, import_react16.useState)(null);
+    const [error, setError] = (0, import_react16.useState)("");
+    (0, import_react16.useEffect)(() => {
       if (!visible) {
         setStage("idle");
         setSummary(null);
@@ -18814,7 +18850,7 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/primitives/Collapsible.jsx
-  var import_react16 = __toESM(require_react());
+  var import_react17 = __toESM(require_react());
   var import_jsx_runtime22 = __toESM(require_jsx_runtime());
   function Collapsible({ title, icon, open, onToggle, maxHeight, children, colors, spacing: spacing2, radius: radius2 }) {
     return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: {
@@ -19018,38 +19054,38 @@ ${inv.inviteLink}`
   }
   function Settings() {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, theme: currentTheme, setTheme: setTheme2 } = useTheme();
-    const [pinOpen, setPinOpen] = (0, import_react17.useState)(false);
-    const [timeOptsOpen, setTimeOptsOpen] = (0, import_react17.useState)(false);
-    const [warningOpen, setWarningOpen] = (0, import_react17.useState)(false);
-    const [appearanceOpen, setAppearanceOpen] = (0, import_react17.useState)(false);
-    const [backupOpen, setBackupOpen] = (0, import_react17.useState)(false);
-    const [backupMode, setBackupMode] = (0, import_react17.useState)(null);
-    const [storageOpen, setStorageOpen] = (0, import_react17.useState)(false);
-    const [storageBusy, setStorageBusy] = (0, import_react17.useState)(false);
-    const [storageBreakdown, setStorageBreakdown] = (0, import_react17.useState)(null);
-    const [storageAnalyze, setStorageAnalyze] = (0, import_react17.useState)(null);
-    const [reclaimResult, setReclaimResult] = (0, import_react17.useState)(null);
-    const [reclaimConfirm, setReclaimConfirm] = (0, import_react17.useState)(false);
-    const [storageError, setStorageError] = (0, import_react17.useState)(null);
-    const [storageModal, setStorageModal] = (0, import_react17.useState)(null);
-    const [name, setName] = (0, import_react17.useState)("");
-    const [savedName, setSavedName] = (0, import_react17.useState)("");
-    const [avatar, setAvatar] = (0, import_react17.useState)(null);
-    const [showPicker, setShowPicker] = (0, import_react17.useState)(false);
-    const [savingName, setSavingName] = (0, import_react17.useState)(false);
-    const [nameStatus, setNameStatus] = (0, import_react17.useState)(null);
-    const [photoLoading, setPhotoLoading] = (0, import_react17.useState)(false);
-    const [newPin, setNewPin] = (0, import_react17.useState)("");
-    const [confirmPin, setConfirmPin] = (0, import_react17.useState)("");
-    const [pinStatus, setPinStatus] = (0, import_react17.useState)(null);
-    const [currentPin, setCurrentPin] = (0, import_react17.useState)(null);
-    const [pinRevealed, setPinRevealed] = (0, import_react17.useState)(false);
-    const confirmPinRef = (0, import_react17.useRef)(null);
-    const [timeRequestMinutes, setTimeRequestMinutes] = (0, import_react17.useState)(DEFAULT_TIME_OPTIONS);
-    const [warningMinutes, setWarningMinutes] = (0, import_react17.useState)(DEFAULT_WARNING_THRESHOLDS);
-    const [settingsStatus, setSettingsStatus] = (0, import_react17.useState)(null);
-    const [settingsLoaded, setSettingsLoaded] = (0, import_react17.useState)(false);
-    (0, import_react17.useEffect)(() => {
+    const [pinOpen, setPinOpen] = (0, import_react18.useState)(false);
+    const [timeOptsOpen, setTimeOptsOpen] = (0, import_react18.useState)(false);
+    const [warningOpen, setWarningOpen] = (0, import_react18.useState)(false);
+    const [appearanceOpen, setAppearanceOpen] = (0, import_react18.useState)(false);
+    const [backupOpen, setBackupOpen] = (0, import_react18.useState)(false);
+    const [backupMode, setBackupMode] = (0, import_react18.useState)(null);
+    const [storageOpen, setStorageOpen] = (0, import_react18.useState)(false);
+    const [storageBusy, setStorageBusy] = (0, import_react18.useState)(false);
+    const [storageBreakdown, setStorageBreakdown] = (0, import_react18.useState)(null);
+    const [storageAnalyze, setStorageAnalyze] = (0, import_react18.useState)(null);
+    const [reclaimResult, setReclaimResult] = (0, import_react18.useState)(null);
+    const [reclaimConfirm, setReclaimConfirm] = (0, import_react18.useState)(false);
+    const [storageError, setStorageError] = (0, import_react18.useState)(null);
+    const [storageModal, setStorageModal] = (0, import_react18.useState)(null);
+    const [name, setName] = (0, import_react18.useState)("");
+    const [savedName, setSavedName] = (0, import_react18.useState)("");
+    const [avatar, setAvatar] = (0, import_react18.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react18.useState)(false);
+    const [savingName, setSavingName] = (0, import_react18.useState)(false);
+    const [nameStatus, setNameStatus] = (0, import_react18.useState)(null);
+    const [photoLoading, setPhotoLoading] = (0, import_react18.useState)(false);
+    const [newPin, setNewPin] = (0, import_react18.useState)("");
+    const [confirmPin, setConfirmPin] = (0, import_react18.useState)("");
+    const [pinStatus, setPinStatus] = (0, import_react18.useState)(null);
+    const [currentPin, setCurrentPin] = (0, import_react18.useState)(null);
+    const [pinRevealed, setPinRevealed] = (0, import_react18.useState)(false);
+    const confirmPinRef = (0, import_react18.useRef)(null);
+    const [timeRequestMinutes, setTimeRequestMinutes] = (0, import_react18.useState)(DEFAULT_TIME_OPTIONS);
+    const [warningMinutes, setWarningMinutes] = (0, import_react18.useState)(DEFAULT_WARNING_THRESHOLDS);
+    const [settingsStatus, setSettingsStatus] = (0, import_react18.useState)(null);
+    const [settingsLoaded, setSettingsLoaded] = (0, import_react18.useState)(false);
+    (0, import_react18.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
         setName(n);
@@ -19067,7 +19103,7 @@ ${inv.inviteLink}`
       }).catch(() => {
       });
     }, []);
-    (0, import_react17.useEffect)(() => {
+    (0, import_react18.useEffect)(() => {
       if (!pinOpen) setPinRevealed(false);
     }, [pinOpen]);
     async function handleNameSave() {
@@ -19481,7 +19517,7 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/AboutTab.jsx
-  var import_react18 = __toESM(require_react());
+  var import_react19 = __toESM(require_react());
   var import_jsx_runtime24 = __toESM(require_jsx_runtime());
   var LIGHTNING_ADDRESS = "peerloomllc@strike.me";
   var WALLETS = [
@@ -19502,13 +19538,13 @@ ${inv.inviteLink}`
   }
   function AboutTab() {
     const { colors, spacing: spacing2, radius: radius2 } = useTheme();
-    const [walletModal, setWalletModal] = (0, import_react18.useState)(false);
-    const [howOpen, setHowOpen] = (0, import_react18.useState)(false);
-    const [tutorialOpen, setTutorialOpen] = (0, import_react18.useState)(false);
-    const [valueOpen, setValueOpen] = (0, import_react18.useState)(false);
-    const [bitcoinOpen, setBitcoinOpen] = (0, import_react18.useState)(false);
-    const [shareOpen, setShareOpen] = (0, import_react18.useState)(false);
-    const [contactOpen, setContactOpen] = (0, import_react18.useState)(false);
+    const [walletModal, setWalletModal] = (0, import_react19.useState)(false);
+    const [howOpen, setHowOpen] = (0, import_react19.useState)(false);
+    const [tutorialOpen, setTutorialOpen] = (0, import_react19.useState)(false);
+    const [valueOpen, setValueOpen] = (0, import_react19.useState)(false);
+    const [bitcoinOpen, setBitcoinOpen] = (0, import_react19.useState)(false);
+    const [shareOpen, setShareOpen] = (0, import_react19.useState)(false);
+    const [contactOpen, setContactOpen] = (0, import_react19.useState)(false);
     const isIOS = window.__pearPlatform === "ios";
     async function handleDonateBTC() {
       window.callBare("haptic:tap");
@@ -19696,24 +19732,24 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/Tour.jsx
-  var import_react19 = __toESM(require_react());
+  var import_react20 = __toESM(require_react());
   var import_jsx_runtime26 = __toESM(require_jsx_runtime());
-  var TourContext = (0, import_react19.createContext)(null);
+  var TourContext = (0, import_react20.createContext)(null);
   function useTour() {
-    const ctx = (0, import_react19.useContext)(TourContext);
+    const ctx = (0, import_react20.useContext)(TourContext);
     if (!ctx) throw new Error("useTour must be used inside <TourProvider>");
     return ctx;
   }
   function TourProvider({ children }) {
-    const [slides, setSlides] = (0, import_react19.useState)(null);
-    const [index, setIndex] = (0, import_react19.useState)(0);
-    const onFinishRef = (0, import_react19.useRef)(null);
-    const start = (0, import_react19.useCallback)((slidesArray, opts) => {
+    const [slides, setSlides] = (0, import_react20.useState)(null);
+    const [index, setIndex] = (0, import_react20.useState)(0);
+    const onFinishRef = (0, import_react20.useRef)(null);
+    const start = (0, import_react20.useCallback)((slidesArray, opts) => {
       setSlides(slidesArray);
       setIndex(0);
       onFinishRef.current = opts?.onFinish || null;
     }, []);
-    const finish = (0, import_react19.useCallback)(() => {
+    const finish = (0, import_react20.useCallback)(() => {
       setSlides(null);
       setIndex(0);
       if (onFinishRef.current) {
@@ -19724,7 +19760,7 @@ ${inv.inviteLink}`
         onFinishRef.current = null;
       }
     }, []);
-    const next = (0, import_react19.useCallback)(() => {
+    const next = (0, import_react20.useCallback)(() => {
       setIndex((i) => {
         if (!slides) return i;
         if (i + 1 >= slides.length) {
@@ -19734,7 +19770,7 @@ ${inv.inviteLink}`
         return i + 1;
       });
     }, [slides, finish]);
-    const prev = (0, import_react19.useCallback)(() => setIndex((i) => Math.max(0, i - 1)), []);
+    const prev = (0, import_react20.useCallback)(() => setIndex((i) => Math.max(0, i - 1)), []);
     const value = {
       slides,
       index,
@@ -19754,8 +19790,8 @@ ${inv.inviteLink}`
   function TourSpotlight() {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
     const { currentSlide, index, slides, next, prev, skip } = useTour();
-    const [rect, setRect] = (0, import_react19.useState)(null);
-    (0, import_react19.useEffect)(() => {
+    const [rect, setRect] = (0, import_react20.useState)(null);
+    (0, import_react20.useEffect)(() => {
       if (!currentSlide) return;
       if (currentSlide.navigate) {
         try {
@@ -19765,7 +19801,7 @@ ${inv.inviteLink}`
         }
       }
     }, [currentSlide]);
-    (0, import_react19.useEffect)(() => {
+    (0, import_react20.useEffect)(() => {
       if (!currentSlide?.targetId) {
         setRect(null);
         return;
@@ -20089,9 +20125,9 @@ ${inv.inviteLink}`
   }
   function PinSetupOverlay({ onDone }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [pin, setPin] = (0, import_react20.useState)("");
-    const [confirmPin, setConfirmPin] = (0, import_react20.useState)("");
-    const [error, setError] = (0, import_react20.useState)(null);
+    const [pin, setPin] = (0, import_react21.useState)("");
+    const [confirmPin, setConfirmPin] = (0, import_react21.useState)("");
+    const [error, setError] = (0, import_react21.useState)(null);
     function handleSubmit(e) {
       e.preventDefault();
       if (pin.length !== 4) {
@@ -20180,14 +20216,14 @@ ${inv.inviteLink}`
   }
   function ParentAppInner() {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
-    const [tab, setTab] = (0, import_react20.useState)("dashboard");
-    const [banner, setBanner] = (0, import_react20.useState)(null);
-    const [pinCheckState, setPinCheckState] = (0, import_react20.useState)("loading");
-    const [showDonation, setShowDonation] = (0, import_react20.useState)(false);
-    const [showWelcome, setShowWelcome] = (0, import_react20.useState)(false);
+    const [tab, setTab] = (0, import_react21.useState)("dashboard");
+    const [banner, setBanner] = (0, import_react21.useState)(null);
+    const [pinCheckState, setPinCheckState] = (0, import_react21.useState)("loading");
+    const [showDonation, setShowDonation] = (0, import_react21.useState)(false);
+    const [showWelcome, setShowWelcome] = (0, import_react21.useState)(false);
     const tour = useTour();
-    const tourStartedRef = (0, import_react20.useRef)(false);
-    (0, import_react20.useEffect)(() => {
+    const tourStartedRef = (0, import_react21.useRef)(false);
+    (0, import_react21.useEffect)(() => {
       window.__pearTourNavigate = (target) => {
         if (target === "dashboard" || target === "settings" || target === "about") {
           setTab(target);
@@ -20209,21 +20245,21 @@ ${inv.inviteLink}`
         delete window.__pearTourNavigate;
       };
     }, []);
-    (0, import_react20.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       function checkPin() {
         window.callBare("pin:isSet", {}).then(({ isSet }) => setPinCheckState(isSet ? "done" : "needed")).catch(() => setPinCheckState("needed"));
       }
       checkPin();
       return window.onBareEvent("ready", checkPin);
     }, []);
-    (0, import_react20.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       if (pinCheckState !== "done") return;
       window.callBare("pref:get", { key: "onboarding:welcomeSeen" }).then((seen) => {
         if (!seen) setShowWelcome(true);
       }).catch(() => {
       });
     }, [pinCheckState]);
-    (0, import_react20.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       function onReplay() {
         tour.start(PARENT_TOUR_SLIDES, {
           onFinish: () => window.callBare("pref:set", { key: "onboarding:tourSeen", value: true }).catch(() => {
@@ -20235,7 +20271,7 @@ ${inv.inviteLink}`
         delete window.__pearReplayTour;
       };
     }, [tour]);
-    (0, import_react20.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       if (pinCheckState !== "done") return;
       if (window.__pearPlatform === "ios") return;
       window.callBare("donation:check").then(({ createdAt, dismissed }) => {
@@ -20244,7 +20280,7 @@ ${inv.inviteLink}`
       }).catch(() => {
       });
     }, [pinCheckState]);
-    (0, import_react20.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       if (window.__pendingAlertsNav) setTab("dashboard");
       const unsub1 = window.onBareEvent("navigate:child:alerts", () => setTab("dashboard"));
       const unsub2 = window.onBareEvent("navigate:child:requests", () => setTab("dashboard"));
@@ -20253,7 +20289,7 @@ ${inv.inviteLink}`
         unsub2();
       };
     }, []);
-    (0, import_react20.useEffect)(() => {
+    (0, import_react21.useEffect)(() => {
       const unsub = window.onBareEvent("child:connected", (data) => {
         setBanner(`Successfully paired with ${data?.displayName || "Child"}!`);
         setTimeout(() => {
@@ -20324,10 +20360,10 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/ChildApp.jsx
-  var import_react24 = __toESM(require_react());
+  var import_react25 = __toESM(require_react());
 
   // src/ui/components/ChildHome.jsx
-  var import_react21 = __toESM(require_react());
+  var import_react22 = __toESM(require_react());
   var import_jsx_runtime28 = __toESM(require_jsx_runtime());
   function greeting(name) {
     if (name) return `Hi, ${name}`;
@@ -20420,13 +20456,13 @@ ${inv.inviteLink}`
   }
   function ChildHome({ openDetail }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [homeData, setHomeData] = (0, import_react21.useState)(null);
-    const [detail, setDetail] = (0, import_react21.useState)(null);
-    const loadHomeData = (0, import_react21.useCallback)(() => {
+    const [homeData, setHomeData] = (0, import_react22.useState)(null);
+    const [detail, setDetail] = (0, import_react22.useState)(null);
+    const loadHomeData = (0, import_react22.useCallback)(() => {
       window.callBare("child:homeData").then(setHomeData).catch(() => {
       });
     }, []);
-    (0, import_react21.useEffect)(() => {
+    (0, import_react22.useEffect)(() => {
       loadHomeData();
       const unsubs = [
         window.onBareEvent("policy:updated", loadHomeData),
@@ -20440,7 +20476,7 @@ ${inv.inviteLink}`
         clearInterval(timer);
       };
     }, [loadHomeData]);
-    (0, import_react21.useEffect)(() => {
+    (0, import_react22.useEffect)(() => {
       if (!openDetail) return;
       const unsub = window.onBareEvent("navigate:child:requests", () => setDetail("requests"));
       return unsub;
@@ -20540,25 +20576,25 @@ ${inv.inviteLink}`
   }
 
   // src/ui/components/Profile.jsx
-  var import_react23 = __toESM(require_react());
+  var import_react24 = __toESM(require_react());
 
   // src/ui/components/ChildInviteCard.jsx
-  var import_react22 = __toESM(require_react());
+  var import_react23 = __toESM(require_react());
   var import_qrcode2 = __toESM(require_browser());
   var import_jsx_runtime29 = __toESM(require_jsx_runtime());
   function ChildInviteCard({ onConnected, onDismiss }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, shadow: shadow2 } = useTheme();
-    const [invite, setInvite] = (0, import_react22.useState)(null);
-    const [error, setError] = (0, import_react22.useState)(null);
-    const canvasRef = (0, import_react22.useRef)(null);
-    (0, import_react22.useEffect)(() => {
+    const [invite, setInvite] = (0, import_react23.useState)(null);
+    const [error, setError] = (0, import_react23.useState)(null);
+    const canvasRef = (0, import_react23.useRef)(null);
+    (0, import_react23.useEffect)(() => {
       window.callBare("child-invite:generate").then(setInvite).catch(() => setError("Failed to generate invite. Please try again."));
       const unsub = window.onBareEvent("peer:paired", (data) => {
         onConnected(data);
       });
       return unsub;
     }, [onConnected]);
-    (0, import_react22.useEffect)(() => {
+    (0, import_react23.useEffect)(() => {
       if (invite?.inviteLink && canvasRef.current) {
         import_qrcode2.default.toCanvas(canvasRef.current, invite.inviteLink, {
           width: 200,
@@ -20635,24 +20671,24 @@ ${invite.inviteLink}`
   var import_jsx_runtime30 = __toESM(require_jsx_runtime());
   function Profile({ mode }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
-    const [name, setName] = (0, import_react23.useState)("");
-    const [savedName, setSavedName] = (0, import_react23.useState)("");
-    const [avatar, setAvatar] = (0, import_react23.useState)(null);
-    const [showPicker, setShowPicker] = (0, import_react23.useState)(false);
-    const [saving, setSaving] = (0, import_react23.useState)(false);
-    const [photoLoading, setPhotoLoading] = (0, import_react23.useState)(false);
-    const [status, setStatus] = (0, import_react23.useState)(null);
-    const [pairState, setPairState] = (0, import_react23.useState)("idle");
-    const [pairError, setPairError] = (0, import_react23.useState)(null);
-    const [pairUiMode, setPairUiMode] = (0, import_react23.useState)("initial");
-    const [pasteUrl, setPasteUrl] = (0, import_react23.useState)("");
-    const [sharingLink, setSharingLink] = (0, import_react23.useState)(false);
-    const [parents, setParents] = (0, import_react23.useState)([]);
-    const [pairedBanner, setPairedBanner] = (0, import_react23.useState)(null);
-    const [parentsOpen, setParentsOpen] = (0, import_react23.useState)(true);
-    const pairDoneRef = (0, import_react23.useRef)(false);
-    const pairTimeoutRef = (0, import_react23.useRef)(null);
-    (0, import_react23.useEffect)(() => {
+    const [name, setName] = (0, import_react24.useState)("");
+    const [savedName, setSavedName] = (0, import_react24.useState)("");
+    const [avatar, setAvatar] = (0, import_react24.useState)(null);
+    const [showPicker, setShowPicker] = (0, import_react24.useState)(false);
+    const [saving, setSaving] = (0, import_react24.useState)(false);
+    const [photoLoading, setPhotoLoading] = (0, import_react24.useState)(false);
+    const [status, setStatus] = (0, import_react24.useState)(null);
+    const [pairState, setPairState] = (0, import_react24.useState)("idle");
+    const [pairError, setPairError] = (0, import_react24.useState)(null);
+    const [pairUiMode, setPairUiMode] = (0, import_react24.useState)("initial");
+    const [pasteUrl, setPasteUrl] = (0, import_react24.useState)("");
+    const [sharingLink, setSharingLink] = (0, import_react24.useState)(false);
+    const [parents, setParents] = (0, import_react24.useState)([]);
+    const [pairedBanner, setPairedBanner] = (0, import_react24.useState)(null);
+    const [parentsOpen, setParentsOpen] = (0, import_react24.useState)(true);
+    const pairDoneRef = (0, import_react24.useRef)(false);
+    const pairTimeoutRef = (0, import_react24.useRef)(null);
+    (0, import_react24.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
         setName(n);
@@ -20661,7 +20697,7 @@ ${invite.inviteLink}`
       }).catch(() => {
       });
     }, []);
-    (0, import_react23.useEffect)(() => {
+    (0, import_react24.useEffect)(() => {
       if (mode !== "child") return;
       const refresh = () => window.callBare("children:list").then(setParents).catch(() => {
       });
@@ -21083,11 +21119,11 @@ ${invite.inviteLink}`
   }
   function ChildAppInner() {
     const { colors, typography: typography2 } = useTheme();
-    const [tab, setTab] = (0, import_react24.useState)(() => typeof window !== "undefined" && window.__pearScreenshotChildTab || "home");
-    const [showWelcome, setShowWelcome] = (0, import_react24.useState)(false);
+    const [tab, setTab] = (0, import_react25.useState)(() => typeof window !== "undefined" && window.__pearScreenshotChildTab || "home");
+    const [showWelcome, setShowWelcome] = (0, import_react25.useState)(false);
     const tour = useTour();
-    const tourStartedRef = (0, import_react24.useRef)(false);
-    (0, import_react24.useEffect)(() => {
+    const tourStartedRef = (0, import_react25.useRef)(false);
+    (0, import_react25.useEffect)(() => {
       window.__pearTourNavigate = (target) => {
         if (target === "home" || target === "profile") setTab(target);
       };
@@ -21095,17 +21131,17 @@ ${invite.inviteLink}`
         delete window.__pearTourNavigate;
       };
     }, []);
-    (0, import_react24.useEffect)(() => {
+    (0, import_react25.useEffect)(() => {
       const unsub = window.onBareEvent("navigate:child:requests", () => setTab("home"));
       return unsub;
     }, []);
-    (0, import_react24.useEffect)(() => {
+    (0, import_react25.useEffect)(() => {
       window.callBare("pref:get", { key: "onboarding:welcomeSeen" }).then((seen) => {
         if (!seen) setShowWelcome(true);
       }).catch(() => {
       });
     }, []);
-    (0, import_react24.useEffect)(() => {
+    (0, import_react25.useEffect)(() => {
       const unsub = window.onBareEvent("peer:paired", () => {
         if (tourStartedRef.current) return;
         window.callBare("pref:get", { key: "onboarding:tourSeen" }).then((seen) => {
@@ -21146,10 +21182,10 @@ ${invite.inviteLink}`
     return /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", backgroundColor: colors.surface.base }, children: /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("p", { style: { ...typography2.body, color: colors.text.secondary }, children: "Waiting for setup..." }) });
   }
   function App() {
-    const [mode, setMode] = (0, import_react25.useState)(null);
-    const [ready, setReady] = (0, import_react25.useState)(false);
+    const [mode, setMode] = (0, import_react26.useState)(null);
+    const [ready, setReady] = (0, import_react26.useState)(false);
     const { colors } = useTheme();
-    (0, import_react25.useEffect)(() => {
+    (0, import_react26.useEffect)(() => {
       initTheme();
       window.callBare("identity:getMode").then(({ mode: m }) => setMode(m)).catch(() => {
       });

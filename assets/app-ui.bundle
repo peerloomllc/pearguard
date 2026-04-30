@@ -17301,9 +17301,7 @@
     const [prevSummaries, setPrevSummaries] = (0, import_react11.useState)([]);
     const [loading, setLoading] = (0, import_react11.useState)(true);
     const [animated, setAnimated] = (0, import_react11.useState)(false);
-    (0, import_react11.useEffect)(() => {
-      setLoading(true);
-      setAnimated(false);
+    const fetchTrends = (0, import_react11.useCallback)(() => {
       Promise.all([
         window.callBare("usage:getDailySummaries", { childPublicKey, days: period }),
         window.callBare("usage:getDailySummaries", { childPublicKey, days: period * 2 })
@@ -17320,6 +17318,15 @@
         setLoading(false);
       });
     }, [childPublicKey, period]);
+    (0, import_react11.useEffect)(() => {
+      setLoading(true);
+      setAnimated(false);
+      fetchTrends();
+      const unsub = window.onBareEvent("usage:report", (data) => {
+        if (data && data.childPublicKey === childPublicKey) fetchTrends();
+      });
+      return unsub;
+    }, [childPublicKey, period, fetchTrends]);
     if (loading) return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { textAlign: "center", color: colors.text.muted, fontSize: "14px", padding: `${spacing2.lg}px 0` }, children: "Loading..." });
     const maxSeconds = Math.max(...summaries.map((s) => s.totalSeconds), 1);
     const activeDays = summaries.filter((s) => s.totalSeconds > 0);
@@ -17656,8 +17663,7 @@
     const [categories, setCategories] = (0, import_react11.useState)([]);
     const [loading, setLoading] = (0, import_react11.useState)(true);
     const [expanded, setExpanded] = (0, import_react11.useState)(null);
-    (0, import_react11.useEffect)(() => {
-      setLoading(true);
+    const fetchCategories = (0, import_react11.useCallback)(() => {
       const params = period === 1 ? { childPublicKey, date: localDateStr2() } : { childPublicKey, days: period };
       window.callBare("usage:getCategorySummary", params).then((data) => {
         setCategories(data || []);
@@ -17667,6 +17673,14 @@
         setLoading(false);
       });
     }, [childPublicKey, period]);
+    (0, import_react11.useEffect)(() => {
+      setLoading(true);
+      fetchCategories();
+      const unsub = window.onBareEvent("usage:report", (data) => {
+        if (data && data.childPublicKey === childPublicKey) fetchCategories();
+      });
+      return unsub;
+    }, [childPublicKey, period, fetchCategories]);
     const totalSeconds = categories.reduce((sum, c) => sum + c.totalSeconds, 0);
     return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { children: [
       /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { display: "flex", justifyContent: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.base}px` }, children: [{ value: 1, label: "Today" }, { value: 7, label: "7 days" }, { value: 30, label: "30 days" }].map((p) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(

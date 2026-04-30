@@ -1157,6 +1157,12 @@ function createDispatch (ctx) {
         }
         if (resolvedRequests.length > 0) console.log('[bare] usage:flush piggyback:', resolvedRequests.length, 'resolved requests')
 
+        // dailyTotals: per-day per-app aggregates from the native UsageStatsManager
+        // for the last N days. Carries the full window each flush so the parent
+        // backfills any days it missed automatically. Empty array on platforms
+        // that don't supply it (e.g. iOS, older Windows builds).
+        const dailyTotals = Array.isArray(args.dailyTotals) ? args.dailyTotals : []
+
         const report = {
           type: 'usage:report',
           timestamp: now,
@@ -1169,6 +1175,7 @@ function createDispatch (ctx) {
           currentAppPackage,
           todayScreenTimeSeconds,
           resolvedRequests,
+          dailyTotals,
         }
 
         // Persist report to Hyperbee (single overwriting key per child's own copy).
@@ -1267,13 +1274,44 @@ function createDispatch (ctx) {
         const exclusions = await getExclusions(ctx.db, childPublicKey)
         const summaries = []
         const now = new Date()
+        const todayStr = localDateStr()
         for (let i = 0; i < days; i++) {
           const d = new Date(now)
           d.setDate(d.getDate() - i)
           const dateStr = localDateStr(d)
-          // Collect best-duration snapshot per (pkg, startedAt) first so
-          // open-session deltas collapse into their closed counterparts before
-          // we sum.
+
+          // For the current calendar day, always read from sessions: -
+          // Android's INTERVAL_DAILY active bucket is not midnight-aligned
+          // (it rolls over ~24h after device boot/reset), so today's
+          // foreground time gets attributed to yesterday's date string in
+          // dailyTotals. sessions: is captured live from RESUMED/PAUSED
+          // events with proper midnight handling, so it's the calendar-
+          // accurate source for today.
+          //
+          // For past days, prefer dailyTotals (covers days the parent
+          // missed live) and fall back to sessions if the row is missing
+          // or empty.
+          const totalsRaw = dateStr === todayStr
+            ? null
+            : await ctx.db.get('dailyTotals:' + childPublicKey + ':' + dateStr).catch(() => null)
+          if (totalsRaw?.value && Array.isArray(totalsRaw.value.apps) && totalsRaw.value.apps.length > 0) {
+            let totalSeconds = 0
+            let appCount = 0
+            for (const a of totalsRaw.value.apps) {
+              if (!a || !a.packageName) continue
+              if (packageName && a.packageName !== packageName) continue
+              if (isSystemPackage(a.packageName)) continue
+              if (exclusions.has(a.packageName)) continue
+              totalSeconds += a.secondsToday || 0
+              appCount += 1
+            }
+            summaries.push({ date: dateStr, totalSeconds, sessionCount: appCount })
+            continue
+          }
+
+          // Legacy fallback: rebuild from sessions with per-(pkg, startedAt)
+          // dedup so open-session deltas collapse into their closed counterparts
+          // before we sum.
           const bestByKey = new Map()
           for await (const { value } of ctx.db.createReadStream({
             gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
@@ -1336,63 +1374,80 @@ function createDispatch (ctx) {
         const policyRaw = await ctx.db.get('policy:' + childPublicKey)
         const policyApps = policyRaw?.value?.apps || {}
         const exclusions = await getExclusions(ctx.db, childPublicKey)
-        const sessions = []
+
+        // Build the list of dates we'll aggregate over.
+        const dates = []
         if (days && days > 1) {
           const now = new Date()
           for (let i = 0; i < days; i++) {
             const d = new Date(now)
             d.setDate(d.getDate() - i)
-            const dateStr = localDateStr(d)
-            for await (const { value } of ctx.db.createReadStream({
-              gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
-              lt: 'sessions:' + childPublicKey + ':' + dateStr + ':~',
-            })) {
-              if (Array.isArray(value)) {
-                for (const s of value) sessions.push(s)
+            dates.push(localDateStr(d))
+          }
+        } else {
+          dates.push(date || localDateStr())
+        }
+
+        // For each date, prefer dailyTotals (native aggregates) for past
+        // days and sessions: for the current calendar day - INTERVAL_DAILY's
+        // active bucket isn't midnight-aligned, so today's foreground time
+        // gets misattributed to yesterday's date string in dailyTotals.
+        // sessions: tracks midnight boundaries correctly.
+        const perAppSeconds = new Map()
+        const perAppDisplayName = new Map()
+        const todayStr = localDateStr()
+        for (const dateStr of dates) {
+          const totalsRaw = dateStr === todayStr
+            ? null
+            : await ctx.db.get('dailyTotals:' + childPublicKey + ':' + dateStr).catch(() => null)
+          if (totalsRaw?.value && Array.isArray(totalsRaw.value.apps) && totalsRaw.value.apps.length > 0) {
+            for (const a of totalsRaw.value.apps) {
+              if (!a || !a.packageName) continue
+              const prev = perAppSeconds.get(a.packageName) || 0
+              perAppSeconds.set(a.packageName, prev + (a.secondsToday || 0))
+              if (a.displayName) perAppDisplayName.set(a.packageName, a.displayName)
+            }
+            continue
+          }
+          // Legacy fallback: rebuild from sessions with longest-duration dedup.
+          const bestByKey = new Map()
+          for await (const { value } of ctx.db.createReadStream({
+            gt: 'sessions:' + childPublicKey + ':' + dateStr + ':',
+            lt: 'sessions:' + childPublicKey + ':' + dateStr + ':~',
+          })) {
+            if (!Array.isArray(value)) continue
+            for (const s of value) {
+              const k = s.packageName + ':' + s.startedAt
+              const existing = bestByKey.get(k)
+              if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
+                bestByKey.set(k, s)
               }
             }
           }
-        } else {
-          const queryDate = date || localDateStr()
-          for await (const { value } of ctx.db.createReadStream({
-            gt: 'sessions:' + childPublicKey + ':' + queryDate + ':',
-            lt: 'sessions:' + childPublicKey + ':' + queryDate + ':~',
-          })) {
-            if (Array.isArray(value)) {
-              for (const s of value) sessions.push(s)
-            }
+          for (const s of bestByKey.values()) {
+            const prev = perAppSeconds.get(s.packageName) || 0
+            perAppSeconds.set(s.packageName, prev + (s.durationSeconds || 0))
+            if (s.displayName) perAppDisplayName.set(s.packageName, s.displayName)
           }
         }
-        // Dedup prefers the longest snapshot so open-session deltas collapse
-        // into the final closed version.
-        const bestByKey = new Map()
-        for (const s of sessions) {
-          const key = s.packageName + ':' + s.startedAt
-          const existing = bestByKey.get(key)
-          if (!existing || (s.durationSeconds || 0) > (existing.durationSeconds || 0)) {
-            bestByKey.set(key, s)
-          }
-        }
+
         const categories = {}
-        for (const s of bestByKey.values()) {
-          if (exclusions.has(s.packageName)) continue
-          const appInfo = policyApps[s.packageName]
+        for (const [pkg, seconds] of perAppSeconds.entries()) {
+          if (exclusions.has(pkg)) continue
+          const appInfo = policyApps[pkg]
           // Skip apps not in policy (system apps that slipped through)
           if (!appInfo) continue
           const category = appInfo.category || 'Other'
           if (!categories[category]) {
             categories[category] = { category, totalSeconds: 0, apps: {} }
           }
-          categories[category].totalSeconds += s.durationSeconds || 0
-          if (!categories[category].apps[s.packageName]) {
-            categories[category].apps[s.packageName] = {
-              packageName: s.packageName,
-              displayName: s.displayName || s.packageName,
-              totalSeconds: 0,
-              iconBase64: appInfo?.iconBase64 || null,
-            }
+          categories[category].totalSeconds += seconds
+          categories[category].apps[pkg] = {
+            packageName: pkg,
+            displayName: perAppDisplayName.get(pkg) || pkg,
+            totalSeconds: seconds,
+            iconBase64: appInfo?.iconBase64 || null,
           }
-          categories[category].apps[s.packageName].totalSeconds += s.durationSeconds || 0
         }
         const result = Object.values(categories).map((cat) => ({
           ...cat,

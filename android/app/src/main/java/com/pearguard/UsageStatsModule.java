@@ -223,6 +223,152 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Returns per-day per-app aggregate totals for the last `daysBack` days
+     * (inclusive of today), as
+     * [ { date: "YYYY-MM-DD", apps: [{ packageName, displayName, secondsToday }] } ].
+     *
+     * Uses queryUsageStats(INTERVAL_DAILY, ...) with a single range query so
+     * we only see daily-bucket records. queryAndAggregateUsageStats picks
+     * "best fitting interval" and for older days falls back to weekly/monthly
+     * buckets, returning the bucket's full-period total for any single-day
+     * query inside it - inflates 30-day totals by 10x+. INTERVAL_DAILY
+     * returns nothing for days that have aged past Android's daily retention
+     * (~7-31 days), which is a correct undercount rather than a wild overcount.
+     *
+     * Filters to launcher-visible apps and drops PearGuard itself, matching
+     * getDailyUsageAll.
+     *
+     * Powers the parent's Trends and Category reports without depending on
+     * session-level captures: every flush re-sends the full window so days
+     * the parent missed are backfilled automatically on reconnect.
+     */
+    @ReactMethod
+    public void getDailyAggregatesRange(int daysBack, Promise promise) {
+        try {
+            UsageStatsManager usm = (UsageStatsManager)
+                    reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
+            PackageManager pm = reactContext.getPackageManager();
+
+            int days = Math.max(1, Math.min(daysBack, 90));
+
+            java.util.Set<String> launcherPackages = new java.util.HashSet<>();
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+            if (resolveInfos != null) {
+                for (ResolveInfo ri : resolveInfos) {
+                    launcherPackages.add(ri.activityInfo.packageName);
+                }
+            }
+
+            String selfPkg = reactContext.getPackageName();
+
+            // Window: midnight of (today - days + 1) to now.
+            Calendar startCal = Calendar.getInstance();
+            startCal.set(Calendar.HOUR_OF_DAY, 0);
+            startCal.set(Calendar.MINUTE, 0);
+            startCal.set(Calendar.SECOND, 0);
+            startCal.set(Calendar.MILLISECOND, 0);
+            startCal.add(Calendar.DAY_OF_YEAR, -(days - 1));
+            long rangeStart = startCal.getTimeInMillis();
+            long rangeEnd = System.currentTimeMillis();
+
+            // dateStr -> packageName -> ms
+            java.util.Map<String, java.util.Map<String, Long>> byDay = new java.util.HashMap<>();
+            // packageName -> displayName cache
+            java.util.Map<String, String> labelCache = new java.util.HashMap<>();
+
+            // 25h cap excludes any bucket Android returns that's wider than a
+            // single calendar day (DST + safety margin). INTERVAL_DAILY should
+            // already give 24h buckets but we double-guard.
+            final long MAX_BUCKET_SPAN_MS = 25L * 60 * 60 * 1000;
+
+            List<UsageStats> stats = usm.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, rangeStart, rangeEnd);
+
+            if (stats != null) {
+                for (UsageStats s : stats) {
+                    long bucketStart = s.getFirstTimeStamp();
+                    long bucketEnd = s.getLastTimeStamp();
+                    // Drop buckets entirely outside the window.
+                    if (bucketEnd <= rangeStart) continue;
+                    if (bucketStart >= rangeEnd) continue;
+                    // Drop non-daily buckets if any slipped through.
+                    if (bucketEnd - bucketStart > MAX_BUCKET_SPAN_MS) continue;
+
+                    long ms = s.getTotalTimeInForeground();
+                    if (ms <= 0) continue;
+
+                    String pkg = s.getPackageName();
+                    if (!launcherPackages.contains(pkg)) continue;
+                    if (pkg.equals(selfPkg)) continue;
+
+                    Calendar bucketCal = Calendar.getInstance();
+                    bucketCal.setTimeInMillis(bucketStart);
+                    String dateStr = String.format(java.util.Locale.US, "%04d-%02d-%02d",
+                            bucketCal.get(Calendar.YEAR),
+                            bucketCal.get(Calendar.MONTH) + 1,
+                            bucketCal.get(Calendar.DAY_OF_MONTH));
+
+                    java.util.Map<String, Long> dayMap = byDay.get(dateStr);
+                    if (dayMap == null) {
+                        dayMap = new java.util.HashMap<>();
+                        byDay.put(dateStr, dayMap);
+                    }
+                    Long prev = dayMap.get(pkg);
+                    dayMap.put(pkg, (prev == null ? 0L : prev) + ms);
+
+                    if (!labelCache.containsKey(pkg)) {
+                        String label = pkg;
+                        try {
+                            ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+                            label = pm.getApplicationLabel(info).toString();
+                        } catch (PackageManager.NameNotFoundException ignored) {}
+                        labelCache.put(pkg, label);
+                    }
+                }
+            }
+
+            // Emit one entry per day (today first), with empty apps for days
+            // where Android has no daily data.
+            WritableArray result = Arguments.createArray();
+            for (int i = 0; i < days; i++) {
+                Calendar c = Calendar.getInstance();
+                c.set(Calendar.HOUR_OF_DAY, 0);
+                c.set(Calendar.MINUTE, 0);
+                c.set(Calendar.SECOND, 0);
+                c.set(Calendar.MILLISECOND, 0);
+                c.add(Calendar.DAY_OF_YEAR, -i);
+                String dateStr = String.format(java.util.Locale.US, "%04d-%02d-%02d",
+                        c.get(Calendar.YEAR),
+                        c.get(Calendar.MONTH) + 1,
+                        c.get(Calendar.DAY_OF_MONTH));
+
+                java.util.Map<String, Long> dayMap = byDay.get(dateStr);
+                WritableArray apps = Arguments.createArray();
+                if (dayMap != null) {
+                    for (java.util.Map.Entry<String, Long> e : dayMap.entrySet()) {
+                        WritableMap app = Arguments.createMap();
+                        app.putString("packageName", e.getKey());
+                        app.putString("displayName", labelCache.getOrDefault(e.getKey(), e.getKey()));
+                        app.putInt("secondsToday", (int)(e.getValue() / 1000));
+                        apps.pushMap(app);
+                    }
+                }
+
+                WritableMap dayEntry = Arguments.createMap();
+                dayEntry.putString("date", dateStr);
+                dayEntry.putArray("apps", apps);
+                result.pushMap(dayEntry);
+            }
+
+            promise.resolve(result);
+        } catch (Exception e) {
+            promise.reject("DAILY_AGGREGATES_ERROR", e.getMessage());
+        }
+    }
+
+    /**
      * Collect daily per-app usage as a JSONArray.
      * Callable from EnforcementService without needing the RN bridge.
      * Returns: [ { "packageName": "...", "appName": "...", "secondsToday": N }, ... ]

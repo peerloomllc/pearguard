@@ -227,16 +227,22 @@ async function init (dataDir, attempt = 0) {
   // as soon as the joins complete in the background.
   Promise.all(topicHexes.map(t => joinTopic(t).catch(e => console.error('[bare] rejoin failed:', e.message))))
 
-  // Clean up usage data older than 7 days
+  // Clean up usage data older than its retention window. sessions/usageReport/
+  // usage: keep 7 days (sessions back the per-day Daily-Summary list view);
+  // dailyTotals: keep 30 days to cover the Trends 30-day view.
   async function cleanupOldUsageData() {
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - 7)
-    const cutoffStr = localDateStr(cutoff)
-    const cutoffMs = cutoff.getTime()
+    const cutoff7 = new Date()
+    cutoff7.setDate(cutoff7.getDate() - 7)
+    const cutoff7Str = localDateStr(cutoff7)
+    const cutoff7Ms = cutoff7.getTime()
+
+    const cutoff30 = new Date()
+    cutoff30.setDate(cutoff30.getDate() - 30)
+    const cutoff30Str = localDateStr(cutoff30)
 
     for await (const { key } of db.createReadStream({ gt: 'sessions:', lt: 'sessions:~' })) {
       const parts = key.split(':')
-      if (parts.length >= 3 && parts[2] < cutoffStr) {
+      if (parts.length >= 3 && parts[2] < cutoff7Str) {
         await db.del(key)
       }
     }
@@ -244,14 +250,21 @@ async function init (dataDir, attempt = 0) {
       const parts = key.split(':')
       if (parts.length >= 3) {
         const ts = parseInt(parts[2], 10)
-        if (ts < cutoffMs) await db.del(key)
+        if (ts < cutoff7Ms) await db.del(key)
       }
     }
     for await (const { key } of db.createReadStream({ gt: 'usage:', lt: 'usage:~' })) {
       const parts = key.split(':')
       if (parts.length === 2) {
         const ts = parseInt(parts[1], 10)
-        if (ts < cutoffMs) await db.del(key)
+        if (ts < cutoff7Ms) await db.del(key)
+      }
+    }
+    for await (const { key } of db.createReadStream({ gt: 'dailyTotals:', lt: 'dailyTotals:~' })) {
+      // key format: dailyTotals:{childPublicKey}:{YYYY-MM-DD}
+      const parts = key.split(':')
+      if (parts.length >= 3 && parts[2] < cutoff30Str) {
+        await db.del(key)
       }
     }
   }
@@ -610,6 +623,21 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         const existingRaw = await db.get(sessionKey).catch(() => null)
         const merged = mergeSessions(existingRaw?.value, incomingSessions)
         if (merged.length > 0) await db.put(sessionKey, merged)
+      }
+      // dailyTotals comes as [{ date: 'YYYY-MM-DD', apps: [{ packageName, displayName, secondsToday }] }]
+      // Each flush carries the full window so prior-day records get refreshed
+      // (and any days the parent missed are backfilled). Older-than-window
+      // entries are pruned by the periodic sweep, not here.
+      //
+      // Skip empty-apps payloads so a flush that hits before Android creates
+      // today's INTERVAL_DAILY bucket can't clobber a previously-written
+      // good row. Read paths fall back to sessions: when the row is missing
+      // or empty, so absence yields the correct "use sessions" behaviour.
+      const incomingDailyTotals = Array.isArray(msg.payload.dailyTotals) ? msg.payload.dailyTotals : []
+      for (const day of incomingDailyTotals) {
+        if (!day || typeof day.date !== 'string' || !Array.isArray(day.apps)) continue
+        if (day.apps.length === 0) continue
+        await db.put('dailyTotals:' + childPublicKey + ':' + day.date, { date: day.date, apps: day.apps, updatedAt: reportTs })
       }
       // Apply parent-local exclusions to the event payload so Dashboard and
       // Usage tab subscribers see hidden packages stripped and the recomputed
@@ -1227,7 +1255,7 @@ const MUST_KEEP_PREFIXES = [
   'pendingInviteTopic:', 'pref:', '_migration:',
 ]
 const WIPEABLE_PREFIXES = [
-  'alert:', 'override:', 'usage:', 'usageReport:', 'bypass:', 'sessions:',
+  'alert:', 'override:', 'usage:', 'usageReport:', 'bypass:', 'sessions:', 'dailyTotals:',
 ]
 
 function classifyKey (k) {

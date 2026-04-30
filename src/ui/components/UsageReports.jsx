@@ -249,9 +249,7 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
   const [loading, setLoading] = useState(true);
   const [animated, setAnimated] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    setAnimated(false);
+  const fetchTrends = useCallback(() => {
     Promise.all([
       window.callBare('usage:getDailySummaries', { childPublicKey, days: period }),
       window.callBare('usage:getDailySummaries', { childPublicKey, days: period * 2 }),
@@ -264,6 +262,18 @@ function WeeklyTrends({ childPublicKey, colors, spacing, radius }) {
       });
     }).catch(() => { setSummaries([]); setPrevSummaries([]); setLoading(false); });
   }, [childPublicKey, period]);
+
+  useEffect(() => {
+    setLoading(true);
+    setAnimated(false);
+    fetchTrends();
+    // Refetch when a new flush lands so the chart picks up today's bar
+    // without requiring the user to navigate away and back.
+    const unsub = window.onBareEvent('usage:report', (data) => {
+      if (data && data.childPublicKey === childPublicKey) fetchTrends();
+    });
+    return unsub;
+  }, [childPublicKey, period, fetchTrends]);
 
   if (loading) return <div style={{ textAlign: 'center', color: colors.text.muted, fontSize: '14px', padding: `${spacing.lg}px 0` }}>Loading...</div>;
 
@@ -640,8 +650,7 @@ function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
-  useEffect(() => {
-    setLoading(true);
+  const fetchCategories = useCallback(() => {
     const params = period === 1
       ? { childPublicKey, date: localDateStr() }
       : { childPublicKey, days: period };
@@ -649,6 +658,15 @@ function CategoryBreakdown({ childPublicKey, colors, spacing, radius }) {
       .then((data) => { setCategories(data || []); setLoading(false); })
       .catch(() => { setCategories([]); setLoading(false); });
   }, [childPublicKey, period]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchCategories();
+    const unsub = window.onBareEvent('usage:report', (data) => {
+      if (data && data.childPublicKey === childPublicKey) fetchCategories();
+    });
+    return unsub;
+  }, [childPublicKey, period, fetchCategories]);
 
   const totalSeconds = categories.reduce((sum, c) => sum + c.totalSeconds, 0);
 

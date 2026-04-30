@@ -658,13 +658,14 @@ export default function Root () {
           // Usage flush timer fired — gather usage and send report
           DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
             try {
-              const [usageList, weeklyList, foregroundPkg, sessionsList] = await Promise.all([
+              const [usageList, weeklyList, foregroundPkg, sessionsList, dailyTotals] = await Promise.all([
                 NativeModules.UsageStatsModule.getDailyUsageAllEvents(),
                 NativeModules.UsageStatsModule.getWeeklyUsageAll(),
                 NativeModules.UsageStatsModule.getLastForegroundPackage(),
                 NativeModules.UsageStatsModule.getSessionsSinceLastFlush(),
+                NativeModules.UsageStatsModule.getDailyAggregatesRange?.(30) ?? Promise.resolve([]),
               ])
-              sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList } })
+              sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList, dailyTotals } })
             } catch (err) {
               console.warn('[PearGuard] Usage flush failed:', err)
             }
@@ -752,9 +753,10 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.getWeeklyUsageAll?.(),
                   NativeModules.UsageStatsModule?.getLastForegroundPackage?.(),
                   NativeModules.UsageStatsModule?.getSessionsSinceLastFlush?.(),
+                  NativeModules.UsageStatsModule?.getDailyAggregatesRange?.(30) ?? Promise.resolve([]),
                 ])
-                  .then(([usageList, weeklyList, foregroundPkg, sessionsList]: [{ packageName: string; appName: string; secondsToday: number }[], { packageName: string; appName: string; secondsThisWeek: number }[], string | null, any[]]) => {
-                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList } })
+                  .then(([usageList, weeklyList, foregroundPkg, sessionsList, dailyTotals]: [{ packageName: string; appName: string; secondsToday: number }[], { packageName: string; appName: string; secondsThisWeek: number }[], string | null, any[], { date: string; apps: { packageName: string; displayName: string; secondsToday: number }[] }[]]) => {
+                    sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList, dailyTotals } })
                   })
                   .catch((e: any) => console.warn('[RN] usageFlushRequested getDailyUsageAll failed:', e))
                 return

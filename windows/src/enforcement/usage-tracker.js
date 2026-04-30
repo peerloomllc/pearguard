@@ -12,9 +12,10 @@ const path = require('path')
 // the next foreground change.
 //
 // Rollovers are resolved lazily on any accrue/read. Daily counters zero at
-// local midnight; weekly counters zero at Sunday 00:00 local (matching
-// UsageStatsModule's WEEKLY_ROLLING_WINDOW_DAYS = 7 starting-Sunday behavior
-// used by the parent dashboards).
+// local midnight; weekly counters zero at Sunday 00:00 local. Note: Android's
+// getWeeklyUsageAll now returns a rolling-7-day window (midnight of today-6 to now);
+// the Windows tracker still reports "since Sunday" until per-day buckets are
+// added. Affects the Usage tab "Last 7 days: …" label for Windows children.
 class UsageTracker {
   constructor({ filePath = null, now = () => Date.now(), logger = console } = {}) {
     this._filePath = filePath

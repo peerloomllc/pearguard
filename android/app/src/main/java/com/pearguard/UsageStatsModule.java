@@ -613,9 +613,10 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Returns weekly usage for all launcher-visible apps as an array of
+     * Returns rolling 7-day usage for all launcher-visible apps as an array of
      * { packageName: string, appName: string, secondsThisWeek: number }.
-     * Only includes apps with > 0 seconds.
+     * Window is midnight of (today - 6) through now, so the UI label "Last 7 days"
+     * matches what the UI shows. Only includes apps with > 0 seconds.
      */
     @ReactMethod
     public void getWeeklyUsageAll(Promise promise) {
@@ -624,15 +625,15 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         PackageManager pm = reactContext.getPackageManager();
 
         Calendar cal = Calendar.getInstance();
-        cal.set(Calendar.DAY_OF_WEEK, cal.getFirstDayOfWeek());
         cal.set(Calendar.HOUR_OF_DAY, 0);
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
-        long startOfWeek = cal.getTimeInMillis();
+        cal.add(Calendar.DAY_OF_YEAR, -6);
+        long windowStart = cal.getTimeInMillis();
         long now = System.currentTimeMillis();
 
-        Map<String, UsageStats> statsMap = usm.queryAndAggregateUsageStats(startOfWeek, now);
+        Map<String, UsageStats> statsMap = usm.queryAndAggregateUsageStats(windowStart, now);
 
         java.util.Set<String> launcherPackages = new java.util.HashSet<>();
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
@@ -726,8 +727,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Returns weekly usage for a single package as
-     * { packageName, secondsThisWeek }.
+     * Returns rolling 7-day usage for a single package as
+     * { packageName, secondsThisWeek }. Window is midnight of (today - 6) to now.
      */
     @ReactMethod
     public void getWeeklyUsage(String packageName, Promise promise) {
@@ -735,15 +736,15 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 reactContext.getSystemService(Context.USAGE_STATS_SERVICE);
 
         Calendar cal = Calendar.getInstance();
-        cal.set(Calendar.DAY_OF_WEEK, cal.getFirstDayOfWeek());
         cal.set(Calendar.HOUR_OF_DAY, 0);
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
-        long startOfWeek = cal.getTimeInMillis();
+        cal.add(Calendar.DAY_OF_YEAR, -6);
+        long windowStart = cal.getTimeInMillis();
         long now = System.currentTimeMillis();
 
-        Map<String, UsageStats> statsMap = usm.queryAndAggregateUsageStats(startOfWeek, now);
+        Map<String, UsageStats> statsMap = usm.queryAndAggregateUsageStats(windowStart, now);
         if (statsMap != null && statsMap.containsKey(packageName)) {
             long ms = statsMap.get(packageName).getTotalTimeInForeground();
             WritableMap result = Arguments.createMap();

@@ -74,6 +74,14 @@ class OverlayManager extends EventEmitter {
       }
     })
 
+    // Block Alt+F4 / WM_CLOSE. closable:false is unreliable on fullscreen Win32
+    // windows in Electron 33, so we also veto the close event here. hide() goes
+    // through destroy() which skips the close event entirely, so this veto only
+    // catches kid-initiated closes.
+    this._win.on('close', (event) => {
+      event.preventDefault()
+    })
+
     this._win.on('closed', () => {
       this._win = null
     })

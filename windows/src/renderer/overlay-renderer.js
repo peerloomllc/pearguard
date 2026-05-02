@@ -213,3 +213,13 @@ els.pinSubmit.addEventListener('click', () => {
 els.pinInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') els.pinSubmit.click()
 })
+
+// Swallow Alt+F4 at the renderer level so Chromium doesn't translate it into
+// a WM_CLOSE the main process never sees. Paired with the close-event veto in
+// overlay.js for defense in depth.
+window.addEventListener('keydown', (e) => {
+  if (e.altKey && e.key === 'F4') {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+}, true)

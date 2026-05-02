@@ -839,6 +839,7 @@ public class AppBlockerModule extends AccessibilityService {
 
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
         final String blockCategory = currentOverlayBlockCategory;
+        final String blockReason = reason;
         boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
 
         // Row 1: Request Approval / Request More Time
@@ -847,7 +848,7 @@ public class AppBlockerModule extends AccessibilityService {
                 : (isExtraTime ? "Request More Time" : "Request Approval");
         String requestIcon = isExtraTime ? ICON_CLOCK : ICON_SHIELD;
         card.addView(makeActionRow(requestIcon, requestLabel, OT.PRIMARY,
-                () -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory); }));
+                () -> { vibrate(PATTERN_BUTTON); onSendRequest(packageName, blockCategory, blockReason); }));
 
         // Divider
         View div1 = new View(this);
@@ -944,16 +945,17 @@ public class AppBlockerModule extends AccessibilityService {
 
     // --- Button handlers ---
 
-    private void onSendRequest(String packageName, String blockCategory) {
+    private void onSendRequest(String packageName, String blockCategory, String reason) {
         boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
         if (isExtraTime) {
             // Suppress the polling-loop overlay for 2 minutes so the duration picker
             // dialog is not immediately overwritten by the next EnforcementService tick (#66).
             enforcementSuppressedUntil = System.currentTimeMillis() + 120_000;
             // Show duration picker; the picker fires onTimeRequest with requestType=extra_time
-            // after the child selects how much extra time they want.
+            // after the child selects how much extra time they want. Reason is passed
+            // through so a Cancel tap can restore the original block overlay.
             dismissOverlay();
-            showExtraTimePicker(packageName);
+            showExtraTimePicker(packageName, reason);
             return;
         }
 
@@ -1105,7 +1107,7 @@ public class AppBlockerModule extends AccessibilityService {
         return layout;
     }
 
-    private void showExtraTimePicker(String packageName) {
+    private void showExtraTimePicker(String packageName, String reason) {
         int[] optionMinutes = getTimeRequestOptions();
         String[] labels = new String[optionMinutes.length];
         int[] seconds = new int[optionMinutes.length];
@@ -1144,6 +1146,15 @@ public class AppBlockerModule extends AccessibilityService {
                 () -> {
                     try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
                     pinDialogView = null;
+                    // Restore the original block overlay so the kid lands back on the
+                    // first screen (Request More Time / Enter PIN), not on the blocked
+                    // app. The 2-minute polling-loop suppression set when "Request More
+                    // Time" was tapped would otherwise let the kid use the blocked app
+                    // freely until it expires.
+                    enforcementSuppressedUntil = 0;
+                    recentlyDismissedPackage = null;
+                    dismissedAt = 0;
+                    showOverlay(packageName, reason);
                 });
 
         WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(

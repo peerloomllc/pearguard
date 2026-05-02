@@ -967,7 +967,8 @@ public class AppBlockerModule extends AccessibilityService {
             return;
         }
 
-        // Approval request — fire immediately
+        // Approval request — fire immediately if the RN bridge is alive,
+        // otherwise queue to disk so UsageFlushWorker can deliver it later.
         ReactContext reactContext = PearGuardReactHost.get();
         if (reactContext != null && reactContext.hasActiveReactInstance()) {
             WritableMap params = Arguments.createMap();
@@ -979,7 +980,8 @@ public class AppBlockerModule extends AccessibilityService {
                     .emit("onTimeRequest", params);
             Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
         } else {
-            Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
+            TimeRequestQueueHelper.enqueue(this, packageName, getAppName(packageName), "approval", 0);
+            Toast.makeText(this, "Request queued — will sync to parent shortly", Toast.LENGTH_LONG).show();
         }
         // Track that a request was sent — suppresses the overlay from re-appearing
         // over the home screen while waiting for the parent's response.
@@ -1141,7 +1143,9 @@ public class AppBlockerModule extends AccessibilityService {
                                 .emit("onTimeRequest", params);
                         Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
                     } else {
-                        Toast.makeText(this, "Open PearGuard to send a request", Toast.LENGTH_LONG).show();
+                        TimeRequestQueueHelper.enqueue(this, packageName, getAppName(packageName),
+                                "extra_time", durationSeconds);
+                        Toast.makeText(this, "Request queued — will sync to parent shortly", Toast.LENGTH_LONG).show();
                     }
                     pendingRequestPackages.add(packageName);
 

@@ -176,7 +176,7 @@ public class AppBlockerModule extends AccessibilityService {
     private View overlayView;
     private boolean overlayPending = false; // true between Handler.post() and addView() completing
     private String currentOverlayPackage;
-    private String currentOverlayBlockCategory; // 'blocked', 'pending', 'schedule', 'daily_limit'
+    private String currentOverlayBlockCategory; // 'blocked', 'pending', 'schedule', 'daily_limit', 'category_limit'
     private View pinDialogView;
     // Last non-system-overlay package seen in onAccessibilityEvent. Used by the
     // EnforcementService polling loop to enforce time limits / schedule blocks on
@@ -726,13 +726,16 @@ public class AppBlockerModule extends AccessibilityService {
      * Derives a stable category token from the human-readable block reason string.
      * Used to determine what kind of request to send when the child taps "Send Request".
      *
-     * Returns one of: "blocked", "pending", "schedule", "daily_limit"
+     * Returns one of: "blocked", "pending", "schedule", "daily_limit", "category_limit"
      */
     private String getBlockCategory(String reason) {
         if (reason == null) return "blocked";
         if (reason.contains("parent approval")) return "pending";
         if (reason.contains("Daily limit")) return "daily_limit";
         if (reason.contains("Blocked during")) return "schedule";
+        // Category-limit reasons are formatted as "<category> limit reached (<n> min/day).";
+        // matching this last so it doesn't shadow the per-app "Daily limit" check above.
+        if (reason.contains("limit reached")) return "category_limit";
         return "blocked";
     }
 
@@ -797,10 +800,11 @@ public class AppBlockerModule extends AccessibilityService {
         // Title
         String titleText;
         switch (currentOverlayBlockCategory) {
-            case "pending":     titleText = appName + " needs approval"; break;
-            case "daily_limit": titleText = appName + ": daily limit reached"; break;
-            case "schedule":    titleText = appName + ": scheduled block"; break;
-            default:            titleText = appName + " is blocked"; break;
+            case "pending":        titleText = appName + " needs approval"; break;
+            case "daily_limit":    titleText = appName + ": daily limit reached"; break;
+            case "category_limit": titleText = appName + ": category limit reached"; break;
+            case "schedule":       titleText = appName + ": scheduled block"; break;
+            default:               titleText = appName + " is blocked"; break;
         }
         TextView title = new TextView(this);
         title.setText(titleText);
@@ -840,7 +844,9 @@ public class AppBlockerModule extends AccessibilityService {
         boolean requestAlreadySent = pendingRequestPackages.contains(packageName);
         final String blockCategory = currentOverlayBlockCategory;
         final String blockReason = reason;
-        boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
+        boolean isExtraTime = "schedule".equals(blockCategory)
+                || "daily_limit".equals(blockCategory)
+                || "category_limit".equals(blockCategory);
 
         // Row 1: Request Approval / Request More Time
         String requestLabel = requestAlreadySent
@@ -946,7 +952,9 @@ public class AppBlockerModule extends AccessibilityService {
     // --- Button handlers ---
 
     private void onSendRequest(String packageName, String blockCategory, String reason) {
-        boolean isExtraTime = "schedule".equals(blockCategory) || "daily_limit".equals(blockCategory);
+        boolean isExtraTime = "schedule".equals(blockCategory)
+                || "daily_limit".equals(blockCategory)
+                || "category_limit".equals(blockCategory);
         if (isExtraTime) {
             // Suppress the polling-loop overlay for 2 minutes so the duration picker
             // dialog is not immediately overwritten by the next EnforcementService tick (#66).

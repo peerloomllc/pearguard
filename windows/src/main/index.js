@@ -474,7 +474,13 @@ app.whenReady().then(() => {
     // a button on the overlay focuses the overlay's renderer (electron.exe)
     // and the controller thinks "electron is now in the foreground" — which,
     // under an active lock or schedule, would re-show the overlay and reset
-    // the PIN view back to main.
+    // the PIN view back to main. Worse, an unmapped focus event from one of
+    // our own helper processes (GPU, utility) returns evaluate() === null and
+    // dismisses the overlay outright; the kid clicking Cancel on the time grid
+    // could trigger a transient focus blip that hides the overlay until the
+    // next foreground tick re-creates it. Also match by exePath so any of our
+    // child processes get filtered regardless of which pid active-win reports.
+    const ownExePath = process.execPath ? process.execPath.toLowerCase() : ''
     const isOwnWindow = (info) => {
       if (!info || typeof info.pid !== 'number') return false
       if (info.pid === process.pid) return true
@@ -486,6 +492,7 @@ app.whenReady().then(() => {
           if (mainPid && info.pid === mainPid) return true
         } catch (_) {}
       }
+      if (ownExePath && info.exePath && info.exePath.toLowerCase() === ownExePath) return true
       return false
     }
     enforcement = new EnforcementController({

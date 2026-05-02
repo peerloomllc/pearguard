@@ -502,6 +502,31 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Drained by index.tsx onTimeRequestDrain handler when UsageFlushWorker
+     * fires. Returns a JSON array of pending time/approval requests captured
+     * while the RN bridge was detached.
+     */
+    @ReactMethod
+    public void getQueuedTimeRequests(Promise promise) {
+        try {
+            String json = TimeRequestQueueHelper.dequeue(reactContext);
+            promise.resolve(json);
+        } catch (Exception e) {
+            promise.resolve("[]");
+        }
+    }
+
+    @ReactMethod
+    public void clearQueuedTimeRequests(Promise promise) {
+        try {
+            TimeRequestQueueHelper.clear(reactContext);
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.resolve(false);
+        }
+    }
+
+    /**
      * Like getDailyUsageAll() but uses raw MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND
      * events instead of aggregate stats. This includes the current live session,
      * giving real-time accuracy (aggregate stats lag until the app backgrounds).

@@ -637,6 +637,29 @@ export default function Root () {
             sendToWorklet({ method: 'time:request', args: { ...e } })
           }),
 
+          // UsageFlushWorker fired with queued time requests (kid tapped a
+          // duration on the block overlay while the RN bridge was detached).
+          // Drain the on-disk queue and replay each entry as a time:request.
+          DeviceEventEmitter.addListener('onTimeRequestDrain', async () => {
+            try {
+              const json = await NativeModules.UsageStatsModule.getQueuedTimeRequests()
+              const entries = JSON.parse(json) as Array<{ packageName: string; appName?: string; requestType?: string; extraSeconds?: number }>
+              if (!Array.isArray(entries) || entries.length === 0) return
+              for (const e of entries) {
+                if (!e || !e.packageName) continue
+                sendToWorklet({ method: 'time:request', args: {
+                  packageName: e.packageName,
+                  appName: e.appName,
+                  requestType: e.requestType,
+                  extraSeconds: e.extraSeconds,
+                } })
+              }
+              await NativeModules.UsageStatsModule.clearQueuedTimeRequests()
+            } catch (err) {
+              console.warn('[PearGuard] Time-request drain failed:', err)
+            }
+          }),
+
           // PIN entered successfully — log the override event
           DeviceEventEmitter.addListener('onPinSuccess', (e: { packageName: string; timestamp: number; durationSeconds: number }) => {
             sendToWorklet({ method: 'pin:used', args: e })

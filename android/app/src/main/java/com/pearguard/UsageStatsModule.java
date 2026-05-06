@@ -17,6 +17,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Build;
+import android.os.PowerManager;
 import android.os.Process;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -103,6 +104,17 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * True when this app is on the OS battery-optimization whitelist (Doze exempt).
+     * Returns true automatically on Android < 6 where Doze does not exist.
+     */
+    private boolean isIgnoringBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+        PowerManager pm = (PowerManager) reactContext.getSystemService(Context.POWER_SERVICE);
+        if (pm == null) return false;
+        return pm.isIgnoringBatteryOptimizations(reactContext.getPackageName());
+    }
+
+    /**
      * Returns whether both child-required permissions are granted, plus the last
      * EnforcementService heartbeat timestamp for force-stop detection and any
      * persisted bypass event for background-bypass detection.
@@ -114,11 +126,67 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         WritableMap result = Arguments.createMap();
         result.putBoolean("accessibility", isAccessibilityEnabled());
         result.putBoolean("usageStats", hasUsageStatsPermission());
+        result.putBoolean("batteryOptimization", isIgnoringBatteryOptimizations());
+        result.putBoolean("batteryOptAsked", prefs.getLong("battery_opt_asked_at", 0) > 0);
         result.putDouble("enforcementHeartbeatMs", prefs.getLong("enforcement_heartbeat_ms", 0));
         String bypassReason = prefs.getString("bypass_detected_reason", null);
         result.putString("bypassDetectedReason", bypassReason != null ? bypassReason : "");
         result.putDouble("bypassDetectedAt", prefs.getLong("bypass_detected_at", 0));
         promise.resolve(result);
+    }
+
+    /**
+     * Marks the battery-optimization wizard step as shown so existing users
+     * (already paired) are not redirected back to it on every app launch if
+     * they declined the prompt.
+     */
+    @ReactMethod
+    public void markBatteryOptAsked() {
+        reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("battery_opt_asked_at", System.currentTimeMillis())
+            .apply();
+    }
+
+    /**
+     * Fires the system "Allow PearGuard to keep running in the background?" prompt.
+     * Scoped to this package so the user gets a one-tap Allow/Deny dialog instead
+     * of having to find the app in a list. Requires REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+     * in the manifest. Parental control apps are an explicitly allowed Play category
+     * for this prompt.
+     *
+     * Resolves true if already whitelisted (no prompt shown), false otherwise after
+     * the intent has been launched. The wizard polls checkChildPermissions to detect
+     * when the user grants the whitelist.
+     */
+    @ReactMethod
+    public void requestIgnoreBatteryOptimizations(Promise promise) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            promise.resolve(true);
+            return;
+        }
+        if (isIgnoringBatteryOptimizations()) {
+            promise.resolve(true);
+            return;
+        }
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + reactContext.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            reactContext.startActivity(intent);
+            promise.resolve(false);
+        } catch (Exception e) {
+            // Some OEMs disable the direct-prompt intent. Fall back to the full
+            // settings list — user has to find PearGuard themselves but it works.
+            try {
+                Intent fallback = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                reactContext.startActivity(fallback);
+                promise.resolve(false);
+            } catch (Exception e2) {
+                promise.reject("BATTERY_OPT_INTENT_FAILED", e2.getMessage());
+            }
+        }
     }
 
     /**

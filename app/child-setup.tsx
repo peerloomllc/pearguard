@@ -4,7 +4,8 @@
 // and whenever Accessibility Service or Usage Stats permission is missing.
 // Step 1: Enable Accessibility Service
 // Step 2: Grant Usage Access
-// Step 3: Pair with parent (skipped if already paired)
+// Step 3: Allow background running (battery optimization whitelist)
+// Step 4: Pair with parent (skipped if already paired)
 // No back button (gestureEnabled: false in _layout.tsx).
 
 import { useState, useEffect, useRef } from 'react'
@@ -15,7 +16,7 @@ import { getBareCaller } from './setup'
 import NativeIcon from './NativeIcon'
 import { colors, spacing, radius, typography, fontFamily } from '../src/rn-theme'
 
-type Permissions = { accessibility: boolean; usageStats: boolean }
+type Permissions = { accessibility: boolean; usageStats: boolean; batteryOptimization: boolean; batteryOptAsked: boolean }
 
 function IconAccessibility() {
   return (
@@ -28,6 +29,13 @@ function IconUsage() {
   return (
     <View style={styles.iconCircle}>
       <NativeIcon name="ChartBar" size={32} color={colors.primaryLight} />
+    </View>
+  )
+}
+function IconBattery() {
+  return (
+    <View style={styles.iconCircle}>
+      <NativeIcon name="Battery" size={32} color={colors.primaryLight} />
     </View>
   )
 }
@@ -67,6 +75,19 @@ const PERMISSION_STEPS = {
     ],
     buttonLabel: 'Open Usage Access Settings',
     settingsAction: 'android.settings.USAGE_ACCESS_SETTINGS',
+  },
+  3: {
+    Icon: IconBattery,
+    title: 'Allow background running',
+    description:
+      'When this phone has been idle for a while (in your bag or at school), Android pauses background apps to save battery. PearGuard needs an exemption so it can stay connected to your parent and keep enforcement running. Without this, your parent may stop receiving updates after a few hours of screen-off time.',
+    instructions: [
+      'Tap the button below',
+      'Tap "Allow" on the dialog',
+      'You will return here automatically',
+    ],
+    buttonLabel: 'Allow Background Running',
+    settingsAction: '',
   },
 } as const
 
@@ -132,8 +153,9 @@ const scannerStyles = StyleSheet.create({
 export default function ChildSetupScreen() {
   const router = useRouter()
   const { step: stepParam, source } = useLocalSearchParams<{ step?: string; source?: string }>()
-  const [step, setStep] = useState<1 | 2 | 3>(stepParam === '2' ? 2 : 1)
-  const [totalSteps, setTotalSteps] = useState<2 | 3>(2)
+  const initialStep = stepParam === '2' ? 2 : stepParam === '3' ? 3 : 1
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep)
+  const [totalSteps, setTotalSteps] = useState<3 | 4>(3)
   const [polling, setPolling] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [pairState, setPairState] = useState<'idle' | 'connecting' | 'error'>('idle')
@@ -147,8 +169,16 @@ export default function ChildSetupScreen() {
       .catch(() => {})
   }, [step])
 
+  // Mark battery-opt step as shown the moment the user lands on it. Prevents
+  // index.tsx from redirecting them back here on every app launch if they
+  // decline the prompt.
   useEffect(() => {
-    if (step === 3) return
+    if (step !== 3) return
+    NativeModules.UsageStatsModule?.markBatteryOptAsked?.()
+  }, [step])
+
+  useEffect(() => {
+    if (step === 4) return
     const timerId = setInterval(async () => {
       try {
         const p: Permissions = await NativeModules.UsageStatsModule?.checkChildPermissions?.()
@@ -157,8 +187,12 @@ export default function ChildSetupScreen() {
           setPolling(false)
           setStep(2)
         } else if (step === 2 && p.usageStats) {
+          setPolling(false)
+          setStep(3)
+        } else if (step === 3 && p.batteryOptimization) {
           clearInterval(timerId)
-          await advanceFromStep2()
+          setPolling(false)
+          await advanceFromStep3()
         }
       } catch (e) {
         console.warn('[child-setup] checkChildPermissions error:', e)
@@ -167,7 +201,7 @@ export default function ChildSetupScreen() {
     return () => clearInterval(timerId)
   }, [step, router])
 
-  async function advanceFromStep2() {
+  async function advanceFromStep3() {
     const callBare = getBareCaller()
     if (!callBare) {
       router.replace('/')
@@ -178,12 +212,32 @@ export default function ChildSetupScreen() {
       if (result?.hasPeers) {
         router.replace('/')
       } else {
-        setTotalSteps(3)
-        setStep(3)
+        setTotalSteps(4)
+        setStep(4)
       }
     } catch (_e) {
       router.replace('/')
     }
+  }
+
+  async function requestBatteryOpt() {
+    setPolling(true)
+    try {
+      const granted = await NativeModules.UsageStatsModule?.requestIgnoreBatteryOptimizations?.()
+      if (granted === true) {
+        // Already whitelisted (or pre-Android 6) — advance immediately.
+        await advanceFromStep3()
+      }
+      // Otherwise the OS dialog is now visible; the polling effect will detect
+      // when the user grants it.
+    } catch (e) {
+      console.warn('[child-setup] requestIgnoreBatteryOptimizations failed:', e)
+      setPolling(false)
+    }
+  }
+
+  async function skipBatteryOpt() {
+    await advanceFromStep3()
   }
 
   async function handleScanned(url: string) {
@@ -219,7 +273,7 @@ export default function ChildSetupScreen() {
   }
 
   function openSettings() {
-    if (step === 3) return
+    if (step === 3 || step === 4) return
     setPolling(true)
     Linking.sendIntent(PERMISSION_STEPS[step as 1 | 2].settingsAction).catch(() => {
       console.warn('[child-setup] sendIntent failed for:', PERMISSION_STEPS[step as 1 | 2].settingsAction)
@@ -227,9 +281,47 @@ export default function ChildSetupScreen() {
   }
 
   if (step === 3) {
+    const config = PERMISSION_STEPS[3]
     return (
       <View style={styles.container}>
-        <Text style={styles.stepLabel}>Step 3 of 3</Text>
+        <Text style={styles.stepLabel}>Step 3 of {totalSteps}</Text>
+
+        <config.Icon />
+
+        <Text style={styles.title}>{config.title}</Text>
+        <Text style={styles.description}>{config.description}</Text>
+
+        <View style={styles.instructions}>
+          <Text style={styles.instructionsLabel}>HOW TO ENABLE</Text>
+          {config.instructions.map((line, i) => (
+            <Text key={i} style={styles.instructionLine}>
+              {i + 1}. {line}
+            </Text>
+          ))}
+        </View>
+
+        <TouchableOpacity style={styles.button} onPress={requestBatteryOpt} activeOpacity={0.8}>
+          <Text style={styles.buttonText}>{config.buttonLabel} →</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.skipButton} onPress={skipBatteryOpt} activeOpacity={0.8}>
+          <Text style={styles.skipButtonText}>Skip for now</Text>
+        </TouchableOpacity>
+
+        {polling ? (
+          <View style={styles.waitingRow}>
+            <ActivityIndicator size="small" color={colors.text.muted} />
+            <Text style={styles.waitingText}>Waiting for permission…</Text>
+          </View>
+        ) : null}
+      </View>
+    )
+  }
+
+  if (step === 4) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.stepLabel}>Step 4 of 4</Text>
 
         <IconPair />
 
@@ -325,6 +417,8 @@ const styles = StyleSheet.create({
   instructionLine:  { color: colors.text.secondary, fontSize: typography.body.fontSize, fontFamily: fontFamily.regular, lineHeight: 26 },
   button:           { backgroundColor: colors.surface.tintedGreen, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: spacing.lg, width: '100%', alignItems: 'center', marginBottom: spacing.base },
   buttonText:       { color: colors.primary, fontSize: 15, fontFamily: fontFamily.semibold },
+  skipButton:       { backgroundColor: 'transparent', borderRadius: radius.lg, paddingVertical: 12, paddingHorizontal: spacing.lg, width: '100%', alignItems: 'center', marginBottom: spacing.base },
+  skipButtonText:   { color: colors.text.muted, fontSize: 14, fontFamily: fontFamily.regular },
   buttonPair:       { backgroundColor: colors.surface.tintedBlue, borderWidth: 1, borderColor: colors.accent, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: spacing.lg, width: '100%', alignItems: 'center', marginBottom: spacing.base },
   buttonPairText:   { color: colors.accent, fontSize: 15, fontFamily: fontFamily.semibold },
   waitingRow:       { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

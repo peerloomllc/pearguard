@@ -28,6 +28,11 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+  <!-- Battery optimization whitelist — keeps the foreground service and Hyperswarm
+       sockets alive during long screen-off periods (e.g. child at school). Without
+       this, Doze suspends the network and reconnects can take hours. -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
   <!-- Post notifications — required for the bypass warning notification (Android 13+) -->
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

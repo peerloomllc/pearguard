@@ -585,9 +585,10 @@ export default function Root () {
             consumePendingNavigation()
             if (_dbReady && _mode === 'child') {
               NativeModules.UsageStatsModule?.checkChildPermissions?.()
-                .then((p: { accessibility: boolean; usageStats: boolean }) => {
+                .then((p: { accessibility: boolean; usageStats: boolean; batteryOptimization: boolean; batteryOptAsked: boolean }) => {
                   if (!p.accessibility) router.replace('/child-setup?step=1&source=bypass_recovery')
                   else if (!p.usageStats) router.replace('/child-setup?step=2')
+                  else if (!p.batteryOptimization && !p.batteryOptAsked) router.replace('/child-setup?step=3')
                 })
                 .catch((e: unknown) => console.warn('[index] checkChildPermissions error:', e))
             }

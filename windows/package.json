@@ -1,7 +1,12 @@
 {
   "name": "pearguard-windows",
   "version": "0.1.0",
-  "description": "PearGuard Windows desktop child client",
+  "description": "PearGuard desktop child client",
+  "homepage": "https://github.com/peerloomllc/pearguard",
+  "author": {
+    "name": "PeerLoom LLC",
+    "email": "support@peerloomllc.com"
+  },
   "private": true,
   "main": "src/main/index.js",
   "scripts": {
@@ -14,6 +19,7 @@
     "test:enforcement": "node tests/enforcement.smoke.js",
     "rebuild": "electron-rebuild",
     "build": "node scripts/prepack.js && electron-builder --win",
+    "build:linux": "node scripts/prepack.js && electron-builder --linux",
     "dist": "npm run build"
   },
   "dependencies": {
@@ -43,29 +49,21 @@
       "src/**/*",
       "vendor/**/*",
       "build/icon.ico",
+      "build/icon.png",
       "package.json",
       "!**/*.test.js",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples,docs,doc,.bin}"
     ],
-    "extraResources": [
-      {
-        "from": "build/watchdog.vbs",
-        "to": "watchdog.vbs"
-      },
-      {
-        "from": "build/watchdog.ps1",
-        "to": "watchdog.ps1"
-      },
-      {
-        "from": "vendor/nssm/nssm.exe",
-        "to": "nssm.exe"
-      }
-    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico",
-      "artifactName": "pearguard-v${version}.${ext}"
+      "artifactName": "pearguard-v${version}.${ext}",
+      "extraResources": [
+        { "from": "build/watchdog.vbs", "to": "watchdog.vbs" },
+        { "from": "build/watchdog.ps1", "to": "watchdog.ps1" },
+        { "from": "vendor/nssm/nssm.exe", "to": "nssm.exe" }
+      ]
     },
     "nsis": {
       "oneClick": true,
@@ -75,6 +73,36 @@
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "include": "build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "synopsis": "PearGuard child device client",
+      "description": "Peer-to-peer parental control child client. Pairs with a parent device over Hyperswarm and reports activity.",
+      "artifactName": "pearguard-v${version}.${ext}",
+      "executableName": "pearguard",
+      "desktop": {
+        "Name": "PearGuard",
+        "StartupWMClass": "PearGuard"
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libdrm2",
+        "libgbm1",
+        "libxcb-dri3-0"
+      ]
     },
     "publish": [
       {

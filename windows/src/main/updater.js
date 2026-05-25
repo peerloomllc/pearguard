@@ -17,6 +17,9 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const WATCHDOG_SVC = 'PearGuardWatchdogSvc'
 
 function stopWatchdog() {
+  // No watchdog service on non-Windows platforms — autostart on Linux is a
+  // passive .desktop entry, not a service that could race with the installer.
+  if (process.platform !== 'win32') return Promise.resolve()
   return new Promise((resolve) => {
     exec(`sc.exe stop ${WATCHDOG_SVC}`, () => resolve())
   })

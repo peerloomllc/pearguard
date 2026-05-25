@@ -41,32 +41,33 @@ function copyTopLevelJs() {
   return copied
 }
 
-// When we build on Linux, node-pre-gyp only fetched the linux binding for
-// active-win. Cross-packaging for Windows then ships without the native .node,
-// so active-win's windows-binding falls back to a stub that returns undefined
-// and the foreground monitor never records usage. Explicitly fetch the win32
-// prebuilt so the packaged asar contains it.
-function ensureActiveWinWindowsBinding() {
-  const bindingDir = path.join(activeWinDir, 'lib', 'binding', 'napi-6-win32-unknown-x64')
+// Fetch a missing active-win prebuilt binding for a target platform. node-pre-gyp
+// only downloads the binding for the host OS during npm install; cross-packaging
+// for another platform would otherwise ship without the native .node, and
+// active-win's binding loader falls back to a stub that returns undefined so
+// the foreground monitor never records usage. Explicitly fetch the prebuilt
+// for any target the build needs that isn't already present.
+function ensureActiveWinBinding(triple) {
+  const bindingDir = path.join(activeWinDir, 'lib', 'binding', `napi-6-${triple}`)
   const bindingFile = path.join(bindingDir, 'node-active-win.node')
   if (fs.existsSync(bindingFile)) return
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(activeWinDir, 'package.json'), 'utf8'))
     const version = pkg.version
-    const url = `https://github.com/sindresorhus/active-win/releases/download/v${version}/napi-6-win32-unknown-x64.tar.gz`
+    const url = `https://github.com/sindresorhus/active-win/releases/download/v${version}/napi-6-${triple}.tar.gz`
     ensureDir(bindingDir)
-    const tmpTar = path.join(bindingDir, '..', `napi-6-win32-unknown-x64-v${version}.tar.gz`)
-    console.log(`[prepack] fetching active-win windows binding ${version}`)
+    const tmpTar = path.join(bindingDir, '..', `napi-6-${triple}-v${version}.tar.gz`)
+    console.log(`[prepack] fetching active-win ${triple} binding ${version}`)
     execSync(`curl -fsSL "${url}" -o "${tmpTar}"`, { stdio: 'inherit' })
     execSync(`tar -xzf "${tmpTar}" -C "${path.dirname(bindingDir)}"`, { stdio: 'inherit' })
     fs.unlinkSync(tmpTar)
     if (!fs.existsSync(bindingFile)) {
-      console.error('[prepack] active-win windows binding extraction did not produce node-active-win.node')
+      console.error(`[prepack] active-win ${triple} binding extraction did not produce node-active-win.node`)
       process.exit(1)
     }
-    console.log(`[prepack] active-win windows binding installed at ${path.relative(repoRoot, bindingFile)}`)
+    console.log(`[prepack] active-win ${triple} binding installed at ${path.relative(repoRoot, bindingFile)}`)
   } catch (e) {
-    console.error('[prepack] failed to fetch active-win windows binding:', e.message)
+    console.error(`[prepack] failed to fetch active-win ${triple} binding:`, e.message)
     process.exit(1)
   }
 }
@@ -83,7 +84,9 @@ function main() {
   ensureDir(vendorSrc)
   const jsFiles = copyTopLevelJs()
   copyFile(bundlePath, path.join(vendorDir, 'app-ui.bundle'))
-  if (fs.existsSync(activeWinDir)) ensureActiveWinWindowsBinding()
+  // Linux uses xprop/xwininfo via execFile (no native binding loaded); only
+  // Windows cross-binding has to be fetched explicitly when building from Linux.
+  if (fs.existsSync(activeWinDir)) ensureActiveWinBinding('win32-unknown-x64')
   console.log(`[prepack] copied ${jsFiles.length} js files + app-ui.bundle into ${path.relative(repoRoot, vendorDir)}`)
 }
 

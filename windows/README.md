@@ -37,9 +37,25 @@ Electron upgrade, run `npm run rebuild`.
 - `npm start` - production launch (Windows target)
 - `npm run start:dev-linux` - Linux dev launch with sandbox/GPU disabled
   (Fedora Wayland's chrome-sandbox and GPU process don't play nice with Electron)
+- `npm run build` - electron-builder, Windows target (NSIS installer)
+- `npm run build:linux` - electron-builder, Linux targets (AppImage + deb)
 - `npm run smoke` - headless bare-dispatch smoke test against `smoke.html`
 - `npm run smoke:ui` - headless boot check that loads the real `app-ui.bundle`
   and dumps the rendered DOM to stdout
+
+## Linux packaging
+
+`npm run build:linux` produces an AppImage and a .deb in `dist/`. The AppImage
+self-mounts on launch and uses electron-updater for in-place upgrades from
+GitHub releases. The .deb installs to `/opt/PearGuard/` and registers a
+desktop entry; autostart is handled by a `~/.config/autostart/pearguard.desktop`
+file the app writes on first launch.
+
+For enforcement features (foreground monitor, blocking overlay), the runtime
+depends on `xprop` and `xwininfo` (X11). These ship in most desktop distros by
+default but are listed in the .deb's recommends; on Wayland sessions the
+foreground monitor will fail to read window state and enforcement degrades
+gracefully to "off".
 
 ## Architecture
 

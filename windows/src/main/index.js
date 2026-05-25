@@ -67,8 +67,16 @@ const { UsageTracker } = require('../enforcement/usage-tracker')
 const { enumerateInstalledApps, slugify } = require('../enforcement/apps-enumerator')
 const { readFileDescription } = require('../enforcement/exe-metadata')
 const { extractWin32Icons } = require('../enforcement/icon-extractor')
-const { DEFAULT_MAP } = require('../enforcement/exe-map')
-const { SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
+const { ExeMap, DEFAULT_MAP, ALIAS_MAP, LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP } = require('../enforcement/exe-map')
+const { SYSTEM_EXEMPT_BASENAMES, LINUX_SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
+
+// Pick the right exe map and shell-exemption set for the running platform.
+// Kept here so EnforcementController stays platform-agnostic: the host knows
+// which OS the binary is running on and hands the controller the seeds it
+// needs, instead of the controller branching on process.platform internally.
+const PLATFORM_DEFAULT_MAP = process.platform === 'linux' ? LINUX_DEFAULT_MAP : DEFAULT_MAP
+const PLATFORM_ALIAS_MAP = process.platform === 'linux' ? LINUX_ALIAS_MAP : ALIAS_MAP
+const PLATFORM_SYSTEM_EXEMPT = process.platform === 'linux' ? LINUX_SYSTEM_EXEMPT_BASENAMES : SYSTEM_EXEMPT_BASENAMES
 const { OverlayManager } = require('./overlay')
 const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 const { TamperDetector } = require('./tamper-detector')
@@ -522,6 +530,11 @@ app.whenReady().then(() => {
       overlay,
       sodium,
       isOwnWindow,
+      // Seed the exe-map with platform-appropriate defaults. On Linux that means
+      // firefox/steam/discord-style basenames instead of the Windows .exe set,
+      // so a foreground tick against /usr/bin/firefox resolves through the
+      // built-in mapping before apps:sync hands us a learned entry.
+      exeMap: new ExeMap(PLATFORM_DEFAULT_MAP, PLATFORM_ALIAS_MAP),
     })
 
     // Countdown notifications for daily limits and approaching schedules.
@@ -552,8 +565,8 @@ app.whenReady().then(() => {
     const selfBasename = (process.execPath || '').split(/[\\/]/).pop()
     enforcement.monitor.markSeen([
       selfBasename,
-      ...Object.keys(DEFAULT_MAP),
-      ...SYSTEM_EXEMPT_BASENAMES,
+      ...Object.keys(PLATFORM_DEFAULT_MAP),
+      ...PLATFORM_SYSTEM_EXEMPT,
     ])
 
     // New-exe sightings on the desktop are the closest analogue to Android's

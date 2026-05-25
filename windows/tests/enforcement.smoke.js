@@ -7,8 +7,8 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { evaluate, isSystemExempt } = require('../src/enforcement/block-evaluator')
-const { ExeMap, ALIAS_MAP, UWP_HOST_BASENAMES } = require('../src/enforcement/exe-map')
+const { evaluate, isSystemExempt, LINUX_SYSTEM_EXEMPT_BASENAMES } = require('../src/enforcement/block-evaluator')
+const { ExeMap, ALIAS_MAP, UWP_HOST_BASENAMES, LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
@@ -2332,6 +2332,217 @@ test('mergeRows keeps uncontested launcher rows', () => {
   ]
   const merged = mergeRows([], [], launchers)
   assert.strictEqual(merged.length, 2)
+})
+
+// --- Linux apps enumerator -----------------------------------------------
+
+const linuxEnum = require('../src/enforcement/apps-enumerator-linux')
+
+test('linux extractExeBasenameFromExec handles plain exec', () => {
+  assert.strictEqual(linuxEnum.extractExeBasenameFromExec('firefox %u'), 'firefox')
+  assert.strictEqual(linuxEnum.extractExeBasenameFromExec('/usr/bin/firefox'), 'firefox')
+})
+
+test('linux extractExeBasenameFromExec strips quoted paths and trailing args', () => {
+  assert.strictEqual(
+    linuxEnum.extractExeBasenameFromExec('"/usr/bin/google-chrome" --no-sandbox %U'),
+    'google-chrome',
+  )
+})
+
+test('linux extractExeBasenameFromExec peels env wrapper', () => {
+  assert.strictEqual(linuxEnum.extractExeBasenameFromExec('env LANG=C foo --bar'), 'foo')
+})
+
+test('linux extractExeBasenameFromExec peels sh -c "binary args"', () => {
+  assert.strictEqual(linuxEnum.extractExeBasenameFromExec('sh -c "steam --silent"'), 'steam')
+})
+
+test('linux extractExeBasenameFromExec peels flatpak run with options in any order', () => {
+  assert.strictEqual(
+    linuxEnum.extractExeBasenameFromExec('flatpak run --branch=stable org.mozilla.firefox'),
+    'org.mozilla.firefox',
+  )
+  assert.strictEqual(
+    linuxEnum.extractExeBasenameFromExec('flatpak --user run org.bar'),
+    'org.bar',
+  )
+})
+
+test('linux extractExeBasenameFromExec peels snap run', () => {
+  assert.strictEqual(linuxEnum.extractExeBasenameFromExec('snap run signal-desktop'), 'signal-desktop')
+})
+
+test('linux extractExeBasenameFromExec returns null for %-only Exec', () => {
+  assert.strictEqual(linuxEnum.extractExeBasenameFromExec('%U'), null)
+})
+
+test('linux extractExeBasenameFromExec handles single-quoted tokens', () => {
+  assert.strictEqual(
+    linuxEnum.extractExeBasenameFromExec("flatpak 'run' org.foo.iris"),
+    'org.foo.iris',
+  )
+})
+
+test('linux categorizeFromXdg prefers WebBrowser over Network', () => {
+  assert.strictEqual(linuxEnum.categorizeFromXdg('Network;WebBrowser'), 'Productivity')
+})
+
+test('linux categorizeFromXdg picks Games over AudioVideo', () => {
+  assert.strictEqual(linuxEnum.categorizeFromXdg('AudioVideo;Game'), 'Games')
+})
+
+test('linux categorizeFromXdg falls back to Other', () => {
+  assert.strictEqual(linuxEnum.categorizeFromXdg(''), 'Other')
+  assert.strictEqual(linuxEnum.categorizeFromXdg(undefined), 'Other')
+})
+
+test('linux parseDesktopFile reads [Desktop Entry] and ignores locale keys', () => {
+  const fields = linuxEnum.parseDesktopFile([
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=PearGuard',
+    'Name[de]=Birnenwache',  // locale-suffixed; should be skipped
+    'Exec=pearguard',
+    '',
+    '[Desktop Action New]',
+    'Name=ShouldBeIgnored',
+  ].join('\n'))
+  assert.strictEqual(fields.Name, 'PearGuard')
+  assert.strictEqual(fields.Exec, 'pearguard')
+  assert.strictEqual(fields.Type, 'Application')
+  // Make sure the action subgroup didn't bleed into the main fields.
+  assert.notStrictEqual(fields.Name, 'ShouldBeIgnored')
+})
+
+test('linux shouldHide drops non-Application Type entries', () => {
+  assert.strictEqual(linuxEnum.shouldHide({ Type: 'Directory', Name: 'x' }), true)
+})
+
+test('linux shouldHide drops NoDisplay and Hidden entries', () => {
+  assert.strictEqual(linuxEnum.shouldHide({ Type: 'Application', NoDisplay: 'true' }), true)
+  assert.strictEqual(linuxEnum.shouldHide({ Type: 'Application', Hidden: 'true' }), true)
+})
+
+test('linux shouldHide honors OnlyShowIn against XDG_CURRENT_DESKTOP', () => {
+  const saved = process.env.XDG_CURRENT_DESKTOP
+  process.env.XDG_CURRENT_DESKTOP = 'GNOME'
+  try {
+    assert.strictEqual(linuxEnum.shouldHide({ Type: 'Application', OnlyShowIn: 'KDE;' }), true)
+    assert.strictEqual(linuxEnum.shouldHide({ Type: 'Application', OnlyShowIn: 'GNOME;KDE;' }), false)
+  } finally {
+    if (saved === undefined) delete process.env.XDG_CURRENT_DESKTOP
+    else process.env.XDG_CURRENT_DESKTOP = saved
+  }
+})
+
+test('linux enumerateInstalledApps returns shaped rows from a temp dir', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-enum-'))
+  try {
+    fs.writeFileSync(path.join(tmpDir, 'firefox.desktop'), [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=Firefox',
+      'Exec=firefox %u',
+      'Categories=Network;WebBrowser;',
+    ].join('\n'))
+    fs.writeFileSync(path.join(tmpDir, 'hidden.desktop'), [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=Hidden',
+      'NoDisplay=true',
+      'Exec=hidden',
+    ].join('\n'))
+    fs.writeFileSync(path.join(tmpDir, 'noexec.desktop'), [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=NoExec',
+    ].join('\n'))
+    // Only valid on linux — skip otherwise so CI macOS/Windows doesn't fail.
+    if (process.platform !== 'linux') return
+    const rows = await linuxEnum.enumerateInstalledApps({ dirs: [tmpDir], logger: { log() {} } })
+    assert.strictEqual(rows.length, 1)
+    assert.deepStrictEqual(rows[0], {
+      packageName: 'linux.firefox',
+      appName: 'Firefox',
+      exeBasename: 'firefox',
+      isLauncher: false,
+      category: 'Productivity',
+    })
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('linux ExeMap with LINUX_DEFAULT_MAP resolves firefox basename', () => {
+  const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  assert.strictEqual(map.resolve('/usr/bin/firefox'), 'org.mozilla.firefox')
+  assert.strictEqual(map.resolve('/usr/bin/firefox-esr'), 'org.mozilla.firefox')
+  assert.strictEqual(map.resolve('/usr/bin/google-chrome'), 'com.android.chrome')
+})
+
+test('linux ExeMap resolves steamwebhelper via alias chain', () => {
+  const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  // active-win on Linux reports the steam UI as steamwebhelper. The alias
+  // chain should route it to steam → com.valvesoftware.android.steam.community.
+  assert.strictEqual(
+    map.resolve('/home/kid/.local/share/Steam/ubuntu12_64/steamwebhelper'),
+    'com.valvesoftware.android.steam.community',
+  )
+})
+
+test('linux ExeMap returns null for unknown basename', () => {
+  const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  assert.strictEqual(map.resolve('/usr/bin/some-unmapped-tool'), null)
+})
+
+test('isSystemExempt allows linux desktop shells', () => {
+  assert.strictEqual(isSystemExempt('gnome-shell'), true)
+  assert.strictEqual(isSystemExempt('kwin_wayland'), true)
+  assert.strictEqual(isSystemExempt('plasmashell'), true)
+  assert.strictEqual(isSystemExempt('mutter'), true)
+  assert.strictEqual(isSystemExempt('Xwayland'), true)
+})
+
+test('isSystemExempt is case-insensitive for linux exempt names', () => {
+  assert.strictEqual(isSystemExempt('GNOME-Shell'), true)
+})
+
+test('isSystemExempt still allows windows shell basenames', () => {
+  // The Linux additions must not break the existing Windows behavior.
+  assert.strictEqual(isSystemExempt('explorer.exe'), true)
+  assert.strictEqual(isSystemExempt('applicationframehost.exe'), true)
+})
+
+test('LINUX_SYSTEM_EXEMPT_BASENAMES never overlaps the windows set', () => {
+  // Linux entries have no .exe; Windows entries always do. Guard the
+  // invariant so a future addition can't introduce a silent collision.
+  const { SYSTEM_EXEMPT_BASENAMES } = require('../src/enforcement/block-evaluator')
+  for (const name of LINUX_SYSTEM_EXEMPT_BASENAMES) {
+    assert.strictEqual(SYSTEM_EXEMPT_BASENAMES.has(name), false, 'collision: ' + name)
+    assert.strictEqual(name.endsWith('.exe'), false, 'linux entry ends with .exe: ' + name)
+  }
+})
+
+test('linux enumerateInstalledApps dedupes by appName preserving dir precedence', async () => {
+  if (process.platform !== 'linux') return
+  const dirA = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-enum-a-'))
+  const dirB = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-enum-b-'))
+  try {
+    fs.writeFileSync(path.join(dirA, 'foo.desktop'), [
+      '[Desktop Entry]', 'Type=Application', 'Name=Foo', 'Exec=foo-user',
+    ].join('\n'))
+    fs.writeFileSync(path.join(dirB, 'foo.desktop'), [
+      '[Desktop Entry]', 'Type=Application', 'Name=Foo', 'Exec=foo-system',
+    ].join('\n'))
+    // dirA first means it should win.
+    const rows = await linuxEnum.enumerateInstalledApps({ dirs: [dirA, dirB], logger: { log() {} } })
+    assert.strictEqual(rows.length, 1)
+    assert.strictEqual(rows[0].exeBasename, 'foo-user')
+  } finally {
+    fs.rmSync(dirA, { recursive: true, force: true })
+    fs.rmSync(dirB, { recursive: true, force: true })
+  }
 })
 
 test('EnforcementController.setPolicyJson re-seeds ExeMap from policy.apps entries', () => {

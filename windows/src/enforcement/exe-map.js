@@ -43,6 +43,46 @@ const DEFAULT_MAP = {
   'notepad.exe': 'com.android.notes',
 }
 
+// Linux counterparts of DEFAULT_MAP. Keys are the process basenames active-win
+// reports on Linux (read from /proc/$PID/exe), without the .exe extension.
+// Values reuse the same Android-style packageNames as the Windows map so the
+// parent's policy speaks one identifier across platforms.
+const LINUX_DEFAULT_MAP = {
+  // Browsers — Linux ships multiple basenames per browser depending on the
+  // packager (firefox-esr on Debian, google-chrome and chromium-browser on
+  // Chrome installs, etc.). Map all of them to the same canonical packageName.
+  'chrome': 'com.android.chrome',
+  'google-chrome': 'com.android.chrome',
+  'google-chrome-stable': 'com.android.chrome',
+  'chromium': 'com.android.chrome',
+  'chromium-browser': 'com.android.chrome',
+  'firefox': 'org.mozilla.firefox',
+  'firefox-esr': 'org.mozilla.firefox',
+  'brave': 'com.brave.browser',
+  'brave-browser': 'com.brave.browser',
+  'opera': 'com.opera.browser',
+  'microsoft-edge': 'com.microsoft.emmx',
+
+  // Chat / social
+  'discord': 'com.discord',
+  'slack': 'com.Slack',
+  'telegram-desktop': 'org.telegram.messenger',
+  'telegram': 'org.telegram.messenger',
+  'signal-desktop': 'org.thoughtcrime.securesms',
+
+  // Streaming / media
+  'spotify': 'com.spotify.music',
+  'vlc': 'org.videolan.vlc',
+
+  // Games / launchers
+  'steam': 'com.valvesoftware.android.steam.community',
+  'minecraft-launcher': 'com.mojang.minecraftpe',
+
+  // Productivity (rarely blocked, but useful to recognize so they don't trip
+  // first-sighting notifications)
+  'code': 'com.microsoft.vscode',
+}
+
 // Exes whose foreground reports the host itself rather than the real app.
 // When active-win surfaces one of these as the owner, the hosted app's
 // identity lives in the window title (e.g. "Calculator" while
@@ -65,6 +105,22 @@ const ALIAS_MAP = {
 
   // Epic Games Launcher family
   'epicwebhelper.exe': 'epicgameslauncher.exe',
+}
+
+// Linux counterpart of ALIAS_MAP. Steam on Linux renders its UI through
+// steamwebhelper (same as Windows), so a foreground tick against the helper
+// should resolve to the Steam packageName via the alias chain.
+const LINUX_ALIAS_MAP = {
+  // Steam family — bin names confirmed against active-win output on Debian
+  // (path was /home/user/.local/share/Steam/ubuntu12_64/steamwebhelper).
+  'steamwebhelper': 'steam',
+  'steam_bpm': 'steam',
+
+  // Browser crashpad/helper bins. Active-win occasionally returns these
+  // instead of the primary browser when a crash reporter or GPU process
+  // briefly holds focus.
+  'chrome_crashpad_handler': 'chrome',
+  'crashpad_handler': 'chrome',
 }
 
 class ExeMap {
@@ -144,4 +200,11 @@ function normalizeTitle(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
-module.exports = { ExeMap, DEFAULT_MAP, ALIAS_MAP, UWP_HOST_BASENAMES }
+module.exports = {
+  ExeMap,
+  DEFAULT_MAP,
+  ALIAS_MAP,
+  UWP_HOST_BASENAMES,
+  LINUX_DEFAULT_MAP,
+  LINUX_ALIAS_MAP,
+}

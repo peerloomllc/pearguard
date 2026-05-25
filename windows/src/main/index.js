@@ -73,15 +73,18 @@ const { OverlayManager } = require('./overlay')
 const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 const { TamperDetector } = require('./tamper-detector')
 const { initAutoUpdater } = require('./updater')
+const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's UsageFlushWorker cadence (15 min).
 const USAGE_FLUSH_INTERVAL_MS = 15 * 60 * 1000
 
-// Icon used in toast notifications. Same .ico the tray uses; electron-builder
-// whitelists build/icon.ico in the asar so this path resolves in both dev and
-// packaged runs.
-const NOTIFICATION_ICON_PATH = path.join(__dirname, '..', '..', 'build', 'icon.ico')
+// Icon used in toast notifications. Same image the tray uses; electron-builder
+// whitelists build/icon.* in the asar so this path resolves in both dev and
+// packaged runs. Linux's libnotify can't read .ico — use the PNG there.
+const NOTIFICATION_ICON_PATH = process.platform === 'win32'
+  ? path.join(__dirname, '..', '..', 'build', 'icon.ico')
+  : path.join(__dirname, '..', '..', 'build', 'icon.png')
 
 // Windows derives the toast's "app name" header from the AppUserModelID.
 // electron-builder's NSIS stamps the Start Menu shortcut with build.appId
@@ -330,9 +333,12 @@ function showMainWindow() {
 
 function createTray() {
   if (tray && !tray.isDestroyed()) return
-  // build/icon.ico is whitelisted in package.json's "files" so it lives inside
+  // build/icon.* is whitelisted in package.json's "files" so it lives inside
   // the asar. In dev (electron .), the path resolves against the project root.
-  const iconPath = path.join(__dirname, '..', '..', 'build', 'icon.ico')
+  // AppIndicator/Ayatana on Linux only renders PNG tray icons.
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, '..', '..', 'build', 'icon.ico')
+    : path.join(__dirname, '..', '..', 'build', 'icon.png')
   try {
     tray = new Tray(iconPath)
   } catch (e) {
@@ -435,8 +441,20 @@ app.whenReady().then(() => {
   // Autostart on user login. No user-facing toggle: this is a parental-control
   // app and the child shouldn't be able to disable it. Dev launches (app.isPackaged
   // === false) skip this so running `npm start` doesn't register the dev binary.
+  // Linux's setLoginItemSettings is a no-op; we hand-roll a .desktop file under
+  // ~/.config/autostart/ instead. Re-asserted on every startup so a kid
+  // deleting the entry sees it return as soon as they re-open PearGuard.
   if (app.isPackaged) {
-    app.setLoginItemSettings({ openAtLogin: true })
+    if (process.platform === 'linux') {
+      try {
+        const { wrote, path: entryPath } = ensureLinuxAutostart({ execPath: process.execPath })
+        if (wrote) console.log('[main] linux autostart entry written:', entryPath)
+      } catch (e) {
+        console.warn('[main] linux autostart failed:', e.message)
+      }
+    } else {
+      app.setLoginItemSettings({ openAtLogin: true })
+    }
   }
 
   // Watchdog: register a scheduled task that relaunches PearGuard every two

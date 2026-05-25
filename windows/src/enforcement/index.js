@@ -32,12 +32,16 @@ class EnforcementController extends EventEmitter {
     sodium = null,         // sodium-native, optional — required only for PIN verification
     isOwnWindow = null,    // (info) => bool — used to ignore our own electron windows
     warningChecker = new WarningChecker(),
+    exeMap = null,         // pre-seeded ExeMap; host picks platform defaults
     logger = console,
   } = {}) {
     super()
     this._sodium = sodium
     this.policyCache = new PolicyCache()
-    this.exeMap = new ExeMap()
+    // Default to the Windows seed map when no instance is supplied so existing
+    // unit tests (which `new EnforcementController({...})` without an exeMap)
+    // keep their original behavior. The Linux host always passes its own.
+    this.exeMap = exeMap || new ExeMap()
     this.overrides = overridesStore
     this.usage = usageTracker
     this.monitor = new ForegroundMonitor({ activeWin, intervalMs, seenExesPath })

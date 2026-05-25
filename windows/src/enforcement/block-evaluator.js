@@ -39,9 +39,73 @@ const SYSTEM_EXEMPT_BASENAMES = new Set([
   'widgetservice.exe',
 ])
 
+// Linux counterpart of SYSTEM_EXEMPT_BASENAMES. Compositors, shells, and
+// background daemons that own the foreground briefly during normal use must
+// be allowed through unconditionally so a device-wide lock can never wedge
+// the child in a black screen. Mirrors Android's PHONE_PACKAGES rule.
+const LINUX_SYSTEM_EXEMPT_BASENAMES = new Set([
+  // Desktop shells / panels
+  'gnome-shell',
+  'gnome-session',
+  'gnome-session-binary',
+  'kwin',
+  'kwin_x11',
+  'kwin_wayland',
+  'plasmashell',
+  'kded5',
+  'kded6',
+  'kdeinit5',
+  'kdeinit6',
+  'mutter',
+  'mutter-x11-frames',
+  'cinnamon',
+  'mate-panel',
+  'mate-session',
+  'xfce4-panel',
+  'xfce4-session',
+  'lxsession',
+  'lxqt-session',
+  'i3',
+  'sway',
+  'hyprland',
+
+  // Display servers / login managers
+  'xorg',
+  'xwayland',
+  'gdm',
+  'gdm3',
+  'sddm',
+  'lightdm',
+
+  // System / IPC daemons that occasionally surface as foreground owners on
+  // their own renderer windows (settings dialogs, notification popups).
+  'systemd',
+  'systemd-logind',
+  'dbus-daemon',
+  'dbus-broker',
+  'pipewire',
+  'wireplumber',
+  'pulseaudio',
+  'polkit-gnome-authentication-agent-1',
+  'polkitd',
+
+  // Input methods (foreground briefly during composition)
+  'ibus-daemon',
+  'ibus-x11',
+  'fcitx5',
+
+  // GNOME Settings + sub-tools that the user shouldn't be locked out of
+  'gnome-control-center',
+  'gnome-settings-daemon',
+])
+
 function isSystemExempt(exeBasename) {
   if (!exeBasename) return true
-  return SYSTEM_EXEMPT_BASENAMES.has(exeBasename.toLowerCase())
+  const lower = exeBasename.toLowerCase()
+  // Cross-platform check: Windows names carry .exe and Linux names don't,
+  // so the two sets never collide. Walking both lets shared code on either
+  // platform reach the right shell exemption without branching.
+  return SYSTEM_EXEMPT_BASENAMES.has(lower) || LINUX_SYSTEM_EXEMPT_BASENAMES.has(lower)
 }
 
 // Returns null (allow) or { reason: string, category: string }.
@@ -182,4 +246,4 @@ function safeUsage(getUsageSeconds, packageName) {
   }
 }
 
-module.exports = { evaluate, isSystemExempt, SYSTEM_EXEMPT_BASENAMES }
+module.exports = { evaluate, isSystemExempt, SYSTEM_EXEMPT_BASENAMES, LINUX_SYSTEM_EXEMPT_BASENAMES }

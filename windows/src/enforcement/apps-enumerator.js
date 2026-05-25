@@ -122,8 +122,16 @@ function defaultPowershellExec(script) {
 // Tests pass a single function that receives the script string; production
 // uses defaultPowershellExec which binds it into the spawn.
 async function enumerateInstalledApps({ exec = defaultPowershellExec, logger = console } = {}) {
+  // Linux uses a .desktop file scan instead of PowerShell. Delegate to the
+  // Linux module so this file stays the single entry point. Skip the delegate
+  // when a fake `exec` is passed (the Windows unit tests inject one to verify
+  // the PS code path on a Linux dev machine — preserving that requires us to
+  // keep running the Windows code when an injection is present).
+  if (process.platform === 'linux' && exec === defaultPowershellExec) {
+    return require('./apps-enumerator-linux').enumerateInstalledApps({ logger })
+  }
   if (process.platform !== 'win32' && exec === defaultPowershellExec) {
-    // Dev runs on Linux/macOS would crash trying to invoke powershell.exe. The
+    // Dev runs on macOS would crash trying to invoke powershell.exe. The
     // feature only matters on real Windows children; return empty on anything
     // else unless the caller swapped in a fake.
     return []

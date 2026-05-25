@@ -72,6 +72,7 @@ const { SYSTEM_EXEMPT_BASENAMES } = require('../enforcement/block-evaluator')
 const { OverlayManager } = require('./overlay')
 const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 const { TamperDetector } = require('./tamper-detector')
+const { initAutoUpdater } = require('./updater')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's UsageFlushWorker cadence (15 min).
@@ -659,6 +660,12 @@ app.whenReady().then(() => {
       }
       bufferedEvents.length = 0
     })
+
+    // Auto-update from GitHub releases. Skips in dev (app.isPackaged is false)
+    // and in smoke runs since the dialog needs a real focusable window.
+    if (!process.env.PEARGUARD_SMOKE && !process.env.PEARGUARD_UI_SMOKE) {
+      initAutoUpdater({ getMainWindow: () => mainWindow })
+    }
 
     // Start the foreground monitor only after bare is ready, we know we're in
     // child mode, AND at least one parent is paired. Without the pairing gate,

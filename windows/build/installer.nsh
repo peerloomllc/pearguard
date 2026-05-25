@@ -69,34 +69,43 @@
   ; uninstall.
   nsExec::Exec 'schtasks.exe /delete /tn "PearGuardWatchdog" /f'
 
-  ; Remove Hyperbee store, overrides.json, usage.json, seen-exes.json, etc.
-  ; from every user profile on the machine.
-  Push $0
-  Push $1
-  Push $2
+  ; Skip the userData wipe on silent uninstalls. NSIS upgrades work by running
+  ; the OLD uninstaller silently before laying down new files, so an
+  ; unconditional wipe here would destroy the child's keypair and paired-parent
+  ; list on every version upgrade. ${Silent} is true during that upgrade-time
+  ; uninstall and false when the user runs the uninstaller from Add/Remove
+  ; Programs (oneClick: false in package.json), which is the only case where we
+  ; actually want to delete state.
+  ${IfNot} ${Silent}
+    ; Remove Hyperbee store, overrides.json, usage.json, seen-exes.json, etc.
+    ; from every user profile on the machine.
+    Push $0
+    Push $1
+    Push $2
 
-  StrCpy $0 "$PROFILE\.."
+    StrCpy $0 "$PROFILE\.."
 
-  FindFirst $1 $2 "$0\*"
-  pg_userdata_loop:
-    StrCmp $2 "" pg_userdata_done
-    StrCmp $2 "." pg_userdata_next
-    StrCmp $2 ".." pg_userdata_next
-    StrCmp $2 "Public" pg_userdata_next
-    StrCmp $2 "Default" pg_userdata_next
-    StrCmp $2 "Default User" pg_userdata_next
-    StrCmp $2 "All Users" pg_userdata_next
-    IfFileExists "$0\$2\AppData\Roaming\pearguard-windows\*.*" 0 +2
-      RMDir /r "$0\$2\AppData\Roaming\pearguard-windows"
-    IfFileExists "$0\$2\AppData\Local\pearguard-windows-updater\*.*" 0 +2
-      RMDir /r "$0\$2\AppData\Local\pearguard-windows-updater"
-  pg_userdata_next:
-    FindNext $1 $2
-    Goto pg_userdata_loop
-  pg_userdata_done:
-    FindClose $1
+    FindFirst $1 $2 "$0\*"
+    pg_userdata_loop:
+      StrCmp $2 "" pg_userdata_done
+      StrCmp $2 "." pg_userdata_next
+      StrCmp $2 ".." pg_userdata_next
+      StrCmp $2 "Public" pg_userdata_next
+      StrCmp $2 "Default" pg_userdata_next
+      StrCmp $2 "Default User" pg_userdata_next
+      StrCmp $2 "All Users" pg_userdata_next
+      IfFileExists "$0\$2\AppData\Roaming\pearguard-windows\*.*" 0 +2
+        RMDir /r "$0\$2\AppData\Roaming\pearguard-windows"
+      IfFileExists "$0\$2\AppData\Local\pearguard-windows-updater\*.*" 0 +2
+        RMDir /r "$0\$2\AppData\Local\pearguard-windows-updater"
+    pg_userdata_next:
+      FindNext $1 $2
+      Goto pg_userdata_loop
+    pg_userdata_done:
+      FindClose $1
 
-  Pop $2
-  Pop $1
-  Pop $0
+    Pop $2
+    Pop $1
+    Pop $0
+  ${EndIf}
 !macroend

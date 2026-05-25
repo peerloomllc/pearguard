@@ -19,6 +19,7 @@
   "dependencies": {
     "active-win": "^8.2.1",
     "b4a": "^1.8.0",
+    "electron-updater": "^6.8.3",
     "hyperbee": "^2.27.3",
     "hypercore": "^11.26.0",
     "hypercore-errors": "^1.5.0",
@@ -48,22 +49,39 @@
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples,docs,doc,.bin}"
     ],
     "extraResources": [
-      { "from": "build/watchdog.vbs", "to": "watchdog.vbs" },
-      { "from": "build/watchdog.ps1", "to": "watchdog.ps1" },
-      { "from": "vendor/nssm/nssm.exe", "to": "nssm.exe" }
+      {
+        "from": "build/watchdog.vbs",
+        "to": "watchdog.vbs"
+      },
+      {
+        "from": "build/watchdog.ps1",
+        "to": "watchdog.ps1"
+      },
+      {
+        "from": "vendor/nssm/nssm.exe",
+        "to": "nssm.exe"
+      }
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "pearguard-v${version}.${ext}"
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "include": "build/installer.nsh"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "peerloomllc",
+        "repo": "pearguard"
+      }
+    ]
   }
 }

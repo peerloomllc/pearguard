@@ -83,6 +83,7 @@ const { TamperDetector } = require('./tamper-detector')
 const { initAutoUpdater } = require('./updater')
 const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
 const { ensureExtensionInstalled: ensureGnomeExtension } = require('./gnome-extension-installer')
+const { GnomeExtensionWatchdog } = require('./gnome-extension-watchdog')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's UsageFlushWorker cadence (15 min).
@@ -120,6 +121,7 @@ let enforcement = null  // lazily constructed in app.whenReady so tests can stub
 let usageFlushTimer = null
 let heartbeatTimer = null
 let tamperDetector = null
+let gnomeExtensionWatchdog = null
 
 // Install the BareKit shim BEFORE requiring bare.js so its module-top
 // `BareKit.IPC.on('data', ...)` binds to our EventEmitter.
@@ -464,8 +466,8 @@ app.whenReady().then(() => {
       // Install/refresh the GNOME Shell extension that backs the Wayland
       // foreground adapter. No-op on non-GNOME sessions (gnome-extensions
       // tool absent). First install requires a Shell restart to pick up.
-      const sourceDir = path.join(process.resourcesPath, 'gnome-extension')
-      ensureGnomeExtension({ sourceDir }).then((r) => {
+      const gnomeExtensionSourceDir = path.join(process.resourcesPath, 'gnome-extension')
+      ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir }).then((r) => {
         if (r.installed && r.enabled) {
           if (r.requiresShellRestart) {
             console.log('[main] gnome extension installed/updated; log out + log back in for Mutter to pick it up')
@@ -476,6 +478,25 @@ app.whenReady().then(() => {
           console.warn('[main] gnome extension install skipped:', r.reason)
         }
       }, (e) => console.warn('[main] gnome extension install failed:', e.message))
+
+      // Watch the extension state and re-enable + alert the parent if the
+      // child toggles it off. Without this, a kid can defeat Wayland
+      // enforcement in 30 seconds via Settings → Extensions.
+      gnomeExtensionWatchdog = new GnomeExtensionWatchdog({
+        onTamper: ({ reason }) => {
+          console.warn('[main] gnome extension tamper detected:', reason)
+          // Re-run the installer so a deleted directory comes back too;
+          // the installer also re-issues `gnome-extensions enable` which
+          // covers the toggle-off case.
+          ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir })
+            .catch((e) => console.warn('[main] tamper repair install failed:', e.message))
+          // Relay to the parent via bare. callBare is fire-and-forget here;
+          // bare-dispatch records the event and forwards bypass:alert.
+          callBare('bypass:detected', { reason: 'linux:' + reason })
+            .catch((e) => console.warn('[main] bypass:detected relay failed:', e.message))
+        },
+      })
+      gnomeExtensionWatchdog.start()
     } else {
       app.setLoginItemSettings({ openAtLogin: true })
     }
@@ -842,6 +863,7 @@ app.on('before-quit', () => {
   isQuitting = true
   stopUsageFlushTimer()
   stopHeartbeatTimer()
+  if (gnomeExtensionWatchdog) gnomeExtensionWatchdog.stop()
   // Close the active session so its seconds land in takeSessions() before we
   // try to flush one last time.
   if (enforcement) enforcement.usage.endActive()

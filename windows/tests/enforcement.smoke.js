@@ -2583,6 +2583,109 @@ test('LINUX_SYSTEM_EXEMPT_BASENAMES never overlaps the windows set', () => {
   }
 })
 
+// --- GNOME extension watchdog --------------------------------------------
+
+const { GnomeExtensionWatchdog, extractState } = require('../src/main/gnome-extension-watchdog')
+
+test('extractState parses gnome-extensions info output', () => {
+  const out = [
+    '  Name: PearGuard Focus Reporter',
+    '  UUID: pearguard-focus@peerloomllc.com',
+    '  Version: 1',
+    '  Enabled: Yes',
+    '  State: ACTIVE',
+  ].join('\n')
+  assert.strictEqual(extractState(out), 'ACTIVE')
+})
+
+test('extractState returns null when state line absent', () => {
+  assert.strictEqual(extractState('something else entirely'), null)
+  assert.strictEqual(extractState(''), null)
+  assert.strictEqual(extractState(null), null)
+})
+
+test('GnomeExtensionWatchdog stays quiet while state is ACTIVE', async () => {
+  let tampers = 0
+  const watchdog = new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    onTamper: () => { tampers++ },
+    logger: { log() {}, warn() {} },
+    runExtensions: async (args) => {
+      if (args[0] === 'info') return { ok: true, stdout: '  State: ACTIVE\n', stderr: '' }
+      return { ok: true, stdout: '', stderr: '' }
+    },
+  })
+  await watchdog._check()
+  await watchdog._check()
+  assert.strictEqual(tampers, 0)
+})
+
+test('GnomeExtensionWatchdog fires tamper + re-enables when state is INITIALIZED', async () => {
+  const calls = []
+  let tamperPayload = null
+  const watchdog = new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    onTamper: (p) => { tamperPayload = p },
+    logger: { log() {}, warn() {} },
+    runExtensions: async (args) => {
+      calls.push(args.join(' '))
+      if (args[0] === 'info') return { ok: true, stdout: '  State: INITIALIZED\n', stderr: '' }
+      return { ok: true, stdout: '', stderr: '' }
+    },
+  })
+  await watchdog._check()
+  assert.ok(tamperPayload, 'expected tamper payload')
+  assert.strictEqual(tamperPayload.reason, 'extension-disabled')
+  assert.ok(calls.some((c) => c.startsWith('enable')), 'expected an enable call; got: ' + calls.join(', '))
+})
+
+test('GnomeExtensionWatchdog throttles repeated tamper reports', async () => {
+  let tampers = 0
+  let fakeNow = 0
+  const watchdog = new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    cooldownMs: 60_000,
+    onTamper: () => { tampers++ },
+    now: () => fakeNow,
+    logger: { log() {}, warn() {} },
+    runExtensions: async () => ({ ok: true, stdout: '  State: INITIALIZED\n', stderr: '' }),
+  })
+  await watchdog._check()
+  fakeNow = 30_000
+  await watchdog._check()
+  fakeNow = 90_000
+  await watchdog._check()
+  assert.strictEqual(tampers, 2)
+})
+
+test('GnomeExtensionWatchdog distinguishes OUT_OF_DATE from disabled', async () => {
+  let payload = null
+  const watchdog = new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    onTamper: (p) => { payload = p },
+    logger: { log() {}, warn() {} },
+    runExtensions: async (args) => {
+      if (args[0] === 'info') return { ok: true, stdout: '  State: OUT_OF_DATE\n', stderr: '' }
+      return { ok: true, stdout: '', stderr: '' }
+    },
+  })
+  await watchdog._check()
+  assert.ok(payload)
+  assert.strictEqual(payload.reason, 'extension-out-of-date')
+})
+
+test('GnomeExtensionWatchdog stops when gnome-extensions tool is missing', async () => {
+  const watchdog = new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    logger: { log() {}, warn() {} },
+    runExtensions: async () => ({ ok: false, error: 'spawn ENOENT', code: 'ENOENT', stdout: '', stderr: '' }),
+  })
+  watchdog.start()
+  // start() runs an immediate check; let the microtask drain.
+  await new Promise((r) => setImmediate(r))
+  assert.strictEqual(watchdog._timer, null, 'timer must be cleared after ENOENT')
+})
+
 // --- Linux Wayland foreground adapter ------------------------------------
 
 const wayland = require('../src/enforcement/foreground-wayland')

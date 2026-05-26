@@ -578,8 +578,14 @@ app.whenReady().then(() => {
       // Seed the exe-map with platform-appropriate defaults. On Linux that means
       // firefox/steam/discord-style basenames instead of the Windows .exe set,
       // so a foreground tick against /usr/bin/firefox resolves through the
-      // built-in mapping before apps:sync hands us a learned entry.
-      exeMap: new ExeMap(PLATFORM_DEFAULT_MAP, PLATFORM_ALIAS_MAP),
+      // built-in mapping before apps:sync hands us a learned entry. The
+      // persist path keeps every learned mapping across restarts so the first
+      // foreground tick after a reboot/relaunch doesn't race apps:sync.
+      exeMap: new ExeMap(
+        PLATFORM_DEFAULT_MAP,
+        PLATFORM_ALIAS_MAP,
+        path.join(app.getPath('userData'), 'exemap.json'),
+      ),
     })
 
     // Countdown notifications for daily limits and approaching schedules.
@@ -864,6 +870,11 @@ app.on('before-quit', () => {
   stopUsageFlushTimer()
   stopHeartbeatTimer()
   if (gnomeExtensionWatchdog) gnomeExtensionWatchdog.stop()
+  // Flush pending exemap writes synchronously so we don't lose the last
+  // 500ms of learn() calls on a clean quit (the debounce timer is unref'd).
+  if (enforcement && enforcement.exeMap && typeof enforcement.exeMap._flushPersist === 'function') {
+    enforcement.exeMap._flushPersist()
+  }
   // Close the active session so its seconds land in takeSessions() before we
   // try to flush one last time.
   if (enforcement) enforcement.usage.endActive()

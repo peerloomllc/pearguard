@@ -2543,6 +2543,62 @@ test('linux ExeMap mount prefix lookup does not fire for non-AppImage learn', ()
   assert.strictEqual(map.resolve('/tmp/.mount_firefoXXXXXX/firefox-bin'), null)
 })
 
+test('ExeMap persists learned mappings to disk and reloads them on construct', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-exemap-'))
+  const persistPath = path.join(dir, 'exemap.json')
+  try {
+    // First session: learn a few mappings, force the debounced save to disk.
+    const a = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP, persistPath)
+    a.learn('myapp', 'com.example.myapp')
+    a.learn('mygame.appimage', 'linux.mygame')
+    a.learnAlias('myapp-helper', 'myapp')
+    a._flushPersist()  // bypass the debounce timer
+
+    // File now exists and contains the learned mappings.
+    assert.ok(fs.existsSync(persistPath))
+    const raw = JSON.parse(fs.readFileSync(persistPath, 'utf8'))
+    assert.strictEqual(raw.basenames.myapp, 'com.example.myapp')
+    assert.strictEqual(raw.basenames['mygame.appimage'], 'linux.mygame')
+    assert.strictEqual(raw.appImagePrefixes.mygame, 'linux.mygame')
+    assert.strictEqual(raw.aliases['myapp-helper'], 'myapp')
+
+    // Second session: new instance loads the persisted state.
+    const b = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP, persistPath)
+    assert.strictEqual(b.resolve('/usr/bin/myapp'), 'com.example.myapp')
+    assert.strictEqual(b.resolve('/tmp/.mount_mygameXYZ123/inner'), 'linux.mygame')
+    // alias still routes through to the learned myapp
+    assert.strictEqual(b.resolve('/usr/bin/myapp-helper'), 'com.example.myapp')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('ExeMap loads gracefully when persisted file is missing or corrupt', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-exemap-bad-'))
+  const persistPath = path.join(dir, 'exemap.json')
+  try {
+    // Missing file: should construct cleanly and behave as default.
+    const a = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP, persistPath)
+    assert.strictEqual(a.resolve('/usr/bin/firefox'), 'org.mozilla.firefox')
+    // Corrupt JSON: constructor must not throw and must still use defaults.
+    fs.writeFileSync(persistPath, '{not json')
+    const b = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP, persistPath)
+    assert.strictEqual(b.resolve('/usr/bin/firefox'), 'org.mozilla.firefox')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('ExeMap without persistPath is a pure in-memory store (no fs touches)', () => {
+  // Constructing without persistPath must not crash and must behave the
+  // same as before. Regression guard for existing test setups.
+  const m = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  m.learn('firefox-esr', 'linux.firefox_esr')
+  assert.strictEqual(m.resolve('/usr/bin/firefox-esr'), 'linux.firefox_esr')
+  // _flushPersist is a no-op without persistPath.
+  m._flushPersist()
+})
+
 test('linux ExeMap direct basename wins over mount prefix lookup', () => {
   const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
   // Learn two unrelated apps whose prefixes happen to overlap.

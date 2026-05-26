@@ -84,6 +84,17 @@ function migrateUserData({
   try {
     logger.log('[userdata-migrate] copying', oldDir, '->', newDir)
     copyTreeSync(oldDir, newDir)
+    // Drop the Hypercore device-file (CORESTORE) so corestore regenerates
+    // it on next open. The file stores inode + birthtime + platform attr;
+    // copying produces a NEW inode, which trips device-file's tamper check
+    // ("Invalid device file, was modified") and bare init throws. The
+    // payload Hyperbee files (key, oplog, blobs, RocksDB stuff) are
+    // portable; only the device-identity file is filesystem-specific.
+    // Older pre-corestore-v6 installs don't have CORESTORE — the unlink
+    // safely no-ops in that case.
+    const corestoreFile = path.join(newDir, 'pearguard', 'core', 'CORESTORE')
+    try { fs.unlinkSync(corestoreFile); logger.log('[userdata-migrate] cleared stale CORESTORE so device-file regenerates') }
+    catch (e) { if (e.code !== 'ENOENT') throw e }
     // Record success so the next launch skips the copy.
     fs.writeFileSync(sentinel, new Date().toISOString())
     let files = 0

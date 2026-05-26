@@ -2703,6 +2703,31 @@ test('migrateUserData skips when old dir is absent (fresh install)', () => {
   }
 })
 
+test('migrateUserData deletes CORESTORE in the new dir so device-file regenerates', () => {
+  // Hypercore's device-file binds the CORESTORE file to its inode + birthtime.
+  // A copied CORESTORE has a fresh inode and trips the tamper check on next
+  // open, so we drop it after copying and let corestore make a new one.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-migrate-corestore-'))
+  const oldDir = path.join(root, 'pearguard-windows')
+  const newDir = path.join(root, 'pearguard-desktop')
+  try {
+    fs.mkdirSync(path.join(oldDir, 'pearguard', 'core', 'db'), { recursive: true })
+    fs.writeFileSync(path.join(oldDir, 'pearguard', 'core', 'CORESTORE'), 'fake-device-file-bytes')
+    // Sibling files should survive — they're the actual Hyperbee data.
+    fs.writeFileSync(path.join(oldDir, 'pearguard', 'core', 'db', 'CURRENT'), 'manifest-pointer')
+    fs.writeFileSync(path.join(oldDir, 'pearguard', 'core', 'db', '000023.blob'), 'real-data')
+
+    const r = migrateUserData({ oldDir, newDir, logger: { log() {}, warn() {} } })
+    assert.strictEqual(r.migrated, true)
+    // CORESTORE removed; siblings intact.
+    assert.strictEqual(fs.existsSync(path.join(newDir, 'pearguard', 'core', 'CORESTORE')), false)
+    assert.ok(fs.existsSync(path.join(newDir, 'pearguard', 'core', 'db', 'CURRENT')))
+    assert.strictEqual(fs.readFileSync(path.join(newDir, 'pearguard', 'core', 'db', '000023.blob'), 'utf8'), 'real-data')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('migrateUserData refuses to clobber a new dir that already has a Hyperbee store', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-migrate-collision-'))
   const oldDir = path.join(root, 'pearguard-windows')

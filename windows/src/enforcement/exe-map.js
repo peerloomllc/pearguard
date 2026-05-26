@@ -123,11 +123,45 @@ const LINUX_ALIAS_MAP = {
   'crashpad_handler': 'chrome',
 }
 
+// AppImage mount paths look like /tmp/.mount_<6prefix><6random>/<inner-bin>.
+// The 6-char prefix is the first 6 characters of the AppImage's full basename
+// (extension included). Verified against keet.appimage → "keet.a",
+// pearcal.appimage → "pearca", pearguard-v0.1.0.AppImage → "peargu". We
+// lowercase on both sides of the comparison to handle case-mixed filenames
+// like PearCal.AppImage which mount as /tmp/.mount_PearCa.../.
+// Not part of any AppImage spec, so a future runtime change could break this.
+// Documented in [[linux-headless-pair-harness]].
+const APP_IMAGE_MOUNT_PREFIX_LEN = 6
+function computeAppImageMountPrefix(basename) {
+  if (typeof basename !== 'string' || !basename) return null
+  return basename.slice(0, APP_IMAGE_MOUNT_PREFIX_LEN).toLowerCase()
+}
+
+// Pull the basename-derived prefix back out of a /tmp/.mount_* path. Returns
+// null when the path isn't an AppImage mount or is too short to contain a
+// random tail.
+function extractAppImageMountPrefix(exePath) {
+  if (typeof exePath !== 'string') return null
+  // The mount-dir name can contain dots ("keet.a..."), underscores, and
+  // hyphens — they're all valid AppImage filename characters that get
+  // copied byte-for-byte into the mount prefix.
+  const m = exePath.match(/\/\.mount_([^/]+)\//)
+  if (!m) return null
+  const full = m[1]
+  // The runtime appends a 6-char random tail; anything before it is the
+  // basename-derived prefix. Short basenames could yield a shorter total
+  // length than 12, but in practice the runtime always emits 6+6, so refuse
+  // anything shorter than that to avoid misreading non-AppImage tmp dirs.
+  if (full.length <= APP_IMAGE_MOUNT_PREFIX_LEN) return null
+  return full.slice(0, full.length - APP_IMAGE_MOUNT_PREFIX_LEN).toLowerCase()
+}
+
 class ExeMap {
   constructor(initial = DEFAULT_MAP, initialAliases = ALIAS_MAP) {
     this._map = new Map()
     this._aliasMap = new Map()     // child basename -> primary basename
     this._uwpByTitle = new Map()  // normalized title -> { packageName, exeBasename }
+    this._appImagePrefixMap = new Map()  // 6-char prefix -> packageName
     for (const [exe, pkg] of Object.entries(initial)) {
       this._map.set(exe.toLowerCase(), pkg)
     }
@@ -148,6 +182,15 @@ class ExeMap {
     const basename = pathWin32.basename(exePath).toLowerCase()
     const direct = this._map.get(basename)
     if (direct) return direct
+    // AppImage mount-path indirection: active-win surfaces the mounted inner
+    // binary (e.g. .../pearguard) rather than the .AppImage on disk. The
+    // basename rarely matches a learned entry, but the mount-dir prefix
+    // does — derived from the AppImage filename by the runtime.
+    const mountPrefix = extractAppImageMountPrefix(exePath)
+    if (mountPrefix) {
+      const fromMount = this._appImagePrefixMap.get(mountPrefix)
+      if (fromMount) return fromMount
+    }
     const primary = this._aliasMap.get(basename)
     if (primary) return this._map.get(primary) || null
     return null
@@ -155,9 +198,19 @@ class ExeMap {
 
   // Add or override a mapping. Used by the parent-side policy editor when the
   // parent attaches an exe identifier to an existing app entry.
+  //
+  // .AppImage basenames also seed the mount-prefix lookup so a foreground
+  // tick against /tmp/.mount_<prefix><random>/<inner> resolves back to the
+  // same packageName. The prefix is predicted from the filename — see
+  // computeAppImageMountPrefix for the rule and its limitations.
   learn(exeBasename, packageName) {
     if (!exeBasename || !packageName) return
-    this._map.set(exeBasename.toLowerCase(), packageName)
+    const lower = exeBasename.toLowerCase()
+    this._map.set(lower, packageName)
+    if (/\.appimage$/.test(lower)) {
+      const prefix = computeAppImageMountPrefix(exeBasename)
+      if (prefix) this._appImagePrefixMap.set(prefix, packageName)
+    }
   }
 
   // Register a helper/sub-process basename as an alias of a primary basename.
@@ -207,4 +260,7 @@ module.exports = {
   UWP_HOST_BASENAMES,
   LINUX_DEFAULT_MAP,
   LINUX_ALIAS_MAP,
+  computeAppImageMountPrefix,
+  extractAppImageMountPrefix,
+  APP_IMAGE_MOUNT_PREFIX_LEN,
 }

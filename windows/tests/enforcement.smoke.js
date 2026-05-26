@@ -8,7 +8,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { evaluate, isSystemExempt, LINUX_SYSTEM_EXEMPT_BASENAMES } = require('../src/enforcement/block-evaluator')
-const { ExeMap, ALIAS_MAP, UWP_HOST_BASENAMES, LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP } = require('../src/enforcement/exe-map')
+const { ExeMap, ALIAS_MAP, UWP_HOST_BASENAMES, LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP, computeAppImageMountPrefix, extractAppImageMountPrefix } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
 const { OverridesStore } = require('../src/enforcement/overrides-store')
@@ -2494,6 +2494,65 @@ test('linux ExeMap resolves steamwebhelper via alias chain', () => {
 test('linux ExeMap returns null for unknown basename', () => {
   const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
   assert.strictEqual(map.resolve('/usr/bin/some-unmapped-tool'), null)
+})
+
+test('computeAppImageMountPrefix takes first 6 chars of full basename, lowercased', () => {
+  // Verified against real mounts on Fedora 44:
+  assert.strictEqual(computeAppImageMountPrefix('pearguard-v0.1.0.AppImage'), 'peargu')
+  assert.strictEqual(computeAppImageMountPrefix('pearcal.appimage'), 'pearca')
+  // Short basenames retain literal punctuation (the runtime copies bytes
+  // byte-for-byte, it doesn't strip extension):
+  assert.strictEqual(computeAppImageMountPrefix('keet.appimage'), 'keet.a')
+  // Case-mixed filenames lowercase for the lookup map but match a mounted
+  // case-preserved path (extractAppImageMountPrefix lowercases too).
+  assert.strictEqual(computeAppImageMountPrefix('PearCal.AppImage'), 'pearca')
+  // Edge cases:
+  assert.strictEqual(computeAppImageMountPrefix(''), null)
+  assert.strictEqual(computeAppImageMountPrefix(null), null)
+})
+
+test('extractAppImageMountPrefix recovers prefix from real runtime mount paths', () => {
+  // Verified shapes from the host (Fedora 44):
+  assert.strictEqual(extractAppImageMountPrefix('/tmp/.mount_peargu9A38YE/pearguard'), 'peargu')
+  assert.strictEqual(extractAppImageMountPrefix('/tmp/.mount_keet.aGFHXiA/Keet'), 'keet.a')
+  assert.strictEqual(extractAppImageMountPrefix('/tmp/.mount_pearcai2Vn5o/usr/bin/pearcal'), 'pearca')
+  // Case-preserved mount path → lowercased prefix
+  assert.strictEqual(extractAppImageMountPrefix('/tmp/.mount_PearCidkjbHp/x'), 'pearci')
+  // Non-mount path
+  assert.strictEqual(extractAppImageMountPrefix('/usr/bin/firefox'), null)
+  // Too short to be a real mount (no random suffix)
+  assert.strictEqual(extractAppImageMountPrefix('/tmp/.mount_abc/x'), null)
+})
+
+test('linux ExeMap.learn registers an AppImage mount prefix from the filename', () => {
+  const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  map.learn('pearguard-v0.1.0.AppImage', 'linux.pearguard')
+  // Direct filename lookup still works:
+  assert.strictEqual(map.resolve('/home/kid/Downloads/pearguard-v0.1.0.AppImage'), 'linux.pearguard')
+  // Mount-path lookup uses the predicted prefix:
+  assert.strictEqual(map.resolve('/tmp/.mount_peargu9A38YE/pearguard'), 'linux.pearguard')
+  // Different mount path for the same prefix still resolves.
+  assert.strictEqual(map.resolve('/tmp/.mount_pearguABCDEF/usr/bin/foo'), 'linux.pearguard')
+})
+
+test('linux ExeMap mount prefix lookup does not fire for non-AppImage learn', () => {
+  const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  map.learn('firefox-esr', 'linux.firefox_esr')
+  // /tmp/.mount_firefoXXXXXX would resolve only if firefox-esr were learned
+  // as an AppImage; bare basename .learn() must NOT poison the prefix map.
+  assert.strictEqual(map.resolve('/tmp/.mount_firefoXXXXXX/firefox-bin'), null)
+})
+
+test('linux ExeMap direct basename wins over mount prefix lookup', () => {
+  const map = new ExeMap(LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP)
+  // Learn two unrelated apps whose prefixes happen to overlap.
+  map.learn('pearguard-v0.1.0.AppImage', 'linux.pearguard')
+  map.learn('pearguard', 'linux.pearguard_native')
+  // Mount path -> only the AppImage prefix map applies (basename pearguard
+  // doesn't match the inner binary name, falls through to prefix).
+  // Wait — actually basename of /tmp/.mount_peargu../pearguard IS `pearguard`,
+  // which IS in the direct map. So direct map wins.
+  assert.strictEqual(map.resolve('/tmp/.mount_pearguXYZ123/pearguard'), 'linux.pearguard_native')
 })
 
 test('isSystemExempt allows linux desktop shells', () => {

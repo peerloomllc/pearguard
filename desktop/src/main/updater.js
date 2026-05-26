@@ -26,7 +26,7 @@ function stopWatchdog() {
 }
 
 function initAutoUpdater({ getMainWindow }) {
-  // Dev runs report the unbumped windows/package.json version (0.1.0) and
+  // Dev runs report the unbumped desktop/package.json version (0.1.0) and
   // would always claim an update is available. Only run in packaged builds.
   if (!app.isPackaged) return
 

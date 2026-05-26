@@ -1,5 +1,5 @@
 {
-  "name": "pearguard-windows",
+  "name": "pearguard-desktop",
   "version": "0.1.0",
   "description": "PearGuard desktop child client",
   "homepage": "https://github.com/peerloomllc/pearguard",
@@ -113,6 +113,10 @@
       "recommends": [
         "librsvg2-bin",
         "libfuse2 | libfuse2t64"
+      ],
+      "fpm": [
+        "--replaces", "pearguard-windows",
+        "--conflicts", "pearguard-windows"
       ]
     },
     "publish": [

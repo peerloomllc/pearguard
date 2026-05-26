@@ -5,7 +5,7 @@
 // throws "Failed to parse process ID" on every tick.
 //
 // We bridge the gap via a tiny GNOME Shell extension (see
-// windows/build/gnome-extension/) that exports a D-Bus method returning the
+// desktop/build/gnome-extension/) that exports a D-Bus method returning the
 // focused window's pid/title/wmClass. This module shells out to gdbus to read
 // it; gdbus ships with glib2-tools on every GNOME-running distro, so we don't
 // need a native dbus binding.
@@ -16,7 +16,7 @@
 const { execFile } = require('child_process')
 const fs = require('fs')
 
-// Bus identifiers — must agree with windows/build/gnome-extension/extension.js
+// Bus identifiers — must agree with desktop/build/gnome-extension/extension.js
 const BUS_NAME = 'com.peerloomllc.PearGuardFocus'
 const OBJECT_PATH = '/com/peerloomllc/PearGuardFocus'
 const METHOD = 'com.peerloomllc.PearGuardFocus.GetFocus'

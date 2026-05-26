@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Stand-alone Node smoke test for the Windows enforcement modules. Runs
 // without Electron, without active-win, without any P2P backend. Exits 0 on
-// pass, 1 on first failure. Run from windows/: `node tests/enforcement.smoke.js`.
+// pass, 1 on first failure. Run from desktop/: `node tests/enforcement.smoke.js`.
 
 const assert = require('assert')
 const fs = require('fs')
@@ -2636,6 +2636,90 @@ test('LINUX_SYSTEM_EXEMPT_BASENAMES never overlaps the windows set', () => {
   for (const name of LINUX_SYSTEM_EXEMPT_BASENAMES) {
     assert.strictEqual(SYSTEM_EXEMPT_BASENAMES.has(name), false, 'collision: ' + name)
     assert.strictEqual(name.endsWith('.exe'), false, 'linux entry ends with .exe: ' + name)
+  }
+})
+
+// --- userData migration (pearguard-windows -> pearguard-desktop) ---------
+
+const { migrateUserData, userDataDirFor } = require('../src/main/userdata-migrate')
+
+test('userDataDirFor picks platform-appropriate path', () => {
+  // Win32: %APPDATA%\<name>
+  assert.strictEqual(
+    userDataDirFor('pearguard-desktop', { platform: 'win32', env: { APPDATA: 'C:\\Users\\kid\\AppData\\Roaming' }, home: 'C:\\Users\\kid' }),
+    path.join('C:\\Users\\kid\\AppData\\Roaming', 'pearguard-desktop'),
+  )
+  // Linux without XDG_CONFIG_HOME → ~/.config
+  assert.strictEqual(
+    userDataDirFor('pearguard-desktop', { platform: 'linux', env: {}, home: '/home/kid' }),
+    '/home/kid/.config/pearguard-desktop',
+  )
+  // Linux with XDG_CONFIG_HOME set
+  assert.strictEqual(
+    userDataDirFor('pearguard-desktop', { platform: 'linux', env: { XDG_CONFIG_HOME: '/data/xdg' }, home: '/home/kid' }),
+    '/data/xdg/pearguard-desktop',
+  )
+})
+
+test('migrateUserData copies old dir to new and writes sentinel', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-migrate-'))
+  const oldDir = path.join(root, 'pearguard-windows')
+  const newDir = path.join(root, 'pearguard-desktop')
+  try {
+    // Set up a fake old install with a Hyperbee-shaped subtree.
+    fs.mkdirSync(path.join(oldDir, 'pearguard', 'core'), { recursive: true })
+    fs.writeFileSync(path.join(oldDir, 'pearguard', 'core', 'data'), 'hyperbee-bytes')
+    fs.writeFileSync(path.join(oldDir, 'exemap.json'), '{"basenames":{}}')
+    fs.writeFileSync(path.join(oldDir, 'overrides.json'), '{}')
+
+    const result = migrateUserData({ oldDir, newDir, logger: { log() {}, warn() {} } })
+    assert.strictEqual(result.migrated, true)
+    assert.ok(fs.existsSync(path.join(newDir, 'pearguard', 'core', 'data')))
+    assert.strictEqual(fs.readFileSync(path.join(newDir, 'pearguard', 'core', 'data'), 'utf8'), 'hyperbee-bytes')
+    assert.ok(fs.existsSync(path.join(newDir, 'exemap.json')))
+    assert.ok(fs.existsSync(path.join(newDir, '.migrated-from-pearguard-windows')))
+
+    // Second call must be a no-op (sentinel present).
+    const second = migrateUserData({ oldDir, newDir, logger: { log() {}, warn() {} } })
+    assert.strictEqual(second.migrated, false)
+    assert.strictEqual(second.reason, 'sentinel-present')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('migrateUserData skips when old dir is absent (fresh install)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-migrate-fresh-'))
+  try {
+    const r = migrateUserData({
+      oldDir: path.join(root, 'pearguard-windows'),  // does not exist
+      newDir: path.join(root, 'pearguard-desktop'),
+      logger: { log() {}, warn() {} },
+    })
+    assert.strictEqual(r.migrated, false)
+    assert.strictEqual(r.reason, 'no-old-dir')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('migrateUserData refuses to clobber a new dir that already has a Hyperbee store', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-migrate-collision-'))
+  const oldDir = path.join(root, 'pearguard-windows')
+  const newDir = path.join(root, 'pearguard-desktop')
+  try {
+    fs.mkdirSync(path.join(oldDir, 'pearguard', 'core'), { recursive: true })
+    fs.writeFileSync(path.join(oldDir, 'pearguard', 'core', 'data'), 'old')
+    // Simulate the kid already running the new build first.
+    fs.mkdirSync(path.join(newDir, 'pearguard', 'core'), { recursive: true })
+    fs.writeFileSync(path.join(newDir, 'pearguard', 'core', 'data'), 'new')
+    const r = migrateUserData({ oldDir, newDir, logger: { log() {}, warn() {} } })
+    assert.strictEqual(r.migrated, false)
+    assert.strictEqual(r.reason, 'new-dir-already-has-data')
+    // Make sure the new store wasn't overwritten.
+    assert.strictEqual(fs.readFileSync(path.join(newDir, 'pearguard', 'core', 'data'), 'utf8'), 'new')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
   }
 })
 

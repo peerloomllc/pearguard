@@ -14,7 +14,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, clipboard, dialog
 // way to see logs is to run `npm start > pearguard.log`. File lives under
 // app.getPath('userData') + '/logs/', matching the electron-log convention
 // and keeping logs next to the Hyperbee store (same backup/deletion boundary).
-// Windows: %APPDATA%\pearguard-windows\logs\pearguard.log
+// Windows: %APPDATA%\pearguard-desktop\logs\pearguard.log
 ;(function installFileLogger() {
   try {
     const dir = path.join(app.getPath('userData'), 'logs')
@@ -84,6 +84,7 @@ const { initAutoUpdater } = require('./updater')
 const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
 const { ensureExtensionInstalled: ensureGnomeExtension } = require('./gnome-extension-installer')
 const { GnomeExtensionWatchdog } = require('./gnome-extension-watchdog')
+const { migrateUserData } = require('./userdata-migrate')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's UsageFlushWorker cadence (15 min).
@@ -449,6 +450,22 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Migrate the userData root if we're running on top of an old install that
+  // used the legacy package name (`pearguard-windows`). Must happen BEFORE
+  // bare.js init (Hypercore opens locks) and before any other on-disk state
+  // file is touched. Idempotent: a sentinel inside the new dir guards
+  // repeated runs. Safe on fresh installs (no-old-dir branch).
+  try {
+    const result = migrateUserData()
+    if (result.migrated) {
+      console.log('[main] userData migrated from pearguard-windows ->', result.files, 'entries copied')
+    } else if (result.reason !== 'sentinel-present' && result.reason !== 'no-old-dir') {
+      console.warn('[main] userData migration skipped:', result.reason, result.error || '')
+    }
+  } catch (e) {
+    console.warn('[main] userData migration threw:', e.message)
+  }
+
   // Autostart on user login. No user-facing toggle: this is a parental-control
   // app and the child shouldn't be able to disable it. Dev launches (app.isPackaged
   // === false) skip this so running `npm start` doesn't register the dev binary.

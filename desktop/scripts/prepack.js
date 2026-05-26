@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copies cross-directory dependencies from pearguard/src/ and pearguard/assets/
-// into windows/vendor/ so the Windows tree is self-contained for electron-builder.
+// into desktop/vendor/ so the Windows tree is self-contained for electron-builder.
 // Runs from postinstall (dev launch needs vendor/ populated) and from the build
 // script (so dist always has fresh copies).
 const fs = require('fs')

@@ -484,15 +484,49 @@ app.whenReady().then(() => {
       // foreground adapter. No-op on non-GNOME sessions (gnome-extensions
       // tool absent). First install requires a Shell restart to pick up.
       const gnomeExtensionSourceDir = path.join(process.resourcesPath, 'gnome-extension')
-      ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir }).then((r) => {
-        if (r.installed && r.enabled) {
-          if (r.requiresShellRestart) {
-            console.log('[main] gnome extension installed/updated; log out + log back in for Mutter to pick it up')
-          } else {
-            console.log('[main] gnome extension already installed and enabled')
-          }
-        } else if (r.reason && r.reason !== 'not-linux') {
+      ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir }).then(async (r) => {
+        if (r.reason === 'not-linux') return
+        if (!r.installed) {
           console.warn('[main] gnome extension install skipped:', r.reason)
+          return
+        }
+        if (r.enabled && !r.requiresShellRestart) {
+          console.log('[main] gnome extension already installed and enabled')
+          return
+        }
+        // Either we just copied a fresh set of files (Shell may not have
+        // loaded them yet) or `gnome-extensions enable` failed (same cause:
+        // Shell hasn't seen the new extension). In both cases, probe the
+        // extension's D-Bus interface to see whether Mutter actually has
+        // it live. If not, the kid is staring at a parental-control app
+        // that silently doesn't enforce until they log out + back in; show
+        // a desktop notification telling them so. GNOME 48 deprecated
+        // ReloadExtension, so this logout prompt is the only path on
+        // Wayland.
+        if (r.requiresShellRestart) {
+          console.log('[main] gnome extension installed/updated; verifying Mutter has loaded it')
+        } else if (!r.enabled) {
+          console.warn('[main] gnome extension enable failed; verifying Mutter has loaded it')
+        }
+        try {
+          const { callGdbus } = require('../enforcement/foreground-wayland')
+          // 3s settle: gnome-extensions enable can return before Shell
+          // has finished registering the bus name on a fresh install.
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+          const probe = await callGdbus({ timeoutMs: 2000 })
+          if (probe === null) {
+            new Notification({
+              title: 'PearGuard needs you to log out',
+              body: 'Log out and log back in to finish enabling app-blocking on this device.',
+              icon: NOTIFICATION_ICON_PATH,
+              urgency: 'critical',
+            }).show()
+            console.warn('[main] extension D-Bus unreachable; notified user to log out')
+          } else {
+            console.log('[main] extension responding via D-Bus (no logout needed)')
+          }
+        } catch (e) {
+          console.warn('[main] extension probe failed:', e.message)
         }
       }, (e) => console.warn('[main] gnome extension install failed:', e.message))
 

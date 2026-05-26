@@ -82,6 +82,7 @@ const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 const { TamperDetector } = require('./tamper-detector')
 const { initAutoUpdater } = require('./updater')
 const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
+const { ensureExtensionInstalled: ensureGnomeExtension } = require('./gnome-extension-installer')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's UsageFlushWorker cadence (15 min).
@@ -460,6 +461,21 @@ app.whenReady().then(() => {
       } catch (e) {
         console.warn('[main] linux autostart failed:', e.message)
       }
+      // Install/refresh the GNOME Shell extension that backs the Wayland
+      // foreground adapter. No-op on non-GNOME sessions (gnome-extensions
+      // tool absent). First install requires a Shell restart to pick up.
+      const sourceDir = path.join(process.resourcesPath, 'gnome-extension')
+      ensureGnomeExtension({ sourceDir }).then((r) => {
+        if (r.installed && r.enabled) {
+          if (r.requiresShellRestart) {
+            console.log('[main] gnome extension installed/updated; log out + log back in for Mutter to pick it up')
+          } else {
+            console.log('[main] gnome extension already installed and enabled')
+          }
+        } else if (r.reason && r.reason !== 'not-linux') {
+          console.warn('[main] gnome extension install skipped:', r.reason)
+        }
+      }, (e) => console.warn('[main] gnome extension install failed:', e.message))
     } else {
       app.setLoginItemSettings({ openAtLogin: true })
     }
@@ -486,7 +502,15 @@ app.whenReady().then(() => {
   // prebuild and so a missing module degrades to "no enforcement" rather than
   // crashing the child app.
   try {
-    const activeWin = require('active-win')
+    const baseActiveWin = require('active-win')
+    // On Wayland sessions, xprop (active-win's Linux backend) is blind to
+    // Wayland-native windows — GNOME Calculator, Files, Firefox-on-Wayland,
+    // and friends all return "Failed to parse process ID". We bridge via our
+    // GNOME Shell extension over D-Bus; the wrapper falls back to active-win
+    // for Xwayland-hosted apps (Steam, legacy X11 launchers) automatically.
+    const { isWaylandSession, makeWaylandActiveWin } = require('../enforcement/foreground-wayland')
+    const activeWin = isWaylandSession() ? makeWaylandActiveWin(baseActiveWin) : baseActiveWin
+    if (isWaylandSession()) console.log('[main] wayland session detected; using gnome-shell-extension foreground adapter')
     const sodium = require('sodium-native')
     const overridesStore = new OverridesStore({
       filePath: path.join(app.getPath('userData'), 'overrides.json'),

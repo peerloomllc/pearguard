@@ -88,7 +88,14 @@
       "desktop": {
         "Name": "PearGuard",
         "StartupWMClass": "PearGuard"
-      }
+      },
+      "extraResources": [
+        {
+          "from": "build/gnome-extension",
+          "to": "gnome-extension",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "deb": {
       "depends": [
@@ -104,7 +111,8 @@
         "libxcb-dri3-0"
       ],
       "recommends": [
-        "librsvg2-bin"
+        "librsvg2-bin",
+        "libfuse2 | libfuse2t64"
       ]
     },
     "publish": [

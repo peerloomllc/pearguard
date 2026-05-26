@@ -2583,6 +2583,53 @@ test('LINUX_SYSTEM_EXEMPT_BASENAMES never overlaps the windows set', () => {
   }
 })
 
+// --- Linux Wayland foreground adapter ------------------------------------
+
+const wayland = require('../src/enforcement/foreground-wayland')
+
+test('wayland isWaylandSession reads XDG_SESSION_TYPE', () => {
+  const savedType = process.env.XDG_SESSION_TYPE
+  const savedDisp = process.env.WAYLAND_DISPLAY
+  try {
+    process.env.XDG_SESSION_TYPE = 'wayland'
+    delete process.env.WAYLAND_DISPLAY
+    assert.strictEqual(wayland.isWaylandSession(), true)
+    process.env.XDG_SESSION_TYPE = 'x11'
+    assert.strictEqual(wayland.isWaylandSession(), false)
+    // WAYLAND_DISPLAY-only also flips on (SSH containers etc.)
+    delete process.env.XDG_SESSION_TYPE
+    process.env.WAYLAND_DISPLAY = 'wayland-0'
+    assert.strictEqual(wayland.isWaylandSession(), true)
+  } finally {
+    if (savedType === undefined) delete process.env.XDG_SESSION_TYPE
+    else process.env.XDG_SESSION_TYPE = savedType
+    if (savedDisp === undefined) delete process.env.WAYLAND_DISPLAY
+    else process.env.WAYLAND_DISPLAY = savedDisp
+  }
+})
+
+test('wayland makeWaylandActiveWin falls back to active-win when extension returns null', async () => {
+  // Inject a fake `active-win` to verify the fallback fires when our adapter
+  // can't reach the extension (no GNOME session on the test host).
+  let fallbackCalled = 0
+  const fallback = async () => { fallbackCalled++; return { platform: 'linux', title: 'fallback' } }
+  const fn = wayland.makeWaylandActiveWin(fallback)
+  const result = await fn()
+  // On a test host without our GNOME extension running, gdbus call fails →
+  // adapter returns null → fallback is invoked.
+  assert.strictEqual(fallbackCalled, 1)
+  assert.strictEqual(result && result.title, 'fallback')
+})
+
+test('wayland makeWaylandActiveWin returns null when fallback errors', async () => {
+  const fallback = async () => { throw new Error('xprop blew up') }
+  const fn = wayland.makeWaylandActiveWin(fallback)
+  const result = await fn()
+  // Adapter must not propagate the error; ForegroundMonitor's catch path
+  // already handles "active-win failed" by skipping the tick.
+  assert.strictEqual(result, null)
+})
+
 // --- Linux icon extractor -------------------------------------------------
 
 const linuxIcon = require('../src/enforcement/icon-extractor-linux')

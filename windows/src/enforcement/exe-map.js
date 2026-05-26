@@ -10,6 +10,13 @@
 // Use win32.basename so dev runs on Linux can still parse Windows paths
 // like 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'.
 const { win32: pathWin32 } = require('path')
+const fs = require('fs')
+const path = require('path')
+
+// Debounce filesystem writes so a burst of learn() calls during apps:sync
+// (which can register 40+ basenames in a tight loop) results in one write,
+// not one per row.
+const PERSIST_DEBOUNCE_MS = 500
 
 const DEFAULT_MAP = {
   // Browsers
@@ -157,16 +164,92 @@ function extractAppImageMountPrefix(exePath) {
 }
 
 class ExeMap {
-  constructor(initial = DEFAULT_MAP, initialAliases = ALIAS_MAP) {
+  // persistPath is optional. When supplied, learned mappings (anything that
+  // wasn't in the initial DEFAULT_MAP) are written to that JSON file on each
+  // learn() call (debounced) and reloaded on construction. This closes the
+  // first-tick race: without persistence, every restart starts with only
+  // PLATFORM_DEFAULT_MAP entries until apps:sync completes, and the very
+  // first foreground tick can evaluate against an empty exemap (allowing one
+  // launch of a blocked app to slip through). With persistence, the kid's
+  // app catalog survives reboots and is ready before bare even finishes init.
+  constructor(initial = DEFAULT_MAP, initialAliases = ALIAS_MAP, persistPath = null) {
     this._map = new Map()
     this._aliasMap = new Map()     // child basename -> primary basename
     this._uwpByTitle = new Map()  // normalized title -> { packageName, exeBasename }
     this._appImagePrefixMap = new Map()  // 6-char prefix -> packageName
+    this._persistPath = persistPath
+    this._saveTimer = null
     for (const [exe, pkg] of Object.entries(initial)) {
       this._map.set(exe.toLowerCase(), pkg)
     }
     for (const [child, primary] of Object.entries(initialAliases)) {
       this._aliasMap.set(child.toLowerCase(), primary.toLowerCase())
+    }
+    if (persistPath) this._loadPersisted()
+  }
+
+  _loadPersisted() {
+    try {
+      const raw = fs.readFileSync(this._persistPath, 'utf8')
+      const data = JSON.parse(raw)
+      // Persisted learned mappings overlay the platform defaults — that's the
+      // documented `learn()` contract (learn overwrites). If the persisted
+      // file contains a stale entry for a basename that now has a different
+      // canonical mapping, the next apps:sync overwrites it again. Safer to
+      // load everything than to invent dedup logic at load time.
+      if (data && typeof data.basenames === 'object') {
+        for (const [k, v] of Object.entries(data.basenames)) {
+          if (typeof k === 'string' && typeof v === 'string') this._map.set(k, v)
+        }
+      }
+      if (data && typeof data.appImagePrefixes === 'object') {
+        for (const [k, v] of Object.entries(data.appImagePrefixes)) {
+          if (typeof k === 'string' && typeof v === 'string') this._appImagePrefixMap.set(k, v)
+        }
+      }
+      if (data && typeof data.aliases === 'object') {
+        for (const [k, v] of Object.entries(data.aliases)) {
+          if (typeof k === 'string' && typeof v === 'string') this._aliasMap.set(k, v)
+        }
+      }
+      if (data && typeof data.uwpByTitle === 'object') {
+        for (const [k, v] of Object.entries(data.uwpByTitle)) {
+          if (typeof k === 'string' && v && typeof v.packageName === 'string') {
+            this._uwpByTitle.set(k, v)
+          }
+        }
+      }
+    } catch (e) {
+      // Missing/corrupt file is normal on first launch. Don't propagate.
+      if (e.code !== 'ENOENT') {
+        try { console.warn('[exe-map] persisted load failed:', e.message) } catch (_) {}
+      }
+    }
+  }
+
+  _schedulePersist() {
+    if (!this._persistPath) return
+    if (this._saveTimer) return
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null
+      this._flushPersist()
+    }, PERSIST_DEBOUNCE_MS)
+    if (typeof this._saveTimer.unref === 'function') this._saveTimer.unref()
+  }
+
+  _flushPersist() {
+    if (!this._persistPath) return
+    try {
+      const data = {
+        basenames: Object.fromEntries(this._map),
+        appImagePrefixes: Object.fromEntries(this._appImagePrefixMap),
+        aliases: Object.fromEntries(this._aliasMap),
+        uwpByTitle: Object.fromEntries(this._uwpByTitle),
+      }
+      fs.mkdirSync(path.dirname(this._persistPath), { recursive: true })
+      fs.writeFileSync(this._persistPath, JSON.stringify(data))
+    } catch (e) {
+      try { console.warn('[exe-map] persist write failed:', e.message) } catch (_) {}
     }
   }
 
@@ -211,6 +294,7 @@ class ExeMap {
       const prefix = computeAppImageMountPrefix(exeBasename)
       if (prefix) this._appImagePrefixMap.set(prefix, packageName)
     }
+    this._schedulePersist()
   }
 
   // Register a helper/sub-process basename as an alias of a primary basename.
@@ -220,6 +304,7 @@ class ExeMap {
   learnAlias(childExeBasename, primaryExeBasename) {
     if (!childExeBasename || !primaryExeBasename) return
     this._aliasMap.set(childExeBasename.toLowerCase(), primaryExeBasename.toLowerCase())
+    this._schedulePersist()
   }
 
   // Register a UWP app by its display title. Populated from apps:sync rows
@@ -232,6 +317,7 @@ class ExeMap {
     const n = normalizeTitle(title)
     if (!n) return
     this._uwpByTitle.set(n, { packageName, exeBasename })
+    this._schedulePersist()
   }
 
   // Resolve a foreground window title to a UWP packageName. Called from the

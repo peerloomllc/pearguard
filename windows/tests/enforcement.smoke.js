@@ -2524,6 +2524,121 @@ test('LINUX_SYSTEM_EXEMPT_BASENAMES never overlaps the windows set', () => {
   }
 })
 
+// --- Linux icon extractor -------------------------------------------------
+
+const linuxIcon = require('../src/enforcement/icon-extractor-linux')
+
+test('linux resolveIconPath returns null for nonexistent names', async () => {
+  if (process.platform !== 'linux') return
+  const p = await linuxIcon.resolveIconPath('totally-fake-icon-name-12345', { roots: ['/tmp/pg-icon-nonexistent'] })
+  assert.strictEqual(p, null)
+})
+
+test('linux resolveIconPath rejects non-PNG absolute paths', async () => {
+  if (process.platform !== 'linux') return
+  const p = await linuxIcon.resolveIconPath('/usr/share/icons/foo.svg')
+  assert.strictEqual(p, null)
+})
+
+test('linux resolveIconPath finds PNG in a synthetic hicolor tree', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-'))
+  try {
+    const dir = path.join(root, 'hicolor', '128x128', 'apps')
+    fs.mkdirSync(dir, { recursive: true })
+    const iconPath = path.join(dir, 'myapp.png')
+    // Minimal PNG: 8-byte signature only. Enough for our magic-byte check.
+    fs.writeFileSync(iconPath, Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    const found = await linuxIcon.resolveIconPath('myapp', { roots: [root], themes: ['hicolor'] })
+    assert.strictEqual(found, iconPath)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux resolveIconPath prefers 128 over 256 over 48', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-prio-'))
+  try {
+    for (const size of [48, 128, 256]) {
+      const dir = path.join(root, 'hicolor', `${size}x${size}`, 'apps')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'pri.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    }
+    const found = await linuxIcon.resolveIconPath('pri', { roots: [root], themes: ['hicolor'] })
+    assert.ok(found.includes('128x128'), 'expected 128x128 winner, got: ' + found)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux resolveIconPath falls back to 256 over 48 when no medium size exists', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-fb-'))
+  try {
+    for (const size of [48, 256]) {
+      const dir = path.join(root, 'hicolor', `${size}x${size}`, 'apps')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'firefox-shape.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    }
+    const found = await linuxIcon.resolveIconPath('firefox-shape', { roots: [root], themes: ['hicolor'] })
+    assert.ok(found.includes('256x256'), 'expected 256x256 fallback over 48, got: ' + found)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux extractLinuxIcons returns base64 for valid PNGs and skips misses', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-batch-'))
+  try {
+    const dir = path.join(root, 'hicolor', '128x128', 'apps')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'one.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    const map = await linuxIcon.extractLinuxIcons(['one', 'missing'], { roots: [root], themes: ['hicolor'] })
+    assert.strictEqual(map.size, 1)
+    assert.ok(map.has('one'))
+    assert.strictEqual(map.get('missing'), undefined)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux extractLinuxIcons skips files that lack the PNG magic', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-magic-'))
+  try {
+    const dir = path.join(root, 'hicolor', '128x128', 'apps')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'fake.png'), Buffer.from('GIF89a not a png'))
+    const map = await linuxIcon.extractLinuxIcons(['fake'], { roots: [root], themes: ['hicolor'] })
+    assert.strictEqual(map.size, 0)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux enumerator strips __iconKey from rows whether or not lookup hits', async () => {
+  if (process.platform !== 'linux') return
+  const desktopDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-enum-iconkey-'))
+  try {
+    fs.writeFileSync(path.join(desktopDir, 'myapp.desktop'), [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=MyApp',
+      'Exec=myapp',
+      'Icon=myapp',
+    ].join('\n'))
+    const rows = await linuxEnum.enumerateInstalledApps({ dirs: [desktopDir], logger: { log() {} } })
+    assert.strictEqual(rows.length, 1)
+    assert.strictEqual(rows[0].appName, 'MyApp')
+    // Internal field must not leak through apps:sync.
+    assert.strictEqual(rows[0].__iconKey, undefined)
+  } finally {
+    fs.rmSync(desktopDir, { recursive: true, force: true })
+  }
+})
+
 test('linux enumerateInstalledApps dedupes by appName preserving dir precedence', async () => {
   if (process.platform !== 'linux') return
   const dirA = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-enum-a-'))

@@ -12,6 +12,7 @@
 const fs = require('fs').promises
 const path = require('path')
 const os = require('os')
+const { extractLinuxIcons } = require('./icon-extractor-linux')
 
 // Categories map to the same fixed set the parent UI expects
 // (see src/ui/components/AppsTab.jsx and app-category.js for the Windows
@@ -282,18 +283,42 @@ async function enumerateInstalledApps({ dirs = defaultAppDirs(), logger = consol
       // First write wins, which honors the user/system precedence in `dirs`.
       if (byName.has(appName)) continue
       const packageName = 'linux.' + slugify(appName)
-      byName.set(appName, {
+      // iconKey is kept on the row so we can batch-resolve all icons at the
+      // end. Stripped before the row leaves the module — apps:sync receives
+      // either iconBase64 (resolved) or nothing.
+      const row = {
         packageName,
         appName,
         exeBasename,
         isLauncher: false,
         category: categorizeFromXdg(fields.Categories),
-      })
+      }
+      const iconKey = (fields.Icon || '').trim()
+      if (iconKey) row.__iconKey = iconKey
+      byName.set(appName, row)
     }
   }
   const rows = Array.from(byName.values())
+
+  // Batch-resolve every icon key into PNG base64 in parallel, then attach to
+  // rows and strip the temporary key. Mirrors the Windows enumerator's
+  // Win32/UWP icon merge step. Best-effort: an unresolved icon just leaves
+  // iconBase64 absent and the parent UI falls back to initials, same as the
+  // Windows behavior when a PE has no icon group.
+  const iconKeys = rows.map((r) => r.__iconKey).filter(Boolean)
+  const icons = await extractLinuxIcons(iconKeys)
+  let iconHits = 0
+  for (const row of rows) {
+    if (row.__iconKey) {
+      const b64 = icons.get(row.__iconKey)
+      if (b64) { row.iconBase64 = b64; iconHits++ }
+      delete row.__iconKey
+    }
+  }
+
   if (typeof logger.log === 'function') {
-    logger.log('[apps-enumerator-linux] scanned=%d kept=%d dropped=%d', scanned, rows.length, dropped)
+    logger.log('[apps-enumerator-linux] scanned=%d kept=%d dropped=%d icons=%d/%d',
+      scanned, rows.length, dropped, iconHits, rows.length)
   }
   return rows
 }

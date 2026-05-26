@@ -102,6 +102,9 @@
         "libdrm2",
         "libgbm1",
         "libxcb-dri3-0"
+      ],
+      "recommends": [
+        "librsvg2-bin"
       ]
     },
     "publish": [

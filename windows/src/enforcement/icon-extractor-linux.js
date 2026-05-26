@@ -14,8 +14,10 @@
 // chains, then /usr/share/pixmaps) but skip the full theme inheritance graph
 // since hicolor + the current theme cover virtually every desktop app.
 const fs = require('fs').promises
+const fsSync = require('fs')
 const path = require('path')
 const os = require('os')
+const { execFile } = require('child_process')
 
 // Size preference. We aim for ~128 so the parent dashboard has enough
 // resolution to render at common UI scales without a network round-trip per
@@ -60,33 +62,47 @@ function themesPriority() {
 }
 
 // Try to resolve a single icon name into an absolute file path. Returns null
-// if nothing matched. Caller decides whether to read the bytes.
+// if nothing matched. Caller decides whether to read the bytes (PNG) or
+// rasterize (SVG via extractLinuxIcons).
 async function resolveIconPath(iconKey, {
   roots = defaultIconRoots(),
   themes = themesPriority(),
   sizes = DEFAULT_SIZE_PRIORITY,
 } = {}) {
   if (typeof iconKey !== 'string' || !iconKey) return null
-  // Absolute path: trust and verify it exists.
+  // Absolute path: trust and verify it exists. SVGs are returned too —
+  // extractLinuxIcons knows how to rasterize them.
   if (path.isAbsolute(iconKey)) {
-    if (/\.png$/i.test(iconKey)) {
+    if (/\.(png|svg)$/i.test(iconKey)) {
       try { await fs.access(iconKey); return iconKey } catch (_) { return null }
     }
-    return null  // skip svg/xpm/other formats; pre-rendered PNG only
+    return null  // skip xpm/other formats
   }
   // Strip an extension if the .desktop included one. Spec says Icon= is a
-  // name; but a handful of distro entries do include .png.
+  // name; a handful of distro entries do include .png.
   const base = iconKey.replace(/\.(png|svg|xpm)$/i, '')
+  // Symbolic icons are monochrome line art meant for menu/toolbar use, not
+  // app launchers — skip the *-symbolic naming explicitly so we don't waste
+  // a slot in the result map with something that'd render as a flat blob.
+  if (/-symbolic$/.test(base)) return null
 
   // Theme-organized layout: <root>/<theme>/<size>x<size>/apps/<name>.png
-  // Some themes use scalable/apps/<name>.svg only — skipped because we
-  // can't rasterize without a dependency.
   for (const size of sizes) {
     for (const theme of themes) {
       for (const root of roots) {
         const p = path.join(root, theme, `${size}x${size}`, 'apps', `${base}.png`)
         try { await fs.access(p); return p } catch (_) {}
       }
+    }
+  }
+
+  // SVG fallback under scalable/apps/. Worth trying because the GNOME app
+  // family ships SVG-only on Debian and Adwaita. Rasterized later via
+  // rsvg-convert if the binary is on PATH.
+  for (const theme of themes) {
+    for (const root of roots) {
+      const p = path.join(root, theme, 'scalable', 'apps', `${base}.svg`)
+      try { await fs.access(p); return p } catch (_) {}
     }
   }
 
@@ -101,8 +117,47 @@ async function resolveIconPath(iconKey, {
   return null
 }
 
+// Detect rsvg-convert once per process so a missing binary doesn't slow down
+// every icon. Resolved lazily on first SVG.
+let _rsvgConvertChecked = false
+let _rsvgConvertPath = null
+function rsvgConvertPath() {
+  if (_rsvgConvertChecked) return _rsvgConvertPath
+  _rsvgConvertChecked = true
+  // Common install locations. /usr/bin covers Debian apt, Fedora dnf, and
+  // Arch pacman; /usr/local/bin covers manual installs.
+  for (const candidate of ['/usr/bin/rsvg-convert', '/usr/local/bin/rsvg-convert']) {
+    try { fsSync.accessSync(candidate, fsSync.constants.X_OK); _rsvgConvertPath = candidate; return _rsvgConvertPath } catch (_) {}
+  }
+  // Last resort: rely on PATH. execFile will fall back to ENOENT if absent.
+  _rsvgConvertPath = 'rsvg-convert'
+  return _rsvgConvertPath
+}
+
+// Rasterize an SVG file to a PNG buffer at the target width. Returns null
+// if rsvg-convert isn't installed or the conversion fails; callers treat
+// that the same as "no icon" and the parent UI falls back to initials.
+function rasterizeSvg(svgPath, { width = 128, timeoutMs = 4000 } = {}) {
+  return new Promise((resolve) => {
+    const bin = rsvgConvertPath()
+    const args = ['-w', String(width), '-f', 'png', svgPath]
+    const child = execFile(bin, args, { encoding: 'buffer', timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (err) { resolve(null); return }
+      // Sanity-check: should start with PNG magic. Guards against rsvg
+      // printing a warning to stdout instead of bytes.
+      if (!stdout || stdout.length < 8 || stdout[0] !== 0x89 || stdout[1] !== 0x50) {
+        resolve(null); return
+      }
+      resolve(stdout)
+    })
+    child.on('error', () => resolve(null))
+  })
+}
+
 // Batch resolver: take an iterable of icon keys, return Map<key, base64>.
 // Missing icons are absent from the map (caller checks .get() for null).
+// SVG hits are rasterized via rsvg-convert if available; if not, those
+// keys are silently dropped — equivalent to the pre-rsvg behavior.
 async function extractLinuxIcons(iconKeys, opts = {}) {
   const out = new Map()
   if (process.platform !== 'linux') return out
@@ -113,9 +168,16 @@ async function extractLinuxIcons(iconKeys, opts = {}) {
     try {
       const p = await resolveIconPath(key, opts)
       if (!p) return
-      const buf = await fs.readFile(p)
-      // Belt-and-suspenders: only emit base64 for actual PNGs. .access()
-      // already filtered by extension; this guards against a misnamed file.
+      let buf
+      if (/\.svg$/i.test(p)) {
+        buf = await rasterizeSvg(p, { width: opts.svgWidth })
+        if (!buf) return
+      } else {
+        buf = await fs.readFile(p)
+      }
+      // Belt-and-suspenders: only emit base64 for actual PNGs. rasterizeSvg
+      // already PNG-magic-checks; this guards a .png file that turned out
+      // to be misnamed.
       if (buf.length < 8 || buf[0] !== 0x89 || buf[1] !== 0x50) return
       out.set(key, buf.toString('base64'))
     } catch (_) { /* skip on read error */ }
@@ -126,6 +188,8 @@ async function extractLinuxIcons(iconKeys, opts = {}) {
 module.exports = {
   resolveIconPath,
   extractLinuxIcons,
+  rasterizeSvg,
+  rsvgConvertPath,
   defaultIconRoots,
   themesPriority,
   DEFAULT_SIZE_PRIORITY,

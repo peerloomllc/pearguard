@@ -2534,10 +2534,79 @@ test('linux resolveIconPath returns null for nonexistent names', async () => {
   assert.strictEqual(p, null)
 })
 
-test('linux resolveIconPath rejects non-PNG absolute paths', async () => {
+test('linux resolveIconPath rejects xpm/non-image absolute paths', async () => {
   if (process.platform !== 'linux') return
-  const p = await linuxIcon.resolveIconPath('/usr/share/icons/foo.svg')
+  const p = await linuxIcon.resolveIconPath('/usr/share/icons/foo.xpm')
   assert.strictEqual(p, null)
+})
+
+test('linux resolveIconPath returns SVG path under scalable/apps', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-svg-'))
+  try {
+    const dir = path.join(root, 'hicolor', 'scalable', 'apps')
+    fs.mkdirSync(dir, { recursive: true })
+    const svgPath = path.join(dir, 'svg-only-app.svg')
+    fs.writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="red"/></svg>')
+    const found = await linuxIcon.resolveIconPath('svg-only-app', { roots: [root], themes: ['hicolor'] })
+    assert.strictEqual(found, svgPath)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux resolveIconPath prefers PNG over SVG when both exist', async () => {
+  if (process.platform !== 'linux') return
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-mixed-'))
+  try {
+    const pngDir = path.join(root, 'hicolor', '128x128', 'apps')
+    const svgDir = path.join(root, 'hicolor', 'scalable', 'apps')
+    fs.mkdirSync(pngDir, { recursive: true })
+    fs.mkdirSync(svgDir, { recursive: true })
+    fs.writeFileSync(path.join(pngDir, 'mixed.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    fs.writeFileSync(path.join(svgDir, 'mixed.svg'), '<svg/>')
+    const found = await linuxIcon.resolveIconPath('mixed', { roots: [root], themes: ['hicolor'] })
+    assert.ok(/\.png$/.test(found), 'expected PNG winner, got: ' + found)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux resolveIconPath skips -symbolic icon names', async () => {
+  if (process.platform !== 'linux') return
+  // Even if a -symbolic PNG exists, we should skip it because symbolic
+  // icons render as monochrome line art that looks wrong as a launcher.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-symbolic-'))
+  try {
+    const dir = path.join(root, 'hicolor', '128x128', 'apps')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'foo-symbolic.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    const found = await linuxIcon.resolveIconPath('foo-symbolic', { roots: [root], themes: ['hicolor'] })
+    assert.strictEqual(found, null)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('linux extractLinuxIcons returns null entries when rsvg-convert is absent and only SVG resolves', async () => {
+  // This test ONLY runs when rsvg-convert is NOT installed; with rsvg, the
+  // assertion would flip. Skip rather than branch so the suite stays
+  // deterministic per host.
+  if (process.platform !== 'linux') return
+  let rsvgPresent = false
+  try { require('fs').accessSync('/usr/bin/rsvg-convert', require('fs').constants.X_OK); rsvgPresent = true } catch (_) {}
+  try { require('fs').accessSync('/usr/local/bin/rsvg-convert', require('fs').constants.X_OK); rsvgPresent = true } catch (_) {}
+  if (rsvgPresent) return  // separate test below covers the present case
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-icons-svg-none-'))
+  try {
+    const dir = path.join(root, 'hicolor', 'scalable', 'apps')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'svg-no-rsvg.svg'), '<svg/>')
+    const map = await linuxIcon.extractLinuxIcons(['svg-no-rsvg'], { roots: [root], themes: ['hicolor'] })
+    assert.strictEqual(map.size, 0)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('linux resolveIconPath finds PNG in a synthetic hicolor tree', async () => {

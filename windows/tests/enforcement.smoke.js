@@ -2639,6 +2639,51 @@ test('LINUX_SYSTEM_EXEMPT_BASENAMES never overlaps the windows set', () => {
   }
 })
 
+// --- Overlay dismiss-shortcut filter -------------------------------------
+
+const { isDismissShortcut, BLOCKED_GLOBAL_SHORTCUTS } = require('../src/main/overlay')
+
+test('isDismissShortcut blocks Alt+F4', () => {
+  assert.strictEqual(isDismissShortcut({ alt: true, key: 'F4' }), true)
+  assert.strictEqual(isDismissShortcut({ alt: true, key: 'f4' }), true)
+})
+
+test('isDismissShortcut blocks reload + close + devtools combos', () => {
+  assert.strictEqual(isDismissShortcut({ control: true, key: 'w' }), true)
+  assert.strictEqual(isDismissShortcut({ control: true, key: 'r' }), true)
+  assert.strictEqual(isDismissShortcut({ control: true, shift: true, key: 'r' }), true)
+  assert.strictEqual(isDismissShortcut({ control: true, shift: true, key: 'i' }), true)
+  assert.strictEqual(isDismissShortcut({ key: 'F11' }), true)
+  assert.strictEqual(isDismissShortcut({ key: 'F12' }), true)
+  // macOS Cmd works the same as Ctrl for close-style chords.
+  assert.strictEqual(isDismissShortcut({ meta: true, key: 'w' }), true)
+})
+
+test('isDismissShortcut does NOT block PIN digits or normal typing', () => {
+  for (const d of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+    assert.strictEqual(isDismissShortcut({ key: d }), false, 'PIN digit blocked: ' + d)
+  }
+  assert.strictEqual(isDismissShortcut({ key: 'Backspace' }), false)
+  assert.strictEqual(isDismissShortcut({ key: 'Enter' }), false)
+  assert.strictEqual(isDismissShortcut({ key: 'Tab' }), false)
+  assert.strictEqual(isDismissShortcut({ key: 'ArrowDown' }), false)
+  assert.strictEqual(isDismissShortcut({ shift: true, key: 'a' }), false)
+})
+
+test('isDismissShortcut handles missing or empty input', () => {
+  assert.strictEqual(isDismissShortcut(null), false)
+  assert.strictEqual(isDismissShortcut(undefined), false)
+  assert.strictEqual(isDismissShortcut({}), false)
+  assert.strictEqual(isDismissShortcut({ key: '' }), false)
+})
+
+test('BLOCKED_GLOBAL_SHORTCUTS includes Alt+F4 and the major reload/devtools chords', () => {
+  // Guard against accidental removal of the most important entry.
+  assert.ok(BLOCKED_GLOBAL_SHORTCUTS.includes('Alt+F4'), 'Alt+F4 missing from BLOCKED_GLOBAL_SHORTCUTS')
+  assert.ok(BLOCKED_GLOBAL_SHORTCUTS.includes('F11'))
+  assert.ok(BLOCKED_GLOBAL_SHORTCUTS.some((s) => /Control\+R|CommandOrControl\+R/.test(s)))
+})
+
 // --- GNOME extension watchdog --------------------------------------------
 
 const { GnomeExtensionWatchdog, extractState } = require('../src/main/gnome-extension-watchdog')

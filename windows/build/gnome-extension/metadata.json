@@ -1,0 +1,8 @@
+{
+  "uuid": "pearguard-focus@peerloomllc.com",
+  "name": "PearGuard Focus Reporter",
+  "description": "Exposes the currently-focused window's PID, title and WM class over the session D-Bus so PearGuard's parental-control enforcement can monitor app usage on Wayland sessions (where xprop is blind). Required when PearGuard is installed.",
+  "shell-version": ["45", "46", "47", "48"],
+  "url": "https://github.com/peerloomllc/pearguard",
+  "version": 1
+}

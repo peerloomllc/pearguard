@@ -1,6 +1,39 @@
 const path = require('path')
 const { EventEmitter } = require('events')
-const { BrowserWindow, ipcMain, screen } = require('electron')
+const { BrowserWindow, ipcMain, screen, globalShortcut } = require('electron')
+
+// Accelerators that would dismiss / inspect / minimize the overlay. We
+// disable them at two layers: a window-local before-input-event filter and
+// system-wide globalShortcut registrations active only while the overlay
+// is visible. Alt+F4 is the obvious one — on fullscreen BrowserWindows in
+// Electron 33, closable:false alone doesn't reliably veto WM_CLOSE, so
+// without these the kid can dismiss the block screen with one key combo.
+const BLOCKED_GLOBAL_SHORTCUTS = [
+  'Alt+F4',           // Win32 close-window accelerator
+  'CommandOrControl+W',  // Chromium close-tab; harmless but consistent
+  'CommandOrControl+R',  // Reload — must not refresh past the PIN gate
+  'CommandOrControl+Shift+R',
+  'F11',              // Toggle fullscreen — kid could un-fullscreen us
+  'F12',              // DevTools (already disabled in webPreferences, defense in depth)
+  'CommandOrControl+Shift+I',  // DevTools alternative binding
+]
+
+// True when the key chord would dismiss / inspect / minimize the overlay.
+// Keep narrow: PIN digits, Backspace, Enter, arrow keys etc. must NOT match
+// so the kid can still type the PIN. Module-level so tests can call it
+// without instantiating OverlayManager (which needs the Electron ipcMain).
+function isDismissShortcut(input) {
+  if (!input) return false
+  const key = (input.key || '').toLowerCase()
+  if (input.alt && key === 'f4') return true
+  if (input.control || input.meta) {
+    if (key === 'w' || key === 'r') return true
+    if (input.shift && key === 'r') return true
+    if (input.shift && key === 'i') return true
+  }
+  if (key === 'f11' || key === 'f12') return true
+  return false
+}
 
 // Manages the blocking-overlay BrowserWindow. The window is intentionally
 // disposable: show() creates it on demand, hide() destroys it. Holding state
@@ -82,9 +115,42 @@ class OverlayManager extends EventEmitter {
       event.preventDefault()
     })
 
+    // Defense in depth against the kid Alt+F4'ing or F11'ing out of the
+    // overlay. The before-input-event filter runs first and is window-local;
+    // globalShortcut is the system-wide fallback for when Chromium's
+    // accelerator path skips the renderer entirely (Win32 sends WM_CLOSE on
+    // Alt+F4 before keyboard input reaches the page). Only specific window-
+    // control combos are filtered — PIN digits still flow through normally.
+    this._win.webContents.on('before-input-event', (event, input) => {
+      if (isDismissShortcut(input)) event.preventDefault()
+    })
+    this._registerGlobalShortcuts()
+
     this._win.on('closed', () => {
+      this._unregisterGlobalShortcuts()
       this._win = null
     })
+  }
+
+  _registerGlobalShortcuts() {
+    for (const accel of BLOCKED_GLOBAL_SHORTCUTS) {
+      try {
+        // No-op callback; registration alone is enough to swallow the key
+        // chord at the OS level while the overlay is up.
+        globalShortcut.register(accel, () => {})
+      } catch (e) {
+        // Another app may already hold this shortcut. Not fatal — the
+        // before-input-event filter still catches keys that reach the
+        // renderer. Log so a debugger has a breadcrumb.
+        try { console.warn('[overlay] globalShortcut register failed for', accel, ':', e.message) } catch (_) {}
+      }
+    }
+  }
+
+  _unregisterGlobalShortcuts() {
+    for (const accel of BLOCKED_GLOBAL_SHORTCUTS) {
+      try { globalShortcut.unregister(accel) } catch (_) {}
+    }
   }
 
   hide() {
@@ -112,4 +178,4 @@ class OverlayManager extends EventEmitter {
   }
 }
 
-module.exports = { OverlayManager }
+module.exports = { OverlayManager, BLOCKED_GLOBAL_SHORTCUTS, isDismissShortcut }

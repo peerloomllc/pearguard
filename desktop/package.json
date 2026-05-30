@@ -1,6 +1,6 @@
 {
   "name": "pearguard-desktop",
-  "version": "0.1.0",
+  "version": "1.0.9",
   "description": "PearGuard desktop child client",
   "homepage": "https://github.com/peerloomllc/pearguard",
   "author": {
@@ -42,6 +42,7 @@
     "appId": "com.peerloomllc.pearguard",
     "productName": "PearGuard",
     "npmRebuild": false,
+    "afterPack": "build/afterPack.js",
     "directories": {
       "output": "dist"
     },
@@ -60,9 +61,18 @@
       "icon": "build/icon.ico",
       "artifactName": "pearguard-v${version}.${ext}",
       "extraResources": [
-        { "from": "build/watchdog.vbs", "to": "watchdog.vbs" },
-        { "from": "build/watchdog.ps1", "to": "watchdog.ps1" },
-        { "from": "vendor/nssm/nssm.exe", "to": "nssm.exe" }
+        {
+          "from": "build/watchdog.vbs",
+          "to": "watchdog.vbs"
+        },
+        {
+          "from": "build/watchdog.ps1",
+          "to": "watchdog.ps1"
+        },
+        {
+          "from": "vendor/nssm/nssm.exe",
+          "to": "nssm.exe"
+        }
       ]
     },
     "nsis": {
@@ -76,8 +86,18 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.png",
       "category": "Utility",
@@ -93,11 +113,14 @@
         {
           "from": "build/gnome-extension",
           "to": "gnome-extension",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
     "deb": {
+      "afterInstall": "build/deb-postinst.sh",
       "depends": [
         "libgtk-3-0",
         "libnotify4",
@@ -115,8 +138,10 @@
         "libfuse2 | libfuse2t64"
       ],
       "fpm": [
-        "--replaces", "pearguard-windows",
-        "--conflicts", "pearguard-windows"
+        "--replaces",
+        "pearguard-windows",
+        "--conflicts",
+        "pearguard-windows"
       ]
     },
     "publish": [

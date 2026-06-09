@@ -8,8 +8,10 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -22,6 +24,7 @@ import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.Gravity;
@@ -190,6 +193,23 @@ public class AppBlockerModule extends AccessibilityService {
     // In-memory override: packageName -> expiry time in ms
     private final HashMap<String, Long> overrides = new HashMap<>();
 
+    // --- Screen / lock state gating (#112 follow-up) ---
+    // The block overlay must never be drawn while the screen is off or the lock
+    // screen is up — otherwise it can get stuck over the keyguard with no way to
+    // dismiss it (e.g. a Bedtime schedule block firing while the screen sleeps,
+    // accepting a PIN but the overlay never clearing). KeyguardManager alone is
+    // unreliable: it reports false on non-secure locks and during the delay
+    // before the keyguard engages after sleep, and nothing re-checks it when the
+    // screen turns off. We additionally track screen-interactive state via a
+    // receiver and tear the overlay down immediately on SCREEN_OFF.
+    private volatile boolean screenInteractive = true;
+    // Set on SCREEN_OFF, cleared on USER_PRESENT (secure unlock) or on SCREEN_ON
+    // when no keyguard is present (non-secure devices, which never fire
+    // USER_PRESENT). While true the overlay is suppressed so it cannot flash
+    // over the lock screen before the user unlocks.
+    private volatile boolean awaitingUserPresent = false;
+    private BroadcastReceiver screenStateReceiver;
+
     // Packages that have an in-flight time request — used to change button label in overlay.
     // Cleared via clearPendingRequest() when a parent decision arrives via setPolicy().
     private static final Set<String> pendingRequestPackages = new HashSet<>();
@@ -339,6 +359,7 @@ public class AppBlockerModule extends AccessibilityService {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         lazySodium = new LazySodiumAndroid(new SodiumAndroid());
 
+        registerScreenStateReceiver();
         createBypassNotificationChannel();
 
         // Start the enforcement polling service. BootReceiverModule handles post-reboot
@@ -357,7 +378,51 @@ public class AppBlockerModule extends AccessibilityService {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (screenStateReceiver != null) {
+            try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
+            screenStateReceiver = null;
+        }
         if (sInstance == this) sInstance = null;
+    }
+
+    /**
+     * Registers a receiver for screen-power and unlock transitions. SCREEN_ON/OFF
+     * cannot be declared in the manifest (Android implicit-broadcast limits), so
+     * they must be registered at runtime while the service is alive. On SCREEN_OFF
+     * we tear the overlay down immediately so it can never persist into sleep or
+     * over the lock screen (#112).
+     */
+    private void registerScreenStateReceiver() {
+        screenStateReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (action == null) return;
+                switch (action) {
+                    case Intent.ACTION_SCREEN_OFF:
+                        screenInteractive = false;
+                        awaitingUserPresent = true;
+                        new Handler(Looper.getMainLooper()).post(() -> dismissOverlay());
+                        break;
+                    case Intent.ACTION_SCREEN_ON:
+                        screenInteractive = true;
+                        // Non-secure devices wake straight past the keyguard and
+                        // never fire USER_PRESENT — clear the gate so enforcement
+                        // resumes. Secure devices keep waiting for USER_PRESENT.
+                        if (!isKeyguardLocked()) awaitingUserPresent = false;
+                        break;
+                    case Intent.ACTION_USER_PRESENT:
+                        screenInteractive = true;
+                        awaitingUserPresent = false;
+                        break;
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        registerReceiver(screenStateReceiver, filter);
     }
 
     @Override
@@ -739,13 +804,34 @@ public class AppBlockerModule extends AccessibilityService {
         return "blocked";
     }
 
-    /**
-     * Returns true when the device is locked (keyguard active). Used to suppress the
-     * block overlay while the lock screen is showing (#112).
-     */
-    private boolean isDeviceLocked() {
+    /** Raw keyguard check — true when the lock screen is active. */
+    private boolean isKeyguardLocked() {
         KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         return km != null && km.isKeyguardLocked();
+    }
+
+    /** True when the screen is on (interactive). Defaults to true if unavailable. */
+    @SuppressWarnings("deprecation")
+    private boolean isScreenInteractive() {
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm == null) return true;
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
+                ? pm.isInteractive() : pm.isScreenOn();
+    }
+
+    /**
+     * Returns true when the block overlay must be suppressed: the screen is off,
+     * the keyguard is up, or we are still waiting for the user to unlock after
+     * sleep. Gating on all three (rather than the keyguard alone) prevents the
+     * overlay from getting stuck over the lock screen with no way to dismiss it,
+     * including the case where a schedule block fires while the screen is off and
+     * isKeyguardLocked() has not yet engaged (#112).
+     */
+    private boolean isDeviceLocked() {
+        return !screenInteractive
+                || !isScreenInteractive()
+                || isKeyguardLocked()
+                || awaitingUserPresent;
     }
 
     private void showOverlay(String packageName, String reason) {

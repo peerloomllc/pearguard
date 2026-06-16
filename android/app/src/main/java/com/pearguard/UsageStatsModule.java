@@ -115,6 +115,19 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Role-agnostic battery-optimization status for the parent dashboard banner.
+     * Returns whitelisted (Doze-exempt) and whether the user has been asked before.
+     */
+    @ReactMethod
+    public void checkBatteryOptimization(Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+        WritableMap result = Arguments.createMap();
+        result.putBoolean("whitelisted", isIgnoringBatteryOptimizations());
+        result.putBoolean("asked", prefs.getLong("battery_opt_asked_at", 0) > 0);
+        promise.resolve(result);
+    }
+
+    /**
      * Returns whether both child-required permissions are granted, plus the last
      * EnforcementService heartbeat timestamp for force-stop detection and any
      * persisted bypass event for background-bypass detection.

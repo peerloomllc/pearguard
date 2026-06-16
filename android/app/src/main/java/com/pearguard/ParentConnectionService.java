@@ -44,6 +44,9 @@ public class ParentConnectionService extends Service {
     private static final long   HEARTBEAT_STALE_MS     = 3 * 60_000; // 3 min (3 missed heartbeats)
     private static final long   NOTIFY_COOLDOWN_MS     = 30 * 60_000; // 30 min between notifications per child
 
+    private static final long WAKE_THROTTLE_MS = 2 * 60_000; // min gap between RN wake attempts
+    private static long lastWakeAt = 0; // static: survives service teardown/restart
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int loopTick = 0; // counts 30s ticks; heartbeat check runs every 2nd tick (60 s)
     private long serviceStartedAt = 0;
@@ -64,26 +67,40 @@ public class ParentConnectionService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // Cold-started by BootReceiverModule after a reboot: the RN/Bare process
-        // is not running, so this service can show its notification but cannot
-        // actually reconnect Hyperswarm (emitReconnectNeeded bails when there is
-        // no active React instance). Wake the RN host so index.tsx restarts the
-        // worklet; MainActivity backgrounds itself shortly after (parent_boot_wake).
-        boolean fromBoot = intent != null && "boot".equals(intent.getStringExtra("source"));
-        if (fromBoot) {
-            ReactContext ctx = PearGuardReactHost.get();
-            if (ctx == null || !ctx.hasActiveReactInstance()) {
-                try {
-                    Intent wake = new Intent(this, MainActivity.class);
-                    wake.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                            | Intent.FLAG_ACTIVITY_NO_ANIMATION);
-                    wake.putExtra("parent_boot_wake", true);
-                    startActivity(wake);
-                } catch (Exception ignored) {
-                }
-            }
+        // The RN/Bare process may not be running when this service starts:
+        //   - cold-started by BootReceiverModule after a reboot ("source"=="boot")
+        //   - restarted by the OS via START_STICKY after a low-memory / battery-saver
+        //     kill (intent is null)
+        // In both cases the service can show its notification but cannot actually
+        // reconnect Hyperswarm — emitReconnectNeeded() bails when there is no active
+        // React instance. Wake the RN host so index.tsx restarts the worklet;
+        // MainActivity backgrounds itself shortly after (parent_boot_wake).
+        // When RN itself called startParentService() the instance is already active,
+        // so this is a no-op on the normal foregrounded path.
+        ReactContext ctx = PearGuardReactHost.get();
+        if (ctx == null || !ctx.hasActiveReactInstance()) {
+            maybeWakeReactHost();
         }
         return START_STICKY;
+    }
+
+    /**
+     * Launches MainActivity to bring the RN bridge (and Bare worklet) back up.
+     * Throttled so a flapping service / repeated OS restarts cannot spin the
+     * activity. MainActivity moves itself to the background ~10s after waking.
+     */
+    private void maybeWakeReactHost() {
+        long now = System.currentTimeMillis();
+        if (now - lastWakeAt < WAKE_THROTTLE_MS) return;
+        lastWakeAt = now;
+        try {
+            Intent wake = new Intent(this, MainActivity.class);
+            wake.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            wake.putExtra("parent_boot_wake", true);
+            startActivity(wake);
+        } catch (Exception ignored) {
+        }
     }
 
     @Override

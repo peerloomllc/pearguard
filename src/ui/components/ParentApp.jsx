@@ -3,6 +3,7 @@ import Dashboard from './Dashboard.jsx';
 import Settings from './Settings.jsx';
 import AboutTab from './AboutTab.jsx';
 import TabBar from './TabBar.jsx';
+import BatteryBanner from './BatteryBanner.jsx';
 import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
 import Icon from '../icons.js';
@@ -323,6 +324,7 @@ function ParentAppInner() {
       backgroundColor: colors.surface.base,
       ...typography.body,
     }}>
+      <BatteryBanner />
       {banner && (
         <div style={{
           backgroundColor: `${colors.success}22`,

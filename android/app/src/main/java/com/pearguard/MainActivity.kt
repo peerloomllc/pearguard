@@ -30,10 +30,12 @@ class MainActivity : ReactActivity() {
 
         super.onCreate(null)
 
-        // WorkManager wake-up: move to background quickly so the RN bridge
-        // has time to initialize and flush queued usage reports, but the child
+        // Background wake-up (WorkManager usage flush, or ParentConnectionService
+        // resuming monitoring after a reboot): move to background quickly so the
+        // RN bridge has time to initialize and restart the worklet, but the user
         // sees minimal disruption (no animation via intent flag, short delay).
-        if (intent?.getBooleanExtra("usage_flush_wake", false) == true) {
+        if (intent?.getBooleanExtra("usage_flush_wake", false) == true ||
+            intent?.getBooleanExtra("parent_boot_wake", false) == true) {
             android.os.Handler(mainLooper).postDelayed({
                 moveTaskToBack(true)
             }, 10_000)

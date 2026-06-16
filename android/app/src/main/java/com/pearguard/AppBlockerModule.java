@@ -362,6 +362,13 @@ public class AppBlockerModule extends AccessibilityService {
         registerScreenStateReceiver();
         createBypassNotificationChannel();
 
+        // Persist the role so BootReceiverModule restarts EnforcementService
+        // (and NOT the parent's ParentConnectionService) after a reboot.
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("pearguard_mode", "child")
+            .apply();
+
         // Start the enforcement polling service. BootReceiverModule handles post-reboot
         // startup, but the service must also start when the Accessibility Service connects
         // (i.e. on first enable and on any app restart that re-connects the service).

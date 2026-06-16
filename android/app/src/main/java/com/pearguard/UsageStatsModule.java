@@ -1421,6 +1421,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void startParentService() {
+        // Persist the role so BootReceiverModule restarts ParentConnectionService
+        // (and NOT the child's EnforcementService) after a reboot.
+        reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .putString("pearguard_mode", "parent")
+            .apply();
+
         Intent intent = new Intent(reactContext, ParentConnectionService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             reactContext.startForegroundService(intent);

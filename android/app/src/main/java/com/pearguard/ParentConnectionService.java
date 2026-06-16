@@ -64,6 +64,25 @@ public class ParentConnectionService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Cold-started by BootReceiverModule after a reboot: the RN/Bare process
+        // is not running, so this service can show its notification but cannot
+        // actually reconnect Hyperswarm (emitReconnectNeeded bails when there is
+        // no active React instance). Wake the RN host so index.tsx restarts the
+        // worklet; MainActivity backgrounds itself shortly after (parent_boot_wake).
+        boolean fromBoot = intent != null && "boot".equals(intent.getStringExtra("source"));
+        if (fromBoot) {
+            ReactContext ctx = PearGuardReactHost.get();
+            if (ctx == null || !ctx.hasActiveReactInstance()) {
+                try {
+                    Intent wake = new Intent(this, MainActivity.class);
+                    wake.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+                    wake.putExtra("parent_boot_wake", true);
+                    startActivity(wake);
+                } catch (Exception ignored) {
+                }
+            }
+        }
         return START_STICKY;
     }
 

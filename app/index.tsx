@@ -310,6 +310,52 @@ export default function Root () {
         return
       }
 
+      // Battery-optimization status for the parent dashboard banner. iOS has no
+      // Doze whitelist, so report whitelisted=true and let the banner stay hidden.
+      if (msg.method === 'battery:status') {
+        if (isAndroid && NativeModules.UsageStatsModule?.checkBatteryOptimization) {
+          NativeModules.UsageStatsModule.checkBatteryOptimization()
+            .then((s: { whitelisted: boolean; asked: boolean }) => {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msg.id + ', ' + JSON.stringify(s) + ');true;'
+              )
+            })
+            .catch(() => {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ whitelisted: true, asked: false }) + ');true;'
+              )
+            })
+        } else {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ whitelisted: true, asked: false }) + ');true;'
+          )
+        }
+        return
+      }
+
+      // Fire the system battery-optimization exemption prompt (Android only).
+      if (msg.method === 'battery:request') {
+        if (isAndroid && NativeModules.UsageStatsModule?.requestIgnoreBatteryOptimizations) {
+          NativeModules.UsageStatsModule?.markBatteryOptAsked?.()
+          NativeModules.UsageStatsModule.requestIgnoreBatteryOptimizations()
+            .then((granted: boolean) => {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ granted: !!granted }) + ');true;'
+              )
+            })
+            .catch(() => {
+              webViewRef.current?.injectJavaScript(
+                'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ granted: false }) + ');true;'
+              )
+            })
+        } else {
+          webViewRef.current?.injectJavaScript(
+            'window.__pearResponse(' + msg.id + ', ' + JSON.stringify({ granted: true }) + ');true;'
+          )
+        }
+        return
+      }
+
       if (msg.method === 'clipboard:copy') {
         const { Clipboard: RNClipboard } = require('react-native')
         RNClipboard.setString(msg.args.text)

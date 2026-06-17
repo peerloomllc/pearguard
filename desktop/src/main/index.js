@@ -671,12 +671,29 @@ app.whenReady().then(() => {
       ...PLATFORM_SYSTEM_EXEMPT,
     ])
 
+    // markSeen() only covers our stable running binary (pearguard.exe /
+    // pearguard). Our update installer and updater binaries are version-stamped
+    // (pearguard-v<version>.exe, pearguard-v<version>.AppImage — the build's
+    // artifactName), so their basename changes every release and is never in the
+    // seen-set. When one briefly takes foreground during a self-update it would
+    // otherwise fire app-first-seen and relay app:installed for PearGuard itself,
+    // surfacing PearGuard in the parent's (and child's) approval list. Match the
+    // whole family by prefix so any version is suppressed. No third-party app is
+    // named "pearguard", so this can't over-suppress.
+    const SELF_EXE_RE = /^pearguard([-_. ]|$)/i
+
     // New-exe sightings on the desktop are the closest analogue to Android's
     // PACKAGE_ADDED broadcast: we can't observe installs directly, so we treat
     // "first time we ever see this exe in the foreground" as "newly installed"
     // and relay it to the parent with enough metadata to show a meaningful
     // Activity notification.
     enforcement.monitor.on('app-first-seen', async ({ exePath, exeBasename, title }) => {
+      // Never relay a sighting of PearGuard's own running app, update installer
+      // or updater binary (version-stamped, so markSeen can't pre-cover them).
+      if (exeBasename && SELF_EXE_RE.test(exeBasename)) {
+        console.log('[main] app:installed suppressed for PearGuard self/updater binary', { exeBasename })
+        return
+      }
       try {
         const [fileDescription, iconMap] = await Promise.all([
           readFileDescription(exePath),

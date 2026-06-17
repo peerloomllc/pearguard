@@ -282,37 +282,120 @@ public class AppBlockerModule extends AccessibilityService {
      */
     public static void checkAndShowOverlayIfNeeded() {
         AppBlockerModule inst = sInstance;
-        if (inst == null || inst.lastForegroundPackage == null) return;
-        // Use UsageStatsManager to get the real foreground app. This catches cases
-        // where lastForegroundPackage is stale - e.g. after the user enters recents
-        // (which sets lastForegroundPackage to the launcher) and then returns to a
-        // blocked app without a TYPE_WINDOW_STATE_CHANGED firing (#113).
-        String realFg = inst.queryForegroundPackage();
-        final String pkg = (realFg != null) ? realFg : inst.lastForegroundPackage;
+        if (inst == null) return;
+        inst.enforceCurrentForeground();
+    }
+
+    /**
+     * Re-evaluates the real foreground app and shows/dismisses the overlay accordingly.
+     * Called both from the EnforcementService 5s poll (#66) and from the fast re-check
+     * burst after a dismissal (recents-return bypass mitigation).
+     */
+    private void enforceCurrentForeground() {
+        if (lastForegroundPackage == null) return;
+        // Query the actual foreground app. This catches cases where lastForegroundPackage
+        // is stale - e.g. after the user enters recents (which sets lastForegroundPackage
+        // to the launcher) and then returns to a blocked app without a
+        // TYPE_WINDOW_STATE_CHANGED firing (#113).
+        String realFg = queryForegroundPackage();
+        final String pkg = (realFg != null) ? realFg : lastForegroundPackage;
         // Keep lastForegroundPackage in sync so onAccessibilityEvent doesn't
         // immediately dismiss the overlay we're about to show (#113).
-        if (realFg != null && !realFg.equals(inst.lastForegroundPackage)) {
-            inst.lastForegroundPackage = realFg;
+        if (realFg != null && !realFg.equals(lastForegroundPackage)) {
+            lastForegroundPackage = realFg;
         }
         new Handler(Looper.getMainLooper()).post(() -> {
             // Dismiss overlay while device is locked (#112).
-            if (inst.isDeviceLocked()) {
-                if (inst.overlayView != null || inst.overlayPending) inst.dismissOverlay();
+            if (isDeviceLocked()) {
+                if (overlayView != null || overlayPending) dismissOverlay();
                 return;
             }
-            if ((inst.overlayView != null || inst.overlayPending)
-                    && pkg.equals(inst.currentOverlayPackage)) {
+            if ((overlayView != null || overlayPending)
+                    && pkg.equals(currentOverlayPackage)) {
                 // Overlay is showing — re-check whether the block still applies.
                 // Handles policy changes (e.g. daily limit removed) while overlay is up.
-                String reason = inst.getBlockReason(pkg);
-                if (reason == null) inst.dismissOverlay();
+                String reason = getBlockReason(pkg);
+                if (reason == null) {
+                    dismissOverlay();
+                } else {
+                    // Blocked app is (still) the foreground — cancel any pending deferred
+                    // teardown from a recents transition so the overlay stays put.
+                    cancelDeferredDismiss();
+                }
                 return;
             }
             // Suppressed while an interaction dialog (e.g. extra-time picker) is showing.
-            if (System.currentTimeMillis() < inst.enforcementSuppressedUntil) return;
-            String reason = inst.getBlockReason(pkg);
-            if (reason != null) inst.showOverlay(pkg, reason);
+            if (System.currentTimeMillis() < enforcementSuppressedUntil) return;
+            String reason = getBlockReason(pkg);
+            if (reason != null) showOverlay(pkg, reason);
         });
+    }
+
+    // --- Fast re-check burst (recents-return bypass mitigation) ---
+    // After the overlay is dismissed because the foreground changed to home/recents/system
+    // UI, the child can swipe straight back into the blocked app. Android frequently does
+    // NOT fire a TYPE_WINDOW_STATE_CHANGED for that return, so onAccessibilityEvent never
+    // runs and the only safety net is the EnforcementService 5s poll — a multi-second window
+    // in which the blocked app is fully usable. Run a short high-frequency burst of
+    // foreground re-checks so the overlay snaps back within a few hundred ms instead.
+    private static final long RECHECK_BURST_INTERVAL_MS = 250;
+    private static final long RECHECK_BURST_DURATION_MS = 3000;
+    private final Handler burstHandler = new Handler(Looper.getMainLooper());
+    private long burstUntil = 0;
+    private boolean burstScheduled = false;
+
+    private final Runnable recheckBurst = new Runnable() {
+        @Override
+        public void run() {
+            enforceCurrentForeground();
+            if (System.currentTimeMillis() < burstUntil) {
+                burstHandler.postDelayed(this, RECHECK_BURST_INTERVAL_MS);
+            } else {
+                burstScheduled = false;
+            }
+        }
+    };
+
+    /** Starts (or extends) the fast re-check burst. Idempotent — won't stack runnables. */
+    private void startRecheckBurst() {
+        burstUntil = System.currentTimeMillis() + RECHECK_BURST_DURATION_MS;
+        if (burstScheduled) return;
+        burstScheduled = true;
+        burstHandler.postDelayed(recheckBurst, RECHECK_BURST_INTERVAL_MS);
+    }
+
+    // --- Deferred dismissal (overlay flash elimination) ---
+    // When the foreground moves to home/recents while a block is active, removing the
+    // overlay immediately and re-adding it on the swipe-back produces a visible flash.
+    // Instead, defer the teardown by DISMISS_DEFER_MS. If the blocked app returns to the
+    // foreground within that window (the fast swipe-and-back), the deferred removal is
+    // cancelled and the overlay is never taken down — no flash. If the child genuinely
+    // leaves, the deferred removal fires and the overlay comes down.
+    private static final long DISMISS_DEFER_MS = 450;
+    private boolean deferredDismissScheduled = false;
+
+    private final Runnable deferredDismiss = new Runnable() {
+        @Override
+        public void run() {
+            deferredDismissScheduled = false;
+            if (overlayView == null && !overlayPending) return;
+            // Keep the overlay if the blocked app is back in the foreground.
+            String realFg = queryForegroundPackage();
+            if (currentOverlayPackage != null && currentOverlayPackage.equals(realFg)) return;
+            dismissOverlay();
+        }
+    };
+
+    private void scheduleDeferredDismiss() {
+        if (deferredDismissScheduled) return;
+        deferredDismissScheduled = true;
+        burstHandler.postDelayed(deferredDismiss, DISMISS_DEFER_MS);
+    }
+
+    private void cancelDeferredDismiss() {
+        if (!deferredDismissScheduled) return;
+        deferredDismissScheduled = false;
+        burstHandler.removeCallbacks(deferredDismiss);
     }
 
     /**
@@ -482,7 +565,18 @@ public class AppBlockerModule extends AccessibilityService {
                     && !isCurrentHomeLauncher(packageName)) {
                 return;
             }
-            dismissOverlay();
+            boolean wasShowing = (overlayView != null || overlayPending);
+            if (wasShowing) {
+                // Defer the teardown instead of removing the overlay now. A fast swipe
+                // through recents and straight back into the blocked app cancels the
+                // deferred removal (see deferredDismiss), so the overlay is never taken
+                // down and there is no disappear/reappear flash. The burst catches the
+                // return when it fires no accessibility event of its own.
+                scheduleDeferredDismiss();
+                startRecheckBurst();
+            } else {
+                dismissOverlay();
+            }
         }
     }
 
@@ -849,8 +943,13 @@ public class AppBlockerModule extends AccessibilityService {
         // The blocked app fires a final TYPE_WINDOW_STATE_CHANGED as its activity destructs
         // (e.g. after back gesture or Send Request). Without this guard that event would
         // re-trigger the overlay over the home screen.
+        // Exception: if the blocked app is genuinely the real foreground again (child swiped
+        // back from recents), bypass the cooldown so the overlay snaps back instead of
+        // waiting it out. The destruction-event case is distinguished because the real
+        // foreground there is the launcher, not the blocked package.
         if (packageName.equals(recentlyDismissedPackage)
-                && System.currentTimeMillis() - dismissedAt < DISMISS_COOLDOWN_MS) {
+                && System.currentTimeMillis() - dismissedAt < DISMISS_COOLDOWN_MS
+                && !packageName.equals(queryForegroundPackage())) {
             return;
         }
 
@@ -987,6 +1086,7 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     private void dismissOverlay() {
+        cancelDeferredDismiss();
         overlayPending = false;
         if (pinDialogView != null) {
             try { windowManager.removeView(pinDialogView); } catch (Exception ignored) {}

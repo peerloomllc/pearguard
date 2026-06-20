@@ -11,10 +11,14 @@ beforeEach(() => {
   window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
 
-test('renders Loading... while waiting for identity:getMode', () => {
+test('renders setup placeholder (not Parent/Child) while waiting for identity:getMode', () => {
   window.callBare.mockReturnValue(new Promise(() => {})); // never resolves
   render(<App />);
-  expect(screen.getByText('Loading...')).toBeInTheDocument();
+  // Mode is still unresolved (null) so the setup placeholder is shown and
+  // neither the parent nor child app is mounted prematurely.
+  expect(screen.getByText(/waiting for setup/i)).toBeInTheDocument();
+  expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+  expect(screen.queryByText(/child mode/i)).not.toBeInTheDocument();
 });
 
 test('renders ParentApp when mode is parent', async () => {
@@ -38,14 +42,18 @@ test('renders setup screen when mode is null', async () => {
   window.callBare.mockResolvedValue({ mode: null });
   render(<App />);
   await waitFor(() => {
-    expect(screen.getByText(/welcome to pearguard/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for setup/i)).toBeInTheDocument();
   });
+  expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+  expect(screen.queryByText(/child mode/i)).not.toBeInTheDocument();
 });
 
 test('renders setup screen when callBare rejects', async () => {
   window.callBare.mockRejectedValue(new Error('not ready'));
   render(<App />);
   await waitFor(() => {
-    expect(screen.getByText(/welcome to pearguard/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for setup/i)).toBeInTheDocument();
   });
+  expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+  expect(screen.queryByText(/child mode/i)).not.toBeInTheDocument();
 });

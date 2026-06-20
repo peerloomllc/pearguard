@@ -15,29 +15,51 @@ const MOCK_POLICY = {
 };
 
 beforeEach(() => {
-  window.callBare = jest.fn().mockResolvedValue(MOCK_POLICY);
+  // Per-method mock so policy:get returns the policy while overrides:list /
+  // pref:get return shapes the component expects (avoids viewMode becoming the
+  // policy object, which would otherwise force the 'category' branch).
+  window.callBare = jest.fn((method) => {
+    if (method === 'policy:get') return Promise.resolve(MOCK_POLICY);
+    if (method === 'overrides:list') return Promise.resolve({ overrides: [] });
+    if (method === 'pref:get') return Promise.resolve(null);
+    return Promise.resolve(undefined);
+  });
   window.onBareEvent = jest.fn().mockReturnValue(() => {});
 });
+
+// Apps now render inside collapsible accordions that start collapsed. Expand
+// every accordion so the underlying app rows are present in the DOM.
+async function expandAllSections() {
+  await waitFor(() => {
+    expect(screen.getAllByRole('button', { expanded: false }).length).toBeGreaterThan(0);
+  });
+  // Re-query after each click since expanding can change the set of collapsed sections.
+  let guard = 0;
+  let collapsed = screen.queryAllByRole('button', { expanded: false });
+  while (collapsed.length > 0 && guard < 20) {
+    fireEvent.click(collapsed[0]);
+    collapsed = screen.queryAllByRole('button', { expanded: false });
+    guard += 1;
+  }
+}
 
 test('renders loading then app list', async () => {
   render(<AppsTab childPublicKey="pk1" />);
   expect(screen.getByText(/loading apps/i)).toBeInTheDocument();
-  await waitFor(() => {
-    expect(screen.getByText('com.google.android.youtube')).toBeInTheDocument();
-  });
+  await expandAllSections();
+  expect(screen.getByText('com.google.android.youtube')).toBeInTheDocument();
 });
 
 test('renders pending app with Approve and Deny buttons', async () => {
   render(<AppsTab childPublicKey="pk1" />);
-  await waitFor(() => {
-    expect(screen.getByLabelText('Approve com.shady.app')).toBeInTheDocument();
-    expect(screen.getByLabelText('Deny com.shady.app')).toBeInTheDocument();
-  });
+  await expandAllSections();
+  expect(screen.getByLabelText('Approve com.shady.app')).toBeInTheDocument();
+  expect(screen.getByLabelText('Deny com.shady.app')).toBeInTheDocument();
 });
 
 test('Approve button calls app:decide with decision approve', async () => {
   render(<AppsTab childPublicKey="pk1" />);
-  await waitFor(() => screen.getByLabelText('Approve com.shady.app'));
+  await expandAllSections();
   fireEvent.click(screen.getByLabelText('Approve com.shady.app'));
   expect(window.callBare).toHaveBeenCalledWith('app:decide', {
     childPublicKey: 'pk1',
@@ -48,7 +70,7 @@ test('Approve button calls app:decide with decision approve', async () => {
 
 test('Deny button calls app:decide with decision deny', async () => {
   render(<AppsTab childPublicKey="pk1" />);
-  await waitFor(() => screen.getByLabelText('Deny com.shady.app'));
+  await expandAllSections();
   fireEvent.click(screen.getByLabelText('Deny com.shady.app'));
   expect(window.callBare).toHaveBeenCalledWith('app:decide', {
     childPublicKey: 'pk1',
@@ -59,7 +81,7 @@ test('Deny button calls app:decide with decision deny', async () => {
 
 test('toggling allowed app to blocked calls policy:update', async () => {
   render(<AppsTab childPublicKey="pk1" />);
-  await waitFor(() => screen.getByLabelText('Toggle com.google.android.youtube'));
+  await expandAllSections();
   fireEvent.click(screen.getByLabelText('Toggle com.google.android.youtube'));
   await waitFor(() => {
     expect(window.callBare).toHaveBeenCalledWith(

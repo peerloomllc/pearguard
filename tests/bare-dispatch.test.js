@@ -368,7 +368,7 @@ describe('bare dispatch', () => {
     test('setting a PIN stores a non-empty pinHash in the policy', async () => {
       const stored = {}
       const mockDb = makeMockDb(stored)
-      const ctx = { db: mockDb, sodium }
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
       const dispatch = createDispatch(ctx)
 
       const result = await dispatch('pin:set', { pin: '5678' })
@@ -390,7 +390,7 @@ describe('bare dispatch', () => {
       const existingPolicy = { version: 1, childPublicKey: 'abc', overrideDurationSeconds: 300 }
       const stored = { policy: existingPolicy }
       const mockDb = makeMockDb(stored)
-      const ctx = { db: mockDb, sodium }
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
       const dispatch = createDispatch(ctx)
 
       await dispatch('pin:set', { pin: '5678' })
@@ -404,7 +404,7 @@ describe('bare dispatch', () => {
 
     test('missing pin throws', async () => {
       const mockDb = makeMockDb()
-      const ctx = { db: mockDb, sodium }
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
       const dispatch = createDispatch(ctx)
 
       await expect(dispatch('pin:set', {})).rejects.toThrow('invalid pin')
@@ -412,7 +412,7 @@ describe('bare dispatch', () => {
 
     test('non-string pin throws', async () => {
       const mockDb = makeMockDb()
-      const ctx = { db: mockDb, sodium }
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
       const dispatch = createDispatch(ctx)
 
       await expect(dispatch('pin:set', { pin: 1234 })).rejects.toThrow('invalid pin')
@@ -424,6 +424,13 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        // usage:flush sweeps resolved req: entries to piggyback on the report
+        createReadStream: jest.fn(({ gt, lt } = {}) => {
+          const entries = Object.entries(stored)
+            .filter(([k]) => (!gt || k > gt) && (!lt || k < lt))
+            .map(([k, v]) => ({ key: k, value: v }))
+          return (async function* () { for (const e of entries) yield e })()
+        }),
         _stored: stored,
       }
     }
@@ -447,7 +454,7 @@ describe('bare dispatch', () => {
       expect(typeof result.timestamp).toBe('number')
     })
 
-    test('persists report to db with key usage:{timestamp}', async () => {
+    test('persists report to db under the single usage:latest key', async () => {
       const pinLogEntry = { packageName: 'com.example.app', grantedAt: 1000, expiresAt: 2000 }
       const identity = { publicKey: 'abc123def456', secretKey: 'secret' }
       const stored = {
@@ -466,7 +473,7 @@ describe('bare dispatch', () => {
       expect(usagePuts).toHaveLength(1)
 
       const [key, value] = usagePuts[0]
-      expect(key).toBe('usage:' + result.timestamp)
+      expect(key).toBe('usage:latest')
       expect(value).toHaveProperty('type', 'usage:report')
       expect(value).toHaveProperty('timestamp', result.timestamp)
       expect(value).toHaveProperty('pinOverrides')
@@ -584,7 +591,7 @@ describe('bare dispatch', () => {
       const mockDb = makeMockDb(stored)
       const mockSend = jest.fn()
       const mockSendToParent = jest.fn().mockResolvedValue(undefined)
-      const ctx = { db: mockDb, send: mockSend, sendToParent: mockSendToParent }
+      const ctx = { db: mockDb, send: mockSend, sendToAllParents: mockSendToParent }
       const dispatch = createDispatch(ctx)
 
       await dispatch('usage:flush', { usage: [{ packageName: 'com.example.app', appName: 'Example', secondsToday: 60 }] })
@@ -613,7 +620,7 @@ describe('bare dispatch', () => {
       const usagePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('usage:'))
       const [, report] = usagePuts[0]
       expect(report.apps).toHaveLength(2)
-      expect(report.apps[0]).toEqual({ packageName: 'com.example.chrome', displayName: 'Chrome', todaySeconds: 3600, weekSeconds: 0 })
+      expect(report.apps[0]).toEqual({ packageName: 'com.example.chrome', displayName: 'Chrome', todaySeconds: 3600, weekSeconds: 0, dailyLimitSeconds: null })
     })
 
     test('returns flushed:false without storing when apps is empty', async () => {
@@ -787,7 +794,7 @@ describe('bare dispatch', () => {
       const mockDb = makeMockDb()
       const mockSend = jest.fn()
       const mockSendToParent = jest.fn().mockResolvedValue(undefined)
-      const ctx = { db: mockDb, send: mockSend, sendToParent: mockSendToParent }
+      const ctx = { db: mockDb, send: mockSend, sendToAllParents: mockSendToParent }
       const dispatch = createDispatch(ctx)
 
       await dispatch('time:request', { packageName: 'com.example.tiktok' })
@@ -890,14 +897,17 @@ describe('bare dispatch', () => {
       expect(mockSend).not.toHaveBeenCalled()
     })
 
-    test('skips db.put if requestId not found in db but still sends native and events', async () => {
+    test('skips request-record put if requestId not found, but still stores override grant and sends native/events', async () => {
       const mockDb = makeMockDb({})  // empty db — request not found
       const mockSend = jest.fn()
 
       await handleTimeExtend({ requestId: 'req:999:com.example.app', packageName: 'com.example.app', extraSeconds: 300 }, mockDb, mockSend)
 
-      // No put since request not found
-      expect(mockDb.put).not.toHaveBeenCalled()
+      // Request record is NOT updated (it was not found)...
+      expect(mockDb.put).not.toHaveBeenCalledWith('req:999:com.example.app', expect.anything())
+      // ...but the override grant is still persisted so overrides:list can find it (#61)
+      const overridePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('override:'))
+      expect(overridePuts).toHaveLength(1)
 
       // Native and events still fire
       const nativeCalls = mockSend.mock.calls.filter(([m]) => m.method === 'native:grantOverride')
@@ -1062,7 +1072,7 @@ describe('bare dispatch', () => {
       const mockDb = makeMockDb({})
       const mockSend = jest.fn()
       const mockSendToParent = jest.fn().mockResolvedValue(undefined)
-      const ctx = { db: mockDb, send: mockSend, sendToParent: mockSendToParent }
+      const ctx = { db: mockDb, send: mockSend, sendToAllParents: mockSendToParent }
       const dispatch = createDispatch(ctx)
 
       await dispatch('app:installed', { packageName: 'com.example.newapp', appName: 'New App' })
@@ -1078,7 +1088,7 @@ describe('bare dispatch', () => {
       const mockDb = makeMockDb({ policy: existingPolicy })
       const mockSend = jest.fn()
       const mockSendToParent = jest.fn()
-      const ctx = { db: mockDb, send: mockSend, sendToParent: mockSendToParent }
+      const ctx = { db: mockDb, send: mockSend, sendToAllParents: mockSendToParent }
       const dispatch = createDispatch(ctx)
 
       await dispatch('app:installed', { packageName: 'com.example.known' })
@@ -1255,7 +1265,7 @@ describe('bare dispatch', () => {
       const mockDb = makeMockDb({ identity })
       const mockSend = jest.fn()
       const mockSendToParent = jest.fn().mockResolvedValue(undefined)
-      const ctx = { db: mockDb, send: mockSend, sendToParent: mockSendToParent }
+      const ctx = { db: mockDb, send: mockSend, sendToAllParents: mockSendToParent }
       const dispatch = createDispatch(ctx)
 
       await dispatch('heartbeat:send', {})
@@ -1417,7 +1427,7 @@ describe('bare dispatch', () => {
 
     test('calls appendPinUseLog with packageName, grantedAt, expiresAt; returns { logged: true }', async () => {
       const mockDb = makeMockDb({})
-      const ctx = { db: mockDb }
+      const ctx = { db: mockDb, send: jest.fn() }
       const dispatch = createDispatch(ctx)
 
       const timestamp = Date.now()
@@ -1438,7 +1448,7 @@ describe('bare dispatch', () => {
 
     test('pin:used with missing args: still returns { logged: true } (graceful)', async () => {
       const mockDb = makeMockDb({})
-      const ctx = { db: mockDb }
+      const ctx = { db: mockDb, send: jest.fn() }
       const dispatch = createDispatch(ctx)
 
       // timestamp and durationSeconds are undefined — expiresAt will be NaN, but should not throw
@@ -1550,7 +1560,7 @@ describe('bare dispatch', () => {
       const peerRecord = { publicKey: 'child1', noiseKey: 'noise1', displayName: 'Test', pairedAt: 1 }
       const mockDb = makeMockDb({ 'policy:child1': existing, 'peers:child1': peerRecord })
       const mockSendToPeer = jest.fn()
-      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer, send: jest.fn() })
 
       const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'approve' })
 
@@ -1572,7 +1582,7 @@ describe('bare dispatch', () => {
       const existing = { apps: { 'com.example.app': { status: 'pending' } }, childPublicKey: 'child1', version: 1 }
       const mockDb = makeMockDb({ 'policy:child1': existing })
       const mockSendToPeer = jest.fn()
-      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer, send: jest.fn() })
 
       const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'deny' })
 
@@ -1586,7 +1596,7 @@ describe('bare dispatch', () => {
       const existing = { apps: {}, childPublicKey: 'child1', version: 0 }
       const mockDb = makeMockDb({ 'policy:child1': existing })
       const mockSendToPeer = jest.fn().mockImplementation(() => { throw new Error('peer not connected') })
-      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer, send: jest.fn() })
 
       const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'approve' })
 
@@ -1598,7 +1608,7 @@ describe('bare dispatch', () => {
     test('no existing policy: creates new one with apps object', async () => {
       const mockDb = makeMockDb({})
       const mockSendToPeer = jest.fn()
-      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer, send: jest.fn() })
 
       const result = await dispatch('app:decide', { childPublicKey: 'child1', packageName: 'com.example.app', decision: 'approve' })
 
@@ -1624,7 +1634,7 @@ describe('bare dispatch', () => {
       const peerRecord = { publicKey: 'child1', noiseKey: 'noise1', displayName: 'Test', pairedAt: 1 }
       const mockDb = makeMockDb({ 'peers:child1': peerRecord })
       const mockSendToPeer = jest.fn()
-      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer, send: jest.fn() })
 
       const result = await dispatch('policy:update', { childPublicKey: 'child1', policy })
 
@@ -1646,7 +1656,7 @@ describe('bare dispatch', () => {
       const policy = { apps: {}, childPublicKey: 'child1', version: 1 }
       const mockDb = makeMockDb({})
       const mockSendToPeer = jest.fn().mockImplementation(() => { throw new Error('peer not connected') })
-      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer })
+      const dispatch = createDispatch({ db: mockDb, sendToPeer: mockSendToPeer, send: jest.fn() })
 
       const result = await dispatch('policy:update', { childPublicKey: 'child1', policy })
 
@@ -1942,29 +1952,36 @@ describe('bare dispatch', () => {
           })()
         }
       }
-      return { db, stored, identity, sendToPeer: jest.fn(), peers: new Map() }
+      return { db, stored, identity, sendToPeer: jest.fn(), send: jest.fn(), peers: new Map() }
     }
 
-    test('rules:export then rules:import:preview produces diff', async () => {
+    test('rules:export then rules:import:preview produces an installed-scoped diff', async () => {
       const ctx = makeCtx()
       const childA = 'aa'.repeat(32)
       const childB = 'bb'.repeat(32)
       ctx.stored['policy:' + childA] = {
         childPublicKey: childA, version: 1,
-        apps: { 'com.x': { status: 'blocked', appName: 'X', addedAt: 1 } },
+        apps: {
+          'com.x': { status: 'blocked', appName: 'X', addedAt: 1 }, // installed on B, status differs -> changed
+          'com.z': { status: 'blocked', appName: 'Z', addedAt: 1 }, // not installed on B -> skipped
+        },
         schedules: [], pinHash: 'A', locked: false, lockMessage: ''
       }
       ctx.stored['policy:' + childB] = {
         childPublicKey: childB, version: 1,
-        apps: { 'com.y': { status: 'allowed', appName: 'Y', addedAt: 1 } },
+        apps: { 'com.x': { status: 'allowed', appName: 'X', addedAt: 1 } }, // com.x installed on B
         schedules: [], pinHash: 'B', locked: false, lockMessage: ''
       }
       const dispatch = createDispatch(ctx)
       const { json } = await dispatch('rules:export', { childPubKey: childA })
       const preview = await dispatch('rules:import:preview', { jsonString: json, targetChildPubKey: childB })
       expect(preview.sourceChildPubKey).toBe(childA)
-      expect(preview.appsAdded).toEqual([{ packageName: 'com.x', appName: 'X' }])
-      expect(preview.appsRemoved).toEqual([{ packageName: 'com.y', appName: 'Y' }])
+      // Import is intersect-scoped to apps installed on the target and never removes apps:
+      // com.x is installed on B with a different status -> changed; com.z isn't installed on B -> skipped.
+      expect(preview.appsChanged).toEqual([{ packageName: 'com.x', appName: 'X' }])
+      expect(preview.appsSkipped).toEqual([{ packageName: 'com.z', appName: 'Z' }])
+      expect(preview.appsAdded).toEqual([])
+      expect(preview.appsRemoved).toEqual([])
     })
 
     test('rules:import:apply preserves target pinHash and locked', async () => {
@@ -1979,7 +1996,8 @@ describe('bare dispatch', () => {
       }
       ctx.stored['policy:' + childB] = {
         childPublicKey: childB, version: 5,
-        apps: {}, schedules: [],
+        // com.x must be installed on the target for the intersect-scoped import to apply its rule
+        apps: { 'com.x': { status: 'allowed', appName: 'X', addedAt: 1 } }, schedules: [],
         pinHash: 'KEEPME', locked: true, lockMessage: 'hi'
       }
       ctx.stored['peers:' + childB] = { publicKey: childB, noiseKey: 'nk' }

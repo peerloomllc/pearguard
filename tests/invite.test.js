@@ -50,9 +50,9 @@ describe('invite', () => {
     expect(result.ok).toBe(false)
   })
 
-  test('buildInviteLink produces a pearguard:// URL', () => {
+  test('buildInviteLink produces a pear://pearguard/join URL', () => {
     const link = buildInviteLink(validInvite)
-    expect(link.startsWith('pearguard://join/')).toBe(true)
+    expect(link.startsWith('pear://pearguard/join?t=')).toBe(true)
   })
 
   test('parseInviteLink round-trips buildInviteLink', () => {

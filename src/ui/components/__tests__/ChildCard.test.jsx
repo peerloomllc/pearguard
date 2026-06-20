@@ -32,12 +32,12 @@ test('renders current active app', () => {
 
 test('formats screen time correctly (1h 30m)', () => {
   render(<ChildCard child={mockChild} onPress={() => {}} />);
-  expect(screen.getByText('1h 30m')).toBeInTheDocument();
+  expect(screen.getByText('1h 30m today')).toBeInTheDocument();
 });
 
 test('formats screen time under 1 hour as minutes only', () => {
   render(<ChildCard child={{ ...mockChild, todayScreenTimeSeconds: 720 }} onPress={() => {}} />);
-  expect(screen.getByText('12m')).toBeInTheDocument();
+  expect(screen.getByText('12m today')).toBeInTheDocument();
 });
 
 test('shows no badges when all counts are 0', () => {
@@ -62,9 +62,9 @@ test('renders all three badge types simultaneously', () => {
   expect(screen.getByText('2')).toBeInTheDocument();
 });
 
-test('shows "None" when currentApp is null', () => {
+test('shows "No active app" when currentApp is null', () => {
   render(<ChildCard child={{ ...mockChild, currentApp: null }} onPress={() => {}} />);
-  expect(screen.getByText('None')).toBeInTheDocument();
+  expect(screen.getByText('No active app')).toBeInTheDocument();
 });
 
 test('calls onPress when card is clicked', () => {

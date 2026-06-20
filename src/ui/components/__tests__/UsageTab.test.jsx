@@ -52,7 +52,8 @@ test('renders last synced timestamp', async () => {
 test('formats today usage correctly', async () => {
   render(<UsageTab childPublicKey="pk1" />);
   await waitFor(() => {
-    expect(screen.getByText('Today: 1h 0m')).toBeInTheDocument();
+    // YouTube: 3600s today (1h 0m) of a 7200s (2h 0m) daily limit
+    expect(screen.getByText('Today: 1h 0m of 2h 0m')).toBeInTheDocument();
   });
 });
 

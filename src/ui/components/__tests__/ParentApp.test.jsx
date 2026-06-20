@@ -18,7 +18,7 @@ test('renders all three tab buttons', async () => {
   render(<ParentApp />);
   expect(await screen.findByText('Dashboard')).toBeInTheDocument();
   expect(screen.getByText('Settings')).toBeInTheDocument();
-  expect(screen.getByText('Profile')).toBeInTheDocument();
+  expect(screen.getByText('About')).toBeInTheDocument();
 });
 
 test('Dashboard panel is shown by default', async () => {
@@ -57,13 +57,21 @@ test('does not subscribe to child:reconnected (banner is first-pairing only)', a
   expect(subscribedEvents).not.toContain('child:reconnected');
 });
 
-test('active tab has aria-selected=true', async () => {
+test('active tab label is highlighted with the primary color', async () => {
+  const PRIMARY = 'rgb(76, 175, 80)'; // #4CAF50
   render(<ParentApp />);
-  const dashTab = await screen.findByRole('tab', { name: 'Dashboard' });
-  expect(dashTab).toHaveAttribute('aria-selected', 'true');
-  fireEvent.click(screen.getByText('Settings'));
-  expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
-  expect(dashTab).toHaveAttribute('aria-selected', 'false');
+  const dashLabel = await screen.findByText('Dashboard');
+  const settingsLabel = screen.getByText('Settings');
+
+  // Dashboard is the default active tab.
+  expect(dashLabel).toHaveStyle({ color: PRIMARY });
+  expect(settingsLabel).not.toHaveStyle({ color: PRIMARY });
+
+  fireEvent.click(settingsLabel);
+
+  // Active highlight moves to Settings.
+  expect(screen.getByText('Settings')).toHaveStyle({ color: PRIMARY });
+  expect(screen.getByText('Dashboard')).not.toHaveStyle({ color: PRIMARY });
 });
 
 test('shows PIN setup overlay when pin:isSet returns false', async () => {

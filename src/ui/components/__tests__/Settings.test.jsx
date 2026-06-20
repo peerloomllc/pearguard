@@ -10,7 +10,7 @@ test('renders PIN form and display name section', () => {
   render(<Settings />);
   expect(screen.getByLabelText('New PIN')).toBeInTheDocument();
   expect(screen.getByLabelText('Confirm PIN')).toBeInTheDocument();
-  expect(screen.getByLabelText('Display name')).toBeInTheDocument();
+  expect(screen.getByLabelText('Parent Name')).toBeInTheDocument();
 });
 
 test('shows error when PINs do not match', async () => {
@@ -80,7 +80,7 @@ test('shows error message when pin:set IPC call fails', async () => {
 
 test('display name input onBlur calls identity:setName', async () => {
   render(<Settings />);
-  const input = screen.getByLabelText('Display name');
+  const input = screen.getByLabelText('Parent Name');
   fireEvent.change(input, { target: { value: 'Mom' } });
   fireEvent.blur(input);
   await waitFor(() => {

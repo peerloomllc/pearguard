@@ -39,14 +39,14 @@ test('shows welcome message and add child button when no children', async () => 
   await waitFor(() => {
     expect(screen.getByText(/Welcome to PearGuard/)).toBeInTheDocument();
   });
-  expect(screen.getByText('Add Your First Child')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Add Child/ })).toBeInTheDocument();
 });
 
-test('clicking Add Your First Child shows InviteCard', async () => {
+test('clicking Add Child shows InviteCard', async () => {
   window.callBare.mockResolvedValue([]);
   render(<Dashboard />);
-  await waitFor(() => screen.getByText('Add Your First Child'));
-  fireEvent.click(screen.getByText('Add Your First Child'));
+  await waitFor(() => screen.getByRole('button', { name: /Add Child/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Add Child/ }));
   expect(screen.getByText('Invite Card')).toBeInTheDocument();
 });
 

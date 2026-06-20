@@ -4,13 +4,24 @@ const { signMessage, verifyMessage } = require('../src/message')
 const { generateKeypair } = require('../src/identity')
 
 describe('pairing', () => {
-  test('generateInvite dispatch creates a valid invite link', async () => {
+  // db.createReadStream is used by invite:generate to sweep stale topics; return
+  // an empty async iterable so no entries are found.
+  function emptyReadStream () {
+    return (async function* () {})()
+  }
+
+  test('invite:generate dispatch creates a valid invite link', async () => {
     const { createDispatch } = require('../src/bare-dispatch')
 
     const kp = generateKeypair()
 
     const ctx = {
-      db:        { put: jest.fn(), get: jest.fn().mockResolvedValue(null) },
+      db: {
+        put: jest.fn().mockResolvedValue(undefined),
+        get: jest.fn().mockResolvedValue(null),
+        del: jest.fn().mockResolvedValue(undefined),
+        createReadStream: jest.fn(() => emptyReadStream()),
+      },
       identity:  kp,
       peers:     new Map(),
       send:      jest.fn(),
@@ -19,10 +30,10 @@ describe('pairing', () => {
     }
 
     const dispatch = createDispatch(ctx)
-    const result = await dispatch('generateInvite', [])
+    const result = await dispatch('invite:generate', [])
 
     expect(typeof result.inviteLink).toBe('string')
-    expect(result.inviteLink.startsWith('pearguard://join/')).toBe(true)
+    expect(result.inviteLink.startsWith('pear://pearguard/join?t=')).toBe(true)
 
     const parsed = parseInviteLink(result.inviteLink)
     expect(parsed.ok).toBe(true)
@@ -57,10 +68,11 @@ describe('pairing', () => {
 
     expect(result.ok).toBe(true)
     expect(ctx.joinTopic).toHaveBeenCalledWith(topic)
-    // Parent pubkey should be stored
+    // Parent pubkey should be stored under the per-parent pendingParent key
+    const parentPubHex = Buffer.from(parentKp.publicKey).toString('hex')
     expect(ctx.db.put).toHaveBeenCalledWith(
-      'pendingParent',
-      expect.objectContaining({ publicKey: Buffer.from(parentKp.publicKey).toString('hex') })
+      'pendingParent:' + parentPubHex,
+      expect.objectContaining({ publicKey: parentPubHex })
     )
   })
 

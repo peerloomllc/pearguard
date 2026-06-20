@@ -83,63 +83,60 @@ test('shows all three status badges together', async () => {
   })
 })
 
-test('"New Request" button is disabled when no lastBlockedPackage (initial state)', async () => {
-  window.callBare.mockResolvedValue({ requests: [] })
+test('prefers appName over packageName when displaying a request', async () => {
+  window.callBare.mockResolvedValue({
+    requests: [
+      { id: 'req:1', appName: 'YouTube', packageName: 'com.example.youtube', requestedAt: Date.now(), status: 'pending' },
+    ],
+  })
   render(<ChildRequests />)
   await waitFor(() => {
-    expect(screen.getByText('No requests yet.')).toBeInTheDocument()
+    expect(screen.getByText('YouTube')).toBeInTheDocument()
   })
-
-  const button = screen.getByRole('button', { name: 'New Request' })
-  expect(button).toBeDisabled()
+  expect(screen.queryByText('com.example.youtube')).not.toBeInTheDocument()
 })
 
-test('after block:occurred event, "New Request" button is enabled', async () => {
-  window.callBare.mockResolvedValue({ requests: [] })
+test('clicking "Clear resolved" fires a haptic:tap', async () => {
+  window.callBare.mockResolvedValue({
+    requests: [
+      { id: 'req:1', packageName: 'com.example.app', requestedAt: Date.now(), status: 'approved' },
+    ],
+  })
   render(<ChildRequests />)
-  await waitFor(() => {
-    expect(screen.getByText('No requests yet.')).toBeInTheDocument()
-  })
+  const btn = await screen.findByRole('button', { name: 'Clear resolved' })
 
-  const button = screen.getByRole('button', { name: 'New Request' })
-  expect(button).toBeDisabled()
-
-  act(() => {
-    fireBareEvent('block:occurred', { packageName: 'com.example.app' })
-  })
-
-  await waitFor(() => {
-    expect(button).not.toBeDisabled()
-  })
-})
-
-test('after block:occurred event, clicking "New Request" calls callBare with correct args', async () => {
-  window.callBare.mockResolvedValue({ requests: [] })
-  render(<ChildRequests />)
-  await waitFor(() => {
-    expect(screen.getByText('No requests yet.')).toBeInTheDocument()
-  })
-
-  act(() => {
-    fireBareEvent('block:occurred', { packageName: 'com.example.testapp' })
-  })
-
-  const button = screen.getByRole('button', { name: 'New Request' })
-  await waitFor(() => {
-    expect(button).not.toBeDisabled()
-  })
-
-  // Reset mock to isolate the time:request call
   window.callBare.mockClear()
   window.callBare.mockResolvedValue({ requests: [] })
-
-  act(() => {
-    button.click()
-  })
+  act(() => { btn.click() })
 
   await waitFor(() => {
-    expect(window.callBare).toHaveBeenCalledWith('time:request', { packageName: 'com.example.testapp' })
+    expect(window.callBare).toHaveBeenCalledWith('haptic:tap')
   })
+})
+
+test('"Clear resolved" button shows "Clearing..." and is disabled while clearing', async () => {
+  window.callBare.mockResolvedValue({
+    requests: [
+      { id: 'req:1', packageName: 'com.example.app', requestedAt: Date.now(), status: 'approved' },
+    ],
+  })
+  render(<ChildRequests />)
+  const btn = await screen.findByRole('button', { name: 'Clear resolved' })
+
+  // Make requests:clear hang so the clearing state stays visible
+  let resolveClear
+  window.callBare.mockImplementation((method) => {
+    if (method === 'requests:clear') return new Promise((res) => { resolveClear = res })
+    return Promise.resolve({ requests: [] })
+  })
+
+  act(() => { btn.click() })
+
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Clearing...' })).toBeDisabled()
+  })
+
+  act(() => { resolveClear({ ok: true }) })
 })
 
 test('after request:submitted event, list re-fetches', async () => {

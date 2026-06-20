@@ -1305,6 +1305,48 @@ describe('bare dispatch', () => {
       expect(finalQueue[0].message).toEqual({ type: 'msg1' })
       expect(finalQueue[1].message).toEqual({ type: 'msg2' })
     })
+
+    test('repeated heartbeats collapse to the latest only', async () => {
+      const stored = {}
+      const mockDb = makeMockDb(stored)
+
+      await queueMessage({ type: 'heartbeat', payload: { seq: 1 } }, mockDb)
+      await queueMessage({ type: 'heartbeat', payload: { seq: 2 } }, mockDb)
+      await queueMessage({ type: 'heartbeat', payload: { seq: 3 } }, mockDb)
+
+      expect(stored.pendingMessages).toHaveLength(1)
+      expect(stored.pendingMessages[0].message).toEqual({ type: 'heartbeat', payload: { seq: 3 } })
+    })
+
+    test('repeated usage:report collapse to the latest only', async () => {
+      const stored = {}
+      const mockDb = makeMockDb(stored)
+
+      await queueMessage({ type: 'usage:report', payload: { ts: 1000 } }, mockDb)
+      await queueMessage({ type: 'usage:report', payload: { ts: 2000 } }, mockDb)
+
+      expect(stored.pendingMessages).toHaveLength(1)
+      expect(stored.pendingMessages[0].message).toEqual({ type: 'usage:report', payload: { ts: 2000 } })
+    })
+
+    test('collapsing a snapshot type preserves other queued messages and ordering', async () => {
+      const stored = {}
+      const mockDb = makeMockDb(stored)
+
+      await queueMessage({ type: 'usage:report', payload: { ts: 1000 } }, mockDb)
+      await queueMessage({ type: 'time:request', payload: { id: 'r1' } }, mockDb)
+      await queueMessage({ type: 'heartbeat', payload: { seq: 1 } }, mockDb)
+      await queueMessage({ type: 'usage:report', payload: { ts: 2000 } }, mockDb)
+      await queueMessage({ type: 'time:request', payload: { id: 'r2' } }, mockDb)
+
+      const types = stored.pendingMessages.map((e) => e.message.type)
+      // both distinct time:requests survive; only the latest usage:report + heartbeat remain
+      expect(types).toEqual(['time:request', 'heartbeat', 'usage:report', 'time:request'])
+      const report = stored.pendingMessages.find((e) => e.message.type === 'usage:report')
+      expect(report.message.payload).toEqual({ ts: 2000 })
+      expect(stored.pendingMessages.filter((e) => e.message.type === 'time:request').map((e) => e.message.payload.id))
+        .toEqual(['r1', 'r2'])
+    })
   })
 
   describe('flushMessageQueue', () => {

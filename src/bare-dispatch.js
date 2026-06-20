@@ -2026,16 +2026,31 @@ async function getPinUseLog (db) {
   return raw ? raw.value : []
 }
 
+// Message types where each new message fully supersedes any older queued copy,
+// so the offline queue keeps only the most recent one instead of growing
+// unbounded (one heartbeat per minute, one usage:report per flush) while a
+// child is disconnected.
+const COLLAPSIBLE_MESSAGE_TYPES = new Set(['heartbeat', 'usage:report'])
+
 /**
  * Queue a message for later delivery when no parent connection is available.
- * Appends to the `pendingMessages` array in Hyperbee.
+ * Appends to the `pendingMessages` array in Hyperbee. Collapsible message types
+ * (see COLLAPSIBLE_MESSAGE_TYPES) replace any prior queued copy of themselves.
  *
  * @param {object} message — the message object to queue
  * @param {object} db — Hyperbee instance
  */
 async function queueMessage (message, db) {
   const raw = await db.get('pendingMessages')
-  const queue = raw ? raw.value : []
+  let queue = raw ? raw.value : []
+  // Some message types fully supersede any older queued copy of themselves:
+  // a heartbeat is ephemeral presence and a usage:report is a complete day
+  // snapshot, so replaying stale copies on reconnect is pure noise. Drop any
+  // existing entry of the same type and keep only this latest one. Other types
+  // (time:request, pin:override etc.) are distinct events and are never collapsed.
+  if (message && COLLAPSIBLE_MESSAGE_TYPES.has(message.type)) {
+    queue = queue.filter((entry) => !entry.message || entry.message.type !== message.type)
+  }
   queue.push({ message, queuedAt: Date.now() })
   await db.put('pendingMessages', queue)
 }

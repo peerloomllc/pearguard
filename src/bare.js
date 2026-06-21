@@ -571,6 +571,16 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
     return
   }
 
+  // Every message type this protocol sends carries an object payload. Guard here
+  // so a malformed (or version-mismatched) peer sending a missing/non-object
+  // payload is dropped cleanly with a warning, instead of throwing a TypeError
+  // deep in a case (e.g. usage:report's msg.payload.childPublicKey) that the
+  // per-message catch would swallow silently.
+  if (msg.payload == null || typeof msg.payload !== 'object') {
+    console.warn('[bare] dropped message: missing/invalid payload for', msg.type, 'from', msg.from.slice(0, 12))
+    return
+  }
+
   // Dispatch verified peer message by type
   switch (msg.type) {
     case 'policy:update':

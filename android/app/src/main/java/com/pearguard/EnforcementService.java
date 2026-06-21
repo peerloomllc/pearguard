@@ -7,14 +7,18 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
 
@@ -52,6 +56,11 @@ public class EnforcementService extends Service {
     private int lastWarningDayOfYear = -1;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
+    private BroadcastReceiver clockChangeReceiver;
+    // A wall-clock jump larger than this, beyond what elapsedRealtime accounts for,
+    // is treated as a manual time change. Generous enough to ignore NTP corrections
+    // (seconds) while catching the hours-scale shifts needed to defeat a daily limit.
+    private static final long CLOCK_TAMPER_THRESHOLD_MS = 120_000; // 2 minutes
 
     // --- Lifecycle ---
 
@@ -63,6 +72,8 @@ public class EnforcementService extends Service {
         startForeground(NOTIFICATION_ID, buildNotification());
         lastAccessibilityState = isAccessibilityServiceEnabled();
         registerNetworkCallback();
+        anchorClock();
+        registerClockChangeReceiver();
         handler.post(enforcementLoop);
     }
 
@@ -81,6 +92,7 @@ public class EnforcementService extends Service {
     public void onDestroy() {
         handler.removeCallbacks(enforcementLoop);
         unregisterNetworkCallback();
+        unregisterClockChangeReceiver();
         super.onDestroy();
     }
 
@@ -196,6 +208,92 @@ public class EnforcementService extends Service {
         }
 
         lastAccessibilityState = isEnabled;
+    }
+
+    // --- Clock-tamper detection ---
+
+    /**
+     * Store a fresh (wall clock, elapsedRealtime) anchor. elapsedRealtime is
+     * monotonic and immune to wall-clock changes, and both advance together during
+     * deep sleep, so normal operation never produces drift. Comparing the two deltas
+     * after an android.intent.action.TIME_SET reveals a manual clock change.
+     */
+    private void anchorClock() {
+        getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+            .edit()
+            .putLong("clock_anchor_wall", System.currentTimeMillis())
+            .putLong("clock_anchor_elapsed", SystemClock.elapsedRealtime())
+            .apply();
+    }
+
+    /**
+     * TIME_SET cannot be declared in the manifest on Android 8+ (implicit-broadcast
+     * restrictions), so it is registered at runtime here in the long-running service.
+     */
+    private void registerClockChangeReceiver() {
+        if (clockChangeReceiver != null) return;
+        clockChangeReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (action == null) return;
+
+                if (Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
+                    // Epoch time is unchanged by a timezone switch, but the local-day
+                    // boundary used by daily limits and schedules shifts, so this is a
+                    // genuine evasion vector. It could also be travel — the parent decides.
+                    reportBypass("timezone_changed");
+                    anchorClock();
+                    return;
+                }
+
+                // Intent.ACTION_TIME_CHANGED == "android.intent.action.TIME_SET"
+                SharedPreferences prefs = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE);
+                long anchorWall = prefs.getLong("clock_anchor_wall", 0L);
+                long anchorElapsed = prefs.getLong("clock_anchor_elapsed", 0L);
+                long nowWall = System.currentTimeMillis();
+                long nowElapsed = SystemClock.elapsedRealtime();
+                anchorClock(); // re-anchor immediately so later checks measure from here
+
+                if (anchorWall == 0L || anchorElapsed == 0L) return; // no baseline yet
+                long drift = (nowWall - anchorWall) - (nowElapsed - anchorElapsed);
+                if (Math.abs(drift) > CLOCK_TAMPER_THRESHOLD_MS) {
+                    reportBypass("clock_changed");
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_TIME_CHANGED);
+        filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        registerReceiver(clockChangeReceiver, filter);
+    }
+
+    private void unregisterClockChangeReceiver() {
+        if (clockChangeReceiver != null) {
+            try { unregisterReceiver(clockChangeReceiver); } catch (Exception ignored) {}
+            clockChangeReceiver = null;
+        }
+    }
+
+    /**
+     * Persist + notify + relay a bypass detection, mirroring checkAccessibilityService
+     * so it survives a suspended JS thread (the reason is replayed on next launch).
+     */
+    private void reportBypass(String reason) {
+        getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+            .edit()
+            .putString("bypass_detected_reason", reason)
+            .putLong("bypass_detected_at", System.currentTimeMillis())
+            .apply();
+
+        AppBlockerModule.showBypassNotification(this);
+
+        ReactContext reactContext = PearGuardReactHost.get();
+        if (reactContext != null && reactContext.hasActiveReactInstance()) {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("onBypassDetected", reason);
+        }
     }
 
     /**

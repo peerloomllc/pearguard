@@ -84,6 +84,20 @@ function mergeSessions(existing, incoming) {
   return Array.from(byKey.values())
 }
 
+// Order-independent content signature of a day's per-app totals. The parent uses
+// it to skip re-writing an unchanged dailyTotals row: the child re-sends the full
+// multi-day window every flush, but past-day totals are static, so a naive write
+// produced thousands of redundant Hypercore appends per day. Native may return
+// apps in a different order between flushes, so sort before comparing. Excludes
+// updatedAt (which changes every flush) — that churn is exactly what we avoid.
+function dailyTotalsSignature(apps) {
+  if (!Array.isArray(apps)) return ''
+  return apps
+    .map(a => ((a && a.packageName) || '') + '=' + ((a && a.secondsToday) || 0) + ':' + ((a && a.displayName) || ''))
+    .sort()
+    .join('|')
+}
+
 // RN shells push fresh app/usage values into this cache via 'heartbeat:updateData'
 // whenever the JS thread is alive. bare.js's native-thread setInterval calls
 // 'heartbeat:send', which reads from this cache so heartbeats stay reliable
@@ -2345,4 +2359,4 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, getExclusions, applyExclusionsToReport }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport }

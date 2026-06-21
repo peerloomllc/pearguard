@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -1041,6 +1041,41 @@ describe('bare dispatch', () => {
       // oldest (grantedAt 0) was dropped, newest is at the tail
       expect(stored.pinLog[0]).toEqual({ packageName: 'com.old', grantedAt: 1 })
       expect(stored.pinLog[499]).toEqual({ packageName: 'com.new', grantedAt: 9999 })
+    })
+  })
+
+  describe('dailyTotalsSignature', () => {
+    test('is identical regardless of app order (so reordered-but-same days dedup)', () => {
+      const a = [
+        { packageName: 'com.a', secondsToday: 60, displayName: 'A' },
+        { packageName: 'com.b', secondsToday: 120, displayName: 'B' },
+      ]
+      const b = [
+        { packageName: 'com.b', secondsToday: 120, displayName: 'B' },
+        { packageName: 'com.a', secondsToday: 60, displayName: 'A' },
+      ]
+      expect(dailyTotalsSignature(a)).toBe(dailyTotalsSignature(b))
+    })
+
+    test('differs when seconds change (so an updated day is written)', () => {
+      const a = [{ packageName: 'com.a', secondsToday: 60, displayName: 'A' }]
+      const b = [{ packageName: 'com.a', secondsToday: 61, displayName: 'A' }]
+      expect(dailyTotalsSignature(a)).not.toBe(dailyTotalsSignature(b))
+    })
+
+    test('differs when an app is added or removed', () => {
+      const a = [{ packageName: 'com.a', secondsToday: 60 }]
+      const b = [
+        { packageName: 'com.a', secondsToday: 60 },
+        { packageName: 'com.b', secondsToday: 5 },
+      ]
+      expect(dailyTotalsSignature(a)).not.toBe(dailyTotalsSignature(b))
+    })
+
+    test('handles missing fields and non-arrays safely', () => {
+      expect(dailyTotalsSignature(null)).toBe('')
+      expect(dailyTotalsSignature(undefined)).toBe('')
+      expect(dailyTotalsSignature([{}])).toBe('=0:')
     })
   })
 

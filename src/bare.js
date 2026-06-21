@@ -17,7 +17,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -671,11 +671,26 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       // good row. Read paths fall back to sessions: when the row is missing
       // or empty, so absence yields the correct "use sessions" behaviour.
       const incomingDailyTotals = Array.isArray(msg.payload.dailyTotals) ? msg.payload.dailyTotals : []
+      let dtWrote = 0
+      let dtSkipped = 0
       for (const day of incomingDailyTotals) {
         if (!day || typeof day.date !== 'string' || !Array.isArray(day.apps)) continue
         if (day.apps.length === 0) continue
-        await db.put('dailyTotals:' + childPublicKey + ':' + day.date, { date: day.date, apps: day.apps, updatedAt: reportTs })
+        // The child re-sends the full window every flush so missed days backfill,
+        // but past-day totals are static. Skip the put when the day's content is
+        // unchanged: a 30-day window written every ~15 min was ~2,880 redundant
+        // Hypercore appends/day/child (the main driver of reclaim churn). Only
+        // today's row actually changes between flushes.
+        const dtKey = 'dailyTotals:' + childPublicKey + ':' + day.date
+        const existingDt = await db.get(dtKey).catch(() => null)
+        if (existingDt?.value && dailyTotalsSignature(existingDt.value.apps) === dailyTotalsSignature(day.apps)) {
+          dtSkipped++
+          continue
+        }
+        await db.put(dtKey, { date: day.date, apps: day.apps, updatedAt: reportTs })
+        dtWrote++
       }
+      if (dtWrote + dtSkipped > 0) console.log('[bare] dailyTotals:', dtWrote, 'written,', dtSkipped, 'unchanged for', childPublicKey.slice(0, 8))
       // Apply parent-local exclusions to the event payload so Dashboard and
       // Usage tab subscribers see hidden packages stripped and the recomputed
       // todayScreenTimeSeconds. Storage above keeps the unfiltered data so

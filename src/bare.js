@@ -687,6 +687,8 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         accessibility_disabled: 'Accessibility Service disabled',
         force_stopped: 'App was force-closed',
         device_admin_disabled: 'Device Admin disabled',
+        clock_changed: 'Device clock changed',
+        timezone_changed: 'Device time zone changed',
       }
       const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
       const childDisplayName = peerRecord?.value?.displayName || 'Child'

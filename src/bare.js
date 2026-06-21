@@ -231,6 +231,7 @@ async function init (dataDir, attempt = 0) {
   // usage: keep 7 days (sessions back the per-day Daily-Summary list view);
   // dailyTotals: keep 30 days to cover the Trends 30-day view.
   async function cleanupOldUsageData() {
+    const now = Date.now()
     const cutoff7 = new Date()
     cutoff7.setDate(cutoff7.getDate() - 7)
     const cutoff7Str = localDateStr(cutoff7)
@@ -266,6 +267,42 @@ async function init (dataDir, attempt = 0) {
       if (parts.length >= 3 && parts[2] < cutoff30Str) {
         await db.del(key)
       }
+    }
+
+    // Event/history keys below were previously pruned only lazily when the parent
+    // opened a tab (alerts:list / requests:list / overrides:list), so a parent who
+    // never opened those views accumulated them forever. Prune them here on the same
+    // schedule, matching each view's own cutoff. Auto-reclaim only removes tombstones,
+    // not live rows, so this time-based sweep is what actually bounds growth.
+
+    // Bypass alerts (parent): key alert:{childPublicKey}:{ts}[:{pkg}], value.timestamp. 7-day window (matches alerts:list).
+    for await (const { key, value } of db.createReadStream({ gt: 'alert:', lt: 'alert:~' })) {
+      if (value && (value.timestamp || 0) < cutoff7Ms) await db.del(key)
+    }
+
+    // Time requests: parent stores request:{requestId}, child stores req:{ts}:{pkg}; both carry requestedAt.
+    // 7-day window (matches requests:list / alerts:list). The two ranges are disjoint ('request:' > 'req:~').
+    for await (const { key, value } of db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+      if (value && (value.requestedAt || 0) < cutoff7Ms) await db.del(key)
+    }
+    for await (const { key, value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
+      if (value && (value.requestedAt || 0) < cutoff7Ms) await db.del(key)
+    }
+
+    // Override grants: only active ones are ever read (overrides:list / child:homeData skip expired),
+    // so drop any that have already expired. Fall back to a 7-day grantedAt window if expiresAt is absent.
+    for await (const { key, value } of db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
+      if (!value) continue
+      if (typeof value.expiresAt === 'number') {
+        if (value.expiresAt < now) await db.del(key)
+      } else if ((value.grantedAt || 0) < cutoff7Ms) {
+        await db.del(key)
+      }
+    }
+
+    // Bypass events (child): key bypass:{detectedAt}, write-only after relay to the parent. 7-day window.
+    for await (const { key, value } of db.createReadStream({ gt: 'bypass:', lt: 'bypass:~' })) {
+      if (value && (value.detectedAt || 0) < cutoff7Ms) await db.del(key)
     }
   }
 

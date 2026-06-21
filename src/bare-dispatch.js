@@ -2007,10 +2007,16 @@ async function handleTimeExtend (payload, db, send, sendToAllParents) {
  * @param {object} entry — { packageName, grantedAt, expiresAt }
  * @param {object} db — Hyperbee instance
  */
+// pinLog is normally drained to empty on each successful usage:flush, but a flush
+// that early-returns (no app data) skips that clear, so cap the array as a backstop
+// against unbounded growth from PIN activity on an otherwise-idle device.
+const PIN_LOG_MAX = 500
+
 async function appendPinUseLog (entry, db) {
   const raw = await db.get('pinLog')
   const log = raw ? raw.value : []  // Hyperbee json encoding returns parsed value
   log.push(entry)
+  if (log.length > PIN_LOG_MAX) log.splice(0, log.length - PIN_LOG_MAX)
   await db.put('pinLog', log)
 }
 

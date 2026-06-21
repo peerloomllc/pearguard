@@ -1013,6 +1013,37 @@ describe('bare dispatch', () => {
     })
   })
 
+  describe('appendPinUseLog', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('appends an entry to pinLog', async () => {
+      const stored = {}
+      const mockDb = makeMockDb(stored)
+      await appendPinUseLog({ packageName: 'com.a', grantedAt: 1, expiresAt: 2 }, mockDb)
+      expect(stored.pinLog).toHaveLength(1)
+      expect(stored.pinLog[0]).toEqual({ packageName: 'com.a', grantedAt: 1, expiresAt: 2 })
+    })
+
+    test('caps pinLog at 500 entries, keeping the most recent', async () => {
+      const existing = Array.from({ length: 500 }, (_, i) => ({ packageName: 'com.old', grantedAt: i }))
+      const stored = { pinLog: existing }
+      const mockDb = makeMockDb(stored)
+
+      await appendPinUseLog({ packageName: 'com.new', grantedAt: 9999 }, mockDb)
+
+      expect(stored.pinLog).toHaveLength(500)
+      // oldest (grantedAt 0) was dropped, newest is at the tail
+      expect(stored.pinLog[0]).toEqual({ packageName: 'com.old', grantedAt: 1 })
+      expect(stored.pinLog[499]).toEqual({ packageName: 'com.new', grantedAt: 9999 })
+    })
+  })
+
   // ── Task 6: app:installed ──────────────────────────────────────────────────
 
   describe('app:installed', () => {

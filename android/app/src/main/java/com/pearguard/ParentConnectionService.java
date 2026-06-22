@@ -43,6 +43,11 @@ public class ParentConnectionService extends Service {
     private static final long   RECONNECT_INTERVAL_MS  = 30_000; // 30 s
     private static final long   HEARTBEAT_STALE_MS     = 3 * 60_000; // 3 min (3 missed heartbeats)
     private static final long   NOTIFY_COOLDOWN_MS     = 30 * 60_000; // 30 min between notifications per child
+    // After the service (re)starts, wait this long before flagging stale heartbeats
+    // so a freshly-woken worklet has time to rejoin Hyperswarm and the child can
+    // send a heartbeat. Longer than HEARTBEAT_STALE_MS because a cold boot
+    // (BootReceiver / START_STICKY restart) reconnects slower than a foregrounded app.
+    private static final long   STARTUP_GRACE_MS       = 5 * 60_000; // 5 min
 
     private static final long WAKE_THROTTLE_MS = 2 * 60_000; // min gap between RN wake attempts
     private static long lastWakeAt = 0; // static: survives service teardown/restart
@@ -181,7 +186,7 @@ public class ParentConnectionService extends Service {
         // child to send at least one heartbeat. Prevents false "enforcement may
         // be off" notifications after app reinstalls or device restarts.
         long now = System.currentTimeMillis();
-        if (now - serviceStartedAt < HEARTBEAT_STALE_MS) return;
+        if (now - serviceStartedAt < STARTUP_GRACE_MS) return;
 
         SharedPreferences prefs = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE);
         Map<String, ?> all = prefs.getAll();
@@ -197,10 +202,15 @@ public class ParentConnectionService extends Service {
             long lastHeartbeat = (Long) val;
             if (lastHeartbeat <= 0) continue;
 
-            // Ignore heartbeat timestamps from before this service session —
-            // they are leftover from a previous run and don't indicate the
-            // child went offline during this session.
-            if (lastHeartbeat < serviceStartedAt) continue;
+            // NOTE: we deliberately evaluate heartbeats from before this service
+            // session too. A child that went offline (uninstalled / wiped / force-
+            // stopped) right around when this service (re)started has a last-
+            // heartbeat predating serviceStartedAt; skipping those left such a child
+            // permanently un-flagged across a parent reboot — the silent-failure the
+            // dead-man's-switch exists to prevent. The STARTUP_GRACE_MS window above
+            // prevents false positives while the connection re-establishes, and the
+            // persistent heartbeat_notified_ flag (reset on the next fresh heartbeat)
+            // prevents duplicate alerts across restarts.
 
             boolean alreadyNotified = prefs.getBoolean("heartbeat_notified_" + childPublicKey, false);
             long lastNotifiedAt = prefs.getLong("heartbeat_notified_at_" + childPublicKey, 0);

@@ -5,6 +5,7 @@ const {
   isAppBlocked,
   isScheduleActive,
   hasExceededLimit,
+  hasExceededScreenTimeLimit,
   isSmsCallException,
 } = require('./policy')
 
@@ -100,6 +101,57 @@ function makeDate(dayOfWeek, hour, minute) {
   assert.strictEqual(hasExceededLimit('com.example.tiktok', null, {}), false, 'null policy')
 }
 
+// hasExceededScreenTimeLimit
+{
+  const policy = { dailyScreenTimeLimitSeconds: 3600 }
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, {
+      'com.a': { dailySeconds: 2000 },
+      'com.b': { dailySeconds: 1600 },
+    }),
+    true,
+    'sum across apps at limit is exceeded'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, {
+      'com.a': { dailySeconds: 2000 },
+      'com.b': { dailySeconds: 1599 },
+    }),
+    false,
+    'sum one second under limit'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, { 'com.a': { dailySeconds: 3600 } }),
+    true,
+    'single app exactly at limit'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit({ dailyScreenTimeLimitSeconds: 0 }, { 'com.a': { dailySeconds: 9999 } }),
+    false,
+    'zero limit means disabled'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit({}, { 'com.a': { dailySeconds: 9999 } }),
+    false,
+    'no limit field means disabled'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, {}),
+    false,
+    'no usage data'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, null),
+    false,
+    'null usage stats'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(null, { 'com.a': { dailySeconds: 9999 } }),
+    false,
+    'null policy'
+  )
+}
+
 // isSmsCallException
 {
   const policy = {
@@ -189,6 +241,36 @@ function makeDate(dayOfWeek, hour, minute) {
   assert.strictEqual(isAppBlocked('com.example.unknown', policy, {}, daytime), false, 'unknown app not in policy')
   assert.strictEqual(isAppBlocked('com.example.tiktok', null, {}, daytime), false, 'null policy never blocks')
   assert.strictEqual(isAppBlocked('com.example.tiktok', {}, {}, daytime), false, 'empty policy never blocks')
+}
+
+// isAppBlocked — cumulative screen-time cap
+{
+  const policy = {
+    apps: { 'com.example.youtube': { status: 'allowed' } },
+    dailyScreenTimeLimitSeconds: 3600,
+  }
+  const daytime = makeDate(1, 14, 0)
+
+  assert.strictEqual(
+    isAppBlocked('com.example.youtube', policy, { 'com.example.youtube': { dailySeconds: 1800 } }, daytime),
+    false,
+    'screen-time cap: under total, allowed'
+  )
+  assert.strictEqual(
+    isAppBlocked('com.example.youtube', policy, {
+      'com.example.youtube': { dailySeconds: 1800 },
+      'com.example.other': { dailySeconds: 1800 },
+    }, daytime),
+    true,
+    'screen-time cap: total at limit blocks the app'
+  )
+  assert.strictEqual(
+    isAppBlocked('com.example.unmapped', policy, {
+      'com.example.youtube': { dailySeconds: 3600 },
+    }, daytime),
+    true,
+    'screen-time cap: blocks even apps not listed in policy'
+  )
 }
 
 console.log('All policy.js tests passed.')

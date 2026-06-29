@@ -109,7 +109,7 @@ function isSystemExempt(exeBasename) {
 }
 
 // Returns null (allow) or { reason: string, category: string }.
-//   category ∈ 'lock' | 'override-bypass' | 'schedule' | 'status' | 'daily_limit' | 'category_limit'
+//   category ∈ 'lock' | 'override-bypass' | 'screen_time' | 'schedule' | 'status' | 'daily_limit' | 'category_limit'
 function evaluate({
   policy,
   packageName,
@@ -135,6 +135,13 @@ function evaluate({
     const expiry = overrides.get(packageName)
     if (expiry && now < expiry) return null
   }
+
+  // Step 1.5: Device-wide cumulative screen-time cap. Applies to every
+  // non-exempt app (including unmapped exes), but the active override above
+  // already returned null for the foreground app, so a parent-granted time
+  // extension still wins.
+  const screenTimeReason = getScreenTimeBlockReason(policy, getUsageSeconds)
+  if (screenTimeReason) return { reason: screenTimeReason, category: 'screen_time' }
 
   // Step 2: Scheduled blackout. exemptApps matches by packageName, so an
   // unmapped exe can never be exempt — meaning any unmapped exe falling
@@ -174,6 +181,22 @@ function evaluate({
   const categoryReason = getCategoryLimitReason(policy, apps, appPolicy, getUsageSeconds)
   if (categoryReason) return { reason: categoryReason, category: 'category_limit' }
 
+  return null
+}
+
+function getScreenTimeBlockReason(policy, getUsageSeconds) {
+  const limit = policy.dailyScreenTimeLimitSeconds
+  if (typeof limit !== 'number' || limit <= 0) return null
+
+  const apps = policy.apps || {}
+  let total = 0
+  for (const pkg of Object.keys(apps)) {
+    total += safeUsage(getUsageSeconds, pkg)
+    if (total >= limit) break
+  }
+  if (total >= limit) {
+    return 'Screen time limit reached (' + Math.floor(limit / 60) + ' min/day).'
+  }
   return null
 }
 

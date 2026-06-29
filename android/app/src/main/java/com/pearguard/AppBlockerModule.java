@@ -671,6 +671,18 @@ public class AppBlockerModule extends AccessibilityService {
                 return null;
             }
 
+            // Step 1.5: Device-wide cumulative screen-time cap. Applies to every
+            // non-exempt app (exemptions were filtered above). An active override
+            // returned null already, so a parent-granted time extension still wins.
+            int screenLimit = policy.optInt("dailyScreenTimeLimitSeconds", 0);
+            if (screenLimit > 0) {
+                int totalUsed = getTotalDailyUsageSeconds();
+                if (totalUsed >= screenLimit) {
+                    int minutes = screenLimit / 60;
+                    return "Screen time limit reached (" + minutes + " min/day).";
+                }
+            }
+
             // Step 2: Scheduled blackout (respects per-rule exempt apps).
             String scheduleReason = getScheduleBlockReason(policy, packageName);
             if (scheduleReason != null) return scheduleReason;
@@ -822,6 +834,55 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     /**
+     * Total foreground screen time in seconds across all non-exempt packages
+     * today, computed in a single event scan. Backs the device-wide
+     * cumulative screen-time cap. Exempt packages (PearGuard itself,
+     * phone/messaging, system overlays) are skipped so a call or the
+     * PearGuard app never counts against the budget — mirroring the
+     * exemptions in getBlockReason.
+     */
+    private int getTotalDailyUsageSeconds() {
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return 0;
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long startOfDay = cal.getTimeInMillis();
+        long now = System.currentTimeMillis();
+        try {
+            UsageEvents events = usm.queryEvents(startOfDay, now);
+            if (events == null) return 0;
+            UsageEvents.Event event = new UsageEvents.Event();
+            // Track an open session per package so interleaved app switches sum correctly.
+            Map<String, Long> sessionStart = new java.util.HashMap<>();
+            long totalMs = 0;
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event);
+                String pkg = event.getPackageName();
+                if (pkg == null) continue;
+                if (pkg.equals(getPackageName())) continue;
+                if (isSystemOverlayPackage(pkg)) continue;
+                if (isPhoneOrMessagingApp(pkg)) continue;
+                if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    sessionStart.put(pkg, event.getTimeStamp());
+                } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    Long start = sessionStart.remove(pkg);
+                    if (start != null) totalMs += event.getTimeStamp() - start;
+                }
+            }
+            // Any package still in the foreground — add elapsed time since its start.
+            for (Long start : sessionStart.values()) {
+                if (start != null) totalMs += now - start;
+            }
+            return (int)(totalMs / 1000);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
      * Category-limit fallback. Only called when the app has no per-app
      * dailyLimitSeconds of its own. Sums foreground seconds across every app
      * in the same category and compares to the category's daily budget.
@@ -898,6 +959,7 @@ public class AppBlockerModule extends AccessibilityService {
         if (reason == null) return "blocked";
         if (reason.contains("parent approval")) return "pending";
         if (reason.contains("Daily limit")) return "daily_limit";
+        if (reason.contains("Screen time limit")) return "screen_time";
         if (reason.contains("Blocked during")) return "schedule";
         // Category-limit reasons are formatted as "<category> limit reached (<n> min/day).";
         // matching this last so it doesn't shadow the per-app "Daily limit" check above.
@@ -995,6 +1057,7 @@ public class AppBlockerModule extends AccessibilityService {
             case "pending":        titleText = appName + " needs approval"; break;
             case "daily_limit":    titleText = appName + ": daily limit reached"; break;
             case "category_limit": titleText = appName + ": category limit reached"; break;
+            case "screen_time":    titleText = "Screen time's up"; break;
             case "schedule":       titleText = appName + ": scheduled block"; break;
             default:               titleText = appName + " is blocked"; break;
         }
@@ -1038,7 +1101,8 @@ public class AppBlockerModule extends AccessibilityService {
         final String blockReason = reason;
         boolean isExtraTime = "schedule".equals(blockCategory)
                 || "daily_limit".equals(blockCategory)
-                || "category_limit".equals(blockCategory);
+                || "category_limit".equals(blockCategory)
+                || "screen_time".equals(blockCategory);
 
         // Row 1: Request Approval / Request More Time
         String requestLabel = requestAlreadySent
@@ -1147,7 +1211,8 @@ public class AppBlockerModule extends AccessibilityService {
     private void onSendRequest(String packageName, String blockCategory, String reason) {
         boolean isExtraTime = "schedule".equals(blockCategory)
                 || "daily_limit".equals(blockCategory)
-                || "category_limit".equals(blockCategory);
+                || "category_limit".equals(blockCategory)
+                || "screen_time".equals(blockCategory);
         if (isExtraTime) {
             // Suppress the polling-loop overlay for 2 minutes so the duration picker
             // dialog is not immediately overwritten by the next EnforcementService tick (#66).

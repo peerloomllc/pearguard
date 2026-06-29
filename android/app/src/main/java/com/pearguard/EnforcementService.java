@@ -373,6 +373,7 @@ public class EnforcementService extends Service {
 
         checkScheduleWarnings(policy);
         checkTimeLimitWarnings(policy);
+        checkScreenTimeWarnings(policy);
     }
 
     private int[] getWarningThresholds(JSONObject policy) {
@@ -489,6 +490,91 @@ public class EnforcementService extends Service {
                 }
             }
         } catch (Exception ignored) {}
+    }
+
+    private void checkScreenTimeWarnings(JSONObject policy) {
+        try {
+            int limitSeconds = policy.optInt("dailyScreenTimeLimitSeconds", 0);
+            if (limitSeconds <= 0) return;
+
+            // Only nudge while the child is actively using a non-exempt app —
+            // no point warning when nothing is on screen.
+            String foregroundPkg = AppBlockerModule.getLastForegroundPackage();
+            if (foregroundPkg == null) return;
+            if (foregroundPkg.equals(getPackageName())) return;
+            if (isPhoneOrMessagingApp(foregroundPkg)) return;
+
+            int usedSeconds = getTotalDailyUsageSeconds();
+            int remainingSeconds = limitSeconds - usedSeconds;
+            if (remainingSeconds <= 0) return;
+
+            int[] thresholds = getWarningThresholds(policy);
+            for (int t = 0; t < thresholds.length; t++) {
+                int threshMin = thresholds[t];
+                int threshSec = threshMin * 60;
+                if (remainingSeconds <= threshSec && remainingSeconds > threshSec - 6) {
+                    String dedupKey = "screentime:" + threshMin;
+                    if (shownWarnings.add(dedupKey)) {
+                        int notifId = 4000 + t;
+                        showWarningNotification(notifId,
+                            "Screen time: " + threshMin
+                                + " minute" + (threshMin > 1 ? "s" : "") + " left",
+                            "Your daily screen time limit is almost up.");
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private boolean isPhoneOrMessagingApp(String packageName) {
+        if (packageName == null) return false;
+        return packageName.contains("dialer")
+                || packageName.contains("sms")
+                || packageName.contains("messaging");
+    }
+
+    /**
+     * Total foreground screen time in seconds across all non-exempt packages
+     * today, in a single event scan. Mirrors AppBlockerModule's exemptions
+     * (PearGuard itself and phone/messaging) so the warning total tracks the
+     * value the block decision uses.
+     */
+    private int getTotalDailyUsageSeconds() {
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return 0;
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long startOfDay = cal.getTimeInMillis();
+        long now = System.currentTimeMillis();
+        try {
+            UsageEvents events = usm.queryEvents(startOfDay, now);
+            if (events == null) return 0;
+            UsageEvents.Event event = new UsageEvents.Event();
+            java.util.Map<String, Long> sessionStart = new java.util.HashMap<>();
+            long totalMs = 0;
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event);
+                String pkg = event.getPackageName();
+                if (pkg == null) continue;
+                if (pkg.equals(getPackageName())) continue;
+                if (isPhoneOrMessagingApp(pkg)) continue;
+                if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    sessionStart.put(pkg, event.getTimeStamp());
+                } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    Long start = sessionStart.remove(pkg);
+                    if (start != null) totalMs += event.getTimeStamp() - start;
+                }
+            }
+            for (Long start : sessionStart.values()) {
+                if (start != null) totalMs += now - start;
+            }
+            return (int)(totalMs / 1000);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private int getDailyUsageSeconds(String packageName) {

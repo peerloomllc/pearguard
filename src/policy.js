@@ -79,6 +79,28 @@ function hasExceededCategoryLimit(packageName, policy, usageStats) {
   return total >= categoryPolicy.dailyLimitSeconds
 }
 
+// Device-wide cumulative cap: sums today's foreground seconds across every
+// app with reported usage and compares to the policy's daily screen-time
+// budget. Unlike per-app/category limits this ignores which app is in the
+// foreground — once the total is spent, every non-exempt app is blocked.
+// Exemptions (PearGuard itself, phone/messaging, system shells) are handled
+// by the native callers, not here.
+function hasExceededScreenTimeLimit(policy, usageStats) {
+  if (!policy) return false
+  const limit = policy.dailyScreenTimeLimitSeconds
+  if (typeof limit !== 'number' || limit <= 0) return false
+  if (!usageStats) return false
+
+  let total = 0
+  for (const pkg of Object.keys(usageStats)) {
+    const stats = usageStats[pkg]
+    if (stats && typeof stats.dailySeconds === 'number') {
+      total += stats.dailySeconds
+    }
+  }
+  return total >= limit
+}
+
 function isSmsCallException(packageName, contactPhone, policy) {
   if (!isPhoneOrMessagingApp(packageName)) return false
   if (!policy || !policy.allowedContacts) return false
@@ -92,8 +114,9 @@ function isSmsCallException(packageName, contactPhone, policy) {
  * Checks (in order):
  *   1. App is explicitly blocked in policy
  *   2. App is pending approval
- *   3. Any active schedule blocks all apps
- *   4. App has exceeded its daily limit
+ *   3. Cumulative device-wide screen time exceeded
+ *   4. Any active schedule blocks all apps
+ *   5. App has exceeded its daily limit
  *
  * Does NOT check override grants — callers handle those before calling this.
  *
@@ -111,6 +134,9 @@ function isAppBlocked(packageName, policy, usageStats, now) {
   if (appPolicy && appPolicy.status === 'blocked') return true
   if (appPolicy && appPolicy.status === 'pending') return true
 
+  // Device-wide cumulative screen-time cap blocks every app once spent.
+  if (hasExceededScreenTimeLimit(policy, usageStats)) return true
+
   const schedules = policy.schedules || []
   for (const schedule of schedules) {
     if (isScheduleActive(schedule, now)) return true
@@ -127,5 +153,6 @@ module.exports = {
   isScheduleActive,
   hasExceededLimit,
   hasExceededCategoryLimit,
+  hasExceededScreenTimeLimit,
   isSmsCallException,
 }

@@ -16451,6 +16451,86 @@
       )
     ] });
   }
+  function ScreenTimeSection({ policy, setPolicy, childPublicKey, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    const savedSeconds = policy && typeof policy.dailyScreenTimeLimitSeconds === "number" ? policy.dailyScreenTimeLimitSeconds : null;
+    const [minutes, setMinutes] = (0, import_react8.useState)(savedSeconds ? String(Math.round(savedSeconds / 60)) : "");
+    const [showInfo, setShowInfo] = (0, import_react8.useState)(false);
+    (0, import_react8.useEffect)(() => {
+      setMinutes(savedSeconds ? String(Math.round(savedSeconds / 60)) : "");
+    }, [savedSeconds]);
+    function save(nextMinutes) {
+      const trimmed = nextMinutes.trim();
+      const updated = { ...policy };
+      if (trimmed === "") {
+        delete updated.dailyScreenTimeLimitSeconds;
+      } else {
+        const mins = parseInt(trimmed, 10);
+        if (isNaN(mins) || mins <= 0) {
+          delete updated.dailyScreenTimeLimitSeconds;
+        } else {
+          updated.dailyScreenTimeLimitSeconds = mins * 60;
+        }
+      }
+      const prev = typeof policy.dailyScreenTimeLimitSeconds === "number" ? policy.dailyScreenTimeLimitSeconds : void 0;
+      const next = updated.dailyScreenTimeLimitSeconds;
+      if (prev === next) return;
+      setPolicy(updated);
+      window.callBare("policy:update", { childPublicKey, policy: updated });
+    }
+    const inputStyle = {
+      padding: `${spacing2.sm}px ${spacing2.base}px`,
+      border: `1px solid ${colors.border}`,
+      borderRadius: `${radius2.md}px`,
+      fontSize: "14px",
+      background: colors.surface.input,
+      color: colors.text.primary,
+      width: "130px",
+      textAlign: "center",
+      boxSizing: "border-box"
+    };
+    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { marginBottom: `${spacing2.xl}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: `${spacing2.xs}px`, marginBottom: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h3", { style: { ...typography2.subheading, fontWeight: "600", color: colors.text.primary, margin: 0 }, children: "Daily Screen Time Limit" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+          "button",
+          {
+            onClick: () => {
+              window.callBare("haptic:tap");
+              setShowInfo((v) => !v);
+            },
+            "aria-label": "About screen time limit",
+            style: { background: "none", border: "none", cursor: "pointer", padding: `${spacing2.xs}px`, display: "flex", alignItems: "center" },
+            children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Icon, { name: "Info", size: 16, color: colors.text.muted })
+          }
+        )
+      ] }),
+      showInfo && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("p", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: `${spacing2.base}px`, lineHeight: "1.4", padding: `${spacing2.sm}px`, background: colors.surface.elevated, borderRadius: `${radius2.md}px` }, children: [
+        "A ",
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("strong", { children: "device-wide cap" }),
+        " on total daily app use. When the child's combined screen time reaches this limit, all apps lock for the rest of the day. Phone, messaging and PearGuard stay available. Leave blank to disable."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: `${spacing2.xs}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+          "input",
+          {
+            type: "number",
+            inputMode: "numeric",
+            value: minutes,
+            onChange: (e) => setMinutes(e.target.value),
+            onBlur: (e) => save(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === "Enter") e.target.blur();
+            },
+            placeholder: "\u221E",
+            "aria-label": "Daily screen time limit in minutes",
+            style: inputStyle,
+            min: "1"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: "min/day" })
+      ] })
+    ] });
+  }
   function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
     const [newRule, setNewRule] = (0, import_react8.useState)(BLANK_RULE);
     const [editingIndex, setEditingIndex] = (0, import_react8.useState)(null);
@@ -16801,7 +16881,10 @@
     }
     const sectionProps = { policy, setPolicy, childPublicKey, footerEl, colors, typography: typography2, spacing: spacing2, radius: radius2 };
     return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: `${spacing2.base}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ScheduleSection, { ...sectionProps }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: `${spacing2.base}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ScreenTimeSection, { ...sectionProps }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ScheduleSection, { ...sectionProps })
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { ref: footerRef })
     ] });
   }

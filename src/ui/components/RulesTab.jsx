@@ -151,6 +151,91 @@ function RuleRow({ rule, onEdit, onDelete, colors, typography, spacing, radius }
   );
 }
 
+function ScreenTimeSection({ policy, setPolicy, childPublicKey, colors, typography, spacing, radius }) {
+  const savedSeconds = policy && typeof policy.dailyScreenTimeLimitSeconds === 'number'
+    ? policy.dailyScreenTimeLimitSeconds
+    : null;
+  const [minutes, setMinutes] = useState(savedSeconds ? String(Math.round(savedSeconds / 60)) : '');
+  const [showInfo, setShowInfo] = useState(false);
+
+  // Resync the field when the policy changes underneath us (e.g. another device edited it).
+  useEffect(() => {
+    setMinutes(savedSeconds ? String(Math.round(savedSeconds / 60)) : '');
+  }, [savedSeconds]);
+
+  function save(nextMinutes) {
+    const trimmed = nextMinutes.trim();
+    const updated = { ...policy };
+    if (trimmed === '') {
+      delete updated.dailyScreenTimeLimitSeconds;
+    } else {
+      const mins = parseInt(trimmed, 10);
+      if (isNaN(mins) || mins <= 0) {
+        delete updated.dailyScreenTimeLimitSeconds;
+      } else {
+        updated.dailyScreenTimeLimitSeconds = mins * 60;
+      }
+    }
+    // Skip the round-trip when nothing actually changed.
+    const prev = typeof policy.dailyScreenTimeLimitSeconds === 'number' ? policy.dailyScreenTimeLimitSeconds : undefined;
+    const next = updated.dailyScreenTimeLimitSeconds;
+    if (prev === next) return;
+    setPolicy(updated);
+    window.callBare('policy:update', { childPublicKey, policy: updated });
+  }
+
+  // Width matches the "Add Rule" button below (icon + label + horizontal
+  // padding) so the two centered controls line up.
+  const inputStyle = {
+    padding: `${spacing.sm}px ${spacing.base}px`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: `${radius.md}px`,
+    fontSize: '14px',
+    background: colors.surface.input,
+    color: colors.text.primary,
+    width: '130px',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ marginBottom: `${spacing.xl}px` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.xs}px`, marginBottom: `${spacing.sm}px` }}>
+        <h3 style={{ ...typography.subheading, fontWeight: '600', color: colors.text.primary, margin: 0 }}>
+          Daily Screen Time Limit
+        </h3>
+        <button
+          onClick={() => { window.callBare('haptic:tap'); setShowInfo((v) => !v); }}
+          aria-label="About screen time limit"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px`, display: 'flex', alignItems: 'center' }}
+        >
+          <Icon name="Info" size={16} color={colors.text.muted} />
+        </button>
+      </div>
+      {showInfo && (
+        <p style={{ ...typography.caption, color: colors.text.secondary, marginBottom: `${spacing.base}px`, lineHeight: '1.4', padding: `${spacing.sm}px`, background: colors.surface.elevated, borderRadius: `${radius.md}px` }}>
+          A <strong>device-wide cap</strong> on total daily app use. When the child's combined screen time reaches this limit, all apps lock for the rest of the day. Phone, messaging and PearGuard stay available. Leave blank to disable.
+        </p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: `${spacing.xs}px` }}>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={minutes}
+          onChange={(e) => setMinutes(e.target.value)}
+          onBlur={(e) => save(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          placeholder="&#8734;"
+          aria-label="Daily screen time limit in minutes"
+          style={inputStyle}
+          min="1"
+        />
+        <span style={{ ...typography.caption, color: colors.text.secondary }}>min/day</span>
+      </div>
+    </div>
+  );
+}
+
 function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, typography, spacing, radius }) {
   const [newRule, setNewRule] = useState(BLANK_RULE);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -617,6 +702,7 @@ export default function RulesTab({ childPublicKey }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: `${spacing.base}px` }}>
+        <ScreenTimeSection {...sectionProps} />
         <ScheduleSection {...sectionProps} />
       </div>
       <div ref={footerRef} />

@@ -108,6 +108,38 @@ public class ParentConnectionService extends Service {
         }
     }
 
+    /**
+     * The user swiped the app away from recents. On stock Android a foreground
+     * service survives this, but many OEMs (and low-memory situations right
+     * after) kill the whole process, taking the Hyperswarm connection with it
+     * and silently stopping the parent from receiving child messages.
+     *
+     * Schedule a near-future restart via AlarmManager -> ServiceRestartReceiver
+     * so the service comes back and onStartCommand re-wakes the RN/Bare worklet.
+     * An inexact alarm (set, not setExact) avoids the SCHEDULE_EXACT_ALARM
+     * permission; the parent is Doze-exempt so it still fires promptly.
+     *
+     * A true force-stop or reinstall cannot be revived this way — Android blocks
+     * all auto-start until the user reopens the app or reboots.
+     */
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        try {
+            Intent restart = new Intent(getApplicationContext(), ServiceRestartReceiver.class);
+            PendingIntent pi = PendingIntent.getBroadcast(
+                    getApplicationContext(), 1, restart,
+                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+            android.app.AlarmManager am =
+                    (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                am.set(android.app.AlarmManager.RTC_WAKEUP,
+                        System.currentTimeMillis() + 2000, pi);
+            }
+        } catch (Exception ignored) {
+        }
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;

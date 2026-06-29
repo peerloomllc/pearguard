@@ -110,6 +110,13 @@
             android:value="parental_control_monitoring" />
     </service>
 
+    <!-- ServiceRestartReceiver: revives ParentConnectionService after the
+         parent app is swiped from recents (onTaskRemoved -> AlarmManager). -->
+    <receiver
+        android:name=".ServiceRestartReceiver"
+        android:enabled="true"
+        android:exported="false" />
+
     <!-- AppBlockerModule: Accessibility Service for app blocking -->
     <service
         android:name=".AppBlockerModule"

@@ -677,6 +677,29 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                         if (sessionStarts.containsKey(pkg)) {
                             recentPauses.put(pkg, event.getTimeStamp());
                         }
+                    } else if (type == UsageEvents.Event.SCREEN_NON_INTERACTIVE
+                            || type == UsageEvents.Event.KEYGUARD_SHOWN) {
+                        // Screen turned off / device locked. Close every open
+                        // session at this boundary. Many devices do not emit a
+                        // per-app ACTIVITY_PAUSED when the screen sleeps, so
+                        // without this the "still in foreground" pass below would
+                        // add all the locked/idle time (potentially hours) to
+                        // whatever app was on top. No session merges across a
+                        // screen-off, so we finalize and reset here.
+                        long boundary = event.getTimeStamp();
+                        for (java.util.Map.Entry<String, Long> open : sessionStarts.entrySet()) {
+                            String p = open.getKey();
+                            long start = open.getValue();
+                            Long pausedAt = recentPauses.get(p);
+                            long end = (pausedAt != null && pausedAt >= start) ? pausedAt : boundary;
+                            long add = end - start;
+                            if (add > 0) {
+                                long prev = totalMs.containsKey(p) ? totalMs.get(p) : 0;
+                                totalMs.put(p, prev + add);
+                            }
+                        }
+                        sessionStarts.clear();
+                        recentPauses.clear();
                     }
                 }
             }
@@ -774,10 +797,42 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
 
             while (events.getNextEvent(event)) {
                 String pkg = event.getPackageName();
+                int type = event.getEventType();
+
+                // Screen-off / lock events are not tied to a launcher package,
+                // so handle them before the package filters below. Close and
+                // emit every open session at this boundary so idle locked time
+                // is never folded into a session's duration (mirrors the fix in
+                // getDailyUsageAllEvents).
+                if (type == UsageEvents.Event.SCREEN_NON_INTERACTIVE
+                        || type == UsageEvents.Event.KEYGUARD_SHOWN) {
+                    long boundary = event.getTimeStamp();
+                    for (java.util.Map.Entry<String, Long> open : fgStarts.entrySet()) {
+                        String p = open.getKey();
+                        Long mergedStart = mergedSessionStarts.get(p);
+                        long start = mergedStart != null ? mergedStart : open.getValue();
+                        Long pausedAt = recentSessionPauses.get(p);
+                        long end = (pausedAt != null && pausedAt >= start) ? pausedAt : boundary;
+                        long durationSec = (end - start) / 1000;
+                        if (durationSec >= 1) {
+                            WritableMap session = Arguments.createMap();
+                            session.putString("packageName", p);
+                            session.putString("displayName", getAppLabel(pm, p));
+                            session.putDouble("startedAt", (double) start);
+                            session.putDouble("endedAt", (double) end);
+                            session.putInt("durationSeconds", (int) durationSec);
+                            sessions.pushMap(session);
+                        }
+                    }
+                    fgStarts.clear();
+                    recentSessionPauses.clear();
+                    mergedSessionStarts.clear();
+                    continue;
+                }
+
                 if (pkg.equals(ctx.getPackageName())) continue;
                 if (!launcherPackages.contains(pkg)) continue;
 
-                int type = event.getEventType();
                 // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
                 // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
                 if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {

@@ -61,6 +61,13 @@ public class EnforcementService extends Service {
     // is treated as a manual time change. Generous enough to ignore NTP corrections
     // (seconds) while catching the hours-scale shifts needed to defeat a daily limit.
     private static final long CLOCK_TAMPER_THRESHOLD_MS = 120_000; // 2 minutes
+    // elapsedRealtime() of the last default-network change. A timezone or clock
+    // broadcast that lands within this grace window of a network swap is almost
+    // always an automatic NITZ update pushed by the new network (WiFi <-> cellular,
+    // VPN, hotspot), not a manual change, so we treat it as benign. Written on the
+    // network-callback thread, read on the receiver's main thread — hence volatile.
+    private volatile long lastNetworkChangeElapsed = 0;
+    private static final long NETWORK_TIME_GRACE_MS = 90_000; // 90 seconds
 
     // --- Lifecycle ---
 
@@ -73,6 +80,7 @@ public class EnforcementService extends Service {
         lastAccessibilityState = isAccessibilityServiceEnabled();
         registerNetworkCallback();
         anchorClock();
+        seedTimezoneBaseline();
         registerClockChangeReceiver();
         handler.post(enforcementLoop);
     }
@@ -161,6 +169,7 @@ public class EnforcementService extends Service {
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
+                    lastNetworkChangeElapsed = SystemClock.elapsedRealtime();
                     emitReconnectNeeded();
                 }
             };
@@ -240,9 +249,20 @@ public class EnforcementService extends Service {
 
                 if (Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
                     // Epoch time is unchanged by a timezone switch, but the local-day
-                    // boundary used by daily limits and schedules shifts, so this is a
-                    // genuine evasion vector. It could also be travel — the parent decides.
-                    reportBypass("timezone_changed");
+                    // boundary used by daily limits and schedules shifts, so a manual
+                    // change is a genuine evasion vector. Two things make this fire
+                    // spuriously, so we filter them out:
+                    //   1) The broadcast often lands with the zone unchanged (or right
+                    //      after a network swap, when Android auto-applies NITZ). Only
+                    //      warn when the zone ID actually moved.
+                    //   2) A network handoff pushing a new zone is not tampering, so
+                    //      suppress within the post-network-change grace window.
+                    // Real manual travel-simulation still changes the zone with no
+                    // preceding network event, so it is still reported — the parent decides.
+                    boolean zoneChanged = timezoneChanged();
+                    if (zoneChanged && !recentNetworkChange()) {
+                        reportBypass("timezone_changed");
+                    }
                     anchorClock();
                     return;
                 }
@@ -256,6 +276,9 @@ public class EnforcementService extends Service {
                 anchorClock(); // re-anchor immediately so later checks measure from here
 
                 if (anchorWall == 0L || anchorElapsed == 0L) return; // no baseline yet
+                // NITZ time sync after a network swap can jump the clock legitimately;
+                // don't flag it as manual tampering.
+                if (recentNetworkChange()) return;
                 long drift = (nowWall - anchorWall) - (nowElapsed - anchorElapsed);
                 if (Math.abs(drift) > CLOCK_TAMPER_THRESHOLD_MS) {
                     reportBypass("clock_changed");
@@ -273,6 +296,40 @@ public class EnforcementService extends Service {
             try { unregisterReceiver(clockChangeReceiver); } catch (Exception ignored) {}
             clockChangeReceiver = null;
         }
+    }
+
+    /**
+     * True when a default-network change happened within NETWORK_TIME_GRACE_MS.
+     * Used to distinguish an automatic NITZ time/zone update (benign) from a
+     * manual clock/timezone change in Settings (a real bypass attempt). A default
+     * of 0 (no network change seen yet) never counts as recent.
+     */
+    private boolean recentNetworkChange() {
+        long anchor = lastNetworkChangeElapsed;
+        if (anchor == 0) return false;
+        long since = SystemClock.elapsedRealtime() - anchor;
+        return since >= 0 && since < NETWORK_TIME_GRACE_MS;
+    }
+
+    /** Records the current timezone ID so the first genuine change is detectable. */
+    private void seedTimezoneBaseline() {
+        getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
+            .edit()
+            .putString("last_timezone_id", java.util.TimeZone.getDefault().getID())
+            .apply();
+    }
+
+    /**
+     * True only when the device timezone ID actually differs from the last one we
+     * recorded, updating the stored value. Many ACTION_TIMEZONE_CHANGED broadcasts
+     * fire with an unchanged zone; those return false and raise no warning.
+     */
+    private boolean timezoneChanged() {
+        SharedPreferences prefs = getSharedPreferences("PearGuardPrefs", MODE_PRIVATE);
+        String current = java.util.TimeZone.getDefault().getID();
+        String last = prefs.getString("last_timezone_id", null);
+        prefs.edit().putString("last_timezone_id", current).apply();
+        return last != null && !last.equals(current);
     }
 
     /**

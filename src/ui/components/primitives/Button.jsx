@@ -22,12 +22,15 @@ export default function Button({ children, variant = 'primary', icon, disabled, 
   const variants = {
     primary: { backgroundColor: colors.primary, color: '#FFFFFF' },
     secondary: { backgroundColor: 'transparent', border: `1px solid ${colors.primary}`, color: colors.primary },
+    accent: { backgroundColor: colors.primary, color: '#000000' },
     danger: { backgroundColor: colors.error, color: '#FFFFFF' },
   };
 
+  const iconColor = variant === 'secondary' ? colors.primary : variant === 'accent' ? '#000000' : '#FFFFFF';
+
   return (
     <button style={{ ...base, ...variants[variant], ...style }} disabled={disabled} {...props}>
-      {icon && <Icon name={icon} size={16} color={variant === 'secondary' ? colors.primary : '#FFFFFF'} />}
+      {icon && <Icon name={icon} size={16} color={iconColor} />}
       {children}
     </button>
   );

@@ -6,6 +6,7 @@ const {
   isScheduleActive,
   hasExceededLimit,
   hasExceededScreenTimeLimit,
+  isScreenTimeExempt,
   isSmsCallException,
 } = require('./policy')
 
@@ -149,6 +150,74 @@ function makeDate(dayOfWeek, hour, minute) {
     hasExceededScreenTimeLimit(null, { 'com.a': { dailySeconds: 9999 } }),
     false,
     'null policy'
+  )
+}
+
+// screenTimeExemptApps (#178)
+{
+  const policy = {
+    dailyScreenTimeLimitSeconds: 3600,
+    screenTimeExemptApps: ['org.thoughtcrime.securesms'],
+  }
+
+  assert.strictEqual(isScreenTimeExempt('org.thoughtcrime.securesms', policy), true, 'listed app is exempt')
+  assert.strictEqual(isScreenTimeExempt('com.a', policy), false, 'unlisted app is not exempt')
+  assert.strictEqual(isScreenTimeExempt('com.a', {}), false, 'no exempt list')
+  assert.strictEqual(isScreenTimeExempt('com.a', null), false, 'null policy')
+
+  // Exempt usage must not spend the shared budget.
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, {
+      'com.a': { dailySeconds: 100 },
+      'org.thoughtcrime.securesms': { dailySeconds: 5000 },
+    }),
+    false,
+    'exempt app usage is excluded from the total'
+  )
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, {
+      'com.a': { dailySeconds: 3600 },
+      'org.thoughtcrime.securesms': { dailySeconds: 5000 },
+    }),
+    true,
+    'non-exempt usage alone still trips the limit'
+  )
+
+  // Once the budget is spent, exempt apps stay usable and others block.
+  const spent = {
+    'com.a': { dailySeconds: 3600 },
+    'org.thoughtcrime.securesms': { dailySeconds: 5000 },
+  }
+  const now = makeDate(1, 12, 0)
+  assert.strictEqual(
+    isAppBlocked('org.thoughtcrime.securesms', policy, spent, now),
+    false,
+    'exempt app allowed after the cap is reached'
+  )
+  assert.strictEqual(
+    isAppBlocked('com.a', policy, spent, now),
+    true,
+    'non-exempt app blocked after the cap is reached'
+  )
+
+  // Exemption from the total does not exempt from the app's own daily limit.
+  const withOwnLimit = {
+    ...policy,
+    apps: { 'org.thoughtcrime.securesms': { dailyLimitSeconds: 1800 } },
+  }
+  assert.strictEqual(
+    isAppBlocked('org.thoughtcrime.securesms', withOwnLimit, {
+      'org.thoughtcrime.securesms': { dailySeconds: 1800 },
+    }, now),
+    true,
+    'exempt app still blocked by its own per-app limit'
+  )
+  assert.strictEqual(
+    isAppBlocked('org.thoughtcrime.securesms', withOwnLimit, {
+      'org.thoughtcrime.securesms': { dailySeconds: 1799 },
+    }, now),
+    false,
+    'exempt app under its own per-app limit is allowed'
   )
 }
 

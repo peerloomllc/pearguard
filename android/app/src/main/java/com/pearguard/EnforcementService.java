@@ -560,8 +560,10 @@ public class EnforcementService extends Service {
             if (foregroundPkg == null) return;
             if (foregroundPkg.equals(getPackageName())) return;
             if (isPhoneOrMessagingApp(foregroundPkg)) return;
+            // An exempt app doesn't spend the budget, so a countdown would be noise.
+            if (AppBlockerModule.isScreenTimeExempt(policy, foregroundPkg)) return;
 
-            int usedSeconds = getTotalDailyUsageSeconds();
+            int usedSeconds = getTotalDailyUsageSeconds(policy);
             int remainingSeconds = limitSeconds - usedSeconds;
             if (remainingSeconds <= 0) return;
 
@@ -593,10 +595,10 @@ public class EnforcementService extends Service {
     /**
      * Total foreground screen time in seconds across all non-exempt packages
      * today, in a single event scan. Mirrors AppBlockerModule's exemptions
-     * (PearGuard itself and phone/messaging) so the warning total tracks the
-     * value the block decision uses.
+     * (PearGuard itself, phone/messaging, and the parent's screenTimeExemptApps)
+     * so the warning total tracks the value the block decision uses.
      */
-    private int getTotalDailyUsageSeconds() {
+    private int getTotalDailyUsageSeconds(JSONObject policy) {
         UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();
@@ -606,6 +608,14 @@ public class EnforcementService extends Service {
         cal.set(Calendar.MILLISECOND, 0);
         long startOfDay = cal.getTimeInMillis();
         long now = System.currentTimeMillis();
+        // Hoisted out of the event loop — the scan can see thousands of events.
+        Set<String> screenTimeExempt = new HashSet<>();
+        if (policy != null) {
+            JSONArray arr = policy.optJSONArray("screenTimeExemptApps");
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) screenTimeExempt.add(arr.optString(i));
+            }
+        }
         try {
             UsageEvents events = usm.queryEvents(startOfDay, now);
             if (events == null) return 0;
@@ -618,6 +628,7 @@ public class EnforcementService extends Service {
                 if (pkg == null) continue;
                 if (pkg.equals(getPackageName())) continue;
                 if (isPhoneOrMessagingApp(pkg)) continue;
+                if (screenTimeExempt.contains(pkg)) continue;
                 if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     sessionStart.put(pkg, event.getTimeStamp());
                 } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {

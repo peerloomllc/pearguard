@@ -79,12 +79,23 @@ function hasExceededCategoryLimit(packageName, policy, usageStats) {
   return total >= categoryPolicy.dailyLimitSeconds
 }
 
+// Parent-chosen apps that don't count toward the device-wide screen-time
+// budget and stay usable once it's spent (#178). Distinct from the built-in
+// exemptions (PearGuard, phone/messaging, system shells), which the native
+// callers filter before we ever see them.
+function isScreenTimeExempt(packageName, policy) {
+  if (!policy) return false
+  const exempt = policy.screenTimeExemptApps
+  return Array.isArray(exempt) && exempt.includes(packageName)
+}
+
 // Device-wide cumulative cap: sums today's foreground seconds across every
 // app with reported usage and compares to the policy's daily screen-time
 // budget. Unlike per-app/category limits this ignores which app is in the
 // foreground — once the total is spent, every non-exempt app is blocked.
 // Exemptions (PearGuard itself, phone/messaging, system shells) are handled
-// by the native callers, not here.
+// by the native callers, not here. Parent-chosen exempt apps (#178) are
+// subtracted from the total so their use never spends the shared budget.
 function hasExceededScreenTimeLimit(policy, usageStats) {
   if (!policy) return false
   const limit = policy.dailyScreenTimeLimitSeconds
@@ -93,6 +104,7 @@ function hasExceededScreenTimeLimit(policy, usageStats) {
 
   let total = 0
   for (const pkg of Object.keys(usageStats)) {
+    if (isScreenTimeExempt(pkg, policy)) continue
     const stats = usageStats[pkg]
     if (stats && typeof stats.dailySeconds === 'number') {
       total += stats.dailySeconds
@@ -114,7 +126,7 @@ function isSmsCallException(packageName, contactPhone, policy) {
  * Checks (in order):
  *   1. App is explicitly blocked in policy
  *   2. App is pending approval
- *   3. Cumulative device-wide screen time exceeded
+ *   3. Cumulative device-wide screen time exceeded (unless app is exempt)
  *   4. Any active schedule blocks all apps
  *   5. App has exceeded its daily limit
  *
@@ -134,8 +146,13 @@ function isAppBlocked(packageName, policy, usageStats, now) {
   if (appPolicy && appPolicy.status === 'blocked') return true
   if (appPolicy && appPolicy.status === 'pending') return true
 
-  // Device-wide cumulative screen-time cap blocks every app once spent.
-  if (hasExceededScreenTimeLimit(policy, usageStats)) return true
+  // Device-wide cumulative screen-time cap blocks every app once spent, except
+  // the ones the parent marked exempt (#178). An exempt app still falls through
+  // to the schedule and per-app/category limit checks below.
+  if (!isScreenTimeExempt(packageName, policy) &&
+      hasExceededScreenTimeLimit(policy, usageStats)) {
+    return true
+  }
 
   const schedules = policy.schedules || []
   for (const schedule of schedules) {
@@ -154,5 +171,6 @@ module.exports = {
   hasExceededLimit,
   hasExceededCategoryLimit,
   hasExceededScreenTimeLimit,
+  isScreenTimeExempt,
   isSmsCallException,
 }

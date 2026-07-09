@@ -52,6 +52,12 @@
       <category android:name="android.intent.category.BROWSABLE"/>
       <data android:scheme="https"/>
     </intent>
+    <!-- Lets canOpenURL('lightning:') see an installed wallet. Without this,
+         package visibility filtering makes it always resolve false on API 30+. -->
+    <intent>
+      <action android:name="android.intent.action.VIEW"/>
+      <data android:scheme="lightning"/>
+    </intent>
   </queries>
   <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false">
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>

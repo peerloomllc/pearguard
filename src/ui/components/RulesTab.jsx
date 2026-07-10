@@ -8,6 +8,25 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const BLANK_RULE = { label: '', days: [], start: '21:00', end: '07:00', exemptApps: [] };
 
+// Shared by the schedule rule editor and the screen-time exempt picker.
+function groupAppsByCategory(policy) {
+  const grouped = {};
+  let total = 0;
+  if (policy && policy.apps) {
+    for (const [pkg, data] of Object.entries(policy.apps)) {
+      const name = data.appName || pkg;
+      const cat = data.category || 'Other';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push({ packageName: pkg, appName: name });
+      total++;
+    }
+    for (const cat of Object.keys(grouped)) {
+      grouped[cat].sort((a, b) => a.appName.localeCompare(b.appName));
+    }
+  }
+  return { appsByCategory: grouped, totalAppCount: total };
+}
+
 function ExemptCategoryGroup({ categoryName, apps, exemptSet, onToggle, onSelectAll, onClear, expanded, onToggleExpanded, colors, typography, spacing, radius }) {
   const color = CATEGORY_COLORS[categoryName] || '#aaa';
   const selectedCount = apps.reduce((n, a) => n + (exemptSet.has(a.packageName) ? 1 : 0), 0);
@@ -157,11 +176,45 @@ function ScreenTimeSection({ policy, setPolicy, childPublicKey, colors, typograp
     : null;
   const [minutes, setMinutes] = useState(savedSeconds ? String(Math.round(savedSeconds / 60)) : '');
   const [showInfo, setShowInfo] = useState(false);
+  const [showExempt, setShowExempt] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState({});
+
+  const { appsByCategory, totalAppCount } = useMemo(() => groupAppsByCategory(policy), [policy]);
+  const exemptApps = useMemo(
+    () => (policy && Array.isArray(policy.screenTimeExemptApps) ? policy.screenTimeExemptApps : []),
+    [policy]
+  );
+  const exemptSet = useMemo(() => new Set(exemptApps), [exemptApps]);
 
   // Resync the field when the policy changes underneath us (e.g. another device edited it).
   useEffect(() => {
     setMinutes(savedSeconds ? String(Math.round(savedSeconds / 60)) : '');
   }, [savedSeconds]);
+
+  function saveExempt(next) {
+    const updated = { ...policy, screenTimeExemptApps: next };
+    setPolicy(updated);
+    window.callBare('policy:update', { childPublicKey, policy: updated });
+  }
+
+  function toggleExemptApp(packageName) {
+    saveExempt(
+      exemptSet.has(packageName)
+        ? exemptApps.filter((p) => p !== packageName)
+        : [...exemptApps, packageName]
+    );
+  }
+
+  function selectAllInCategory(categoryName) {
+    const set = new Set(exemptApps);
+    for (const a of appsByCategory[categoryName] || []) set.add(a.packageName);
+    saveExempt(Array.from(set));
+  }
+
+  function clearCategory(categoryName) {
+    const pkgs = new Set((appsByCategory[categoryName] || []).map((a) => a.packageName));
+    saveExempt(exemptApps.filter((p) => !pkgs.has(p)));
+  }
 
   function save(nextMinutes) {
     const trimmed = nextMinutes.trim();
@@ -232,6 +285,75 @@ function ScreenTimeSection({ policy, setPolicy, childPublicKey, colors, typograp
         />
         <span style={{ ...typography.caption, color: colors.text.secondary }}>min/day</span>
       </div>
+
+      {/* Always visible, but exemptions only mean something once a cap is set
+          and the child has reported apps to choose from. */}
+      {(() => {
+        const hint = savedSeconds > 0
+          ? (totalAppCount > 0 ? null : 'No apps yet')
+          : 'Set a limit first';
+        const disabled = hint !== null;
+        const expanded = showExempt && !disabled;
+        return (
+        <div style={{ marginTop: `${spacing.base}px` }}>
+          <button
+            type="button"
+            onClick={() => { window.callBare('haptic:tap'); setShowExempt((v) => !v); }}
+            disabled={disabled}
+            aria-expanded={expanded}
+            aria-label={disabled ? `Exempt apps, unavailable: ${hint}` : 'Exempt apps'}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: `${spacing.sm}px`,
+              padding: `${spacing.sm}px ${spacing.base}px`,
+              background: colors.surface.elevated,
+              border: `1px solid ${colors.border}`,
+              // Accent bar echoes the category rows below, and turns green to
+              // signal "this list is doing something" at a glance.
+              borderLeft: `4px solid ${!disabled && exemptApps.length > 0 ? colors.primary : colors.border}`,
+              borderRadius: `${radius.md}px`,
+              cursor: disabled ? 'default' : 'pointer',
+              textAlign: 'left',
+              opacity: disabled ? 0.6 : 1,
+            }}
+          >
+            <span style={{ flex: 1, ...typography.body, fontWeight: '600', color: disabled ? colors.text.muted : colors.text.primary }}>
+              Exempt apps
+            </span>
+            <span style={{ ...typography.caption, color: !disabled && exemptApps.length > 0 ? colors.primary : colors.text.muted, fontWeight: !disabled && exemptApps.length > 0 ? '600' : '400' }}>
+              {disabled ? hint : (exemptApps.length > 0 ? `${exemptApps.length} exempt` : 'None')}
+            </span>
+            <span style={{ fontSize: '18px', color: disabled ? colors.text.muted : colors.text.secondary, lineHeight: 1 }}>{expanded ? '⌄' : '›'}</span>
+          </button>
+          {expanded && (
+            <div style={{ marginTop: `${spacing.sm}px` }}>
+              <p style={{ ...typography.caption, color: colors.text.secondary, marginBottom: `${spacing.sm}px`, lineHeight: '1.4' }}>
+                Exempt apps don't count toward the daily total and stay usable once it runs out. Any per-app limit you've set still applies to them.
+              </p>
+              {Object.keys(appsByCategory).sort().map((cat) => (
+                <ExemptCategoryGroup
+                  key={cat}
+                  categoryName={cat}
+                  apps={appsByCategory[cat]}
+                  exemptSet={exemptSet}
+                  onToggle={toggleExemptApp}
+                  onSelectAll={() => selectAllInCategory(cat)}
+                  onClear={() => clearCategory(cat)}
+                  expanded={!!expandedCategories[cat]}
+                  onToggleExpanded={() => setExpandedCategories((p) => ({ ...p, [cat]: !p[cat] }))}
+                  colors={colors}
+                  typography={typography}
+                  spacing={spacing}
+                  radius={radius}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        );
+      })()}
     </div>
   );
 }
@@ -244,23 +366,7 @@ function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, 
   const [showInfo, setShowInfo] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState({});
 
-  const { appsByCategory, totalAppCount } = useMemo(() => {
-    const grouped = {};
-    let total = 0;
-    if (policy && policy.apps) {
-      for (const [pkg, data] of Object.entries(policy.apps)) {
-        const name = data.appName || pkg;
-        const cat = data.category || 'Other';
-        if (!grouped[cat]) grouped[cat] = [];
-        grouped[cat].push({ packageName: pkg, appName: name });
-        total++;
-      }
-      for (const cat of Object.keys(grouped)) {
-        grouped[cat].sort((a, b) => a.appName.localeCompare(b.appName));
-      }
-    }
-    return { appsByCategory: grouped, totalAppCount: total };
-  }, [policy]);
+  const { appsByCategory, totalAppCount } = useMemo(() => groupAppsByCategory(policy), [policy]);
 
   function saveSchedules(schedules) {
     const updated = { ...policy, schedules };

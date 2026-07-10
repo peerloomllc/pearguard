@@ -9,14 +9,21 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.pearguard",
-      "buildNumber": "1",
+      "buildNumber": "27",
       "infoPlist": {
         "NSCameraUsageDescription": "Used to scan QR codes and set profile photos",
         "NSPhotoLibraryUsageDescription": "Used to set your profile photo",
         "NSMicrophoneUsageDescription": "Required by AVCaptureSession for QR scanning and camera capture",
-        "BGTaskSchedulerPermittedIdentifiers": ["com.pearguard.bgsync"],
-        "UIBackgroundModes": ["fetch", "processing"],
-        "LSApplicationQueriesSchemes": ["lightning"]
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.pearguard.bgsync"
+        ],
+        "UIBackgroundModes": [
+          "fetch",
+          "processing"
+        ],
+        "LSApplicationQueriesSchemes": [
+          "lightning"
+        ]
       }
     },
     "android": {
@@ -57,11 +64,13 @@
           ]
         }
       ],
-      "versionCode": 1,
+      "versionCode": 1000016,
       "minSdkVersion": 29
     },
     "plugins": [
-      ["expo-router"],
+      [
+        "expo-router"
+      ],
       [
         "expo-build-properties",
         {
@@ -76,6 +85,6 @@
       "./assets/bare-ios.bundle",
       "./assets/bare-ios-sim.bundle"
     ],
-    "version": "0.1.0"
+    "version": "1.0.16"
   }
 }

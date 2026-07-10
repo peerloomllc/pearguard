@@ -672,11 +672,14 @@ public class AppBlockerModule extends AccessibilityService {
             }
 
             // Step 1.5: Device-wide cumulative screen-time cap. Applies to every
-            // non-exempt app (exemptions were filtered above). An active override
-            // returned null already, so a parent-granted time extension still wins.
+            // non-exempt app (built-in exemptions were filtered above). An active
+            // override returned null already, so a parent-granted time extension
+            // still wins. Parent-chosen exempt apps (#178) skip the cap but fall
+            // through to their own per-app/category limit below — unlike the
+            // built-in exemptions, which return null and skip every check.
             int screenLimit = policy.optInt("dailyScreenTimeLimitSeconds", 0);
-            if (screenLimit > 0) {
-                int totalUsed = getTotalDailyUsageSeconds();
+            if (screenLimit > 0 && !isScreenTimeExempt(policy, packageName)) {
+                int totalUsed = getTotalDailyUsageSeconds(policy);
                 if (totalUsed >= screenLimit) {
                     int minutes = screenLimit / 60;
                     return "Screen time limit reached (" + minutes + " min/day).";
@@ -834,14 +837,29 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     /**
+     * True if the parent marked this package exempt from the device-wide
+     * screen-time cap (#178). Exempt apps neither spend the shared budget nor
+     * get blocked once it's gone, but their own per-app limit still applies.
+     */
+    static boolean isScreenTimeExempt(JSONObject policy, String packageName) {
+        if (policy == null || packageName == null) return false;
+        JSONArray exempt = policy.optJSONArray("screenTimeExemptApps");
+        if (exempt == null) return false;
+        for (int i = 0; i < exempt.length(); i++) {
+            if (packageName.equals(exempt.optString(i))) return true;
+        }
+        return false;
+    }
+
+    /**
      * Total foreground screen time in seconds across all non-exempt packages
      * today, computed in a single event scan. Backs the device-wide
      * cumulative screen-time cap. Exempt packages (PearGuard itself,
-     * phone/messaging, system overlays) are skipped so a call or the
-     * PearGuard app never counts against the budget — mirroring the
-     * exemptions in getBlockReason.
+     * phone/messaging, system overlays, plus the parent's screenTimeExemptApps)
+     * are skipped so a call or the PearGuard app never counts against the
+     * budget — mirroring the exemptions in getBlockReason.
      */
-    private int getTotalDailyUsageSeconds() {
+    private int getTotalDailyUsageSeconds(JSONObject policy) {
         UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();
@@ -851,6 +869,14 @@ public class AppBlockerModule extends AccessibilityService {
         cal.set(Calendar.MILLISECOND, 0);
         long startOfDay = cal.getTimeInMillis();
         long now = System.currentTimeMillis();
+        // Hoisted out of the event loop — the scan can see thousands of events.
+        Set<String> screenTimeExempt = new java.util.HashSet<>();
+        if (policy != null) {
+            JSONArray arr = policy.optJSONArray("screenTimeExemptApps");
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) screenTimeExempt.add(arr.optString(i));
+            }
+        }
         try {
             UsageEvents events = usm.queryEvents(startOfDay, now);
             if (events == null) return 0;
@@ -865,6 +891,7 @@ public class AppBlockerModule extends AccessibilityService {
                 if (pkg.equals(getPackageName())) continue;
                 if (isSystemOverlayPackage(pkg)) continue;
                 if (isPhoneOrMessagingApp(pkg)) continue;
+                if (screenTimeExempt.contains(pkg)) continue;
                 if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     sessionStart.put(pkg, event.getTimeStamp());
                 } else if (event.getEventType() == UsageEvents.Event.MOVE_TO_BACKGROUND) {

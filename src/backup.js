@@ -172,11 +172,16 @@ function mergeRulesIntoPolicy (targetPolicy, importedPolicy, targetChildPubKey, 
     ...s,
     exemptApps: Array.isArray(s.exemptApps) ? s.exemptApps.filter(p => allowed.has(p)) : []
   }))
+  // Same for the screen-time exempt list (#178).
+  const screenTimeExemptApps = Array.isArray(importedPolicy.screenTimeExemptApps)
+    ? importedPolicy.screenTimeExemptApps.filter(p => allowed.has(p))
+    : []
   return {
     ...base,
     childPublicKey: targetChildPubKey,
     apps: mergedApps,
     schedules,
+    screenTimeExemptApps,
     version: (base.version || 0) + 1
   }
 }

@@ -8,6 +8,7 @@ import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
 import Icon from '../icons.js';
 import { useTheme } from '../theme.js';
+import { validatePin, MAX_PIN_LENGTH } from '../../pin-rules.js';
 import { TourProvider, useTour } from './Tour.jsx';
 import { PARENT_TOUR_SLIDES, PARENT_TOUR_AFTER_PAIR_SLIDES } from './parentTourSlides.js';
 
@@ -112,8 +113,8 @@ function PinSetupOverlay({ onDone }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (pin.length !== 4) { setError('PIN must be exactly 4 digits.'); return; }
-    if (!/^\d+$/.test(pin)) { setError('PIN must contain only digits.'); return; }
+    const pinError = validatePin(pin);
+    if (pinError) { setError(pinError); return; }
     if (pin !== confirmPin) { setError('PINs do not match.'); setConfirmPin(''); return; }
     setError(null);
     window.callBare('pin:set', { pin })
@@ -151,18 +152,15 @@ function PinSetupOverlay({ onDone }) {
         </p>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.base}px` }}>
           <Input
-            label="Set PIN"
+            label={`Set PIN (4 to ${MAX_PIN_LENGTH} digits)`}
             value={pin}
             onChange={(e) => {
               setPin(e.target.value);
               setError(null);
-              if (e.target.value.length === 4) {
-                document.getElementById('pin-confirm-input')?.focus();
-              }
             }}
             placeholder="e.g. 1234"
             inputMode="numeric"
-            maxLength={4}
+            maxLength={MAX_PIN_LENGTH}
             aria-label="Set PIN"
           />
           <Input
@@ -172,7 +170,7 @@ function PinSetupOverlay({ onDone }) {
             onChange={(e) => { setConfirmPin(e.target.value); setError(null); }}
             placeholder="Repeat PIN"
             inputMode="numeric"
-            maxLength={4}
+            maxLength={MAX_PIN_LENGTH}
             aria-label="Confirm PIN"
           />
           {error && (

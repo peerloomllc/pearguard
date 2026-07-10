@@ -5,6 +5,7 @@
 // src/bare.js imports this and wires it to BareKit.IPC.
 
 const { nextScheduleWindow } = require('./policy')
+const { validatePin } = require('./pin-rules')
 
 // Return YYYY-MM-DD in local time (not UTC) so session date keys
 // match the user's calendar day regardless of timezone.
@@ -599,7 +600,10 @@ function createDispatch (ctx) {
 
       case 'pin:set': {
         const { pin } = args
-        if (!pin || typeof pin !== 'string') throw new Error('invalid pin')
+        // Validate here as well as in the UI: this is the only write path, and a
+        // caller that skipped the form could otherwise store a 1-digit PIN.
+        const pinError = validatePin(pin)
+        if (pinError) throw new Error(pinError)
 
         // Hash the PIN using BLAKE2b (crypto_generichash) — a core libsodium primitive
         // that is reliably available in all builds including Android/Bare.

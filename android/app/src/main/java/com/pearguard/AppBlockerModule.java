@@ -62,6 +62,13 @@ public class AppBlockerModule extends AccessibilityService {
     private static final String POLICY_KEY = "pearguard_policy";
     private static final String CHANNEL_ID = "pearguard_bypass_warning";
 
+    // Mirrors MIN_PIN_LENGTH / MAX_PIN_LENGTH in src/pin-rules.js. The keypad can't
+    // know the expected length — policy.pinHashes is keyed per parent and co-parents
+    // may hold PINs of different lengths — so entry ends with an explicit submit key
+    // rather than auto-submitting at a fixed digit count.
+    private static final int PIN_MIN_LENGTH = 4;
+    private static final int PIN_MAX_LENGTH = 10;
+
     // --- PIN brute-force lockout ---
     // The child controls this device, so lockout state has to survive overlay
     // dismissal, force-stop and reboot; it lives in SharedPreferences, not memory.
@@ -109,6 +116,7 @@ public class AppBlockerModule extends AccessibilityService {
     private static final String ICON_LOCK = "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z";
     private static final String ICON_BACKSPACE = "M216,40H68.53a16.12,16.12,0,0,0-13.72,7.77L9.14,123.88a8,8,0,0,0,0,8.24l45.67,76.11A16.11,16.11,0,0,0,68.53,216H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H68.53l-43.2-72,43.2-72H216ZM106.34,146.34,124.69,128l-18.35-18.34a8,8,0,0,1,11.32-11.32L136,116.69l18.34-18.35a8,8,0,0,1,11.32,11.32L147.31,128l18.35,18.34a8,8,0,0,1-11.32,11.32L136,139.31l-18.34,18.35a8,8,0,0,1-11.32-11.32Z";
     private static final String ICON_CARET_RIGHT = "M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z";
+    private static final String ICON_CHECK = "M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z";
 
     private Typeface nunitoRegular;
     private Typeface nunitoSemiBold;
@@ -1581,45 +1589,54 @@ public class AppBlockerModule extends AccessibilityService {
         dotsP.gravity = Gravity.CENTER_HORIZONTAL;
         dotsRow.setLayoutParams(dotsP);
 
-        final View[] dots = new View[4];
-        for (int i = 0; i < 4; i++) {
-            View dot = new View(this);
-            int dotSize = dp(14);
-            LinearLayout.LayoutParams dotP = new LinearLayout.LayoutParams(dotSize, dotSize);
-            if (i > 0) dotP.setMargins(dp(16), 0, 0, 0);
-            dot.setLayoutParams(dotP);
-            android.graphics.drawable.GradientDrawable emptyDot = new android.graphics.drawable.GradientDrawable();
-            emptyDot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-            emptyDot.setStroke(dp(2), OT.BORDER);
-            emptyDot.setColor(Color.TRANSPARENT);
-            dot.setBackground(emptyDot);
-            dots[i] = dot;
-            dotsRow.addView(dot);
-        }
         dialogLayout.addView(dotsRow);
 
-        Runnable updateDots = () -> {
+        // The submit key lives in the pad below; it needs to enable/disable as the
+        // entry crosses PIN_MIN_LENGTH, so the pad hands its view back through here.
+        final View[] submitBtn = { null };
+        final boolean[] showingError = { false };
+
+        // Dots grow with the entry: always at least PIN_MIN_LENGTH placeholders, one
+        // more for each digit past that, up to PIN_MAX_LENGTH.
+        Runnable renderDots = () -> {
             int len = enteredPin[0].length();
-            for (int i = 0; i < 4; i++) {
+            int count = Math.max(PIN_MIN_LENGTH, len);
+            dotsRow.removeAllViews();
+            for (int i = 0; i < count; i++) {
+                View dot = new View(this);
+                int dotSize = dp(14);
+                LinearLayout.LayoutParams dotP = new LinearLayout.LayoutParams(dotSize, dotSize);
+                if (i > 0) dotP.setMargins(dp(12), 0, 0, 0);
+                dot.setLayoutParams(dotP);
                 android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
                 d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                if (i < len) {
+                if (showingError[0]) {
+                    d.setColor(OT.ERROR);
+                } else if (i < len) {
                     d.setColor(OT.PRIMARY);
                 } else {
                     d.setStroke(dp(2), OT.BORDER);
                     d.setColor(Color.TRANSPARENT);
                 }
-                dots[i].setBackground(d);
+                dot.setBackground(d);
+                dotsRow.addView(dot);
+            }
+            if (submitBtn[0] != null) {
+                boolean canSubmit = len >= PIN_MIN_LENGTH;
+                submitBtn[0].setEnabled(canSubmit);
+                submitBtn[0].setClickable(canSubmit);
+                submitBtn[0].setAlpha(canSubmit ? 1f : 0.35f);
             }
         };
 
+        Runnable updateDots = () -> {
+            showingError[0] = false;
+            renderDots.run();
+        };
+
         Runnable showError = () -> {
-            for (View dot : dots) {
-                android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
-                d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                d.setColor(OT.ERROR);
-                dot.setBackground(d);
-            }
+            showingError[0] = true;
+            renderDots.run();
             int left = pinAttemptsRemaining();
             pinTitle.setTextColor(OT.ERROR);
             pinTitle.setText(left == 1
@@ -1632,6 +1649,30 @@ public class AppBlockerModule extends AccessibilityService {
             }, 1500);
         };
 
+        // Submitting is explicit: each attempt costs a strike, so verifying on every
+        // keystroke would let a child brute-force by typing without ever "submitting".
+        Runnable onSubmit = () -> {
+            if (enteredPin[0].length() < PIN_MIN_LENGTH) return;
+            if (verifyPin(enteredPin[0])) {
+                vibrate(PATTERN_SUCCESS);
+                clearPinFailures();
+                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+                pinDialogView = null;
+                showDurationPicker(packageName);
+            } else {
+                vibrate(PATTERN_ERROR);
+                enteredPin[0] = "";
+                long lockMs = recordPinFailure();
+                if (lockMs > 0L) {
+                    try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+                    pinDialogView = null;
+                    showPinLockout(packageName, lockMs);
+                } else {
+                    showError.run();
+                }
+            }
+        };
+
         // Number pad card
         LinearLayout padCard = new LinearLayout(this);
         padCard.setOrientation(LinearLayout.VERTICAL);
@@ -1641,7 +1682,7 @@ public class AppBlockerModule extends AccessibilityService {
         padCardP.gravity = Gravity.CENTER_HORIZONTAL;
         padCard.setLayoutParams(padCardP);
 
-        String[][] rows = { {"1","2","3"}, {"4","5","6"}, {"7","8","9"}, {"⌫","0",""} };
+        String[][] rows = { {"1","2","3"}, {"4","5","6"}, {"7","8","9"}, {"⌫","0","✓"} };
         boolean firstRow = true;
         for (String[] row : rows) {
             LinearLayout rowLayout = new LinearLayout(this);
@@ -1672,12 +1713,19 @@ public class AppBlockerModule extends AccessibilityService {
                         }
                     });
                     rowLayout.addView(bsBtn);
-                } else if ("".equals(digit)) {
-                    View empty = new View(this);
-                    LinearLayout.LayoutParams emptyP = new LinearLayout.LayoutParams(0, dp(52), 1f);
-                    emptyP.setMargins(dp(4), 0, dp(4), 0);
-                    empty.setLayoutParams(emptyP);
-                    rowLayout.addView(empty);
+                } else if ("✓".equals(digit)) {
+                    // Submit key — occupies the slot the old fixed-length pad left empty.
+                    LinearLayout okBtn = new LinearLayout(this);
+                    okBtn.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams okP = new LinearLayout.LayoutParams(0, dp(52), 1f);
+                    okP.setMargins(dp(4), 0, dp(4), 0);
+                    okBtn.setLayoutParams(okP);
+                    okBtn.setBackground(roundedRect(OT.PRIMARY_BG, OT.KEY_RADIUS));
+                    okBtn.addView(iconView(ICON_CHECK, 24, OT.PRIMARY));
+                    okBtn.setContentDescription("Submit PIN");
+                    okBtn.setOnClickListener(v -> onSubmit.run());
+                    submitBtn[0] = okBtn;
+                    rowLayout.addView(okBtn);
                 } else {
                     TextView btn = new TextView(this);
                     btn.setText(digit);
@@ -1692,31 +1740,10 @@ public class AppBlockerModule extends AccessibilityService {
                     btn.setClickable(true);
                     final String d = digit;
                     btn.setOnClickListener(v -> {
-                        if (enteredPin[0].length() < 4) {
+                        if (enteredPin[0].length() < PIN_MAX_LENGTH) {
                             vibrate(PATTERN_TAP);
                             enteredPin[0] = enteredPin[0] + d;
                             updateDots.run();
-
-                            if (enteredPin[0].length() == 4) {
-                                if (verifyPin(enteredPin[0])) {
-                                    vibrate(PATTERN_SUCCESS);
-                                    clearPinFailures();
-                                    try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-                                    pinDialogView = null;
-                                    showDurationPicker(packageName);
-                                } else {
-                                    vibrate(PATTERN_ERROR);
-                                    enteredPin[0] = "";
-                                    long lockMs = recordPinFailure();
-                                    if (lockMs > 0L) {
-                                        try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-                                        pinDialogView = null;
-                                        showPinLockout(packageName, lockMs);
-                                    } else {
-                                        showError.run();
-                                    }
-                                }
-                            }
                         }
                     });
                     rowLayout.addView(btn);
@@ -1725,6 +1752,10 @@ public class AppBlockerModule extends AccessibilityService {
             padCard.addView(rowLayout);
         }
         dialogLayout.addView(padCard);
+
+        // First paint: draws the placeholder dots and disables submit until
+        // PIN_MIN_LENGTH digits are entered. Must run after the pad builds submitBtn.
+        updateDots.run();
 
         // Cancel button (ghost)
         TextView cancelBtn = new TextView(this);

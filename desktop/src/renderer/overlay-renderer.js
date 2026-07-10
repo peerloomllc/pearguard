@@ -257,6 +257,14 @@ els.pinSubmit.addEventListener('click', () => {
     els.pinStatus.className = 'status error'
     return
   }
+  // Mirrors MIN_PIN_LENGTH in src/pin-rules.js. Caught here so a parent's short
+  // typo doesn't burn one of the child's attempts; main still treats a short PIN
+  // that reaches it as simply wrong.
+  if (pin.length < 4) {
+    els.pinStatus.textContent = 'PIN is at least 4 digits.'
+    els.pinStatus.className = 'status error'
+    return
+  }
   els.pinSubmit.disabled = true
   els.pinStatus.textContent = 'Verifying...'
   els.pinStatus.className = 'status'

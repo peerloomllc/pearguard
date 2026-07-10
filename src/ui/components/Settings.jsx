@@ -6,6 +6,7 @@ import Toggle from './primitives/Toggle.jsx';
 import Avatar from './Avatar.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import { pickPhoto } from './avatarUtils.js';
+import { validatePin, MAX_PIN_LENGTH } from '../../pin-rules.js';
 import DeviceBackupModal from './DeviceBackupModal.jsx';
 import Collapsible from './primitives/Collapsible.jsx';
 
@@ -274,12 +275,9 @@ export default function Settings() {
 
   function handlePinSubmit(e) {
     e.preventDefault();
-    if (newPin.length !== 4) {
-      setPinStatus('PIN must be exactly 4 digits.');
-      return;
-    }
-    if (!/^\d+$/.test(newPin)) {
-      setPinStatus('PIN must contain only digits.');
+    const pinError = validatePin(newPin);
+    if (pinError) {
+      setPinStatus(pinError);
       return;
     }
     if (newPin !== confirmPin) {
@@ -461,20 +459,19 @@ export default function Settings() {
         )}
         <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.md}px` }} aria-label="Change PIN form">
           <label style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px`, fontSize: '14px', color: colors.text.secondary }}>
-            New PIN
+            New PIN (4 to {MAX_PIN_LENGTH} digits)
             <input
               type="text"
               value={newPin}
               onChange={(e) => {
                 setNewPin(e.target.value);
                 setPinStatus(null);
-                if (e.target.value.length === 4) confirmPinRef.current?.focus();
               }}
               placeholder="e.g. 1234"
               style={inputStyle}
               aria-label="New PIN"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={MAX_PIN_LENGTH}
             />
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px`, fontSize: '14px', color: colors.text.secondary }}>
@@ -488,7 +485,7 @@ export default function Settings() {
               style={inputStyle}
               aria-label="Confirm PIN"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={MAX_PIN_LENGTH}
             />
           </label>
           {pinStatus && pinStatus !== 'success' && (

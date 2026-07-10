@@ -17,7 +17,7 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -389,6 +389,19 @@ async function init (dataDir, attempt = 0) {
         console.warn('[bare] scheduled heartbeat failed:', e.message)
       )
     }, 60 * 1000)
+
+    // Re-push today's general-time grant (#179) to native enforcement. Android
+    // persists it in SharedPrefs, but the desktop controller holds it in memory,
+    // so without this a restart would silently revoke time the parent granted.
+    try {
+      const bonusRaw = await db.get('screenTimeBonus').catch(() => null)
+      const bonus = bonusRaw ? bonusRaw.value : null
+      if (bonusSecondsForToday(bonus, Date.now()) > 0) {
+        send({ method: 'native:setScreenTimeBonus', args: { date: bonus.date, seconds: bonus.seconds } })
+      }
+    } catch (e) {
+      console.warn('[bare] screen-time bonus restore failed:', e.message)
+    }
   }
 
   // Signal ready
@@ -598,6 +611,9 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       break
     case 'time:extend':
       await handleTimeExtend(msg.payload, db, send, sendToAllParents)
+      break
+    case 'time:extendGeneral':
+      await handleTimeExtendGeneral(msg.payload, db, send)
       break
     case 'request:denied': {
       // Parent denied an extra-time request — update the child-side req: entry and notify.
@@ -1263,7 +1279,8 @@ async function handleHello (msg, conn, remoteKeyHex) {
           requestedAt: value.requestedAt,
           requestType: value.requestType,
         }
-        if (value.requestType === 'extra_time' && typeof value.extraSeconds === 'number') {
+        // extra_time and general_time both carry a requested duration.
+        if (value.requestType !== 'approval' && typeof value.extraSeconds === 'number') {
           p2pPayload.extraSeconds = value.extraSeconds
         }
         const signed = signMessage({ type: 'time:request', payload: p2pPayload }, identity)

@@ -37,12 +37,20 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
   const { colors, typography, spacing } = useTheme();
   const [acting, setActing] = useState(false);
 
-  const isExtraTime = req.requestType === 'extra_time';
+  // General time tops up the whole daily budget; extra time overrides one app.
+  const isGeneralTime = req.requestType === 'general_time';
+  const isExtraTime = req.requestType === 'extra_time' || isGeneralTime;
 
   async function handleApprove() {
     setActing(true);
     try {
-      if (isExtraTime) {
+      if (isGeneralTime) {
+        await window.callBare('time:grantGeneral', {
+          childPublicKey,
+          requestId: req.id,
+          extraSeconds: req.extraSeconds || 1800,
+        });
+      } else if (isExtraTime) {
         await window.callBare('time:grant', {
           childPublicKey,
           requestId: req.id,
@@ -88,6 +96,14 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
     return mins >= 60 ? `Grant ${mins / 60}h` : `Grant ${mins}m`;
   }
 
+  // A general-time request is about the whole day's budget, so lead with that
+  // and demote the app that happened to trigger it to context.
+  const appLabel = req.appDisplayName || req.packageName || 'Unknown app';
+  const title = isGeneralTime ? 'More screen time' : appLabel;
+  // Requests raised from the child's home screen carry no real app, just the
+  // 'general' sentinel — there is no "blocked while opening X" to show.
+  const triggeredBy = isGeneralTime && req.packageName !== 'general' ? appLabel : null;
+
   const badgeColor = typeColor(req.type, colors);
   const meta = TYPE_META[req.type] || { label: req.type, icon: 'Clock' };
 
@@ -96,13 +112,18 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: `${spacing.sm}px` }}>
         <div style={{ flex: 1 }}>
           <div style={{ ...typography.body, color: colors.text.primary, fontWeight: '600', marginBottom: '4px' }}>
-            {req.appDisplayName || req.packageName || 'Unknown app'}
+            {title}
           </div>
+          {triggeredBy && (
+            <div style={{ ...typography.caption, color: colors.text.secondary, marginBottom: '4px' }}>
+              blocked while opening {triggeredBy}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
             <Badge color={badgeColor}>{meta.label}</Badge>
-            {isExtraTime && req.requestedSeconds
+            {isExtraTime && (req.requestedSeconds || req.extraSeconds)
               ? <span style={{ ...typography.caption, color: colors.text.secondary }}>
-                  requesting {formatSeconds(req.requestedSeconds)}
+                  requesting {formatSeconds(req.requestedSeconds || req.extraSeconds)}
                 </span>
               : null}
           </div>

@@ -76,6 +76,7 @@ class EnforcementController extends EventEmitter {
     // blocked even while the kid stays in the same app. Started lazily in
     // start() so tests that never call start() don't leave a dangling timer.
     this._limitCheckTimer = null
+    this._screenTimeBonus = null
   }
 
   setPolicyJson(json) {
@@ -96,6 +97,26 @@ class EnforcementController extends EventEmitter {
       }
     } catch (_e) {}
     return result
+  }
+
+  // Apply a general-time grant from native:setScreenTimeBonus (#179). Stored as
+  // { date, seconds } so it lapses at midnight; the overlay clears right away
+  // because the budget it was enforcing just grew.
+  setScreenTimeBonus(bonus) {
+    this._screenTimeBonus = bonus && typeof bonus.seconds === 'number'
+      ? { date: bonus.date, seconds: bonus.seconds }
+      : null
+    this._reevaluateCurrent()
+  }
+
+  // Today's granted top-up, or 0 if absent or stamped with another date.
+  _bonusSecondsForToday() {
+    const b = this._screenTimeBonus
+    if (!b || typeof b.seconds !== 'number' || b.seconds <= 0) return 0
+    const d = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    return b.date === today ? b.seconds : 0
   }
 
   // Apply a grant from native:grantOverride. Re-evaluates the current
@@ -255,6 +276,7 @@ class EnforcementController extends EventEmitter {
       exeBasename: fg.exeBasename,
       overrides: this.overrides.asMap(),
       getUsageSeconds: this._getUsageSeconds,
+      bonusSeconds: this._bonusSecondsForToday(),
     })
 
     if (decision) {

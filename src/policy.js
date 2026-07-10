@@ -89,6 +89,32 @@ function isScreenTimeExempt(packageName, policy) {
   return Array.isArray(exempt) && exempt.includes(packageName)
 }
 
+// Local calendar date as YYYY-MM-DD. Bonus grants are stamped with this so a
+// grant silently expires at midnight, and a rolled-back device clock discards
+// it rather than extending it (fails safe — see the clock-tamper detector).
+function localDateKey(now) {
+  const d = now instanceof Date ? now : new Date(now)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// Parent-granted top-up on today's screen-time budget (#179), or 0 if the
+// grant is absent or was issued on a different day.
+function bonusSecondsForToday(bonus, now) {
+  if (!bonus || typeof bonus.seconds !== 'number' || bonus.seconds <= 0) return 0
+  if (bonus.date !== localDateKey(now)) return 0
+  return bonus.seconds
+}
+
+// The cap actually enforced right now: the parent's daily budget plus any
+// general-time top-up granted today. Returns 0 when no cap is configured.
+function effectiveScreenTimeLimitSeconds(policy, bonus, now) {
+  if (!policy) return 0
+  const limit = policy.dailyScreenTimeLimitSeconds
+  if (typeof limit !== 'number' || limit <= 0) return 0
+  return limit + bonusSecondsForToday(bonus, now)
+}
+
 // Device-wide cumulative cap: sums today's foreground seconds across every
 // app with reported usage and compares to the policy's daily screen-time
 // budget. Unlike per-app/category limits this ignores which app is in the
@@ -96,10 +122,11 @@ function isScreenTimeExempt(packageName, policy) {
 // Exemptions (PearGuard itself, phone/messaging, system shells) are handled
 // by the native callers, not here. Parent-chosen exempt apps (#178) are
 // subtracted from the total so their use never spends the shared budget.
-function hasExceededScreenTimeLimit(policy, usageStats) {
+// A general-time grant (#179) raises the cap for the rest of today.
+function hasExceededScreenTimeLimit(policy, usageStats, bonus, now = Date.now()) {
   if (!policy) return false
-  const limit = policy.dailyScreenTimeLimitSeconds
-  if (typeof limit !== 'number' || limit <= 0) return false
+  const limit = effectiveScreenTimeLimitSeconds(policy, bonus, now)
+  if (limit <= 0) return false
   if (!usageStats) return false
 
   let total = 0
@@ -111,6 +138,55 @@ function hasExceededScreenTimeLimit(policy, usageStats) {
     }
   }
   return total >= limit
+}
+
+// What the child needs to know about scheduled blackouts: the one running right
+// now (with when it lifts), or the next one due to start. Handles overnight
+// windows, where `end` is earlier in the day than `start` and the window runs
+// into the following morning.
+//
+// Returns { active, label, at } where `at` is a Date: the end of the active
+// window, or the start of the next one. Null when no schedule applies.
+function nextScheduleWindow(schedules, now) {
+  if (!Array.isArray(schedules) || schedules.length === 0) return null
+  const parse = (hm) => {
+    const [h, m] = String(hm).split(':').map(Number)
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null
+  }
+  const atMinutes = (baseDate, dayOffset, minutes) => {
+    const d = new Date(baseDate)
+    d.setDate(d.getDate() + dayOffset)
+    d.setHours(0, 0, 0, 0)
+    d.setMinutes(minutes)
+    return d
+  }
+
+  // An active window wins: the child cares about when they get their device back.
+  for (const s of schedules) {
+    if (!isScheduleActive(s, now)) continue
+    const end = parse(s.end)
+    if (end == null) continue
+    const start = parse(s.start)
+    // Overnight window entered yesterday ends today; otherwise it ends today too,
+    // unless start === end which isScheduleActive already rejected.
+    const endsToday = start == null || end > start || now.getHours() * 60 + now.getMinutes() < end
+    return { active: true, label: s.label || 'Bedtime', at: atMinutes(now, endsToday ? 0 : 1, end) }
+  }
+
+  // Otherwise the soonest upcoming start within the next week.
+  let best = null
+  for (const s of schedules) {
+    const start = parse(s.start)
+    if (start == null || !Array.isArray(s.days) || s.days.length === 0) continue
+    for (let offset = 0; offset < 8; offset++) {
+      const candidate = atMinutes(now, offset, start)
+      if (candidate <= now) continue
+      if (!s.days.includes(candidate.getDay())) continue
+      if (!best || candidate < best.at) best = { active: false, label: s.label || 'Bedtime', at: candidate }
+      break
+    }
+  }
+  return best
 }
 
 function isSmsCallException(packageName, contactPhone, policy) {
@@ -138,7 +214,7 @@ function isSmsCallException(packageName, contactPhone, policy) {
  * @param {Date}   now            Current time (injected for testability)
  * @returns {boolean}
  */
-function isAppBlocked(packageName, policy, usageStats, now) {
+function isAppBlocked(packageName, policy, usageStats, now, bonus) {
   if (!policy) return false
 
   const appPolicy = policy.apps && policy.apps[packageName]
@@ -148,9 +224,11 @@ function isAppBlocked(packageName, policy, usageStats, now) {
 
   // Device-wide cumulative screen-time cap blocks every app once spent, except
   // the ones the parent marked exempt (#178). An exempt app still falls through
-  // to the schedule and per-app/category limit checks below.
+  // to the schedule and per-app/category limit checks below. A general-time
+  // grant (#179) raises the cap but changes nothing else — so a blocked app,
+  // an app past its own limit, or a bedtime schedule all still block.
   if (!isScreenTimeExempt(packageName, policy) &&
-      hasExceededScreenTimeLimit(policy, usageStats)) {
+      hasExceededScreenTimeLimit(policy, usageStats, bonus, now)) {
     return true
   }
 
@@ -172,5 +250,9 @@ module.exports = {
   hasExceededCategoryLimit,
   hasExceededScreenTimeLimit,
   isScreenTimeExempt,
+  effectiveScreenTimeLimitSeconds,
+  bonusSecondsForToday,
+  localDateKey,
+  nextScheduleWindow,
   isSmsCallException,
 }

@@ -4,11 +4,35 @@
 // Separated from IPC wiring so it can be unit tested in Node/jest.
 // src/bare.js imports this and wires it to BareKit.IPC.
 
+const { nextScheduleWindow } = require('./policy')
+
 // Return YYYY-MM-DD in local time (not UTC) so session date keys
 // match the user's calendar day regardless of timezone.
 function localDateStr(ts) {
   const d = new Date(ts || Date.now())
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+// General-time grants (#179) are stamped with the local date they were issued
+// on, so they lapse at midnight and a rolled-back clock discards them rather
+// than extending the budget. Mirrors bonusSecondsForToday in src/policy.js.
+function bonusSecondsForToday(bonus, ts) {
+  if (!bonus || typeof bonus.seconds !== 'number' || bonus.seconds <= 0) return 0
+  if (bonus.date !== localDateStr(ts)) return 0
+  return bonus.seconds
+}
+
+// Child side: accumulate a granted top-up into today's bonus. Stored outside
+// `policy` because the parent replaces that object wholesale on every
+// policy:update, which would otherwise wipe the grant.
+async function applyScreenTimeBonus(db, extraSeconds, ts) {
+  const today = localDateStr(ts)
+  const raw = await db.get('screenTimeBonus').catch(() => null)
+  const prev = raw ? raw.value : null
+  const carried = bonusSecondsForToday(prev, ts)
+  const bonus = { date: today, seconds: carried + extraSeconds, updatedAt: ts }
+  await db.put('screenTimeBonus', bonus)
+  return bonus
 }
 
 // Filter out system-level packages that aren't user-facing apps.
@@ -106,6 +130,10 @@ const heartbeatCache = {
   currentApp: null,
   currentAppPackage: null,
   todayScreenTimeSeconds: null,
+  // { limitSeconds, bonusSeconds, usedSeconds, remainingSeconds } from native (#179)
+  screenTime: null,
+  // [{ packageName, appName, limitSeconds, usedSeconds, remainingSeconds }] from native
+  appLimits: null,
 }
 
 /**
@@ -676,10 +704,16 @@ function createDispatch (ctx) {
 
       case 'time:request': {
         const { packageName, appName, requestType, extraSeconds } = args
-        // requestType: 'approval' (blocked/pending — parent changes policy)
-        //              'extra_time' (approved but hit limit/schedule — parent grants timed override)
+        // requestType: 'approval'     (blocked/pending — parent changes policy)
+        //              'extra_time'   (approved but hit limit/schedule — parent grants timed override)
+        //              'general_time' (device-wide screen-time cap spent — parent tops up
+        //                              today's budget; packageName is kept only as context
+        //                              for the parent, the grant is not app-scoped) (#179)
         // Defaults to 'approval' for backward compatibility with older clients.
-        const resolvedType = requestType === 'extra_time' ? 'extra_time' : 'approval'
+        const resolvedType = (requestType === 'extra_time' || requestType === 'general_time')
+          ? requestType
+          : 'approval'
+        const carriesSeconds = resolvedType === 'extra_time' || resolvedType === 'general_time'
         const requestId = 'req:' + Date.now() + ':' + packageName
         const request = {
           id: requestId,
@@ -688,7 +722,7 @@ function createDispatch (ctx) {
           requestedAt: Date.now(),
           status: 'pending',
           requestType: resolvedType,
-          ...(resolvedType === 'extra_time' && typeof extraSeconds === 'number' ? { extraSeconds } : {}),
+          ...(carriesSeconds && typeof extraSeconds === 'number' ? { extraSeconds } : {}),
         }
 
         await ctx.db.put(requestId, request)
@@ -701,7 +735,7 @@ function createDispatch (ctx) {
 
         if (ctx.sendToAllParents) {
           const p2pPayload = { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt, requestType: resolvedType }
-          if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') p2pPayload.extraSeconds = extraSeconds
+          if (carriesSeconds && typeof extraSeconds === 'number') p2pPayload.extraSeconds = extraSeconds
           await ctx.sendToAllParents({ type: 'time:request', payload: p2pPayload })
         }
 
@@ -735,6 +769,39 @@ function createDispatch (ctx) {
           }
         } catch (_e) {
           // child offline — grant stored; child will receive on reconnect via handleHello
+        }
+        ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
+        return { ok: true }
+      }
+
+      case 'time:grantGeneral': {
+        // Parent approves a general-time request (#179) — tops up the child's
+        // screen-time budget for today. Unlike time:grant this creates no
+        // per-app override: schedules, per-app limits and blocked apps all
+        // still apply, the child simply gets a bigger daily budget.
+        const { childPublicKey, requestId, extraSeconds } = args
+        if (!childPublicKey || !requestId || typeof extraSeconds !== 'number' || extraSeconds <= 0) {
+          throw new Error('invalid time:grantGeneral args')
+        }
+        const existing = await ctx.db.get('request:' + requestId).catch(() => null)
+        if (existing) {
+          await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
+        }
+
+        // Parent-side record so the UI can show what was granted today.
+        const grantedAt = Date.now()
+        await ctx.db.put('screentime:grant:' + childPublicKey + ':' + grantedAt, {
+          childPublicKey, grantedAt, extraSeconds, source: 'parent-approved',
+        })
+
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'time:extendGeneral', payload: { requestId, extraSeconds } })
+          }
+        } catch (_e) {
+          // child offline — grant stored; replayed on reconnect via handleHello
         }
         ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
         return { ok: true }
@@ -879,7 +946,25 @@ function createDispatch (ctx) {
         const identRaw = await ctx.db.get('identity')
         if (identRaw && identRaw.value && identRaw.value.name) childName = identRaw.value.name
 
-        return { blockedCount, pendingCount, pendingRequests, blockedApps, pendingApps, pendingRequestsList, activeOverrides, hasPolicy: !!policy, locked, lockMessage, parentName, childName }
+        // Screen-time budget context for the "ask for more time" button (#179).
+        // The button is pointless with no cap, and asking twice is just noise.
+        // The remaining-time figure itself comes from screentime:status (native truth).
+        const hasScreenTimeLimit = !!(policy && typeof policy.dailyScreenTimeLimitSeconds === 'number' && policy.dailyScreenTimeLimitSeconds > 0)
+        const generalTimeRequestPending = pendingRequestsList.some(r => r.requestType === 'general_time')
+
+        // Warn about the next scheduled blackout — otherwise a blanket lock at
+        // bedtime arrives with no in-app warning at all.
+        const win = nextScheduleWindow((policy && policy.schedules) || [], new Date(now))
+        const nextSchedule = win ? { active: win.active, label: win.label, at: win.at.getTime() } : null
+
+        // Which apps don't spend the shared budget (#178), so "why is Chrome still
+        // working?" has an answer on the child's own screen.
+        const screenTimeExemptApps = (policy && Array.isArray(policy.screenTimeExemptApps)) ? policy.screenTimeExemptApps : []
+        const screenTimeExemptAppNames = screenTimeExemptApps
+          .map(pkg => (apps[pkg] && apps[pkg].appName) || pkg)
+          .sort((a, b) => a.localeCompare(b))
+
+        return { blockedCount, pendingCount, pendingRequests, blockedApps, pendingApps, pendingRequestsList, activeOverrides, hasPolicy: !!policy, locked, lockMessage, parentName, childName, hasScreenTimeLimit, generalTimeRequestPending, nextSchedule, screenTimeExemptAppNames }
       }
 
       case 'app:installed': {
@@ -1024,8 +1109,20 @@ function createDispatch (ctx) {
           if (typeof args.todayScreenTimeSeconds === 'number') {
             heartbeatCache.todayScreenTimeSeconds = args.todayScreenTimeSeconds
           }
+          // Enforced screen-time budget from native (#179). Null on platforms or
+          // builds where the native method is absent — callers treat that as unknown.
+          if ('screenTime' in args) heartbeatCache.screenTime = args.screenTime || null
+          if ('appLimits' in args) heartbeatCache.appLimits = args.appLimits || null
         }
         return { ok: true }
+      }
+
+      case 'screentime:status': {
+        // Child UI: the budget and per-app limits exactly as native enforcement sees them.
+        return {
+          screenTime: heartbeatCache.screenTime || null,
+          appLimits: heartbeatCache.appLimits || [],
+        }
       }
 
       case 'heartbeat:send': {
@@ -1043,6 +1140,8 @@ function createDispatch (ctx) {
             currentApp: heartbeatCache.currentApp,
             currentAppPackage: heartbeatCache.currentAppPackage,
             todayScreenTimeSeconds: heartbeatCache.todayScreenTimeSeconds,
+            // Enforced budget so the parent can show time left (#179).
+            screenTime: heartbeatCache.screenTime,
             timestamp: Date.now(),
           },
         }
@@ -1684,7 +1783,8 @@ function createDispatch (ctx) {
             childPublicKey,
             requestType: value.requestType || 'approval',
           }
-          if (value.requestType === 'extra_time' && typeof value.extraSeconds === 'number') {
+          // extra_time and general_time both carry a requested duration.
+          if (value.requestType !== 'approval' && typeof value.extraSeconds === 'number') {
             entry.extraSeconds = value.extraSeconds
           }
           results.push(entry)
@@ -1965,6 +2065,35 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
       }
     }
   }
+}
+
+/**
+ * Handle a verified `time:extendGeneral` P2P message from a parent peer (#179).
+ * Tops up today's device-wide screen-time budget. Creates no override, so
+ * schedules, per-app limits and blocked apps are unaffected.
+ *
+ * @param {object} payload — { requestId, extraSeconds }
+ * @param {object} db — Hyperbee instance
+ * @param {function} send — bare→RN IPC send function
+ */
+async function handleTimeExtendGeneral (payload, db, send) {
+  const { requestId, extraSeconds } = payload || {}
+  if (!requestId || typeof extraSeconds !== 'number' || extraSeconds <= 0) {
+    console.warn('[bare] time:extendGeneral: malformed payload, dropping')
+    return
+  }
+
+  const now = Date.now()
+  const bonus = await applyScreenTimeBonus(db, extraSeconds, now)
+
+  const existing = await db.get(requestId).catch(() => null)
+  if (existing) {
+    await db.put(requestId, { ...existing.value, status: 'approved', grantedSeconds: extraSeconds })
+  }
+
+  // Push the new budget to native enforcement, then tell the child UI.
+  send({ method: 'native:setScreenTimeBonus', args: { date: bonus.date, seconds: bonus.seconds } })
+  send({ type: 'event', event: 'screentime:granted', data: { extraSeconds, totalBonusSeconds: bonus.seconds } })
 }
 
 /**
@@ -2260,9 +2389,14 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
     : null
   const appName = payloadAppName || policyAppName || packageName
 
-  const resolvedType = requestType === 'extra_time' ? 'extra_time' : 'approval'
+  // Keep in step with the time:request dispatch case: an unknown type degrades to
+  // 'approval', but extra_time and general_time must survive or the parent UI
+  // silently approves the app instead of granting the time that was asked for.
+  const resolvedType = (requestType === 'extra_time' || requestType === 'general_time')
+    ? requestType
+    : 'approval'
   const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', notified: false, childPublicKey, childDisplayName, requestType: resolvedType }
-  if (resolvedType === 'extra_time' && typeof extraSeconds === 'number') request.extraSeconds = extraSeconds
+  if (resolvedType !== 'approval' && typeof extraSeconds === 'number') request.extraSeconds = extraSeconds
   await db.put('request:' + requestId, request)
   send({ type: 'event', event: 'time:request:received', data: request })
 }
@@ -2359,4 +2493,4 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport }

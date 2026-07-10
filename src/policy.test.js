@@ -7,6 +7,10 @@ const {
   hasExceededLimit,
   hasExceededScreenTimeLimit,
   isScreenTimeExempt,
+  effectiveScreenTimeLimitSeconds,
+  bonusSecondsForToday,
+  localDateKey,
+  nextScheduleWindow,
   isSmsCallException,
 } = require('./policy')
 
@@ -219,6 +223,100 @@ function makeDate(dayOfWeek, hour, minute) {
     false,
     'exempt app under its own per-app limit is allowed'
   )
+}
+
+// general-time bonus (#179)
+{
+  const today = new Date(2026, 6, 9, 12, 0, 0)
+  const todayKey = localDateKey(today)
+  const policy = { dailyScreenTimeLimitSeconds: 3600 }
+
+  assert.strictEqual(todayKey, '2026-07-09', 'local date key format')
+
+  // bonusSecondsForToday
+  assert.strictEqual(bonusSecondsForToday({ date: todayKey, seconds: 600 }, today), 600, 'todays bonus counts')
+  assert.strictEqual(bonusSecondsForToday({ date: '2026-07-08', seconds: 600 }, today), 0, 'yesterdays bonus ignored')
+  assert.strictEqual(bonusSecondsForToday({ date: '2026-07-10', seconds: 600 }, today), 0, 'future-dated bonus ignored (clock rollback)')
+  assert.strictEqual(bonusSecondsForToday(null, today), 0, 'no bonus')
+  assert.strictEqual(bonusSecondsForToday({ date: todayKey, seconds: 0 }, today), 0, 'zero bonus')
+  assert.strictEqual(bonusSecondsForToday({ date: todayKey, seconds: -60 }, today), 0, 'negative bonus ignored')
+
+  // effectiveScreenTimeLimitSeconds
+  assert.strictEqual(effectiveScreenTimeLimitSeconds(policy, { date: todayKey, seconds: 600 }, today), 4200, 'bonus raises the cap')
+  assert.strictEqual(effectiveScreenTimeLimitSeconds(policy, null, today), 3600, 'no bonus leaves cap alone')
+  assert.strictEqual(effectiveScreenTimeLimitSeconds({}, { date: todayKey, seconds: 600 }, today), 0, 'no cap configured stays uncapped')
+
+  // A spent budget reopens once the bonus lands, and closes again when spent.
+  const spent = { 'com.a': { dailySeconds: 3600 } }
+  assert.strictEqual(hasExceededScreenTimeLimit(policy, spent, null, today), true, 'cap reached without bonus')
+  assert.strictEqual(hasExceededScreenTimeLimit(policy, spent, { date: todayKey, seconds: 600 }, today), false, 'bonus reopens the budget')
+  assert.strictEqual(
+    hasExceededScreenTimeLimit(policy, { 'com.a': { dailySeconds: 4200 } }, { date: todayKey, seconds: 600 }, today),
+    true,
+    'bonus spent too'
+  )
+  assert.strictEqual(hasExceededScreenTimeLimit(policy, spent, { date: '2026-07-08', seconds: 600 }, today), true, 'stale bonus does not reopen')
+
+  // A grant tops up the budget without overriding anything else.
+  assert.strictEqual(isAppBlocked('com.a', policy, spent, today, { date: todayKey, seconds: 600 }), false, 'granted time unblocks a normal app')
+
+  const strict = {
+    ...policy,
+    apps: { 'com.a': { status: 'blocked' }, 'com.b': { dailyLimitSeconds: 60 } },
+    schedules: [{ days: [today.getDay()], start: '00:00', end: '23:59' }],
+  }
+  const bonus = { date: todayKey, seconds: 600 }
+  assert.strictEqual(isAppBlocked('com.a', strict, spent, today, bonus), true, 'grant does not unblock a blocked app')
+  assert.strictEqual(
+    isAppBlocked('com.b', strict, { 'com.b': { dailySeconds: 60 } }, today, bonus),
+    true,
+    'grant does not beat a per-app limit or an active schedule'
+  )
+}
+
+// nextScheduleWindow — child's "bedtime at ..." hint
+{
+  // 2026-07-09 is a Thursday (day 4).
+  const thursdayNoon = new Date(2026, 6, 9, 12, 0, 0)
+  const everyDay = [0, 1, 2, 3, 4, 5, 6]
+
+  assert.strictEqual(nextScheduleWindow(null, thursdayNoon), null, 'no schedules')
+  assert.strictEqual(nextScheduleWindow([], thursdayNoon), null, 'empty schedules')
+
+  // Upcoming tonight.
+  const bedtime = [{ label: 'Bedtime', days: everyDay, start: '21:00', end: '07:00' }]
+  const next = nextScheduleWindow(bedtime, thursdayNoon)
+  assert.strictEqual(next.active, false, 'not active at noon')
+  assert.strictEqual(next.label, 'Bedtime')
+  assert.strictEqual(next.at.getDate(), 9, 'starts tonight')
+  assert.strictEqual(next.at.getHours(), 21, 'starts at 21:00')
+
+  // Inside an overnight window, before midnight: ends tomorrow morning.
+  const thursday22 = new Date(2026, 6, 9, 22, 0, 0)
+  const active = nextScheduleWindow(bedtime, thursday22)
+  assert.strictEqual(active.active, true, 'active at 22:00')
+  assert.strictEqual(active.at.getDate(), 10, 'ends the next morning')
+  assert.strictEqual(active.at.getHours(), 7, 'ends at 07:00')
+
+  // Inside an overnight window, after midnight: ends this morning.
+  const friday3am = new Date(2026, 6, 10, 3, 0, 0)
+  const stillActive = nextScheduleWindow(bedtime, friday3am)
+  assert.strictEqual(stillActive.active, true, 'active at 03:00')
+  assert.strictEqual(stillActive.at.getDate(), 10, 'ends same morning')
+  assert.strictEqual(stillActive.at.getHours(), 7, 'ends at 07:00')
+
+  // Day-restricted schedule skips to the next matching weekday.
+  const weekend = [{ label: 'Weekend lock', days: [6], start: '10:00', end: '11:00' }]
+  const nextWeekend = nextScheduleWindow(weekend, thursdayNoon)
+  assert.strictEqual(nextWeekend.at.getDay(), 6, 'lands on Saturday')
+  assert.strictEqual(nextWeekend.at.getDate(), 11, 'this coming Saturday')
+
+  // Soonest of several wins.
+  const many = [
+    { label: 'Late', days: everyDay, start: '23:00', end: '23:30' },
+    { label: 'Early', days: everyDay, start: '13:00', end: '13:30' },
+  ]
+  assert.strictEqual(nextScheduleWindow(many, thursdayNoon).label, 'Early', 'soonest start wins')
 }
 
 // isSmsCallException

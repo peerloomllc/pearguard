@@ -551,7 +551,9 @@ public class EnforcementService extends Service {
 
     private void checkScreenTimeWarnings(JSONObject policy) {
         try {
-            int limitSeconds = policy.optInt("dailyScreenTimeLimitSeconds", 0);
+            // Folds in any general-time grant (#179) so the countdown reflects the
+            // budget actually being enforced.
+            int limitSeconds = AppBlockerModule.effectiveScreenTimeLimitSeconds(this, policy);
             if (limitSeconds <= 0) return;
 
             // Only nudge while the child is actively using a non-exempt app —

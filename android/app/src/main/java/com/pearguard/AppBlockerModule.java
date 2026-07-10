@@ -587,8 +587,12 @@ public class AppBlockerModule extends AccessibilityService {
      * intent and return false, so the overlay is correctly dismissed for them.
      */
     private boolean isSystemOverlayPackage(String packageName) {
+        return isSystemOverlayPackage(this, packageName);
+    }
+
+    static boolean isSystemOverlayPackage(Context ctx, String packageName) {
         try {
-            PackageManager pm = getPackageManager();
+            PackageManager pm = ctx.getPackageManager();
             ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
             boolean isSystem = (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             if (!isSystem) return false;
@@ -677,7 +681,8 @@ public class AppBlockerModule extends AccessibilityService {
             // still wins. Parent-chosen exempt apps (#178) skip the cap but fall
             // through to their own per-app/category limit below — unlike the
             // built-in exemptions, which return null and skip every check.
-            int screenLimit = policy.optInt("dailyScreenTimeLimitSeconds", 0);
+            // effectiveScreenTimeLimitSeconds folds in any general-time grant (#179).
+            int screenLimit = effectiveScreenTimeLimitSeconds(this, policy);
             if (screenLimit > 0 && !isScreenTimeExempt(policy, packageName)) {
                 int totalUsed = getTotalDailyUsageSeconds(policy);
                 if (totalUsed >= screenLimit) {
@@ -724,7 +729,7 @@ public class AppBlockerModule extends AccessibilityService {
         return null; // allow
     }
 
-    private boolean isPhoneOrMessagingApp(String packageName) {
+    static boolean isPhoneOrMessagingApp(String packageName) {
         if (PHONE_PACKAGES.contains(packageName)) return true;
         return packageName.contains("dialer")
                 || packageName.contains("sms")
@@ -794,7 +799,11 @@ public class AppBlockerModule extends AccessibilityService {
      * limit being hit while the app is still open (#66).
      */
     private int getDailyUsageSeconds(String packageName) {
-        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        return getDailyUsageSeconds(this, packageName);
+    }
+
+    static int getDailyUsageSeconds(Context ctx, String packageName) {
+        UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
         if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, 0);
@@ -836,6 +845,38 @@ public class AppBlockerModule extends AccessibilityService {
         }
     }
 
+    /** Local calendar date as YYYY-MM-DD, matching localDateStr in bare-dispatch.js. */
+    static String localDateKey() {
+        Calendar c = Calendar.getInstance();
+        return String.format(java.util.Locale.US, "%04d-%02d-%02d",
+                c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH));
+    }
+
+    /**
+     * Parent-granted screen-time top-up for today (#179), or 0 if none was granted
+     * or the grant is stamped with a different date. Comparing dates rather than
+     * storing an expiry means the grant lapses at midnight, and rolling the clock
+     * back discards it instead of extending it.
+     */
+    static int getScreenTimeBonusSeconds(Context ctx) {
+        SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String date = prefs.getString("screentime_bonus_date", null);
+        if (date == null || !date.equals(localDateKey())) return 0;
+        int seconds = prefs.getInt("screentime_bonus_seconds", 0);
+        return Math.max(seconds, 0);
+    }
+
+    /**
+     * The cap actually enforced right now: the parent's daily budget plus any
+     * general-time grant for today. Returns 0 when no cap is configured.
+     */
+    static int effectiveScreenTimeLimitSeconds(Context ctx, JSONObject policy) {
+        if (policy == null) return 0;
+        int limit = policy.optInt("dailyScreenTimeLimitSeconds", 0);
+        if (limit <= 0) return 0;
+        return limit + getScreenTimeBonusSeconds(ctx);
+    }
+
     /**
      * True if the parent marked this package exempt from the device-wide
      * screen-time cap (#178). Exempt apps neither spend the shared budget nor
@@ -860,7 +901,11 @@ public class AppBlockerModule extends AccessibilityService {
      * budget — mirroring the exemptions in getBlockReason.
      */
     private int getTotalDailyUsageSeconds(JSONObject policy) {
-        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        return getTotalDailyUsageSeconds(this, policy);
+    }
+
+    static int getTotalDailyUsageSeconds(Context ctx, JSONObject policy) {
+        UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
         if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, 0);
@@ -888,8 +933,8 @@ public class AppBlockerModule extends AccessibilityService {
                 events.getNextEvent(event);
                 String pkg = event.getPackageName();
                 if (pkg == null) continue;
-                if (pkg.equals(getPackageName())) continue;
-                if (isSystemOverlayPackage(pkg)) continue;
+                if (pkg.equals(ctx.getPackageName())) continue;
+                if (isSystemOverlayPackage(ctx, pkg)) continue;
                 if (isPhoneOrMessagingApp(pkg)) continue;
                 if (screenTimeExempt.contains(pkg)) continue;
                 if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
@@ -946,7 +991,11 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     private JSONObject loadPolicy() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return loadPolicy(this);
+    }
+
+    static JSONObject loadPolicy(Context ctx) {
+        SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = prefs.getString(POLICY_KEY, null);
         if (json == null) return null;
         try {
@@ -1236,19 +1285,23 @@ public class AppBlockerModule extends AccessibilityService {
     // --- Button handlers ---
 
     private void onSendRequest(String packageName, String blockCategory, String reason) {
+        // A screen-time block means the shared daily budget is spent, not that this
+        // one app is restricted — so ask for general time, which tops the budget up
+        // rather than granting a per-app override (#179).
+        boolean isScreenTime = "screen_time".equals(blockCategory);
         boolean isExtraTime = "schedule".equals(blockCategory)
                 || "daily_limit".equals(blockCategory)
                 || "category_limit".equals(blockCategory)
-                || "screen_time".equals(blockCategory);
+                || isScreenTime;
         if (isExtraTime) {
             // Suppress the polling-loop overlay for 2 minutes so the duration picker
             // dialog is not immediately overwritten by the next EnforcementService tick (#66).
             enforcementSuppressedUntil = System.currentTimeMillis() + 120_000;
-            // Show duration picker; the picker fires onTimeRequest with requestType=extra_time
-            // after the child selects how much extra time they want. Reason is passed
-            // through so a Cancel tap can restore the original block overlay.
+            // Show duration picker; the picker fires onTimeRequest after the child
+            // selects how much time they want. Reason is passed through so a Cancel
+            // tap can restore the original block overlay.
             dismissOverlay();
-            showExtraTimePicker(packageName, reason);
+            showExtraTimePicker(packageName, reason, isScreenTime ? "general_time" : "extra_time");
             return;
         }
 
@@ -1402,7 +1455,7 @@ public class AppBlockerModule extends AccessibilityService {
         return layout;
     }
 
-    private void showExtraTimePicker(String packageName, String reason) {
+    private void showExtraTimePicker(String packageName, String reason, String requestType) {
         int[] optionMinutes = getTimeRequestOptions();
         String[] labels = new String[optionMinutes.length];
         int[] seconds = new int[optionMinutes.length];
@@ -1411,8 +1464,11 @@ public class AppBlockerModule extends AccessibilityService {
             seconds[i] = optionMinutes[i] * 60;
         }
 
+        boolean isGeneral = "general_time".equals(requestType);
+        String title = isGeneral ? "How much more screen time?" : "How much extra time?";
+
         final LinearLayout[] holder = { null };
-        holder[0] = makeDurationLayout("How much extra time?", labels, seconds,
+        holder[0] = makeDurationLayout(title, labels, seconds,
                 (durationSeconds) -> {
                     try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
                     pinDialogView = null;
@@ -1422,14 +1478,14 @@ public class AppBlockerModule extends AccessibilityService {
                         WritableMap params = Arguments.createMap();
                         params.putString("packageName", packageName);
                         params.putString("appName", getAppName(packageName));
-                        params.putString("requestType", "extra_time");
+                        params.putString("requestType", requestType);
                         params.putInt("extraSeconds", durationSeconds);
                         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                                 .emit("onTimeRequest", params);
                         Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
                     } else {
                         TimeRequestQueueHelper.enqueue(this, packageName, getAppName(packageName),
-                                "extra_time", durationSeconds);
+                                requestType, durationSeconds);
                         Toast.makeText(this, "Request queued — will sync to parent shortly", Toast.LENGTH_LONG).show();
                     }
                     pendingRequestPackages.add(packageName);

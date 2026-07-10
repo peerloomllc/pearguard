@@ -1106,6 +1106,103 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Today's screen-time budget as enforcement actually sees it (#179). Computed
+     * from the same AppBlockerModule helpers the block decision uses, so the number
+     * the child and parent see can never drift from the number being enforced.
+     *
+     * Returns limitSeconds=0 when no cap is configured (the UI treats that as
+     * "unlimited" and shows nothing).
+     */
+    @ReactMethod
+    public void getScreenTimeStatus(Promise promise) {
+        try {
+            JSONObject policy = AppBlockerModule.loadPolicy(reactContext);
+            int base = policy == null ? 0 : policy.optInt("dailyScreenTimeLimitSeconds", 0);
+            WritableMap out = Arguments.createMap();
+            if (base <= 0) {
+                out.putInt("limitSeconds", 0);
+                out.putInt("bonusSeconds", 0);
+                out.putInt("usedSeconds", 0);
+                out.putInt("remainingSeconds", 0);
+                promise.resolve(out);
+                return;
+            }
+            int bonus = AppBlockerModule.getScreenTimeBonusSeconds(reactContext);
+            int used = AppBlockerModule.getTotalDailyUsageSeconds(reactContext, policy);
+            int limit = base + bonus;
+            out.putInt("limitSeconds", limit);
+            out.putInt("bonusSeconds", bonus);
+            out.putInt("usedSeconds", used);
+            out.putInt("remainingSeconds", Math.max(limit - used, 0));
+            promise.resolve(out);
+        } catch (Exception e) {
+            promise.reject("SCREEN_TIME_STATUS_FAILED", e);
+        }
+    }
+
+    /**
+     * Per-app daily limits and how much of each is left, for apps the parent has
+     * capped individually. Uses the same AppBlockerModule.getDailyUsageSeconds the
+     * block decision uses, so the countdown can't drift from enforcement.
+     *
+     * Category limits are deliberately excluded — they're a shared pool across
+     * several apps and don't map onto a single per-app countdown.
+     */
+    @ReactMethod
+    public void getAppLimitStatus(Promise promise) {
+        try {
+            WritableArray out = Arguments.createArray();
+            JSONObject policy = AppBlockerModule.loadPolicy(reactContext);
+            JSONObject apps = policy == null ? null : policy.optJSONObject("apps");
+            if (apps == null) { promise.resolve(out); return; }
+
+            java.util.Iterator<String> it = apps.keys();
+            while (it.hasNext()) {
+                String pkg = it.next();
+                JSONObject entry = apps.optJSONObject(pkg);
+                if (entry == null) continue;
+                int limit = entry.optInt("dailyLimitSeconds", 0);
+                if (limit <= 0) continue;
+                // A blocked/pending app has no meaningful countdown.
+                if (!"allowed".equals(entry.optString("status", "allowed"))) continue;
+
+                int used = AppBlockerModule.getDailyUsageSeconds(reactContext, pkg);
+                WritableMap row = Arguments.createMap();
+                row.putString("packageName", pkg);
+                row.putString("appName", entry.optString("appName", pkg));
+                row.putInt("limitSeconds", limit);
+                row.putInt("usedSeconds", used);
+                row.putInt("remainingSeconds", Math.max(limit - used, 0));
+                out.pushMap(row);
+            }
+            promise.resolve(out);
+        } catch (Exception e) {
+            promise.reject("APP_LIMIT_STATUS_FAILED", e);
+        }
+    }
+
+    /**
+     * Stores today's granted screen-time top-up (#179). Kept out of the policy JSON
+     * because the parent replaces that object wholesale on every policy:update.
+     * The date is a local YYYY-MM-DD stamp; AppBlockerModule ignores the bonus
+     * unless it matches the current local date, so a grant lapses at midnight and
+     * a rolled-back clock discards it.
+     *
+     * Called from app/index.tsx when bare.js sends native:setScreenTimeBonus.
+     */
+    @ReactMethod
+    public void setScreenTimeBonus(String date, double seconds, Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+        prefs.edit()
+                .putString("screentime_bonus_date", date)
+                .putInt("screentime_bonus_seconds", (int) seconds)
+                .apply();
+        // The budget just grew, so whatever is on screen is no longer blocked.
+        AppBlockerModule.dismissAll();
+        promise.resolve(null);
+    }
+
+    /**
      * Dismisses the block overlay if it is currently showing for the given package.
      * Called from app/index.tsx after a P2P override or policy update makes a package accessible.
      * Delegates to AppBlockerModule.dismissIfShowing() which is a no-op if the service is not

@@ -150,6 +150,11 @@ shim.onBareOut((buf) => {
       else console.warn('[main] native:grantOverride received before enforcement init')
       return
     }
+    if (msg.method === 'native:setScreenTimeBonus') {
+      if (enforcement) enforcement.setScreenTimeBonus(msg.args || {})
+      else console.warn('[main] native:setScreenTimeBonus received before enforcement init')
+      return
+    }
     if (msg.method === 'native:showDecisionNotification') {
       const { appName, decision } = msg.args || {}
       new Notification({

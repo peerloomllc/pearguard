@@ -116,6 +116,7 @@ function evaluate({
   exeBasename,
   overrides,
   getUsageSeconds,
+  bonusSeconds = 0,
   now = Date.now(),
 }) {
   if (isSystemExempt(exeBasename)) return null
@@ -143,7 +144,7 @@ function evaluate({
   // fall through to their own limits. Exemption matches by packageName, so an
   // unmapped exe can never be exempt — same rule as scheduled blackouts below.
   if (!isScreenTimeExempt(policy, packageName)) {
-    const screenTimeReason = getScreenTimeBlockReason(policy, getUsageSeconds)
+    const screenTimeReason = getScreenTimeBlockReason(policy, getUsageSeconds, bonusSeconds)
     if (screenTimeReason) return { reason: screenTimeReason, category: 'screen_time' }
   }
 
@@ -196,9 +197,12 @@ function isScreenTimeExempt(policy, packageName) {
   return Array.isArray(exempt) && exempt.includes(packageName)
 }
 
-function getScreenTimeBlockReason(policy, getUsageSeconds) {
-  const limit = policy.dailyScreenTimeLimitSeconds
-  if (typeof limit !== 'number' || limit <= 0) return null
+// bonusSeconds is today's parent-granted top-up (#179), already date-checked by
+// the caller. It raises the cap and nothing else.
+function getScreenTimeBlockReason(policy, getUsageSeconds, bonusSeconds = 0) {
+  const base = policy.dailyScreenTimeLimitSeconds
+  if (typeof base !== 'number' || base <= 0) return null
+  const limit = base + (typeof bonusSeconds === 'number' && bonusSeconds > 0 ? bonusSeconds : 0)
 
   const apps = policy.apps || {}
   let total = 0

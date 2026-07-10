@@ -100,6 +100,10 @@ class PinLockoutStore {
     return attemptsRemaining(this._state)
   }
 
+  failCount() {
+    return (this._state && this._state.failCount) || 0
+  }
+
   // Returns the lockout in ms now owed, or 0 if attempts remain.
   recordFailure() {
     const { state, lockMs } = nextStateAfterFailure(this._state, this._now())

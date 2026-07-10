@@ -12,10 +12,11 @@ const TYPE_META = {
   app_installed:   { label: 'App Installed',    icon: 'Plus' },
   app_uninstalled: { label: 'App Uninstalled',  icon: 'Trash' },
   pin_override:    { label: 'PIN Override',     icon: 'LockSimpleOpen' },
+  pin_failure:     { label: 'PIN Guessing',     icon: 'Warning' },
 };
 
 function typeColor(type, colors) {
-  if (type === 'bypass' || type === 'app_uninstalled') return colors.error;
+  if (type === 'bypass' || type === 'app_uninstalled' || type === 'pin_failure') return colors.error;
   if (type === 'time_request' || type === 'pin_use' || type === 'pin_override') return colors.secondary;
   if (type === 'app_installed') return colors.success;
   return colors.text.muted;
@@ -180,6 +181,12 @@ function ActivityRow({ item }) {
                 requested {formatSeconds(item.requestedSeconds)}
               </span>
             : null}
+          {item.type === 'pin_failure' && item.failCount
+            ? <span style={{ ...typography.caption, color: colors.text.secondary }}>
+                {item.failCount} wrong attempts
+                {item.lockoutMs ? ', locked ' + Math.max(1, Math.round(item.lockoutMs / 60000)) + ' min' : ''}
+              </span>
+            : null}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
           <span style={{ ...typography.micro, color: colors.text.muted }}>{formatTime(item.timestamp)}</span>
@@ -212,7 +219,9 @@ export default function ActivityTab({ childPublicKey }) {
     const unsubInstalled   = window.onBareEvent('app:installed',         reload);
     const unsubUninstalled = window.onBareEvent('app:uninstalled',       reload);
     const unsubUpdated     = window.onBareEvent('request:updated',       reload);
-    return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); unsubUpdated(); };
+    const unsubOverride    = window.onBareEvent('alert:pin_override',    reload);
+    const unsubFailure     = window.onBareEvent('alert:pin_failure',     reload);
+    return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); unsubUpdated(); unsubOverride(); unsubFailure(); };
   }, [childPublicKey]);
 
   const pendingRequests = allAlerts.filter(

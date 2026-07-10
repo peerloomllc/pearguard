@@ -139,9 +139,14 @@ class EnforcementController extends EventEmitter {
   // counts against the child, since a missing policy or unset PIN isn't a guess.
   // Returns:
   //   { ok: true }                                                    on success
-  //   { ok: false, reason: 'locked', retryAfterMs }                   while locked out
+  //   { ok: false, reason: 'locked', retryAfterMs }                   while already locked
+  //   { ok: false, reason: 'locked', retryAfterMs, justLocked: true, failCount }
+  //                                                                    on a freshly triggered lockout
   //   { ok: false, reason: 'wrong-pin', attemptsRemaining }           on a wrong guess
   //   { ok: false, reason: 'no-policy'|'no-pin'|'no-sodium' }
+  //
+  // justLocked distinguishes a new lockout (worth alerting the parent once) from
+  // a submit that arrives while already locked (which would otherwise re-alert).
   verifyPinOnly({ pin }) {
     const locked = this.pinLockout.remainingMs()
     if (locked > 0) return { ok: false, reason: 'locked', retryAfterMs: locked }
@@ -153,7 +158,9 @@ class EnforcementController extends EventEmitter {
     if (!result.ok) {
       if (result.reason !== 'wrong-pin') return result
       const lockMs = this.pinLockout.recordFailure()
-      if (lockMs > 0) return { ok: false, reason: 'locked', retryAfterMs: lockMs }
+      if (lockMs > 0) {
+        return { ok: false, reason: 'locked', retryAfterMs: lockMs, justLocked: true, failCount: this.pinLockout.failCount() }
+      }
       return { ...result, attemptsRemaining: this.pinLockout.attemptsRemaining() }
     }
 

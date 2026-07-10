@@ -809,6 +809,28 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       send({ type: 'event', event: 'alert:pin_override', data: alertEntry })
       break
     }
+    case 'pin:failure': {
+      // Child repeatedly entered the wrong PIN and hit a lockout — store an alert
+      // so it shows in the Activity tab and the parent knows they are guessing.
+      const childPublicKey = msg.from
+      const { packageName, appName, failedAt, failCount, lockoutMs } = msg.payload
+      const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
+      const childDisplayName = peerRecord?.value?.displayName || 'Your child'
+      const alertEntry = {
+        id: 'pin_failure:' + failedAt,
+        type: 'pin_failure',
+        timestamp: failedAt,
+        packageName: packageName || null,
+        appDisplayName: appName || packageName || null,
+        childPublicKey,
+        childDisplayName,
+        failCount: failCount || 0,
+        lockoutMs: lockoutMs || 0,
+      }
+      await db.put('alert:' + childPublicKey + ':' + failedAt, alertEntry)
+      send({ type: 'event', event: 'alert:pin_failure', data: alertEntry })
+      break
+    }
     case 'unpair': {
       // A parent has removed this child.
       // Find which parent sent this by looking up the identity key for this noise key.

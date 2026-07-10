@@ -1685,6 +1685,10 @@ public class AppBlockerModule extends AccessibilityService {
                 enteredPin[0] = "";
                 long lockMs = recordPinFailure();
                 if (lockMs > 0L) {
+                    // A lockout was just triggered. The keypad is hidden while locked,
+                    // so this only fires on a fresh lockout, never per attempt-while-
+                    // locked — tell the parent the child is guessing.
+                    notifyParentPinFailure(packageName, lockMs);
                     showPinLockout(packageName, lockMs);
                     try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
                 } else {
@@ -2019,6 +2023,24 @@ public class AppBlockerModule extends AccessibilityService {
     private int pinAttemptsRemaining() {
         int fails = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getInt(PIN_FAIL_COUNT_KEY, 0);
         return Math.max(0, PIN_FREE_ATTEMPTS - fails);
+    }
+
+    /**
+     * Emits an onPinFailure RN event so the worklet can relay a "child is guessing
+     * the PIN" alert to the parent. Best-effort, mirroring grantOverride's
+     * onPinSuccess: only delivered when the RN bridge is alive.
+     */
+    private void notifyParentPinFailure(String packageName, long lockoutMs) {
+        ReactContext rc = PearGuardReactHost.get();
+        if (rc == null || !rc.hasActiveReactInstance()) return;
+        int failCount = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getInt(PIN_FAIL_COUNT_KEY, 0);
+        WritableMap evt = Arguments.createMap();
+        evt.putString("packageName", packageName);
+        evt.putDouble("timestamp", System.currentTimeMillis());
+        evt.putInt("failCount", failCount);
+        evt.putDouble("lockoutMs", (double) lockoutMs);
+        rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("onPinFailure", evt);
     }
 
     private void clearPinFailures() {

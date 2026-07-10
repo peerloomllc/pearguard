@@ -716,6 +716,11 @@ export default function Root () {
             sendToWorklet({ method: 'pin:used', args: e })
           }),
 
+          // Child hit a PIN lockout from repeated wrong guesses — relay to parent
+          DeviceEventEmitter.addListener('onPinFailure', (e: { packageName: string; timestamp: number; failCount: number; lockoutMs: number }) => {
+            sendToWorklet({ method: 'pin:failed', args: e })
+          }),
+
           // Notification tapped while app is in foreground — onNewIntent fires but
           // AppState doesn't change, so we need this dedicated listener.
           DeviceEventEmitter.addListener('pearguard_pendingNav', () => {
@@ -898,6 +903,21 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.showPinOverrideNotification?.(childName, appLabel, childPublicKey || '')
                 } else {
                   showNotification('PIN Override', childName + ' used PIN to open ' + appLabel, childPublicKey, 'activity')
+                }
+              }
+              // Notify the parent when a child hits a PIN lockout from repeated wrong guesses
+              if (msg.event === 'alert:pin_failure') {
+                const { childPublicKey, childDisplayName, appDisplayName, failCount, lockoutMs } = msg.data ?? {}
+                const childName = childDisplayName || 'Your child'
+                const attempts = failCount ? failCount + ' wrong attempts' : 'Repeated wrong attempts'
+                const onApp = appDisplayName ? ' on ' + appDisplayName : ''
+                const lockMin = lockoutMs ? Math.max(1, Math.round(lockoutMs / 60000)) : 0
+                const lockedFor = lockMin ? ' Locked ' + lockMin + ' min.' : ''
+                const detail = attempts + onApp + '.' + lockedFor
+                if (isAndroid) {
+                  NativeModules.UsageStatsModule?.showPinFailureNotification?.(childName, detail, childPublicKey || '')
+                } else {
+                  showNotification(childName + ' is guessing the PIN', detail, childPublicKey, 'activity')
                 }
               }
               // Notify about app installs — behaviour differs by mode:

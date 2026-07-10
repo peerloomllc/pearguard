@@ -751,7 +751,7 @@ app.whenReady().then(() => {
       // stripped on the child by handlePolicyUpdate. Verify locally against
       // the per-parent pinHashes map (mirroring AppBlockerModule on Android),
       // then route a pin:used audit through bare for parent-side logging.
-      const { pin } = payload || {}
+      const { pin, packageName } = payload || {}
       const result = enforcement.verifyPinOnly({ pin })
       if (result.ok) {
         overlay.notifyResult('overlay:pin-verify-result', {
@@ -759,6 +759,17 @@ app.whenReady().then(() => {
           durationSeconds: enforcement.getPinDurationSeconds(),
         })
       } else if (result.reason === 'locked') {
+        // Relay to the parent only on a freshly triggered lockout, not on every
+        // submit that arrives while already locked (mirrors Android, where the
+        // keypad is hidden during a lockout so this can't repeat).
+        if (result.justLocked) {
+          callBare('pin:failed', {
+            packageName: packageName || null,
+            timestamp: Date.now(),
+            failCount: result.failCount || 0,
+            lockoutMs: result.retryAfterMs || 0,
+          }).catch((e) => console.warn('[main] pin:failed relay failed:', e.message))
+        }
         overlay.notifyResult('overlay:pin-verify-result', {
           ok: false,
           locked: true,

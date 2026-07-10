@@ -6,6 +6,7 @@ const { OverridesStore } = require('./overrides-store')
 const { UsageTracker } = require('./usage-tracker')
 const { evaluate } = require('./block-evaluator')
 const { verifyPin } = require('./pin-verify')
+const { PinLockoutStore } = require('./pin-lockout')
 const { WarningChecker } = require('./warning-checker')
 
 const DEFAULT_OVERRIDE_SECONDS = 3600
@@ -27,6 +28,7 @@ class EnforcementController extends EventEmitter {
     intervalMs,
     seenExesPath = null,   // persistence path for first-seen dedupe
     overridesStore = new OverridesStore(),
+    pinLockoutStore = new PinLockoutStore(),
     usageTracker = new UsageTracker(),
     overlay = null,        // { show({packageName, appName, reason, category}), hide() }
     sodium = null,         // sodium-native, optional — required only for PIN verification
@@ -43,6 +45,7 @@ class EnforcementController extends EventEmitter {
     // keep their original behavior. The Linux host always passes its own.
     this.exeMap = exeMap || new ExeMap()
     this.overrides = overridesStore
+    this.pinLockout = pinLockoutStore
     this.usage = usageTracker
     this.monitor = new ForegroundMonitor({ activeWin, intervalMs, seenExesPath })
     this._warningChecker = warningChecker
@@ -130,14 +133,31 @@ class EnforcementController extends EventEmitter {
 
   // Verify a PIN against the cached policy without applying a grant. Marks
   // the controller as "PIN-verified" for a short window so a subsequent
-  // applyPinOverride can use the caller-supplied durationSeconds. Returns:
-  //   { ok: true }                                             on success
-  //   { ok: false, reason: 'no-policy'|'no-pin'|'wrong-pin'|'no-sodium' }
+  // applyPinOverride can use the caller-supplied durationSeconds.
+  //
+  // Consecutive wrong PINs escalate into a persisted lockout; only 'wrong-pin'
+  // counts against the child, since a missing policy or unset PIN isn't a guess.
+  // Returns:
+  //   { ok: true }                                                    on success
+  //   { ok: false, reason: 'locked', retryAfterMs }                   while locked out
+  //   { ok: false, reason: 'wrong-pin', attemptsRemaining }           on a wrong guess
+  //   { ok: false, reason: 'no-policy'|'no-pin'|'no-sodium' }
   verifyPinOnly({ pin }) {
+    const locked = this.pinLockout.remainingMs()
+    if (locked > 0) return { ok: false, reason: 'locked', retryAfterMs: locked }
+
     if (!this._sodium) return { ok: false, reason: 'no-sodium' }
     const policy = this.policyCache.getPolicy()
     const result = verifyPin({ sodium: this._sodium, policy, pin })
-    if (!result.ok) return result
+
+    if (!result.ok) {
+      if (result.reason !== 'wrong-pin') return result
+      const lockMs = this.pinLockout.recordFailure()
+      if (lockMs > 0) return { ok: false, reason: 'locked', retryAfterMs: lockMs }
+      return { ...result, attemptsRemaining: this.pinLockout.attemptsRemaining() }
+    }
+
+    this.pinLockout.clear()
     this._pinVerified = { expiresAt: Date.now() + PIN_VERIFY_TTL_MS }
     return { ok: true }
   }

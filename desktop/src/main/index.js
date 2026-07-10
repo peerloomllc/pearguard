@@ -63,6 +63,7 @@ app.on('second-instance', () => {
 const { createBareKitShim } = require('../backend/barekit-shim')
 const { EnforcementController } = require('../enforcement')
 const { OverridesStore } = require('../enforcement/overrides-store')
+const { PinLockoutStore, formatLockRemaining } = require('../enforcement/pin-lockout')
 const { UsageTracker } = require('../enforcement/usage-tracker')
 const { enumerateInstalledApps, slugify } = require('../enforcement/apps-enumerator')
 const { readFileDescription } = require('../enforcement/exe-metadata')
@@ -592,6 +593,9 @@ app.whenReady().then(() => {
     const overridesStore = new OverridesStore({
       filePath: path.join(app.getPath('userData'), 'overrides.json'),
     })
+    const pinLockoutStore = new PinLockoutStore({
+      filePath: path.join(app.getPath('userData'), 'pin-lockout.json'),
+    })
     const usageTracker = new UsageTracker({
       filePath: path.join(app.getPath('userData'), 'usage.json'),
     })
@@ -627,6 +631,7 @@ app.whenReady().then(() => {
       activeWin,
       seenExesPath: path.join(app.getPath('userData'), 'seen-exes.json'),
       overridesStore,
+      pinLockoutStore,
       usageTracker,
       overlay,
       sodium,
@@ -753,8 +758,17 @@ app.whenReady().then(() => {
           ok: true,
           durationSeconds: enforcement.getPinDurationSeconds(),
         })
+      } else if (result.reason === 'locked') {
+        overlay.notifyResult('overlay:pin-verify-result', {
+          ok: false,
+          locked: true,
+          retryAfterMs: result.retryAfterMs,
+          error: 'Too many attempts. Try again in ' + formatLockRemaining(result.retryAfterMs) + '.',
+        })
       } else {
-        const reason = result.reason === 'wrong-pin' ? 'Wrong PIN.'
+        const tries = result.attemptsRemaining
+        const reason = result.reason === 'wrong-pin'
+          ? (tries === 1 ? 'Wrong PIN. 1 try left.' : 'Wrong PIN. ' + tries + ' tries left.')
           : result.reason === 'no-pin' ? 'No PIN set on this device.'
           : result.reason === 'no-policy' ? 'Policy not loaded yet.'
           : result.reason === 'no-sodium' ? 'PIN verification unavailable.'

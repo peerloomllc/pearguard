@@ -133,10 +133,59 @@ window.overlay.onTimeRequestResult((result) => {
   }
 })
 
+// Mirrors formatLockRemaining in enforcement/pin-lockout.js. The renderer can't
+// require() into the enforcement tree, so the format is duplicated here.
+function formatLockRemaining(ms) {
+  const totalSeconds = Math.ceil(ms / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const pad = (n) => String(n).padStart(2, '0')
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`
+  return `${seconds}s`
+}
+
+let pinLockTimer = null
+
+// Cosmetic only — the main process re-checks the lockout on every submit, so a
+// child who tampers with the renderer gains nothing by clearing this early.
+function startPinLockCountdown(retryAfterMs) {
+  if (pinLockTimer) clearInterval(pinLockTimer)
+  let remaining = retryAfterMs
+  els.pinInput.value = ''
+  els.pinInput.disabled = true
+  els.pinSubmit.disabled = true
+
+  const render = () => {
+    els.pinStatus.textContent = 'Too many attempts. Try again in ' + formatLockRemaining(remaining) + '.'
+    els.pinStatus.className = 'status error'
+  }
+  render()
+
+  pinLockTimer = setInterval(() => {
+    remaining -= 1000
+    if (remaining <= 0) {
+      clearInterval(pinLockTimer)
+      pinLockTimer = null
+      els.pinInput.disabled = false
+      els.pinSubmit.disabled = false
+      els.pinStatus.textContent = ''
+      els.pinStatus.className = 'status'
+      els.pinInput.focus()
+      return
+    }
+    render()
+  }, 1000)
+}
+
 window.overlay.onPinVerifyResult((result) => {
   if (result.ok) {
+    if (pinLockTimer) { clearInterval(pinLockTimer); pinLockTimer = null }
     renderPinDurationGrid(result.durationSeconds)
     showView('pin-duration')
+  } else if (result.locked) {
+    startPinLockCountdown(result.retryAfterMs)
   } else {
     els.pinStatus.textContent = result.error || 'Wrong PIN.'
     els.pinStatus.className = 'status error'

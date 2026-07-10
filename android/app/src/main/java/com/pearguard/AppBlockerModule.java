@@ -62,6 +62,18 @@ public class AppBlockerModule extends AccessibilityService {
     private static final String POLICY_KEY = "pearguard_policy";
     private static final String CHANNEL_ID = "pearguard_bypass_warning";
 
+    // --- PIN brute-force lockout ---
+    // The child controls this device, so lockout state has to survive overlay
+    // dismissal, force-stop and reboot; it lives in SharedPreferences, not memory.
+    private static final String PIN_FAIL_COUNT_KEY = "pearguard_pin_fail_count";
+    private static final String PIN_LOCKED_UNTIL_KEY = "pearguard_pin_locked_until";
+    private static final String PIN_LOCKED_AT_KEY = "pearguard_pin_locked_at";
+    private static final int PIN_FREE_ATTEMPTS = 5;
+    // Escalation is driven by the persisted failure count rather than by elapsed
+    // time. A child who moves the system clock forward clears the current wait,
+    // but the count survives, so the next wrong guess costs strictly more.
+    private static final long[] PIN_LOCKOUT_LADDER_MS = { 30_000L, 120_000L, 600_000L, 3_600_000L };
+
     // Phone/messaging package identifiers — these get contact-based exceptions
     private static final Set<String> PHONE_PACKAGES = new HashSet<>();
     static {
@@ -1524,6 +1536,12 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     private void onEnterPin(String packageName) {
+        long lockRemaining = pinLockRemainingMs();
+        if (lockRemaining > 0L) {
+            showPinLockout(packageName, lockRemaining);
+            return;
+        }
+
         final String[] enteredPin = { "" };
 
         LinearLayout dialogLayout = new LinearLayout(this);
@@ -1602,8 +1620,11 @@ public class AppBlockerModule extends AccessibilityService {
                 d.setColor(OT.ERROR);
                 dot.setBackground(d);
             }
+            int left = pinAttemptsRemaining();
             pinTitle.setTextColor(OT.ERROR);
-            pinTitle.setText("Incorrect PIN");
+            pinTitle.setText(left == 1
+                    ? "Incorrect PIN - 1 try left"
+                    : "Incorrect PIN - " + left + " tries left");
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 pinTitle.setTextColor(OT.TEXT_PRIMARY);
                 pinTitle.setText("Enter parent PIN");
@@ -1679,13 +1700,21 @@ public class AppBlockerModule extends AccessibilityService {
                             if (enteredPin[0].length() == 4) {
                                 if (verifyPin(enteredPin[0])) {
                                     vibrate(PATTERN_SUCCESS);
+                                    clearPinFailures();
                                     try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
                                     pinDialogView = null;
                                     showDurationPicker(packageName);
                                 } else {
                                     vibrate(PATTERN_ERROR);
                                     enteredPin[0] = "";
-                                    showError.run();
+                                    long lockMs = recordPinFailure();
+                                    if (lockMs > 0L) {
+                                        try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+                                        pinDialogView = null;
+                                        showPinLockout(packageName, lockMs);
+                                    } else {
+                                        showError.run();
+                                    }
                                 }
                             }
                         }
@@ -1730,6 +1759,108 @@ public class AppBlockerModule extends AccessibilityService {
 
         windowManager.addView(dialogLayout, dialogParams);
         pinDialogView = dialogLayout;
+    }
+
+    /**
+     * Replaces the keypad while a lockout is in force. Counts down once a second
+     * and reopens the keypad on its own when the wait elapses.
+     */
+    private void showPinLockout(String packageName, long remainingMs) {
+        LinearLayout dialogLayout = new LinearLayout(this);
+        dialogLayout.setOrientation(LinearLayout.VERTICAL);
+        dialogLayout.setBackgroundColor(OT.SURFACE_BASE);
+        dialogLayout.setGravity(Gravity.CENTER_HORIZONTAL);
+        dialogLayout.setPadding(dp(24), dp(48), dp(24), dp(48));
+
+        LinearLayout icon = iconCircle(OT.ICON_CIRCLE_SM, ICON_LOCK, 32, OT.ERROR, OT.PRIMARY_BG);
+        LinearLayout.LayoutParams iconP = new LinearLayout.LayoutParams(dp(OT.ICON_CIRCLE_SM), dp(OT.ICON_CIRCLE_SM));
+        iconP.setMargins(0, 0, 0, dp(16));
+        iconP.gravity = Gravity.CENTER_HORIZONTAL;
+        icon.setLayoutParams(iconP);
+        dialogLayout.addView(icon);
+
+        TextView title = new TextView(this);
+        title.setText("Too many attempts");
+        title.setTextColor(OT.TEXT_PRIMARY);
+        title.setTextSize(20);
+        title.setTypeface(getNunitoSemiBold());
+        title.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleP.setMargins(0, 0, 0, dp(8));
+        titleP.gravity = Gravity.CENTER_HORIZONTAL;
+        title.setLayoutParams(titleP);
+        dialogLayout.addView(title);
+
+        final TextView countdown = new TextView(this);
+        countdown.setText("Try again in " + formatLockRemaining(remainingMs));
+        countdown.setTextColor(OT.TEXT_SECONDARY);
+        countdown.setTextSize(15);
+        countdown.setTypeface(getNunitoRegular());
+        countdown.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cdP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cdP.setMargins(0, 0, 0, dp(32));
+        cdP.gravity = Gravity.CENTER_HORIZONTAL;
+        countdown.setLayoutParams(cdP);
+        dialogLayout.addView(countdown);
+
+        TextView cancelBtn = new TextView(this);
+        cancelBtn.setText("Cancel");
+        cancelBtn.setTextColor(OT.TEXT_SECONDARY);
+        cancelBtn.setTextSize(14);
+        cancelBtn.setTypeface(getNunitoSemiBold());
+        cancelBtn.setGravity(Gravity.CENTER);
+        cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
+        cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
+        LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cancelP.gravity = Gravity.CENTER_HORIZONTAL;
+        cancelBtn.setLayoutParams(cancelP);
+        cancelBtn.setClickable(true);
+        dialogLayout.addView(cancelBtn);
+
+        WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+        );
+
+        windowManager.addView(dialogLayout, dialogParams);
+        pinDialogView = dialogLayout;
+
+        final Handler handler = new Handler(Looper.getMainLooper());
+        // Guards the ticker against firing after the view is gone, which would
+        // otherwise reopen the keypad over whatever the child navigated to.
+        final boolean[] dismissed = { false };
+
+        cancelBtn.setOnClickListener(v -> {
+            dismissed[0] = true;
+            try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+            pinDialogView = null;
+        });
+
+        final Runnable[] tick = { null };
+        tick[0] = () -> {
+            // pinDialogView changing out from under us means something else (a
+            // dismiss, a new overlay) already tore this view down.
+            if (dismissed[0] || pinDialogView != dialogLayout) return;
+            long left = pinLockRemainingMs();
+            if (left <= 0L) {
+                dismissed[0] = true;
+                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+                pinDialogView = null;
+                onEnterPin(packageName);
+                return;
+            }
+            countdown.setText("Try again in " + formatLockRemaining(left));
+            handler.postDelayed(tick[0], 1000L);
+        };
+        handler.postDelayed(tick[0], 1000L);
     }
 
     private void showDurationPicker(String packageName) {
@@ -1813,6 +1944,67 @@ public class AppBlockerModule extends AccessibilityService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** Milliseconds to wait after `fails` consecutive wrong PINs; 0 while attempts remain. */
+    private static long lockoutDelayForFailCount(int fails) {
+        if (fails <= PIN_FREE_ATTEMPTS) return 0L;
+        int idx = fails - PIN_FREE_ATTEMPTS - 1;
+        if (idx >= PIN_LOCKOUT_LADDER_MS.length) idx = PIN_LOCKOUT_LADDER_MS.length - 1;
+        return PIN_LOCKOUT_LADDER_MS[idx];
+    }
+
+    /** Remaining lockout in ms, or 0 if the keypad is currently usable. */
+    private long pinLockRemainingMs() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        long until = prefs.getLong(PIN_LOCKED_UNTIL_KEY, 0L);
+        if (until <= 0L) return 0L;
+        long lockedAt = prefs.getLong(PIN_LOCKED_AT_KEY, 0L);
+        long now = System.currentTimeMillis();
+        // Clock rolled back to before the lock was applied: serve the full remaining
+        // duration rather than letting a backwards jump look like an expired lock.
+        if (now < lockedAt) return until - lockedAt;
+        if (now >= until) return 0L;
+        return until - now;
+    }
+
+    /** Records a wrong PIN. Returns the lockout in ms now owed, or 0 if attempts remain. */
+    private long recordPinFailure() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        int fails = prefs.getInt(PIN_FAIL_COUNT_KEY, 0) + 1;
+        long delay = lockoutDelayForFailCount(fails);
+        SharedPreferences.Editor editor = prefs.edit().putInt(PIN_FAIL_COUNT_KEY, fails);
+        if (delay > 0L) {
+            long now = System.currentTimeMillis();
+            editor.putLong(PIN_LOCKED_AT_KEY, now).putLong(PIN_LOCKED_UNTIL_KEY, now + delay);
+        }
+        editor.apply();
+        return delay;
+    }
+
+    /** Attempts remaining before the next lockout. Only meaningful while under the free limit. */
+    private int pinAttemptsRemaining() {
+        int fails = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getInt(PIN_FAIL_COUNT_KEY, 0);
+        return Math.max(0, PIN_FREE_ATTEMPTS - fails);
+    }
+
+    private void clearPinFailures() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .remove(PIN_FAIL_COUNT_KEY)
+                .remove(PIN_LOCKED_UNTIL_KEY)
+                .remove(PIN_LOCKED_AT_KEY)
+                .apply();
+    }
+
+    /** "1h 04m", "9m 30s" or "45s". */
+    private static String formatLockRemaining(long ms) {
+        long totalSeconds = (ms + 999L) / 1000L; // round up so we never display "0s"
+        long hours = totalSeconds / 3600L;
+        long minutes = (totalSeconds % 3600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        if (hours > 0) return String.format(java.util.Locale.US, "%dh %02dm", hours, minutes);
+        if (minutes > 0) return String.format(java.util.Locale.US, "%dm %02ds", minutes, seconds);
+        return seconds + "s";
     }
 
     private static byte[] hexToBytes(String hex) {

@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import NativeIcon from './NativeIcon'
+import { validatePin, MAX_PIN_LENGTH } from '../src/pin-rules'
 import { colors, spacing, radius, typography, fontFamily } from '../src/rn-theme'
 
 let _callBare: ((method: string, args: any) => Promise<any>) | null = null
@@ -95,8 +96,8 @@ export default function SetupScreen () {
 
   async function handleSetPin () {
     if (!_callBare) return
-    if (pin.length !== 4) { setError('PIN must be exactly 4 digits.'); return }
-    if (!/^\d+$/.test(pin)) { setError('PIN must contain only digits.'); return }
+    const pinError = validatePin(pin)
+    if (pinError) { setError(pinError); return }
     if (pin !== confirmPin) { setError('PINs do not match.'); setConfirmPin(''); return }
     setError(null)
     setLoading(true)
@@ -184,20 +185,19 @@ export default function SetupScreen () {
             <ActivityIndicator color={colors.primary} size="large" />
           ) : (
             <View style={styles.form}>
-              <Text style={styles.label}>PIN (4 digits)</Text>
+              <Text style={styles.label}>PIN (4 to {MAX_PIN_LENGTH} digits)</Text>
               <TextInput
                 style={styles.input}
                 value={pin}
                 onChangeText={(v) => {
                   setPin(v);
                   setError(null);
-                  if (v.length === 4) confirmPinRef.current?.focus();
                 }}
                 placeholder="e.g. 1234"
                 placeholderTextColor={colors.text.muted}
                 keyboardType="numeric"
                 secureTextEntry
-                maxLength={4}
+                maxLength={MAX_PIN_LENGTH}
                 inputAccessoryViewID={Platform.OS === 'ios' ? pinAccessoryID : undefined}
               />
               <Text style={styles.label}>Confirm PIN</Text>
@@ -214,7 +214,7 @@ export default function SetupScreen () {
                 placeholderTextColor={colors.text.muted}
                 keyboardType="numeric"
                 secureTextEntry
-                maxLength={4}
+                maxLength={MAX_PIN_LENGTH}
                 inputAccessoryViewID={Platform.OS === 'ios' ? pinAccessoryID : undefined}
               />
               <TouchableOpacity style={styles.btnSave} onPress={handleSetPin}>

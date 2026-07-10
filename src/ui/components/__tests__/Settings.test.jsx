@@ -27,7 +27,26 @@ test('shows error when PIN is shorter than 4 digits', async () => {
   fireEvent.change(screen.getByLabelText('New PIN'), { target: { value: '12' } });
   fireEvent.change(screen.getByLabelText('Confirm PIN'), { target: { value: '12' } });
   fireEvent.click(screen.getByLabelText('Save PIN'));
-  expect(await screen.findByText(/exactly 4 digits/i)).toBeInTheDocument();
+  expect(await screen.findByText(/PIN must be 4 to 10 digits/i)).toBeInTheDocument();
+});
+
+test('shows error when PIN is longer than 10 digits', async () => {
+  render(<Settings />);
+  // maxLength caps typing at 10, so drive the value directly to prove the
+  // validator rejects an over-long PIN rather than relying on the input alone.
+  fireEvent.change(screen.getByLabelText('New PIN'), { target: { value: '12345678901' } });
+  fireEvent.change(screen.getByLabelText('Confirm PIN'), { target: { value: '12345678901' } });
+  fireEvent.click(screen.getByLabelText('Save PIN'));
+  expect(await screen.findByText(/PIN must be 4 to 10 digits/i)).toBeInTheDocument();
+  expect(window.callBare).not.toHaveBeenCalledWith('pin:set', expect.anything());
+});
+
+test('accepts a PIN longer than 4 digits', async () => {
+  render(<Settings />);
+  fireEvent.change(screen.getByLabelText('New PIN'), { target: { value: '839201' } });
+  fireEvent.change(screen.getByLabelText('Confirm PIN'), { target: { value: '839201' } });
+  fireEvent.click(screen.getByLabelText('Save PIN'));
+  await waitFor(() => expect(window.callBare).toHaveBeenCalledWith('pin:set', { pin: '839201' }));
 });
 
 test('shows error when PIN contains non-digits', async () => {

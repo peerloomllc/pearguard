@@ -14370,6 +14370,31 @@
     }
   });
 
+  // src/pin-rules.js
+  var require_pin_rules = __commonJS({
+    "src/pin-rules.js"(exports, module) {
+      "use strict";
+      var MIN_PIN_LENGTH = 4;
+      var MAX_PIN_LENGTH3 = 10;
+      var LENGTH_ERROR = `PIN must be ${MIN_PIN_LENGTH} to ${MAX_PIN_LENGTH3} digits.`;
+      var DIGITS_ERROR = "PIN must contain only digits.";
+      function validatePin3(pin) {
+        if (typeof pin !== "string" || pin.length < MIN_PIN_LENGTH || pin.length > MAX_PIN_LENGTH3) {
+          return LENGTH_ERROR;
+        }
+        if (!/^\d+$/.test(pin)) return DIGITS_ERROR;
+        return null;
+      }
+      module.exports = {
+        MIN_PIN_LENGTH,
+        MAX_PIN_LENGTH: MAX_PIN_LENGTH3,
+        LENGTH_ERROR,
+        DIGITS_ERROR,
+        validatePin: validatePin3
+      };
+    }
+  });
+
   // src/ui/main.jsx
   var import_react29 = __toESM(require_react());
   var import_client = __toESM(require_client());
@@ -18947,6 +18972,9 @@ ${inv.inviteLink}`
     return { type: "custom", base64, thumb64, mime };
   }
 
+  // src/ui/components/Settings.jsx
+  var import_pin_rules = __toESM(require_pin_rules());
+
   // src/ui/components/DeviceBackupModal.jsx
   var import_react16 = __toESM(require_react());
   var import_jsx_runtime21 = __toESM(require_jsx_runtime());
@@ -19375,12 +19403,9 @@ ${inv.inviteLink}`
     }
     function handlePinSubmit(e) {
       e.preventDefault();
-      if (newPin.length !== 4) {
-        setPinStatus("PIN must be exactly 4 digits.");
-        return;
-      }
-      if (!/^\d+$/.test(newPin)) {
-        setPinStatus("PIN must contain only digits.");
+      const pinError = (0, import_pin_rules.validatePin)(newPin);
+      if (pinError) {
+        setPinStatus(pinError);
         return;
       }
       if (newPin !== confirmPin) {
@@ -19573,7 +19598,9 @@ ${inv.inviteLink}`
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("form", { onSubmit: handlePinSubmit, style: { display: "flex", flexDirection: "column", gap: `${spacing2.md}px` }, "aria-label": "Change PIN form", children: [
           /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
-            "New PIN",
+            "New PIN (4 to ",
+            import_pin_rules.MAX_PIN_LENGTH,
+            " digits)",
             /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
               "input",
               {
@@ -19582,13 +19609,12 @@ ${inv.inviteLink}`
                 onChange: (e) => {
                   setNewPin(e.target.value);
                   setPinStatus(null);
-                  if (e.target.value.length === 4) confirmPinRef.current?.focus();
                 },
                 placeholder: "e.g. 1234",
                 style: inputStyle,
                 "aria-label": "New PIN",
                 inputMode: "numeric",
-                maxLength: 4
+                maxLength: import_pin_rules.MAX_PIN_LENGTH
               }
             )
           ] }),
@@ -19608,7 +19634,7 @@ ${inv.inviteLink}`
                 style: inputStyle,
                 "aria-label": "Confirm PIN",
                 inputMode: "numeric",
-                maxLength: 4
+                maxLength: import_pin_rules.MAX_PIN_LENGTH
               }
             )
           ] }),
@@ -20303,6 +20329,9 @@ ${inv.inviteLink}`
     ] });
   }
 
+  // src/ui/components/ParentApp.jsx
+  var import_pin_rules2 = __toESM(require_pin_rules());
+
   // src/ui/components/Tour.jsx
   var import_react22 = __toESM(require_react());
   var import_jsx_runtime28 = __toESM(require_jsx_runtime());
@@ -20702,12 +20731,9 @@ ${inv.inviteLink}`
     const [error, setError] = (0, import_react23.useState)(null);
     function handleSubmit(e) {
       e.preventDefault();
-      if (pin.length !== 4) {
-        setError("PIN must be exactly 4 digits.");
-        return;
-      }
-      if (!/^\d+$/.test(pin)) {
-        setError("PIN must contain only digits.");
+      const pinError = (0, import_pin_rules2.validatePin)(pin);
+      if (pinError) {
+        setError(pinError);
         return;
       }
       if (pin !== confirmPin) {
@@ -20747,18 +20773,15 @@ ${inv.inviteLink}`
         /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
           Input,
           {
-            label: "Set PIN",
+            label: `Set PIN (4 to ${import_pin_rules2.MAX_PIN_LENGTH} digits)`,
             value: pin,
             onChange: (e) => {
               setPin(e.target.value);
               setError(null);
-              if (e.target.value.length === 4) {
-                document.getElementById("pin-confirm-input")?.focus();
-              }
             },
             placeholder: "e.g. 1234",
             inputMode: "numeric",
-            maxLength: 4,
+            maxLength: import_pin_rules2.MAX_PIN_LENGTH,
             "aria-label": "Set PIN"
           }
         ),
@@ -20774,7 +20797,7 @@ ${inv.inviteLink}`
             },
             placeholder: "Repeat PIN",
             inputMode: "numeric",
-            maxLength: 4,
+            maxLength: import_pin_rules2.MAX_PIN_LENGTH,
             "aria-label": "Confirm PIN"
           }
         ),

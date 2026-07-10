@@ -407,7 +407,7 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
       const dispatch = createDispatch(ctx)
 
-      await expect(dispatch('pin:set', {})).rejects.toThrow('invalid pin')
+      await expect(dispatch('pin:set', {})).rejects.toThrow(/4 to 10 digits/)
     })
 
     test('non-string pin throws', async () => {
@@ -415,7 +415,35 @@ describe('bare dispatch', () => {
       const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
       const dispatch = createDispatch(ctx)
 
-      await expect(dispatch('pin:set', { pin: 1234 })).rejects.toThrow('invalid pin')
+      await expect(dispatch('pin:set', { pin: 1234 })).rejects.toThrow(/4 to 10 digits/)
+    })
+
+    test('pin shorter than 4 or longer than 10 digits throws', async () => {
+      const mockDb = makeMockDb()
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
+      const dispatch = createDispatch(ctx)
+
+      await expect(dispatch('pin:set', { pin: '123' })).rejects.toThrow(/4 to 10 digits/)
+      await expect(dispatch('pin:set', { pin: '12345678901' })).rejects.toThrow(/4 to 10 digits/)
+    })
+
+    test('non-digit pin throws', async () => {
+      const mockDb = makeMockDb()
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
+      const dispatch = createDispatch(ctx)
+
+      await expect(dispatch('pin:set', { pin: '12a4' })).rejects.toThrow(/only digits/)
+    })
+
+    test('accepts a 10-digit pin and stores its hash', async () => {
+      const mockDb = makeMockDb()
+      const ctx = { db: mockDb, sodium, identity: { publicKey: 'abc123', secretKey: 'secret' } }
+      const dispatch = createDispatch(ctx)
+
+      await expect(dispatch('pin:set', { pin: '1234567890' })).resolves.toEqual({ ok: true })
+      const stored = await mockDb.get('policy')
+      expect(stored.value.pinPlain).toBe('1234567890')
+      expect(stored.value.pinHash).toMatch(/^[0-9a-f]{64}$/)
     })
   })
 

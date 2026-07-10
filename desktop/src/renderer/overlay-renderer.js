@@ -49,10 +49,14 @@ function showView(view) {
 
 function renderTimeGrid(minutes) {
   els.timeGrid.innerHTML = ''
+  // A screen-time block means the shared daily budget is spent, not that this one
+  // app is restricted — ask for general time so the parent tops the budget up
+  // instead of granting a per-app override (#179). Mirrors AppBlockerModule.
+  const requestType = current && current.category === 'screen_time' ? 'general_time' : 'extra_time'
   for (const m of minutes) {
     const btn = document.createElement('button')
     btn.textContent = m + ' min'
-    btn.addEventListener('click', () => sendTimeRequest(m * 60, 'extra_time'))
+    btn.addEventListener('click', () => sendTimeRequest(m * 60, requestType))
     els.timeGrid.appendChild(btn)
   }
 }

@@ -114,6 +114,7 @@ export default forwardRef(function Dashboard(_props, ref) {
           if (data.currentAppPackage != null) next.currentAppPackage = data.currentAppPackage;
           if (data.currentAppIcon != null) next.currentAppIcon = data.currentAppIcon;
           if (typeof data.todayScreenTimeSeconds === 'number') next.todayScreenTimeSeconds = data.todayScreenTimeSeconds;
+          if (data.screenTime) next.screenTime = data.screenTime;
           return next;
         }));
       }),

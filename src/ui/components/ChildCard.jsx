@@ -16,8 +16,12 @@ export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
     displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
-    bypassAlerts, pendingApprovals, pendingTimeRequests, locked,
+    bypassAlerts, pendingApprovals, pendingTimeRequests, locked, screenTime,
   } = child;
+
+  // Only meaningful once a cap is set; limitSeconds is 0 otherwise (#179).
+  const hasBudget = screenTime && screenTime.limitSeconds > 0;
+  const timeLeft = hasBudget ? screenTime.remainingSeconds : null;
 
   const hasAlerts = bypassAlerts > 0 || pendingApprovals > 0 || pendingTimeRequests > 0;
 
@@ -87,6 +91,19 @@ export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
         </span>
         <span>{formatSeconds(todayScreenTimeSeconds || 0)} today</span>
       </div>
+      {hasBudget && (
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', marginTop: `${spacing.xs}px`,
+          ...typography.caption,
+          color: timeLeft === 0 ? colors.error : colors.text.secondary,
+        }}>
+          <span>Screen time left</span>
+          <span style={{ fontWeight: '600', color: timeLeft === 0 ? colors.error : colors.primary }}>
+            {timeLeft === 0 ? 'None left' : formatSeconds(timeLeft)}
+            {screenTime.bonusSeconds > 0 ? ` (+${formatSeconds(screenTime.bonusSeconds)} granted)` : ''}
+          </span>
+        </div>
+      )}
     </button>
   );
 }

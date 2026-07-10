@@ -100,15 +100,19 @@ function sendToWorklet (msg: object, pendingId?: number) {
 
 async function pushHeartbeatDataOnce () {
   try {
-    const [usageList, currentAppPackage] = await Promise.all([
+    const [usageList, currentAppPackage, screenTime, appLimits] = await Promise.all([
       NativeModules.UsageStatsModule?.getDailyUsageAllEvents?.(),
       NativeModules.UsageStatsModule?.getLastForegroundPackage?.(),
+      // Enforced budget (#179). Distinct from the raw sum below, which counts
+      // PearGuard, phone/messaging and screen-time-exempt apps.
+      NativeModules.UsageStatsModule?.getScreenTimeStatus?.().catch(() => null),
+      NativeModules.UsageStatsModule?.getAppLimitStatus?.().catch(() => null),
     ])
     const usage: { packageName: string; appName: string; secondsToday: number }[] = usageList || []
     const todayScreenTimeSeconds = usage.reduce((sum, a) => sum + (a.secondsToday || 0), 0)
     const foregroundEntry = currentAppPackage ? usage.find((a) => a.packageName === currentAppPackage) : null
     const currentApp = foregroundEntry ? foregroundEntry.appName : null
-    sendToWorklet({ method: 'heartbeat:updateData', args: { currentApp, currentAppPackage: currentAppPackage || null, todayScreenTimeSeconds } })
+    sendToWorklet({ method: 'heartbeat:updateData', args: { currentApp, currentAppPackage: currentAppPackage || null, todayScreenTimeSeconds, screenTime: screenTime || null, appLimits: appLimits || null } })
   } catch (e) {
     console.warn('[PearGuard] heartbeat data push failed:', e)
   }
@@ -974,6 +978,16 @@ export default function Root () {
               )
               // Auto-dismiss the overlay for this package — the parent just granted access
               NativeModules.UsageStatsModule?.dismissOverlayForPackage?.(msg.args.packageName)
+            } else if (msg.method === 'native:setScreenTimeBonus') {
+              // Parent granted extra general screen time — raise today's budget.
+              // Stored separately from the policy, which the parent overwrites wholesale.
+              NativeModules.UsageStatsModule?.setScreenTimeBonus?.(
+                msg.args.date,
+                msg.args.seconds
+              )
+              // Refresh the cached budget now rather than waiting for the next
+              // heartbeat tick, so the child sees the new time left immediately.
+              pushHeartbeatDataOnce()
             } else if (msg.method === 'native:showDecisionNotification') {
               // Parent denied an extra-time request — show a notification to the child
               NativeModules.UsageStatsModule?.showDecisionNotification?.(

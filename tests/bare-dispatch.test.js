@@ -1935,6 +1935,44 @@ describe('bare dispatch', () => {
       expect(events[0][0].data).toMatchObject({ packageName: 'com.example.tiktok', childPublicKey: 'childpk1' })
     })
 
+    // Regression (#179): the parent used to collapse general_time to 'approval'
+    // and drop extraSeconds, so the UI silently approved the app instead of
+    // granting the screen time the child asked for.
+    test.each([
+      ['general_time', 900],
+      ['extra_time', 1800],
+    ])('preserves requestType=%s and extraSeconds', async (requestType, extraSeconds) => {
+      const mockDb = makeMockDb({})
+      const mockSend = jest.fn()
+
+      await handleIncomingTimeRequest(
+        { requestId: 'req:1:com.example.app', packageName: 'com.example.app', requestedAt: 1, requestType, extraSeconds },
+        'childpk1',
+        mockDb,
+        mockSend
+      )
+
+      const [, saved] = mockDb.put.mock.calls.find(([k]) => k === 'request:req:1:com.example.app')
+      expect(saved.requestType).toBe(requestType)
+      expect(saved.extraSeconds).toBe(extraSeconds)
+    })
+
+    test('unknown requestType still degrades to approval and drops extraSeconds', async () => {
+      const mockDb = makeMockDb({})
+      const mockSend = jest.fn()
+
+      await handleIncomingTimeRequest(
+        { requestId: 'req:2:com.example.app', packageName: 'com.example.app', requestedAt: 2, requestType: 'bogus', extraSeconds: 900 },
+        'childpk1',
+        mockDb,
+        mockSend
+      )
+
+      const [, saved] = mockDb.put.mock.calls.find(([k]) => k === 'request:req:2:com.example.app')
+      expect(saved.requestType).toBe('approval')
+      expect(saved.extraSeconds).toBeUndefined()
+    })
+
     test('missing requestId: returns without error, no writes', async () => {
       const mockDb = makeMockDb({})
       const mockSend = jest.fn()

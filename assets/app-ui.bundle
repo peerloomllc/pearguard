@@ -14820,8 +14820,11 @@
       bypassAlerts,
       pendingApprovals,
       pendingTimeRequests,
-      locked
+      locked,
+      screenTime
     } = child;
+    const hasBudget = screenTime && screenTime.limitSeconds > 0;
+    const timeLeft = hasBudget ? screenTime.remainingSeconds : null;
     const hasAlerts = bypassAlerts > 0 || pendingApprovals > 0 || pendingTimeRequests > 0;
     let statusText = "All good";
     let statusColor = colors.success;
@@ -14895,6 +14898,19 @@
             /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
               formatSeconds(todayScreenTimeSeconds || 0),
               " today"
+            ] })
+          ] }),
+          hasBudget && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: {
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: `${spacing2.xs}px`,
+            ...typography2.caption,
+            color: timeLeft === 0 ? colors.error : colors.text.secondary
+          }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "Screen time left" }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { fontWeight: "600", color: timeLeft === 0 ? colors.error : colors.primary }, children: [
+              timeLeft === 0 ? "None left" : formatSeconds(timeLeft),
+              screenTime.bonusSeconds > 0 ? ` (+${formatSeconds(screenTime.bonusSeconds)} granted)` : ""
             ] })
           ] })
         ]
@@ -16117,11 +16133,18 @@
   function PendingRequestCard({ req, childPublicKey, onResolved }) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
     const [acting, setActing] = (0, import_react7.useState)(false);
-    const isExtraTime = req.requestType === "extra_time";
+    const isGeneralTime = req.requestType === "general_time";
+    const isExtraTime = req.requestType === "extra_time" || isGeneralTime;
     async function handleApprove() {
       setActing(true);
       try {
-        if (isExtraTime) {
+        if (isGeneralTime) {
+          await window.callBare("time:grantGeneral", {
+            childPublicKey,
+            requestId: req.id,
+            extraSeconds: req.extraSeconds || 1800
+          });
+        } else if (isExtraTime) {
           await window.callBare("time:grant", {
             childPublicKey,
             requestId: req.id,
@@ -16164,16 +16187,23 @@
       const mins = req.extraSeconds / 60;
       return mins >= 60 ? `Grant ${mins / 60}h` : `Grant ${mins}m`;
     }
+    const appLabel = req.appDisplayName || req.packageName || "Unknown app";
+    const title = isGeneralTime ? "More screen time" : appLabel;
+    const triggeredBy = isGeneralTime && req.packageName !== "general" ? appLabel : null;
     const badgeColor = typeColor(req.type, colors);
     const meta = TYPE_META[req.type] || { label: req.type, icon: "Clock" };
     return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Card, { style: { marginBottom: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: `${spacing2.sm}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.body, color: colors.text.primary, fontWeight: "600", marginBottom: "4px" }, children: req.appDisplayName || req.packageName || "Unknown app" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.body, color: colors.text.primary, fontWeight: "600", marginBottom: "4px" }, children: title }),
+        triggeredBy && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: "4px" }, children: [
+          "blocked while opening ",
+          triggeredBy
+        ] }),
         /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Badge, { color: badgeColor, children: meta.label }),
-          isExtraTime && req.requestedSeconds ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: [
+          isExtraTime && (req.requestedSeconds || req.extraSeconds) ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: [
             "requesting ",
-            formatSeconds3(req.requestedSeconds)
+            formatSeconds3(req.requestedSeconds || req.extraSeconds)
           ] }) : null
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: { ...typography2.micro, color: colors.text.muted }, children: formatTime(req.timestamp) })
@@ -16290,6 +16320,23 @@
   var import_jsx_runtime12 = __toESM(require_jsx_runtime());
   var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var BLANK_RULE = { label: "", days: [], start: "21:00", end: "07:00", exemptApps: [] };
+  function groupAppsByCategory(policy) {
+    const grouped = {};
+    let total = 0;
+    if (policy && policy.apps) {
+      for (const [pkg, data] of Object.entries(policy.apps)) {
+        const name = data.appName || pkg;
+        const cat = data.category || "Other";
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push({ packageName: pkg, appName: name });
+        total++;
+      }
+      for (const cat of Object.keys(grouped)) {
+        grouped[cat].sort((a, b) => a.appName.localeCompare(b.appName));
+      }
+    }
+    return { appsByCategory: grouped, totalAppCount: total };
+  }
   function ExemptCategoryGroup({ categoryName, apps, exemptSet, onToggle, onSelectAll, onClear, expanded, onToggleExpanded, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
     const color = CATEGORY_COLORS[categoryName] || "#aaa";
     const selectedCount = apps.reduce((n, a) => n + (exemptSet.has(a.packageName) ? 1 : 0), 0);
@@ -16459,9 +16506,36 @@
     const savedSeconds = policy && typeof policy.dailyScreenTimeLimitSeconds === "number" ? policy.dailyScreenTimeLimitSeconds : null;
     const [minutes, setMinutes] = (0, import_react8.useState)(savedSeconds ? String(Math.round(savedSeconds / 60)) : "");
     const [showInfo, setShowInfo] = (0, import_react8.useState)(false);
+    const [showExempt, setShowExempt] = (0, import_react8.useState)(false);
+    const [expandedCategories, setExpandedCategories] = (0, import_react8.useState)({});
+    const { appsByCategory, totalAppCount } = (0, import_react8.useMemo)(() => groupAppsByCategory(policy), [policy]);
+    const exemptApps = (0, import_react8.useMemo)(
+      () => policy && Array.isArray(policy.screenTimeExemptApps) ? policy.screenTimeExemptApps : [],
+      [policy]
+    );
+    const exemptSet = (0, import_react8.useMemo)(() => new Set(exemptApps), [exemptApps]);
     (0, import_react8.useEffect)(() => {
       setMinutes(savedSeconds ? String(Math.round(savedSeconds / 60)) : "");
     }, [savedSeconds]);
+    function saveExempt(next) {
+      const updated = { ...policy, screenTimeExemptApps: next };
+      setPolicy(updated);
+      window.callBare("policy:update", { childPublicKey, policy: updated });
+    }
+    function toggleExemptApp(packageName) {
+      saveExempt(
+        exemptSet.has(packageName) ? exemptApps.filter((p) => p !== packageName) : [...exemptApps, packageName]
+      );
+    }
+    function selectAllInCategory(categoryName) {
+      const set = new Set(exemptApps);
+      for (const a of appsByCategory[categoryName] || []) set.add(a.packageName);
+      saveExempt(Array.from(set));
+    }
+    function clearCategory(categoryName) {
+      const pkgs = new Set((appsByCategory[categoryName] || []).map((a) => a.packageName));
+      saveExempt(exemptApps.filter((p) => !pkgs.has(p)));
+    }
     function save(nextMinutes) {
       const trimmed = nextMinutes.trim();
       const updated = { ...policy };
@@ -16532,7 +16606,69 @@
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: "min/day" })
-      ] })
+      ] }),
+      (() => {
+        const hint = savedSeconds > 0 ? totalAppCount > 0 ? null : "No apps yet" : "Set a limit first";
+        const disabled = hint !== null;
+        const expanded = showExempt && !disabled;
+        return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { marginTop: `${spacing2.base}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+            "button",
+            {
+              type: "button",
+              onClick: () => {
+                window.callBare("haptic:tap");
+                setShowExempt((v) => !v);
+              },
+              disabled,
+              "aria-expanded": expanded,
+              "aria-label": disabled ? `Exempt apps, unavailable: ${hint}` : "Exempt apps",
+              style: {
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: `${spacing2.sm}px`,
+                padding: `${spacing2.sm}px ${spacing2.base}px`,
+                background: colors.surface.elevated,
+                border: `1px solid ${colors.border}`,
+                // Accent bar echoes the category rows below, and turns green to
+                // signal "this list is doing something" at a glance.
+                borderLeft: `4px solid ${!disabled && exemptApps.length > 0 ? colors.primary : colors.border}`,
+                borderRadius: `${radius2.md}px`,
+                cursor: disabled ? "default" : "pointer",
+                textAlign: "left",
+                opacity: disabled ? 0.6 : 1
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { flex: 1, ...typography2.body, fontWeight: "600", color: disabled ? colors.text.muted : colors.text.primary }, children: "Exempt apps" }),
+                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.caption, color: !disabled && exemptApps.length > 0 ? colors.primary : colors.text.muted, fontWeight: !disabled && exemptApps.length > 0 ? "600" : "400" }, children: disabled ? hint : exemptApps.length > 0 ? `${exemptApps.length} exempt` : "None" }),
+                /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { fontSize: "18px", color: disabled ? colors.text.muted : colors.text.secondary, lineHeight: 1 }, children: expanded ? "\u2304" : "\u203A" })
+              ]
+            }
+          ),
+          expanded && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { marginTop: `${spacing2.sm}px` }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: `${spacing2.sm}px`, lineHeight: "1.4" }, children: "Exempt apps don't count toward the daily total and stay usable once it runs out. Any per-app limit you've set still applies to them." }),
+            Object.keys(appsByCategory).sort().map((cat) => /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+              ExemptCategoryGroup,
+              {
+                categoryName: cat,
+                apps: appsByCategory[cat],
+                exemptSet,
+                onToggle: toggleExemptApp,
+                onSelectAll: () => selectAllInCategory(cat),
+                onClear: () => clearCategory(cat),
+                expanded: !!expandedCategories[cat],
+                onToggleExpanded: () => setExpandedCategories((p) => ({ ...p, [cat]: !p[cat] })),
+                colors,
+                typography: typography2,
+                spacing: spacing2,
+                radius: radius2
+              },
+              cat
+            ))
+          ] })
+        ] });
+      })()
     ] });
   }
   function ScheduleSection({ policy, setPolicy, childPublicKey, footerEl, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
@@ -16542,23 +16678,7 @@
     const [showForm, setShowForm] = (0, import_react8.useState)(false);
     const [showInfo, setShowInfo] = (0, import_react8.useState)(false);
     const [expandedCategories, setExpandedCategories] = (0, import_react8.useState)({});
-    const { appsByCategory, totalAppCount } = (0, import_react8.useMemo)(() => {
-      const grouped = {};
-      let total = 0;
-      if (policy && policy.apps) {
-        for (const [pkg, data] of Object.entries(policy.apps)) {
-          const name = data.appName || pkg;
-          const cat = data.category || "Other";
-          if (!grouped[cat]) grouped[cat] = [];
-          grouped[cat].push({ packageName: pkg, appName: name });
-          total++;
-        }
-        for (const cat of Object.keys(grouped)) {
-          grouped[cat].sort((a, b) => a.appName.localeCompare(b.appName));
-        }
-      }
-      return { appsByCategory: grouped, totalAppCount: total };
-    }, [policy]);
+    const { appsByCategory, totalAppCount } = (0, import_react8.useMemo)(() => groupAppsByCategory(policy), [policy]);
     function saveSchedules(schedules2) {
       const updated = { ...policy, schedules: schedules2 };
       setPolicy(updated);
@@ -18446,6 +18566,7 @@ ${inv.inviteLink}`
             if (data.currentAppPackage != null) next.currentAppPackage = data.currentAppPackage;
             if (data.currentAppIcon != null) next.currentAppIcon = data.currentAppIcon;
             if (typeof data.todayScreenTimeSeconds === "number") next.todayScreenTimeSeconds = data.todayScreenTimeSeconds;
+            if (data.screenTime) next.screenTime = data.screenTime;
             return next;
           }));
         }),
@@ -20905,21 +21026,223 @@ ${inv.inviteLink}`
       r.id
     )) });
   }
+  var ASK_OPTIONS_MINUTES = [15, 30, 60];
+  function formatClock(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  function formatCountdown(ms) {
+    const mins = Math.round((ms - Date.now()) / 6e4);
+    if (mins < 1) return "in under a minute";
+    if (mins < 60) return `in ${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+  }
+  function Section2({ title, children, colors, typography: typography2, spacing: spacing2 }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("h3", { style: { fontSize: "15px", fontWeight: "700", margin: `0 0 ${spacing2.sm}px`, color: colors.text.primary, textAlign: "center" }, children: title }),
+      children
+    ] });
+  }
+  function EmptyState({ children, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: {
+      ...typography2.caption,
+      color: colors.text.muted,
+      textAlign: "center",
+      padding: `${spacing2.md}px`,
+      borderRadius: `${radius2.md}px`,
+      backgroundColor: colors.surface.card,
+      border: `1px dashed ${colors.border}`
+    }, children });
+  }
+  function BedtimeSection({ nextSchedule, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Section2, { title: "Bedtime", colors, typography: typography2, spacing: spacing2, children: !nextSchedule ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(EmptyState, { colors, typography: typography2, spacing: spacing2, radius: radius2, children: "No bedtime set" }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
+      display: "flex",
+      alignItems: "center",
+      gap: `${spacing2.sm}px`,
+      padding: `${spacing2.md}px`,
+      borderRadius: `${radius2.md}px`,
+      backgroundColor: colors.surface.card,
+      border: `1px solid ${nextSchedule.active ? colors.error : colors.border}`
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Icon, { name: "Clock", size: 18, color: nextSchedule.active ? colors.error : colors.text.secondary }),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { ...typography2.caption, color: colors.text.primary }, children: nextSchedule.active ? /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
+        nextSchedule.label,
+        " until ",
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("strong", { children: formatClock(nextSchedule.at) })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
+        nextSchedule.label,
+        " at ",
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("strong", { children: formatClock(nextSchedule.at) }),
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { style: { color: colors.text.secondary }, children: [
+          "(",
+          formatCountdown(nextSchedule.at),
+          ")"
+        ] })
+      ] }) })
+    ] }) });
+  }
+  function joinNames(names) {
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+  }
+  function formatBonus(seconds) {
+    const mins = Math.round(seconds / 60);
+    if (mins >= 60 && mins % 60 === 0) return `${mins / 60}h`;
+    if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    return `${mins}m`;
+  }
+  function AppLimitsSection({ appLimits, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Section2, { title: "Time left per app", colors, typography: typography2, spacing: spacing2, children: appLimits.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(EmptyState, { colors, typography: typography2, spacing: spacing2, radius: radius2, children: "No app limits set" }) : appLimits.map((a) => /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: `${spacing2.sm}px ${spacing2.md}px`,
+      marginBottom: `${spacing2.xs}px`,
+      borderRadius: `${radius2.md}px`,
+      backgroundColor: colors.surface.card,
+      border: `1px solid ${a.remainingSeconds === 0 ? colors.error : colors.border}`
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { style: { ...typography2.caption, color: colors.text.primary }, children: a.appName }),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { style: {
+        ...typography2.caption,
+        fontWeight: "600",
+        color: a.remainingSeconds === 0 ? colors.error : colors.primary
+      }, children: a.remainingSeconds === 0 ? "None left" : formatBonus(a.remainingSeconds) + " left" })
+    ] }, a.packageName)) });
+  }
+  function ScreenTimeSection2({ hasLimit, pending: pending2, exemptAppNames, screenTime, onSubmitted, colors, typography: typography2, spacing: spacing2, radius: radius2 }) {
+    const [choosing, setChoosing] = (0, import_react24.useState)(false);
+    const [sending, setSending] = (0, import_react24.useState)(false);
+    const remaining = screenTime ? screenTime.remainingSeconds : null;
+    const bonusSeconds = screenTime ? screenTime.bonusSeconds : 0;
+    async function ask(minutes) {
+      setSending(true);
+      try {
+        await window.callBare("time:request", {
+          packageName: "general",
+          appName: "Screen time",
+          requestType: "general_time",
+          extraSeconds: minutes * 60
+        });
+        setChoosing(false);
+        onSubmitted();
+      } catch (e) {
+        console.error("general time request failed:", e);
+      } finally {
+        setSending(false);
+      }
+    }
+    if (!hasLimit) {
+      return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Section2, { title: "Screen time", colors, typography: typography2, spacing: spacing2, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(EmptyState, { colors, typography: typography2, spacing: spacing2, radius: radius2, children: "No daily screen time limit set" }) });
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(Section2, { title: "Screen time", colors, typography: typography2, spacing: spacing2, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
+        textAlign: "center",
+        marginBottom: `${spacing2.md}px`,
+        padding: `${spacing2.md}px`,
+        borderRadius: `${radius2.md}px`,
+        backgroundColor: colors.surface.card,
+        border: `1px solid ${remaining === 0 ? colors.error : colors.border}`
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { ...typography2.display, color: remaining === 0 ? colors.error : colors.primary, fontWeight: "700" }, children: remaining === null ? "--" : remaining === 0 ? "No time left" : formatBonus(remaining) }),
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginTop: `${spacing2.xs}px` }, children: remaining === 0 ? "Your screen time is used up for today" : "left today" }),
+        bonusSeconds > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { ...typography2.caption, color: colors.primary, marginTop: `${spacing2.xs}px` }, children: [
+          "includes +",
+          formatBonus(bonusSeconds),
+          " granted by your parent"
+        ] }),
+        exemptAppNames.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginTop: `${spacing2.xs}px` }, children: [
+          joinNames(exemptAppNames),
+          " ",
+          exemptAppNames.length === 1 ? "doesn't" : "don't",
+          " use your screen time"
+        ] })
+      ] }),
+      pending2 ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: {
+        ...typography2.caption,
+        color: colors.text.secondary,
+        textAlign: "center",
+        padding: `${spacing2.md}px`,
+        borderRadius: `${radius2.md}px`,
+        backgroundColor: colors.surface.card,
+        border: `1px solid ${colors.border}`
+      }, children: "Waiting for your parent to answer your request for more time." }) : choosing ? /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, justifyContent: "center" }, children: [
+        ASK_OPTIONS_MINUTES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+          Button,
+          {
+            variant: "accent",
+            disabled: sending,
+            onClick: () => {
+              window.callBare("haptic:tap");
+              ask(m);
+            },
+            style: { flex: 1, padding: `${spacing2.md}px` },
+            children: [
+              m,
+              "m"
+            ]
+          },
+          m
+        )),
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+          Button,
+          {
+            variant: "secondary",
+            disabled: sending,
+            onClick: () => {
+              window.callBare("haptic:tap");
+              setChoosing(false);
+            },
+            style: { padding: `${spacing2.md}px` },
+            children: "Cancel"
+          }
+        )
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+        Button,
+        {
+          variant: "accent",
+          onClick: () => {
+            window.callBare("haptic:tap");
+            setChoosing(true);
+          },
+          style: { width: "100%", padding: `${spacing2.md}px` },
+          children: "Ask for more screen time"
+        }
+      )
+    ] });
+  }
   function ChildHome({ openDetail }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
     const [homeData, setHomeData] = (0, import_react24.useState)(null);
     const [detail, setDetail] = (0, import_react24.useState)(null);
+    const [status, setStatus] = (0, import_react24.useState)(null);
     const loadHomeData = (0, import_react24.useCallback)(() => {
       window.callBare("child:homeData").then(setHomeData).catch(() => {
       });
     }, []);
+    const loadStatus = (0, import_react24.useCallback)(() => {
+      window.callBare("screentime:status").then(setStatus).catch(() => {
+      });
+    }, []);
+    (0, import_react24.useEffect)(() => {
+      loadStatus();
+      const unsub = window.onBareEvent("screentime:granted", loadStatus);
+      const timer = setInterval(loadStatus, 3e4);
+      return () => {
+        unsub();
+        clearInterval(timer);
+      };
+    }, [loadStatus]);
     (0, import_react24.useEffect)(() => {
       loadHomeData();
       const unsubs = [
         window.onBareEvent("policy:updated", loadHomeData),
         window.onBareEvent("override:granted", loadHomeData),
         window.onBareEvent("request:updated", loadHomeData),
-        window.onBareEvent("request:submitted", loadHomeData)
+        window.onBareEvent("request:submitted", loadHomeData),
+        window.onBareEvent("screentime:granted", loadHomeData)
       ];
       const timer = setInterval(loadHomeData, 3e4);
       return () => {
@@ -20996,28 +21319,59 @@ ${inv.inviteLink}`
           }
         )
       ] }),
-      homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("h3", { style: { fontSize: "15px", fontWeight: "700", marginBottom: "10px", color: colors.text.primary, textAlign: "center" }, children: "Active overrides" }),
-        homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: `${spacing2.md}px 14px`,
-          marginBottom: `${spacing2.sm}px`,
-          borderRadius: `${radius2.md}px`,
-          backgroundColor: colors.surface.card,
-          border: `1px solid ${colors.primary}44`
-        }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { fontWeight: "600", fontSize: "14px", color: colors.text.primary }, children: o.appName }),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { fontSize: "12px", color: colors.text.muted, marginTop: "2px" }, children: o.source === "parent-approved" ? "Granted by parent" : "PIN override" })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { fontSize: "13px", fontWeight: "600", color: colors.primary }, children: [
-            timeRemaining2(o.expiresAt),
-            " left"
-          ] })
-        ] }, i))
-      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+        ScreenTimeSection2,
+        {
+          hasLimit: homeData.hasScreenTimeLimit,
+          pending: homeData.generalTimeRequestPending,
+          exemptAppNames: homeData.screenTimeExemptAppNames || [],
+          screenTime: status && status.screenTime,
+          onSubmitted: loadHomeData,
+          colors,
+          typography: typography2,
+          spacing: spacing2,
+          radius: radius2
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+        BedtimeSection,
+        {
+          nextSchedule: homeData.nextSchedule,
+          colors,
+          typography: typography2,
+          spacing: spacing2,
+          radius: radius2
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+        AppLimitsSection,
+        {
+          appLimits: status && status.appLimits || [],
+          colors,
+          typography: typography2,
+          spacing: spacing2,
+          radius: radius2
+        }
+      ),
+      homeData.activeOverrides.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Section2, { title: "Active overrides", colors, typography: typography2, spacing: spacing2, children: homeData.activeOverrides.map((o, i) => /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: `${spacing2.md}px 14px`,
+        marginBottom: `${spacing2.sm}px`,
+        borderRadius: `${radius2.md}px`,
+        backgroundColor: colors.surface.card,
+        border: `1px solid ${colors.primary}44`
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { fontWeight: "600", fontSize: "14px", color: colors.text.primary }, children: o.appName }),
+          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { style: { fontSize: "12px", color: colors.text.muted, marginTop: "2px" }, children: o.source === "parent-approved" ? "Granted by parent" : "PIN override" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { style: { fontSize: "13px", fontWeight: "600", color: colors.primary }, children: [
+          timeRemaining2(o.expiresAt),
+          " left"
+        ] })
+      ] }, i)) }),
       /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(Modal, { visible: !!detail, onClose: () => setDetail(null), title: detailTitle, children: [
         detail === "blocked" && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(AppList, { items: homeData.blockedApps, emptyText: "No blocked apps.", colors, typography: typography2, spacing: spacing2, radius: radius2 }),
         detail === "pending" && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(AppList, { items: homeData.pendingApps, emptyText: "Nothing awaiting approval.", colors, typography: typography2, spacing: spacing2, radius: radius2 }),

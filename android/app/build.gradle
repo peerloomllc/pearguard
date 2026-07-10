@@ -1,5 +1,19 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
+
+// Ship only the ABIs real devices run. x86/x86_64 exist for emulators and cost
+// ~58 MB compressed in a universal APK (libbare-kit.so alone is 60 MB
+// uncompressed per ABI, and is already stripped). Debug keeps all four so
+// emulator testing still works.
+//
+// This has to override the `reactNativeArchitectures` property rather than set
+// `ndk.abiFilters` on the release build type: the RN gradle plugin does
+// `defaultConfig.ndk.abiFilters.addAll(architectures)` and AGP unions build-type
+// filters with defaultConfig, so a narrower build-type filter is a no-op.
+if (gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }) {
+    project.ext.set("reactNativeArchitectures", "armeabi-v7a,arm64-v8a")
+}
+
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()

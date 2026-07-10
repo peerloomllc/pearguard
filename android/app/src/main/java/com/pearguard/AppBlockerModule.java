@@ -1221,6 +1221,12 @@ public class AppBlockerModule extends AccessibilityService {
 
         layout.addView(card);
 
+        // Explicit way off the block screen. The back gesture / home button work but
+        // aren't obvious and lag on some devices, so give an on-screen exit that
+        // sends the child home (see goToHomeScreen — a bare dismiss would bounce
+        // straight back into the block).
+        layout.addView(makeGhostButton("Close", this::goToHomeScreen));
+
         final View pendingOverlay = layout;
 
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
@@ -1243,6 +1249,19 @@ public class AppBlockerModule extends AccessibilityService {
             }
             overlayPending = false;
         });
+    }
+
+    /**
+     * Dismiss the overlay and send the child to the launcher. Navigating home is
+     * required rather than merely removing the view: the blocked app sits behind
+     * the overlay, so a bare dismiss would let it re-trigger the block immediately.
+     */
+    private void goToHomeScreen() {
+        dismissOverlay();
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(homeIntent);
     }
 
     private void dismissOverlay() {
@@ -1292,6 +1311,29 @@ public class AppBlockerModule extends AccessibilityService {
         return row;
     }
 
+    /**
+     * Ghost (outlined, transparent) button used for Cancel/Close actions at the
+     * bottom of every overlay screen. Centred horizontally with a top margin.
+     */
+    private TextView makeGhostButton(String label, Runnable onClick) {
+        TextView btn = new TextView(this);
+        btn.setText(label);
+        btn.setTextColor(OT.TEXT_SECONDARY);
+        btn.setTextSize(14);
+        btn.setTypeface(getNunitoSemiBold());
+        btn.setGravity(Gravity.CENTER);
+        btn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
+        btn.setPadding(dp(32), dp(12), dp(32), dp(12));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        p.setMargins(0, dp(20), 0, 0);
+        p.gravity = Gravity.CENTER_HORIZONTAL;
+        btn.setLayoutParams(p);
+        btn.setClickable(true);
+        btn.setOnClickListener(v -> onClick.run());
+        return btn;
+    }
+
     private String getAppName(String packageName) {
         try {
             PackageManager pm = getPackageManager();
@@ -1317,10 +1359,10 @@ public class AppBlockerModule extends AccessibilityService {
             // Suppress the polling-loop overlay for 2 minutes so the duration picker
             // dialog is not immediately overwritten by the next EnforcementService tick (#66).
             enforcementSuppressedUntil = System.currentTimeMillis() + 120_000;
-            // Show duration picker; the picker fires onTimeRequest after the child
-            // selects how much time they want. Reason is passed through so a Cancel
-            // tap can restore the original block overlay.
-            dismissOverlay();
+            // Layer the picker on top of the block overlay rather than dismissing it
+            // first. Keeping the block screen attached underneath means Cancel just
+            // removes the picker to reveal it (no rebuild), and neither transition
+            // flashes the blocked app through a gap. Mirrors the PIN keypad flow.
             showExtraTimePicker(packageName, reason, isScreenTime ? "general_time" : "extra_time");
             return;
         }
@@ -1345,13 +1387,9 @@ public class AppBlockerModule extends AccessibilityService {
         // over the home screen while waiting for the parent's response.
         pendingRequestPackages.add(packageName);
 
-        // Dismiss the overlay and go to the home screen so the blocked app
-        // cannot immediately re-trigger the overlay by coming back to foreground.
-        dismissOverlay();
-        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-        homeIntent.addCategory(Intent.CATEGORY_HOME);
-        homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(homeIntent);
+        // Go to the home screen so the blocked app cannot immediately re-trigger
+        // the overlay by coming back to foreground.
+        goToHomeScreen();
     }
 
     private int[] getTimeRequestOptions() {
@@ -1391,7 +1429,7 @@ public class AppBlockerModule extends AccessibilityService {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setBackgroundColor(OT.SURFACE_BASE);
-        layout.setGravity(Gravity.CENTER_HORIZONTAL);
+        layout.setGravity(Gravity.CENTER);
         layout.setPadding(dp(24), dp(48), dp(24), dp(48));
 
         // Icon circle
@@ -1454,22 +1492,7 @@ public class AppBlockerModule extends AccessibilityService {
         layout.addView(card);
 
         if (showCancel && onCancel != null) {
-            TextView cancelBtn = new TextView(this);
-            cancelBtn.setText("Cancel");
-            cancelBtn.setTextColor(OT.TEXT_SECONDARY);
-            cancelBtn.setTextSize(14);
-            cancelBtn.setTypeface(getNunitoSemiBold());
-            cancelBtn.setGravity(Gravity.CENTER);
-            cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
-            cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
-            LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            cancelP.setMargins(0, dp(20), 0, 0);
-            cancelP.gravity = Gravity.CENTER_HORIZONTAL;
-            cancelBtn.setLayoutParams(cancelP);
-            cancelBtn.setClickable(true);
-            cancelBtn.setOnClickListener(v -> onCancel.run());
-            layout.addView(cancelBtn);
+            layout.addView(makeGhostButton("Cancel", onCancel));
         }
 
         return layout;
@@ -1510,24 +1533,20 @@ public class AppBlockerModule extends AccessibilityService {
                     }
                     pendingRequestPackages.add(packageName);
 
-                    Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-                    homeIntent.addCategory(Intent.CATEGORY_HOME);
-                    homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(homeIntent);
+                    // The block overlay is still attached beneath the picker, so
+                    // dismiss it and go home rather than leaving it floating over
+                    // the launcher.
+                    goToHomeScreen();
                 },
                 true,
                 () -> {
+                    // Just remove the picker; the block overlay is still attached
+                    // underneath, so the child lands back on the first screen with no
+                    // rebuild and no flash. Resume enforcement, which was suppressed
+                    // for 2 minutes when "Request More Time" was tapped.
                     try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
                     pinDialogView = null;
-                    // Restore the original block overlay so the kid lands back on the
-                    // first screen (Request More Time / Enter PIN), not on the blocked
-                    // app. The 2-minute polling-loop suppression set when "Request More
-                    // Time" was tapped would otherwise let the kid use the blocked app
-                    // freely until it expires.
                     enforcementSuppressedUntil = 0;
-                    recentlyDismissedPackage = null;
-                    dismissedAt = 0;
-                    showOverlay(packageName, reason);
                 });
 
         WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(
@@ -1555,7 +1574,7 @@ public class AppBlockerModule extends AccessibilityService {
         LinearLayout dialogLayout = new LinearLayout(this);
         dialogLayout.setOrientation(LinearLayout.VERTICAL);
         dialogLayout.setBackgroundColor(OT.SURFACE_BASE);
-        dialogLayout.setGravity(Gravity.CENTER_HORIZONTAL);
+        dialogLayout.setGravity(Gravity.CENTER);
         dialogLayout.setPadding(dp(24), dp(48), dp(24), dp(48));
 
         // Icon circle
@@ -1656,17 +1675,18 @@ public class AppBlockerModule extends AccessibilityService {
             if (verifyPin(enteredPin[0])) {
                 vibrate(PATTERN_SUCCESS);
                 clearPinFailures();
-                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-                pinDialogView = null;
+                // Add the next screen on top before removing the keypad, so the
+                // block overlay underneath never flashes through the gap. Each
+                // show* sets pinDialogView to its own window.
                 showDurationPicker(packageName);
+                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
             } else {
                 vibrate(PATTERN_ERROR);
                 enteredPin[0] = "";
                 long lockMs = recordPinFailure();
                 if (lockMs > 0L) {
-                    try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-                    pinDialogView = null;
                     showPinLockout(packageName, lockMs);
+                    try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
                 } else {
                     showError.run();
                 }
@@ -1757,26 +1777,11 @@ public class AppBlockerModule extends AccessibilityService {
         // PIN_MIN_LENGTH digits are entered. Must run after the pad builds submitBtn.
         updateDots.run();
 
-        // Cancel button (ghost)
-        TextView cancelBtn = new TextView(this);
-        cancelBtn.setText("Cancel");
-        cancelBtn.setTextColor(OT.TEXT_SECONDARY);
-        cancelBtn.setTextSize(14);
-        cancelBtn.setTypeface(getNunitoSemiBold());
-        cancelBtn.setGravity(Gravity.CENTER);
-        cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
-        cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
-        LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cancelP.setMargins(0, dp(20), 0, 0);
-        cancelP.gravity = Gravity.CENTER_HORIZONTAL;
-        cancelBtn.setLayoutParams(cancelP);
-        cancelBtn.setClickable(true);
-        cancelBtn.setOnClickListener(v -> {
+        // Cancel returns to the block screen, which is still attached underneath.
+        dialogLayout.addView(makeGhostButton("Cancel", () -> {
             try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
             pinDialogView = null;
-        });
-        dialogLayout.addView(cancelBtn);
+        }));
 
         WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -1800,7 +1805,7 @@ public class AppBlockerModule extends AccessibilityService {
         LinearLayout dialogLayout = new LinearLayout(this);
         dialogLayout.setOrientation(LinearLayout.VERTICAL);
         dialogLayout.setBackgroundColor(OT.SURFACE_BASE);
-        dialogLayout.setGravity(Gravity.CENTER_HORIZONTAL);
+        dialogLayout.setGravity(Gravity.CENTER);
         dialogLayout.setPadding(dp(24), dp(48), dp(24), dp(48));
 
         LinearLayout icon = iconCircle(OT.ICON_CIRCLE_SM, ICON_LOCK, 32, OT.ERROR, OT.PRIMARY_BG);
@@ -1836,20 +1841,16 @@ public class AppBlockerModule extends AccessibilityService {
         countdown.setLayoutParams(cdP);
         dialogLayout.addView(countdown);
 
-        TextView cancelBtn = new TextView(this);
-        cancelBtn.setText("Cancel");
-        cancelBtn.setTextColor(OT.TEXT_SECONDARY);
-        cancelBtn.setTextSize(14);
-        cancelBtn.setTypeface(getNunitoSemiBold());
-        cancelBtn.setGravity(Gravity.CENTER);
-        cancelBtn.setBackground(roundedRectWithBorder(Color.TRANSPARENT, OT.BORDER, OT.BTN_RADIUS));
-        cancelBtn.setPadding(dp(32), dp(12), dp(32), dp(12));
-        LinearLayout.LayoutParams cancelP = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cancelP.gravity = Gravity.CENTER_HORIZONTAL;
-        cancelBtn.setLayoutParams(cancelP);
-        cancelBtn.setClickable(true);
-        dialogLayout.addView(cancelBtn);
+        // Guards the ticker against firing after the view is gone, which would
+        // otherwise reopen the keypad over whatever the child navigated to.
+        final boolean[] dismissed = { false };
+
+        // Cancel returns to the block screen, still attached underneath.
+        dialogLayout.addView(makeGhostButton("Cancel", () -> {
+            dismissed[0] = true;
+            try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
+            pinDialogView = null;
+        }));
 
         WindowManager.LayoutParams dialogParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -1865,15 +1866,6 @@ public class AppBlockerModule extends AccessibilityService {
         pinDialogView = dialogLayout;
 
         final Handler handler = new Handler(Looper.getMainLooper());
-        // Guards the ticker against firing after the view is gone, which would
-        // otherwise reopen the keypad over whatever the child navigated to.
-        final boolean[] dismissed = { false };
-
-        cancelBtn.setOnClickListener(v -> {
-            dismissed[0] = true;
-            try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-            pinDialogView = null;
-        });
 
         final Runnable[] tick = { null };
         tick[0] = () -> {
@@ -1883,9 +1875,10 @@ public class AppBlockerModule extends AccessibilityService {
             long left = pinLockRemainingMs();
             if (left <= 0L) {
                 dismissed[0] = true;
-                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
-                pinDialogView = null;
+                // Re-open the keypad on top before removing the lockout screen so
+                // the block overlay underneath never flashes through the gap.
                 onEnterPin(packageName);
+                try { windowManager.removeView(dialogLayout); } catch (Exception ignored) {}
                 return;
             }
             countdown.setText("Try again in " + formatLockRemaining(left));
@@ -1901,11 +1894,20 @@ public class AppBlockerModule extends AccessibilityService {
         final LinearLayout[] holder = { null };
         holder[0] = makeDurationLayout("How long?", labels, seconds,
                 (durationSeconds) -> {
-                    try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
-                    pinDialogView = null;
+                    // grantOverride -> dismissOverlay removes this picker (pinDialogView)
+                    // and the block overlay together, so the app is revealed without a
+                    // flash. Removing the picker here first would expose the block for a
+                    // frame.
                     grantOverride(packageName, durationSeconds);
                 },
-                false, null);
+                // Cancel just removes this picker; the block overlay is still
+                // attached underneath (the PIN flow never dismissed it), so the
+                // child lands back on the block screen.
+                true,
+                () -> {
+                    try { windowManager.removeView(holder[0]); } catch (Exception ignored) {}
+                    pinDialogView = null;
+                });
 
         WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,

@@ -1187,6 +1187,27 @@ function createDispatch (ctx) {
         return { logged: true }
       }
 
+      case 'pin:failed': {
+        // Native overlay reported a PIN lockout (child guessing). Relay to the
+        // parent as an alert. Nothing is stored child-side — the parent owns the
+        // alert record, same division as bypass:detected.
+        const { packageName, timestamp, failCount, lockoutMs } = args
+        const failedAt = timestamp || Date.now()
+
+        const policyRaw = await ctx.db.get('policy')
+        const policyApps = policyRaw && policyRaw.value && policyRaw.value.apps
+        const appName = (policyApps && policyApps[packageName] && policyApps[packageName].appName) || packageName || null
+
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({
+            type: 'pin:failure',
+            payload: { packageName: packageName || null, appName, failedAt, failCount: failCount || 0, lockoutMs: lockoutMs || 0 },
+          })
+        }
+
+        return { logged: true }
+      }
+
       case 'bypass:detected': {
         const { reason } = args
         const entry = { reason, detectedAt: Date.now() }

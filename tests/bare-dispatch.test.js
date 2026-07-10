@@ -1555,6 +1555,64 @@ describe('bare dispatch', () => {
     })
   })
 
+  // ── pin:failed (parent alert on lockout) ───────────────────────────────────
+
+  describe('pin:failed', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        _stored: stored,
+      }
+    }
+
+    test('relays a pin:failure to parents with resolved appName and lockout details', async () => {
+      const mockDb = makeMockDb({
+        policy: { apps: { 'com.example.game': { appName: 'Some Game' } } },
+      })
+      const sendToAllParents = jest.fn(async () => {})
+      const ctx = { db: mockDb, send: jest.fn(), sendToAllParents }
+      const dispatch = createDispatch(ctx)
+
+      const timestamp = 1_700_000_000_000
+      const result = await dispatch('pin:failed', {
+        packageName: 'com.example.game', timestamp, failCount: 6, lockoutMs: 30000,
+      })
+
+      expect(result).toEqual({ logged: true })
+      expect(sendToAllParents).toHaveBeenCalledTimes(1)
+      expect(sendToAllParents).toHaveBeenCalledWith({
+        type: 'pin:failure',
+        payload: {
+          packageName: 'com.example.game',
+          appName: 'Some Game',
+          failedAt: timestamp,
+          failCount: 6,
+          lockoutMs: 30000,
+        },
+      })
+    })
+
+    test('does not store anything child-side (parent owns the alert)', async () => {
+      const mockDb = makeMockDb({})
+      const ctx = { db: mockDb, send: jest.fn(), sendToAllParents: jest.fn(async () => {}) }
+      const dispatch = createDispatch(ctx)
+
+      await dispatch('pin:failed', { packageName: 'com.x', timestamp: 1, failCount: 5, lockoutMs: 30000 })
+
+      expect(mockDb.put).not.toHaveBeenCalled()
+    })
+
+    test('is graceful when no parents are connected (no sendToAllParents)', async () => {
+      const mockDb = makeMockDb({})
+      const ctx = { db: mockDb, send: jest.fn() }
+      const dispatch = createDispatch(ctx)
+
+      const result = await dispatch('pin:failed', { packageName: 'com.x', timestamp: 1, failCount: 5, lockoutMs: 30000 })
+      expect(result).toEqual({ logged: true })
+    })
+  })
+
   // ── Task 8: bypass:detected ────────────────────────────────────────────────
 
   describe('bypass:detected', () => {

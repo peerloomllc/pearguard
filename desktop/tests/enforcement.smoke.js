@@ -1211,10 +1211,16 @@ withSodium('verifyPinOnly locks out after the free attempts are spent', () => {
   }
 
   const locked = controller.verifyPinOnly({ pin: '9999' })
-  assert.deepStrictEqual(locked, { ok: false, reason: 'locked', retryAfterMs: LOCKOUT_LADDER_MS[0] })
+  assert.deepStrictEqual(locked, {
+    ok: false, reason: 'locked', retryAfterMs: LOCKOUT_LADDER_MS[0],
+    justLocked: true, failCount: FREE_ATTEMPTS + 1,
+  })
 
-  // The correct PIN is refused while locked — that's the whole point.
-  assert.strictEqual(controller.verifyPinOnly({ pin: '1234' }).reason, 'locked')
+  // A submit that arrives while already locked must NOT set justLocked, or the
+  // parent would be re-alerted on every keystroke a tampering child sends.
+  const stillLocked = controller.verifyPinOnly({ pin: '1234' })
+  assert.strictEqual(stillLocked.reason, 'locked')
+  assert.strictEqual(stillLocked.justLocked, undefined)
 
   // Once the wait elapses, the right PIN works again and resets the counter.
   now += LOCKOUT_LADDER_MS[0]

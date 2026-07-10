@@ -1352,6 +1352,38 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         nm.notify(notificationId++, builder.build());
     }
 
+    /**
+     * Shows a notification on the parent device when a child repeatedly enters the
+     * wrong override PIN and triggers a lockout. `detail` is composed on the JS side.
+     */
+    @ReactMethod
+    public void showPinFailureNotification(String childName, String detail, String childPublicKey) {
+        NotificationManager nm =
+                (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    REQUEST_CHANNEL_ID,
+                    "Child Time Requests",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            nm.createNotificationChannel(channel);
+        }
+
+        PendingIntent pi = buildAlertsPendingIntent(childPublicKey, notificationId);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(childName + " is guessing the PIN")
+                .setContentText(detail)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+
+        nm.notify(notificationId++, builder.build());
+    }
+
     @ReactMethod
     public void showDecisionNotification(String appName, String decision) {
         NotificationManager nm =

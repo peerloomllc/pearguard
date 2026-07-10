@@ -18,6 +18,15 @@ const { enumerateInstalledApps, extractExeBasename, extractExePath, slugify, par
 const { categorizeApp } = require('../src/enforcement/app-category')
 const { extractWin32Icons, extractUwpIcons, buildWin32Script, buildUwpScript, parseRows } = require('../src/enforcement/icon-extractor')
 const { verifyPin, hashPin } = require('../src/enforcement/pin-verify')
+const {
+  PinLockoutStore,
+  lockoutDelayForFailCount,
+  lockRemainingMs,
+  nextStateAfterFailure,
+  formatLockRemaining,
+  FREE_ATTEMPTS,
+  LOCKOUT_LADDER_MS,
+} = require('../src/enforcement/pin-lockout')
 const { TamperDetector, STALE_MS } = require('../src/main/tamper-detector')
 const { WarningChecker, DEFAULT_WARNING_THRESHOLDS_MIN, GRACE_WINDOW_SECONDS } = require('../src/enforcement/warning-checker')
 const { parseVdf, scanSteam, isBlacklisted } = require('../src/enforcement/launchers/steam')
@@ -1062,6 +1071,79 @@ test('Controller allows UWP host when title does not match any registered UWP', 
   controller.stop()
 })
 
+// --- pin-lockout ---------------------------------------------------------
+
+test('lockoutDelayForFailCount gives free attempts then escalates and caps', () => {
+  for (let i = 1; i <= FREE_ATTEMPTS; i++) {
+    assert.strictEqual(lockoutDelayForFailCount(i), 0, 'attempt ' + i + ' should be free')
+  }
+  assert.strictEqual(lockoutDelayForFailCount(FREE_ATTEMPTS + 1), LOCKOUT_LADDER_MS[0])
+  assert.strictEqual(lockoutDelayForFailCount(FREE_ATTEMPTS + 2), LOCKOUT_LADDER_MS[1])
+  assert.strictEqual(lockoutDelayForFailCount(FREE_ATTEMPTS + 4), LOCKOUT_LADDER_MS[3])
+  // Beyond the ladder it pins to the longest wait rather than reading past the end.
+  assert.strictEqual(lockoutDelayForFailCount(FREE_ATTEMPTS + 99), LOCKOUT_LADDER_MS[3])
+})
+
+test('lockRemainingMs counts down and expires', () => {
+  const state = { failCount: 6, lockedAt: 1000, lockedUntil: 31_000 }
+  assert.strictEqual(lockRemainingMs(state, 1000), 30_000)
+  assert.strictEqual(lockRemainingMs(state, 16_000), 15_000)
+  assert.strictEqual(lockRemainingMs(state, 31_000), 0)
+  assert.strictEqual(lockRemainingMs(state, 99_000), 0)
+  assert.strictEqual(lockRemainingMs({ failCount: 1 }, 5000), 0)
+})
+
+test('lockRemainingMs ignores a backwards clock jump', () => {
+  const state = { failCount: 6, lockedAt: 100_000, lockedUntil: 130_000 }
+  // Child winds the clock back to before the lock was applied: still fully locked.
+  assert.strictEqual(lockRemainingMs(state, 50_000), 30_000)
+  assert.strictEqual(lockRemainingMs(state, 0), 30_000)
+})
+
+test('a forward clock jump clears the wait but the failure count still escalates', () => {
+  let state = { failCount: 0, lockedAt: 0, lockedUntil: 0 }
+  for (let i = 0; i < FREE_ATTEMPTS; i++) state = nextStateAfterFailure(state, 1000).state
+  const first = nextStateAfterFailure(state, 1000)
+  assert.strictEqual(first.lockMs, LOCKOUT_LADDER_MS[0])
+
+  // Jump past lockedUntil — the keypad unlocks...
+  assert.strictEqual(lockRemainingMs(first.state, 10_000_000), 0)
+  // ...but the next wrong guess costs strictly more than the one before it.
+  const second = nextStateAfterFailure(first.state, 10_000_000)
+  assert.strictEqual(second.lockMs, LOCKOUT_LADDER_MS[1])
+  assert.ok(second.lockMs > first.lockMs)
+})
+
+test('PinLockoutStore persists lockout across a restart', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pinlock-'))
+  const filePath = path.join(dir, 'pin-lockout.json')
+  let now = 1_000_000
+  const store = new PinLockoutStore({ filePath, now: () => now })
+
+  for (let i = 0; i < FREE_ATTEMPTS; i++) assert.strictEqual(store.recordFailure(), 0)
+  assert.strictEqual(store.attemptsRemaining(), 0)
+  assert.strictEqual(store.recordFailure(), LOCKOUT_LADDER_MS[0])
+
+  // A fresh process (kid force-quits Electron) sees the same remaining lockout.
+  const reopened = new PinLockoutStore({ filePath, now: () => now + 10_000 })
+  assert.strictEqual(reopened.remainingMs(), 20_000)
+
+  // Success clears everything, on disk too.
+  reopened.clear()
+  assert.strictEqual(reopened.remainingMs(), 0)
+  assert.strictEqual(new PinLockoutStore({ filePath, now: () => now }).attemptsRemaining(), FREE_ATTEMPTS)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('formatLockRemaining rounds up and never shows 0s', () => {
+  assert.strictEqual(formatLockRemaining(1), '1s')
+  assert.strictEqual(formatLockRemaining(30_000), '30s')
+  assert.strictEqual(formatLockRemaining(90_000), '1m 30s')
+  assert.strictEqual(formatLockRemaining(600_000), '10m 00s')
+  assert.strictEqual(formatLockRemaining(3_600_000), '1h 00m')
+  assert.strictEqual(formatLockRemaining(3_840_000), '1h 04m')
+})
+
 // --- pin-verify ----------------------------------------------------------
 
 // Lazy-load sodium-native — the prebuild may not be present in every dev env.
@@ -1110,6 +1192,72 @@ withSodium('verifyPin: wrong pin → wrong-pin', () => {
   const hash = hashPin(sodium, '1234')
   const r = verifyPin({ sodium, policy: { pinHashes: { 'parent-A': hash } }, pin: '0000' })
   assert.deepStrictEqual(r, { ok: false, reason: 'wrong-pin' })
+})
+
+withSodium('verifyPinOnly locks out after the free attempts are spent', () => {
+  let now = 500_000
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    sodium,
+    overridesStore: new OverridesStore({ filePath: null }),
+    pinLockoutStore: new PinLockoutStore({ filePath: null, now: () => now }),
+  })
+  controller.policyCache.setPolicyJson(JSON.stringify({ pinHashes: { p: hashPin(sodium, '1234') } }))
+
+  for (let i = 1; i <= FREE_ATTEMPTS; i++) {
+    const r = controller.verifyPinOnly({ pin: '9999' })
+    assert.strictEqual(r.reason, 'wrong-pin', 'attempt ' + i)
+    assert.strictEqual(r.attemptsRemaining, FREE_ATTEMPTS - i)
+  }
+
+  const locked = controller.verifyPinOnly({ pin: '9999' })
+  assert.deepStrictEqual(locked, { ok: false, reason: 'locked', retryAfterMs: LOCKOUT_LADDER_MS[0] })
+
+  // The correct PIN is refused while locked — that's the whole point.
+  assert.strictEqual(controller.verifyPinOnly({ pin: '1234' }).reason, 'locked')
+
+  // Once the wait elapses, the right PIN works again and resets the counter.
+  now += LOCKOUT_LADDER_MS[0]
+  assert.deepStrictEqual(controller.verifyPinOnly({ pin: '1234' }), { ok: true })
+  assert.strictEqual(controller.pinLockout.attemptsRemaining(), FREE_ATTEMPTS)
+})
+
+withSodium('verifyPinOnly does not count no-pin/no-policy against the child', () => {
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    sodium,
+    overridesStore: new OverridesStore({ filePath: null }),
+    pinLockoutStore: new PinLockoutStore({ filePath: null }),
+  })
+  // No policy loaded yet.
+  for (let i = 0; i < 10; i++) {
+    assert.strictEqual(controller.verifyPinOnly({ pin: '1234' }).reason, 'no-policy')
+  }
+  assert.strictEqual(controller.pinLockout.attemptsRemaining(), FREE_ATTEMPTS)
+
+  // Policy loaded but no PIN set on it.
+  controller.policyCache.setPolicyJson(JSON.stringify({ apps: {} }))
+  for (let i = 0; i < 10; i++) {
+    assert.strictEqual(controller.verifyPinOnly({ pin: '1234' }).reason, 'no-pin')
+  }
+  assert.strictEqual(controller.pinLockout.attemptsRemaining(), FREE_ATTEMPTS)
+})
+
+withSodium('a correct PIN before the limit resets the failure count', () => {
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    sodium,
+    overridesStore: new OverridesStore({ filePath: null }),
+    pinLockoutStore: new PinLockoutStore({ filePath: null }),
+  })
+  controller.policyCache.setPolicyJson(JSON.stringify({ pinHashes: { p: hashPin(sodium, '1234') } }))
+
+  controller.verifyPinOnly({ pin: '0000' })
+  controller.verifyPinOnly({ pin: '0000' })
+  assert.strictEqual(controller.pinLockout.attemptsRemaining(), FREE_ATTEMPTS - 2)
+
+  assert.deepStrictEqual(controller.verifyPinOnly({ pin: '1234' }), { ok: true })
+  assert.strictEqual(controller.pinLockout.attemptsRemaining(), FREE_ATTEMPTS)
 })
 
 withSodium('verifyPinOnly + applyPinOverride applies kid-chosen duration', async () => {
@@ -1172,7 +1320,8 @@ withSodium('verifyPinOnly rejects wrong pin and leaves verified-state empty', as
   await new Promise(r => setTimeout(r, 20))
 
   const verify = controller.verifyPinOnly({ pin: '0000' })
-  assert.deepStrictEqual(verify, { ok: false, reason: 'wrong-pin' })
+  assert.strictEqual(verify.ok, false)
+  assert.strictEqual(verify.reason, 'wrong-pin')
 
   // applyPinOverride should refuse — no PIN was verified.
   const apply = controller.applyPinOverride({ packageName: 'com.roblox.client', durationSeconds: 1800 })

@@ -485,6 +485,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             java.util.Map<String, Long> totalMs = new java.util.HashMap<>();
             java.util.Map<String, Long> sessionStarts = new java.util.HashMap<>();
             java.util.Map<String, Long> recentPauses = new java.util.HashMap<>();
+            // The last launcher app resumed is the one actually on screen; only
+            // its open session may run to `now` (see the still-in-foreground pass).
+            String lastForegroundPkg = null;
 
             UsageEvents events = usm.queryEvents(startOfDay, now);
             if (events != null) {
@@ -494,6 +497,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                     String pkg = event.getPackageName();
                     int type = event.getEventType();
                     if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {
+                        if (launcherPackages.contains(pkg) && !pkg.equals(context.getPackageName())) {
+                            lastForegroundPkg = pkg;
+                        }
                         Long pausedAt = recentPauses.remove(pkg);
                         if (pausedAt != null && (event.getTimeStamp() - pausedAt) <= MERGE_GAP_MS) {
                             // Short gap - merge
@@ -525,9 +531,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // Add elapsed time for apps still in foreground
+            // Add elapsed time for apps still in foreground, gated to the app
+            // genuinely on screen right now so a stale never-closed session or a
+            // screen-off background-audio app can't accrue idle hours.
+            boolean screenInteractive = UsageSessionUtil.isScreenInteractive(context);
             for (java.util.Map.Entry<String, Long> entry : sessionStarts.entrySet()) {
                 String pkg = entry.getKey();
+                if (!UsageSessionUtil.shouldAccrueOpenSession(screenInteractive, pkg, lastForegroundPkg)) continue;
                 long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
                 totalMs.put(pkg, prev + (now - entry.getValue()));
             }
@@ -648,6 +658,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             java.util.Map<String, Long> totalMs = new java.util.HashMap<>();
             java.util.Map<String, Long> sessionStarts = new java.util.HashMap<>();
             java.util.Map<String, Long> recentPauses = new java.util.HashMap<>();
+            // The last launcher app to come to the foreground is the one actually
+            // on screen; only its open session may run to `now` (see below).
+            String lastForegroundPkg = null;
 
             UsageEvents events = usm.queryEvents(startOfDay, now);
             if (events != null) {
@@ -659,6 +672,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                     // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
                     // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
                     if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {
+                        if (launcherPackages.contains(pkg) && !pkg.equals(reactContext.getPackageName())) {
+                            lastForegroundPkg = pkg;
+                        }
                         Long pausedAt = recentPauses.remove(pkg);
                         if (pausedAt != null && (event.getTimeStamp() - pausedAt) <= MERGE_GAP_MS) {
                             // Short gap - merge: restore original session start (still in sessionStarts)
@@ -714,9 +730,14 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // Add elapsed time for apps still in foreground
+            // Add elapsed time for apps still in foreground, but only for the app
+            // that is genuinely on screen right now. A stale never-closed session
+            // (or a background-audio app after screen-off) must not run to `now` —
+            // that is the source of the multi-hour phantom totals.
+            boolean screenInteractive = UsageSessionUtil.isScreenInteractive(reactContext);
             for (java.util.Map.Entry<String, Long> entry : sessionStarts.entrySet()) {
                 String pkg = entry.getKey();
+                if (!UsageSessionUtil.shouldAccrueOpenSession(screenInteractive, pkg, lastForegroundPkg)) continue;
                 long prev = totalMs.containsKey(pkg) ? totalMs.get(pkg) : 0;
                 totalMs.put(pkg, prev + (now - entry.getValue()));
             }
@@ -792,6 +813,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             java.util.Map<String, Long> recentSessionPauses = new java.util.HashMap<>();
             // Track the original session start for merging
             java.util.Map<String, Long> mergedSessionStarts = new java.util.HashMap<>();
+            // The last app resumed is the one on screen now; only its session may
+            // stay open to `now` (see the open-sessions pass below).
+            String lastForegroundPkg = null;
             WritableArray sessions = Arguments.createArray();
             UsageEvents.Event event = new UsageEvents.Event();
 
@@ -836,6 +860,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 // Handle both legacy (MOVE_TO_FOREGROUND/BACKGROUND) and
                 // API 29+ (ACTIVITY_RESUMED/ACTIVITY_PAUSED) event types
                 if (type == UsageEvents.Event.MOVE_TO_FOREGROUND || type == UsageEvents.Event.ACTIVITY_RESUMED) {
+                    // pkg is already filtered to launcher, non-self above.
+                    lastForegroundPkg = pkg;
                     Long pausedAt = recentSessionPauses.remove(pkg);
                     if (pausedAt != null && (event.getTimeStamp() - pausedAt) <= SESSION_MERGE_GAP_MS) {
                         // Short gap - merge: keep original start in mergedSessionStarts
@@ -888,8 +914,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // Open sessions (still in foreground)
+            // Open sessions (still in foreground). Only the app genuinely on
+            // screen now may extend to `now`; a stale never-closed session or a
+            // screen-off background-audio app is dropped rather than reported as
+            // a multi-hour open session.
+            boolean screenInteractive = UsageSessionUtil.isScreenInteractive(ctx);
             for (java.util.Map.Entry<String, Long> entry : fgStarts.entrySet()) {
+                if (!UsageSessionUtil.shouldAccrueOpenSession(screenInteractive, entry.getKey(), lastForegroundPkg)) continue;
                 Long mergedStart = mergedSessionStarts.get(entry.getKey());
                 long start = mergedStart != null ? mergedStart : entry.getValue();
                 long durationSec = (now - start) / 1000;

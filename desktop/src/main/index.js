@@ -492,47 +492,25 @@ app.whenReady().then(() => {
       const gnomeExtensionSourceDir = path.join(process.resourcesPath, 'gnome-extension')
       ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir }).then(async (r) => {
         if (r.reason === 'not-linux') return
-        if (!r.installed) {
-          console.warn('[main] gnome extension install skipped:', r.reason)
-          return
-        }
-        if (r.enabled && !r.requiresShellRestart) {
-          console.log('[main] gnome extension already installed and enabled')
-          return
-        }
-        // Either we just copied a fresh set of files (Shell may not have
-        // loaded them yet) or `gnome-extensions enable` failed (same cause:
-        // Shell hasn't seen the new extension). In both cases, probe the
-        // extension's D-Bus interface to see whether Mutter actually has
-        // it live. If not, the kid is staring at a parental-control app
-        // that silently doesn't enforce until they log out + back in; show
-        // a desktop notification telling them so. GNOME 48 deprecated
-        // ReloadExtension, so this logout prompt is the only path on
-        // Wayland.
-        if (r.requiresShellRestart) {
-          console.log('[main] gnome extension installed/updated; verifying Mutter has loaded it')
-        } else if (!r.enabled) {
-          console.warn('[main] gnome extension enable failed; verifying Mutter has loaded it')
-        }
+        if (!r.installed) console.warn('[main] gnome extension install skipped:', r.reason)
+        else if (r.enabled && !r.requiresShellRestart) console.log('[main] gnome extension installed and enabled')
+        else if (r.requiresShellRestart) console.log('[main] gnome extension installed/updated; Shell may not have loaded it yet')
+        else if (!r.enabled) console.warn('[main] gnome extension enable failed')
+
+        // Whatever the installer did, the question that actually matters is:
+        // CAN we enforce on this session? Previously this was only asked when the
+        // extension had just been installed — so a non-GNOME Wayland session (KDE,
+        // sway) fell out at the `!r.installed` early-return above with nothing but
+        // a console.warn, and the child sat in front of a parental-control app
+        // that blocked nothing while the parent's dashboard looked perfectly
+        // healthy. Ask it every launch, on every path.
         try {
-          const { callGdbus } = require('../enforcement/foreground-wayland')
-          // 3s settle: gnome-extensions enable can return before Shell
-          // has finished registering the bus name on a fresh install.
+          // 3s settle: `gnome-extensions enable` can return before the Shell has
+          // finished registering the bus name on a fresh install.
           await new Promise((resolve) => setTimeout(resolve, 3000))
-          const probe = await callGdbus({ timeoutMs: 2000 })
-          if (probe === null) {
-            new Notification({
-              title: 'PearGuard needs you to log out',
-              body: 'Log out and log back in to finish enabling app-blocking on this device.',
-              icon: NOTIFICATION_ICON_PATH,
-              urgency: 'critical',
-            }).show()
-            console.warn('[main] extension D-Bus unreachable; notified user to log out')
-          } else {
-            console.log('[main] extension responding via D-Bus (no logout needed)')
-          }
+          await reportLinuxEnforcementCapability()
         } catch (e) {
-          console.warn('[main] extension probe failed:', e.message)
+          console.warn('[main] linux capability check failed:', e.message)
         }
       }, (e) => console.warn('[main] gnome extension install failed:', e.message))
 
@@ -938,6 +916,101 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0 && bareReady) createWindow()
   })
 })
+
+// Has this launch already told the parent enforcement is dead? One alert per
+// run: the check is cheap but the parent doesn't need it on a loop.
+let linuxCapabilityReported = false
+
+// Answer "can we actually enforce on this Linux session?" and, if not, say so to
+// BOTH sides. The child gets an honest desktop notification (the old code told
+// every failing session to "log out and log back in" — advice that can never work
+// on KDE/sway); the parent gets a bypass:detected alert, because a parent who
+// believes they're protected and isn't is the worst outcome this app can produce.
+//
+// Signals are gathered from configuration, not liveness, so a locked screen can't
+// masquerade as a broken session — see linux-capability.js for why that matters.
+async function reportLinuxEnforcementCapability() {
+  if (process.platform !== 'linux' || linuxCapabilityReported) return
+
+  const { execFile } = require('child_process')
+  const run = (cmd, args) => new Promise((resolve) => {
+    execFile(cmd, args, { timeout: 4000 }, (err, stdout) => resolve(err ? null : String(stdout)))
+  })
+
+  const { isWaylandSession, callGdbus } = require('../enforcement/foreground-wayland')
+  const { assessLinuxEnforcement } = require('../enforcement/linux-capability')
+
+  const isWayland = isWaylandSession()
+  // X11 needs no extension at all — don't probe, don't alarm.
+  if (!isWayland) {
+    console.log('[main] X11 session; active-win handles the foreground (no extension needed)')
+    return
+  }
+
+  const enabledList = await run('gnome-extensions', ['list', '--enabled'])
+  const hasGnome = enabledList !== null   // tool absent => not a GNOME session
+  const extensionEnabled = !!enabledList && enabledList.includes('pearguard-focus@peerloomllc.com')
+
+  const lockedHint = await run('loginctl', ['show-session', process.env.XDG_SESSION_ID || 'self', '-p', 'LockedHint', '--value'])
+  const sessionLocked = !!lockedHint && lockedHint.trim() === 'yes'
+
+  // Only meaningful when enabled AND unlocked; assess() enforces that itself.
+  const dbusLive = extensionEnabled && !sessionLocked
+    ? (await callGdbus({ timeoutMs: 2000 })) !== null
+    : null
+
+  const verdict = assessLinuxEnforcement({
+    isLinux: true, isWayland, hasGnome, extensionEnabled, dbusLive, sessionLocked,
+  })
+
+  if (verdict.ok) {
+    console.log('[main] linux enforcement capability OK (wayland + extension live)')
+    return
+  }
+
+  linuxCapabilityReported = true
+  console.error('[main] *** ENFORCEMENT IS NOT WORKING ***', verdict.reason,
+    { hasGnome, extensionEnabled, sessionLocked, dbusLive })
+
+  try {
+    new Notification({
+      title: verdict.childMessage.title,
+      body: verdict.childMessage.body,
+      icon: NOTIFICATION_ICON_PATH,
+      urgency: 'critical',
+    }).show()
+  } catch (e) {
+    console.warn('[main] capability notification failed:', e.message)
+  }
+
+  // Don't re-notify the parent on every launch. A broken session usually stays
+  // broken until the user logs out, and the app restarts on every login (plus
+  // whenever the child reopens it) — without this the parent would get the same
+  // push over and over and learn to ignore it, which defeats the point. Re-alert
+  // at most once per REALERT_MS per reason, persisted so it survives restarts.
+  const REALERT_MS = 12 * 60 * 60 * 1000
+  const statePath = path.join(app.getPath('userData'), 'capability-alert.json')
+  let last = {}
+  try { last = JSON.parse(fs.readFileSync(statePath, 'utf8')) } catch (_e) {}
+  const now = Date.now()
+  if (last.reason === verdict.reason && typeof last.at === 'number' && now - last.at < REALERT_MS) {
+    console.log('[main] parent already alerted for', verdict.reason,
+      Math.round((now - last.at) / 60000), 'min ago; not re-notifying')
+    return
+  }
+
+  // Tell the parent. Reuses the existing bypass pipeline (persisted + relayed to
+  // every paired parent); src/bypass-reasons.js maps these reasons to wording
+  // that does NOT accuse the child, since an unsupported compositor is our
+  // limitation, not their tampering.
+  try {
+    await callBare('bypass:detected', { reason: verdict.reason })
+    try { fs.writeFileSync(statePath, JSON.stringify({ reason: verdict.reason, at: now })) } catch (_e) {}
+    console.log('[main] parent notified that enforcement is unavailable:', verdict.reason)
+  } catch (e) {
+    console.warn('[main] failed to notify parent of enforcement failure:', e.message)
+  }
+}
 
 async function flushUsageOnce() {
   if (!enforcement || !bareReady) return

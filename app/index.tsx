@@ -22,6 +22,9 @@ import * as Linking from 'expo-linking'
 import { setBareCaller } from './setup'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import Constants from 'expo-constants'
+// Shared with the worklet so parent-facing bypass wording stays truthful:
+// some reasons are tampering, others are PearGuard's own limitation.
+import { describeBypassReason } from '../src/bypass-reasons'
 
 const isAndroid = Platform.OS === 'android'
 const { PearGuardNotifications, PearGuardHaptic, PearGuardBGSync, PearGuardLink, PearGuardCamera } = NativeModules
@@ -884,14 +887,19 @@ export default function Root () {
                   NativeModules.UsageStatsModule?.showDecisionNotification?.(label, status)
                 }
               }
-              // Show a notification on the parent device when a child's accessibility service is disabled
+              // Tell the parent enforcement is off on a child's device. The text is
+              // derived from the reason: some reasons are real tampering, but others
+              // (e.g. an unsupported Wayland compositor) are PearGuard's own
+              // limitation, and blaming the child for those would be a false
+              // accusation. See src/bypass-reasons.js.
               if (msg.event === 'alert:bypass') {
-                const { childPublicKey, childDisplayName } = msg.data ?? {}
+                const { childPublicKey, childDisplayName, reason } = msg.data ?? {}
                 const childName = childDisplayName || 'Your child'
+                const { title, body } = describeBypassReason(reason, childName)
                 if (isAndroid) {
-                  NativeModules.UsageStatsModule?.showBypassAlertNotification?.(childName, childPublicKey || '')
+                  NativeModules.UsageStatsModule?.showBypassAlertNotification?.(title, body, childPublicKey || '')
                 } else {
-                  showNotification('Protection Disabled', childName + ' turned off app blocking', childPublicKey, 'activity')
+                  showNotification(title, body, childPublicKey, 'activity')
                 }
               }
               // Show a notification on the parent device when a child uses the PIN override

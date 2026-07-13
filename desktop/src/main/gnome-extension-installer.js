@@ -21,6 +21,7 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const crypto = require('crypto')
 const { execFile } = require('child_process')
 
 const EXTENSION_UUID = 'pearguard-focus@peerloomllc.com'
@@ -33,31 +34,72 @@ function localExtensionDir() {
   return path.join(localExtensionsDir(), EXTENSION_UUID)
 }
 
-// Compare two trees by file size + mtime so we don't re-copy on every launch.
-// Quick + good enough: an upgrade ships fresh mtimes via the .deb, so a real
-// version change always re-copies.
-function treesEqual(srcDir, destDir) {
-  let srcEntries, destEntries
-  try { srcEntries = fs.readdirSync(srcDir).sort() } catch (_) { return false }
-  try { destEntries = fs.readdirSync(destDir).sort() } catch (_) { return false }
-  if (srcEntries.length !== destEntries.length) return false
-  if (srcEntries.join('|') !== destEntries.join('|')) return false
-  for (const name of srcEntries) {
-    const sSrc = fs.statSync(path.join(srcDir, name))
-    const sDest = fs.statSync(path.join(destDir, name))
-    if (sSrc.size !== sDest.size) return false
-  }
-  return true
+// Compare two trees by CONTENT HASH.
+//
+// This used to compare file sizes only (despite a comment claiming size+mtime),
+// which was wrong in both directions: a changed file that happened to keep its
+// size was never copied, so a stale — possibly broken or incompatible —
+// extension would run forever; and any size wobble triggered a full re-copy.
+// Getting "are these the same?" right matters more than usual here, because the
+// answer decides whether we disturb a *loaded* GNOME extension (see below).
+function hashFile(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')
 }
 
-function copyTree(srcDir, destDir) {
+function hashTree(dir, base = dir, acc = {}) {
+  let entries
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (_) { return null }
+  for (const e of entries) {
+    const p = path.join(dir, e.name)
+    const rel = path.relative(base, p)
+    if (e.isDirectory()) hashTree(p, base, acc)
+    else acc[rel] = hashFile(p)
+  }
+  return acc
+}
+
+function treesEqual(srcDir, destDir) {
+  const a = hashTree(srcDir)
+  const b = hashTree(destDir)
+  if (!a || !b) return false
+  const ka = Object.keys(a).sort()
+  const kb = Object.keys(b).sort()
+  if (ka.length !== kb.length || ka.join('|') !== kb.join('|')) return false
+  return ka.every((k) => a[k] === b[k])
+}
+
+// Sync src -> dest WITHOUT deleting the destination directory first.
+//
+// The old code did `fs.rmSync(destDir, { recursive: true })` before re-copying,
+// which is needlessly destructive: if the copy then failed, the child was left
+// with NO extension at all. Overwriting in place (and pruning only what we no
+// longer ship) keeps the tree usable throughout.
+//
+// To be clear about what this does NOT fix: writing here still knocks a LOADED
+// extension offline — GNOME unloads on any file change and Wayland can't reload.
+// Avoiding that is the caller's job (see the deferral in ensureExtensionInstalled);
+// syncTree is only ever meant to run when the extension isn't live, or at quit.
+function syncTree(srcDir, destDir) {
   fs.mkdirSync(destDir, { recursive: true })
+  const keep = new Set()
   for (const name of fs.readdirSync(srcDir)) {
     const sp = path.join(srcDir, name)
     const dp = path.join(destDir, name)
-    const stat = fs.statSync(sp)
-    if (stat.isDirectory()) copyTree(sp, dp)
-    else fs.copyFileSync(sp, dp)
+    keep.add(name)
+    if (fs.statSync(sp).isDirectory()) {
+      syncTree(sp, dp)
+    } else {
+      // Only rewrite files that actually differ, so an unchanged file's mtime
+      // isn't churned (GNOME watches these paths).
+      let same = false
+      try { same = fs.existsSync(dp) && hashFile(sp) === hashFile(dp) } catch (_) {}
+      if (!same) fs.copyFileSync(sp, dp)
+    }
+  }
+  // Remove anything we no longer ship, so a renamed/removed file doesn't linger.
+  for (const name of fs.readdirSync(destDir)) {
+    if (keep.has(name)) continue
+    fs.rmSync(path.join(destDir, name), { recursive: true, force: true })
   }
 }
 
@@ -80,24 +122,53 @@ function runGnomeExtensions(args, { timeoutMs = 5000 } = {}) {
 // Returns { installed, enabled, requiresShellRestart, reason? } so the caller
 // can log appropriately. Safe to call from app.whenReady before any of the
 // enforcement controller exists.
-async function ensureExtensionInstalled({ sourceDir, logger = console } = {}) {
+async function ensureExtensionInstalled({ sourceDir, logger = console, isLive = false } = {}) {
   if (process.platform !== 'linux') return { installed: false, enabled: false, reason: 'not-linux' }
   if (!sourceDir || !fs.existsSync(sourceDir)) {
     return { installed: false, enabled: false, reason: 'source-missing' }
   }
   const destDir = localExtensionDir()
   let copied = false
-  if (!treesEqual(sourceDir, destDir)) {
+  const needsUpdate = !treesEqual(sourceDir, destDir)
+
+  // THE UPDATE BLACKOUT.
+  //
+  // GNOME unloads an extension the moment its files change on disk — verified on
+  // a real GNOME 48 Wayland session: a single `echo >> extension.js` flipped a
+  // live extension to `State: INACTIVE` instantly. And on Wayland the Shell
+  // cannot reload it (GNOME 45+ removed ReloadExtension); only a logout will.
+  //
+  // So writing an updated extension while it is LOADED destroys enforcement for
+  // the rest of the session — every PearGuard update left the Linux child with
+  // no app blocking at all until they next logged out, which could be days. In
+  // place vs rm -rf makes no difference; the write itself is what does it.
+  //
+  // The only safe moment to write is when the Shell isn't holding it. So if the
+  // extension is currently live, DEFER the write to quit: the session keeps its
+  // working (old) extension, and the next login reads the new files and loads
+  // them cleanly. If it isn't live, there's nothing to lose — write now.
+  if (needsUpdate && isLive) {
+    logger.log('[gnome-ext] update pending, but the extension is LIVE — deferring the write to quit '
+      + 'so enforcement is not knocked offline for the rest of this session')
+    return { installed: true, enabled: true, requiresShellRestart: false, deferredUpdate: true }
+  }
+
+  if (needsUpdate) {
     try {
       fs.mkdirSync(localExtensionsDir(), { recursive: true })
-      fs.rmSync(destDir, { recursive: true, force: true })
-      copyTree(sourceDir, destDir)
+      // In-place sync, not rm -rf + copy: never delete a directory the Shell may
+      // still be holding open (see syncTree).
+      syncTree(sourceDir, destDir)
       copied = true
-      logger.log('[gnome-ext] copied extension to', destDir)
+      logger.log('[gnome-ext] extension files updated in', destDir, '(was not live; safe to write now)')
     } catch (e) {
       logger.warn('[gnome-ext] copy failed:', e.message)
       return { installed: false, enabled: false, reason: 'copy-failed' }
     }
+  } else {
+    // Identical content: touch NOTHING. Rewriting files GNOME is watching would
+    // knock the loaded extension offline for no reason at all.
+    logger.log('[gnome-ext] extension already up to date; leaving files untouched')
   }
 
   // gnome-extensions enable is idempotent for an already-enabled extension.
@@ -112,8 +183,29 @@ async function ensureExtensionInstalled({ sourceDir, logger = console } = {}) {
   return { installed: true, enabled: true, requiresShellRestart: copied }
 }
 
+// Apply an update that was deferred because the extension was live. Called from
+// before-quit: the session is ending anyway, so knocking the (about to die)
+// Shell copy offline costs nothing, and the next login loads the new code.
+function applyDeferredUpdate({ sourceDir, logger = console } = {}) {
+  try {
+    if (!sourceDir || !fs.existsSync(sourceDir)) return false
+    const destDir = localExtensionDir()
+    if (treesEqual(sourceDir, destDir)) return false
+    fs.mkdirSync(localExtensionsDir(), { recursive: true })
+    syncTree(sourceDir, destDir)
+    logger.log('[gnome-ext] deferred extension update written at quit; next login picks it up')
+    return true
+  } catch (e) {
+    logger.warn('[gnome-ext] deferred update failed:', e.message)
+    return false
+  }
+}
+
 module.exports = {
   ensureExtensionInstalled,
+  applyDeferredUpdate,
+  treesEqual,
+  syncTree,
   localExtensionDir,
   EXTENSION_UUID,
 }

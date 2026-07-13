@@ -83,7 +83,7 @@ const { ensureRegistered: ensureWatchdogRegistered } = require('./watchdog')
 const { TamperDetector } = require('./tamper-detector')
 const { initAutoUpdater } = require('./updater')
 const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
-const { ensureExtensionInstalled: ensureGnomeExtension } = require('./gnome-extension-installer')
+const { ensureExtensionInstalled: ensureGnomeExtension, applyDeferredUpdate: applyDeferredExtensionUpdate } = require('./gnome-extension-installer')
 const { GnomeExtensionWatchdog } = require('./gnome-extension-watchdog')
 const { migrateUserData } = require('./userdata-migrate')
 
@@ -505,7 +505,21 @@ app.whenReady().then(() => {
       // foreground adapter. No-op on non-GNOME sessions (gnome-extensions
       // tool absent). First install requires a Shell restart to pick up.
       const gnomeExtensionSourceDir = path.join(process.resourcesPath, 'gnome-extension')
-      ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir }).then(async (r) => {
+      // Is the extension currently LIVE? If so the installer must not rewrite its
+      // files — GNOME unloads on any change and Wayland can't reload, which would
+      // kill app blocking for the rest of the session. Probe first, then let the
+      // installer defer the write to quit.
+      probeExtensionLive().then((isLive) =>
+        ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir, isLive })
+      ).then(async (r) => {
+        if (r.deferredUpdate) {
+          // Write the new extension as we exit: the session is ending anyway, so
+          // disturbing the (about-to-die) Shell copy costs nothing, and the next
+          // login loads the new code cleanly with no blackout.
+          app.once('before-quit', () => {
+            applyDeferredExtensionUpdate({ sourceDir: gnomeExtensionSourceDir })
+          })
+        }
         if (r.reason === 'not-linux') return
         if (!r.installed) console.warn('[main] gnome extension install skipped:', r.reason)
         else if (r.enabled && !r.requiresShellRestart) console.log('[main] gnome extension installed and enabled')
@@ -932,6 +946,26 @@ app.whenReady().then(() => {
   })
 })
 
+// Is the GNOME extension currently loaded and answering? Decides whether the
+// installer may rewrite its files now, or must defer to quit — see the blackout
+// note in gnome-extension-installer.js. Retries, because the Shell can take a
+// few seconds to register the bus name after login and a single failed probe
+// would wrongly conclude "not live" and trigger the very rewrite we're avoiding.
+async function probeExtensionLive() {
+  if (process.platform !== 'linux') return false
+  try {
+    const { isWaylandSession, pingExtension } = require('../enforcement/foreground-wayland')
+    if (!isWaylandSession()) return false   // X11 doesn't need the extension
+    for (let i = 0; i < 4; i++) {
+      if (await pingExtension({ timeoutMs: 2000 })) return true
+      await new Promise((r) => setTimeout(r, 3000))
+    }
+  } catch (e) {
+    console.warn('[main] extension live-probe failed:', e.message)
+  }
+  return false
+}
+
 // Has this launch already told the parent enforcement is dead? One alert per
 // run: the check is cheap but the parent doesn't need it on a loop.
 let linuxCapabilityReported = false
@@ -952,7 +986,7 @@ async function reportLinuxEnforcementCapability() {
     execFile(cmd, args, { timeout: 4000 }, (err, stdout) => resolve(err ? null : String(stdout)))
   })
 
-  const { isWaylandSession, callGdbus } = require('../enforcement/foreground-wayland')
+  const { isWaylandSession, pingExtension } = require('../enforcement/foreground-wayland')
   const { assessLinuxEnforcement } = require('../enforcement/linux-capability')
 
   const isWayland = isWaylandSession()
@@ -970,9 +1004,26 @@ async function reportLinuxEnforcementCapability() {
   const sessionLocked = !!lockedHint && lockedHint.trim() === 'yes'
 
   // Only meaningful when enabled AND unlocked; assess() enforces that itself.
-  const dbusLive = extensionEnabled && !sessionLocked
-    ? (await callGdbus({ timeoutMs: 2000 })) !== null
-    : null
+  //
+  // Probe several times before concluding the extension is dead. Rewriting the
+  // extension's files (which happens on any PearGuard update that touches it)
+  // makes GNOME briefly drop and re-register the D-Bus name, and the Shell can
+  // take a few seconds to settle after login. A single probe landing in that
+  // window reports "ENFORCEMENT IS NOT WORKING" and pushes a bogus alert to the
+  // parent — observed exactly that on the Debian child, where the extension was
+  // ACTIVE and answering moments later. Crying wolf trains parents to ignore the
+  // one alert that must never be ignored, so make it earn the accusation.
+  const probeDbusLive = async (attempts = 4, gapMs = 3000) => {
+    for (let i = 0; i < attempts; i++) {
+      // pingExtension, NOT callGdbus: an idle desktop with nothing focused is a
+      // successful reply, not a dead extension. Getting this wrong told parents
+      // enforcement was broken every time their child had no window focused.
+      if (await pingExtension({ timeoutMs: 2000 })) return true
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, gapMs))
+    }
+    return false
+  }
+  const dbusLive = extensionEnabled && !sessionLocked ? await probeDbusLive() : null
 
   const verdict = assessLinuxEnforcement({
     isLinux: true, isWayland, hasGnome, extensionEnabled, dbusLive, sessionLocked,

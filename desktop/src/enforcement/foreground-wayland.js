@@ -65,6 +65,30 @@ function unescape(s) {
   })
 }
 
+// Is the extension LOADED AND ANSWERING? This is deliberately NOT callGdbus().
+//
+// callGdbus() collapses two very different things into null: "the extension isn't
+// there" and "the extension answered, but no window is focused" — the latter
+// replies with the perfectly valid tuple (uint32 0, '', '', '') and is completely
+// normal on an idle desktop. Using callGdbus() as a liveness signal therefore
+// declares enforcement dead whenever the child simply has nothing focused, which
+// pushed a bogus "ENFORCEMENT IS NOT WORKING" alert to the parent (seen on the
+// Debian child) and made the installer think it was safe to rewrite a live
+// extension's files — the exact thing that blacks out app blocking.
+//
+// Liveness = the D-Bus call SUCCEEDED. Any well-formed reply, focused window or
+// not, proves the extension is loaded.
+function pingExtension({ timeoutMs = 2000 } = {}) {
+  return new Promise((resolve) => {
+    execFile('gdbus', [
+      'call', '--session',
+      '--dest', BUS_NAME,
+      '--object-path', OBJECT_PATH,
+      '--method', METHOD,
+    ], { timeout: timeoutMs }, (err) => resolve(!err))
+  })
+}
+
 function callGdbus({ timeoutMs = 1500 } = {}) {
   return new Promise((resolve) => {
     execFile('gdbus', [
@@ -149,6 +173,7 @@ module.exports = {
   activeWindowWayland,
   makeWaylandActiveWin,
   callGdbus,            // exported for tests
+  pingExtension,        // liveness: did the call succeed (NOT: was a window focused)
   resolveExePath,       // exported for tests
   BUS_NAME,
   OBJECT_PATH,

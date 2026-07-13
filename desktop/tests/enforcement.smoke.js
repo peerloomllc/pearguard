@@ -3360,3 +3360,55 @@ test('EnforcementController.setPolicyJson re-seeds ExeMap from policy.apps entri
   console.log('\n' + passed + '/' + total + ' passed')
   process.exit(failed === 0 ? 0 : 1)
 })()
+
+// --- linux enforcement capability -----------------------------------------
+const { assessLinuxEnforcement, REASON_UNSUPPORTED, REASON_NOT_LOADED } = require('../src/enforcement/linux-capability')
+
+test('X11 needs no extension - never reports a capability failure', () => {
+  const r = assessLinuxEnforcement({ isWayland: false, hasGnome: false, extensionEnabled: false })
+  assert.strictEqual(r.ok, true)
+  assert.strictEqual(r.reason, null)
+})
+
+test('non-GNOME Wayland (KDE/sway) is an unsupported compositor', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: false })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, REASON_UNSUPPORTED)
+  // The child must NOT be told to log out - that can never help on KDE.
+  assert.ok(!/log out/i.test(r.childMessage.body), 'must not advise a pointless logout')
+})
+
+test('GNOME Wayland with the extension disabled needs a logout', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: true, extensionEnabled: false })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, REASON_NOT_LOADED)
+  assert.ok(/log out/i.test(r.childMessage.body))
+})
+
+test('GNOME Wayland with a live extension is healthy', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: true, extensionEnabled: true, dbusLive: true })
+  assert.strictEqual(r.ok, true)
+})
+
+// THE trap: GNOME unloads extensions on the lock screen, so D-Bus goes silent
+// while locked. Treating that as evidence of failure would fire a false "your
+// child disabled protection" alert at the parent every time the kid locks their
+// screen. Capability must be judged from configuration, not liveness.
+test('a LOCKED session must not be mistaken for broken enforcement', () => {
+  const r = assessLinuxEnforcement({
+    isWayland: true, hasGnome: true, extensionEnabled: true,
+    dbusLive: false,      // silent purely because the screen is locked
+    sessionLocked: true,
+  })
+  assert.strictEqual(r.ok, true, 'a locked screen must NOT raise a false alarm')
+  assert.strictEqual(r.reason, null)
+})
+
+test('but an unlocked session with a dead D-Bus really is broken', () => {
+  const r = assessLinuxEnforcement({
+    isWayland: true, hasGnome: true, extensionEnabled: true,
+    dbusLive: false, sessionLocked: false,
+  })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, REASON_NOT_LOADED)
+})

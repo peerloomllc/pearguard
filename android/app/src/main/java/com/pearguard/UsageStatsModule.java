@@ -1321,11 +1321,18 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Shows a notification on the parent device when a child's Accessibility Service is disabled.
+     * Shows a notification on the parent device when enforcement stops working on a
+     * child's device. Title/body are composed on the JS side from the bypass reason
+     * (src/bypass-reasons.js) rather than hardcoded here: this used to always read
+     * "<child> turned off the PearGuard Accessibility Service", which is wrong for a
+     * desktop child (no such service exists there) and, worse, accuses the child of
+     * tampering even when the real cause is PearGuard being unable to enforce on
+     * their machine at all — e.g. an unsupported Wayland compositor.
+     *
      * Called from app/index.tsx when the bare worklet emits alert:bypass.
      */
     @ReactMethod
-    public void showBypassAlertNotification(String childName, String childPublicKey) {
+    public void showBypassAlertNotification(String title, String body, String childPublicKey) {
         NotificationManager nm =
                 (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
@@ -1343,8 +1350,9 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(childName + "'s parental controls disabled")
-                .setContentText(childName + " turned off the PearGuard Accessibility Service")
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(pi);

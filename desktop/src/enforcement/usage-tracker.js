@@ -16,11 +16,23 @@ const path = require('path')
 // getWeeklyUsageAll now returns a rolling-7-day window (midnight of today-6 to now);
 // the Windows tracker still reports "since Sunday" until per-day buckets are
 // added. Affects the Usage tab "Last 7 days: …" label for Windows children.
+// How long the tracker will keep extending an open session without a fresh
+// observation from the foreground monitor. The monitor polls every 1s, so this
+// tolerates ~15 missed polls (a slow active-win call, GC pause, heavy load)
+// while bounding the damage from a genuine observation gap to a few seconds.
+const DEFAULT_MAX_OBSERVATION_GAP_MS = 15000
+
 class UsageTracker {
-  constructor({ filePath = null, now = () => Date.now(), logger = console } = {}) {
+  constructor({
+    filePath = null,
+    now = () => Date.now(),
+    logger = console,
+    maxObservationGapMs = DEFAULT_MAX_OBSERVATION_GAP_MS,
+  } = {}) {
     this._filePath = filePath
     this._now = now
     this._logger = logger
+    this._maxObservationGapMs = maxObservationGapMs
 
     const t = now()
     this._dayStart = localDayStart(t)
@@ -34,6 +46,13 @@ class UsageTracker {
     this._activePkg = null
     this._activeAppName = null
     this._activeStartedAt = null   // ms
+
+    // Wall-clock of the last time the monitor actually observed the foreground.
+    // Reads virtually extend the active session to "now", so without this the
+    // tracker cannot tell "the app is still open" from "we stopped looking".
+    // A suspended machine, a locked screen or a stalled poll loop would credit
+    // the entire unobserved gap as foreground usage (hours, overnight).
+    this._lastObservedAt = null
 
     // Display-name cache so getDailyUsageAll can surface a friendly name even
     // after the kid switches away from the app (the active session's appName
@@ -54,23 +73,46 @@ class UsageTracker {
   // null (unmapped exe); in that case we close any active session and record
   // no new one, but still remember the exe for diagnostics.
   noteForeground({ packageName, appName = null, ts = this._now() }) {
-    this._resolveRollovers(ts)
+    this._syncTo(ts)
     this._closeActive(ts)
     if (packageName) {
-      this._activePkg = packageName
-      this._activeAppName = appName
-      this._activeStartedAt = ts
-      this._lastForegroundPkg = packageName
-      if (appName) this._appNames.set(packageName, appName)
+      this._openActive(packageName, appName, ts)
     } else {
       this._lastForegroundPkg = null
     }
+    this._lastObservedAt = ts
   }
 
-  // Close the in-flight session (used on app quit / flush-on-exit so the
-  // session hits daily/weekly counters and the sessions buffer). Idempotent.
+  // Heartbeat from the foreground monitor, fired on EVERY poll rather than only
+  // when the focused app changes. This is what lets the tracker distinguish "the
+  // app is still in the foreground" from "we stopped observing" — see
+  // _closeStaleSession. `packageName` is null when nothing mapped is focused
+  // (locked screen, screen off, unmapped exe), which closes the active session.
+  noteObserved({ packageName = null, appName = null, ts = this._now() } = {}) {
+    this._syncTo(ts)
+    if (!packageName) {
+      // Nothing focused we can attribute time to — stop accruing.
+      if (this._activePkg) this._closeActive(ts)
+      this._lastForegroundPkg = null
+    } else if (this._activePkg == null) {
+      // The stale guard (or a lock) closed the session while the app stayed
+      // focused. Resume accrual now instead of waiting for the kid to switch
+      // apps — foreground-changed only fires on a *change*, so nothing else
+      // would ever reopen it.
+      this._openActive(packageName, appName, ts)
+    } else if (this._activePkg !== packageName) {
+      // Defensive: monitor and tracker disagree about what's focused.
+      this._closeActive(ts)
+      this._openActive(packageName, appName, ts)
+    }
+    this._lastObservedAt = ts
+  }
+
+  // Close the in-flight session (used on app quit / flush-on-exit, and on
+  // system suspend / screen lock so the boundary is exact rather than relying
+  // on the stale-observation guard). Idempotent.
   endActive(ts = this._now()) {
-    this._resolveRollovers(ts)
+    this._syncTo(ts)
     this._closeActive(ts)
     this._persist()
   }
@@ -82,7 +124,7 @@ class UsageTracker {
   getDailyUsageSeconds(packageName) {
     if (!packageName) return 0
     const ts = this._now()
-    this._resolveRollovers(ts)
+    this._syncTo(ts)
     const stored = this._daily.get(packageName) || 0
     if (this._activePkg === packageName && this._activeStartedAt != null) {
       return stored + secondsBetween(this._activeStartedAt, ts)
@@ -93,7 +135,7 @@ class UsageTracker {
   // [{ packageName, appName, secondsToday }] — appName is best-effort.
   getDailyUsageAll() {
     const ts = this._now()
-    this._resolveRollovers(ts)
+    this._syncTo(ts)
     const out = []
     // Fold the active session so in-flight time is reflected.
     const active = this._activePkg
@@ -117,7 +159,7 @@ class UsageTracker {
   // [{ packageName, secondsThisWeek }].
   getWeeklyUsageAll() {
     const ts = this._now()
-    this._resolveRollovers(ts)
+    this._syncTo(ts)
     const out = []
     const active = this._activePkg
     for (const [pkg, seconds] of this._weekly.entries()) {
@@ -140,7 +182,7 @@ class UsageTracker {
   // it continues to accrue.
   takeSessions() {
     const ts = this._now()
-    this._resolveRollovers(ts)
+    this._syncTo(ts)
     // Snapshot an in-flight session into the buffer, then restart it so
     // accrual continues against the same package.
     if (this._activePkg && this._activeStartedAt != null && this._activeStartedAt < ts) {
@@ -159,6 +201,49 @@ class UsageTracker {
   }
 
   // --- Internals -----------------------------------------------------------
+
+  _openActive(packageName, appName, ts) {
+    this._activePkg = packageName
+    this._activeAppName = appName
+    this._activeStartedAt = ts
+    this._lastForegroundPkg = packageName
+    if (appName) this._appNames.set(packageName, appName)
+  }
+
+  // Bring tracker state up to `ts` before any read or accrual. Order matters:
+  // a stale session has to be retired at the time it actually ended (which may
+  // be in a previous day) BEFORE rollovers advance the day/week windows,
+  // otherwise its seconds would land in the wrong bucket — or be wiped.
+  _syncTo(ts) {
+    this._closeStaleSession(ts)
+    this._resolveRollovers(ts)
+  }
+
+  // The monitor stopped reporting for longer than the grace window: the machine
+  // suspended, the screen locked, or the poll loop stalled/crashed. Whatever the
+  // cause, we did not observe the foreground during that gap, so we cannot claim
+  // the app was being used. Close the session at the last observation instead of
+  // letting reads extend it to `now` — that extension is what turned an
+  // overnight sleep into ~8h of phantom usage (and blew through screen-time
+  // limits, since block-evaluator reads the same counters).
+  _closeStaleSession(ts) {
+    if (!this._activePkg || this._activeStartedAt == null) return
+    if (this._lastObservedAt == null) return
+    if (ts - this._lastObservedAt <= this._maxObservationGapMs) return
+
+    const end = Math.max(this._lastObservedAt, this._activeStartedAt)
+    const pkg = this._activePkg
+    // Roll over relative to when the session ENDED, so a session that died
+    // before midnight is credited to that day, not to today.
+    this._resolveRollovers(end)
+    this._closeActive(end)
+    if (this._logger && typeof this._logger.log === 'function') {
+      this._logger.log(
+        '[usage-tracker] closed stale session for', pkg,
+        '- unobserved for', Math.round((ts - this._lastObservedAt) / 1000), 's (suspend/lock/stall)'
+      )
+    }
+  }
 
   _closeActive(ts) {
     if (!this._activePkg || this._activeStartedAt == null) {
@@ -204,6 +289,11 @@ class UsageTracker {
     const today = localDayStart(ts)
     const thisWeek = localWeekStart(ts)
     if (today === this._dayStart && thisWeek === this._weekStart) return
+    // Never roll *backwards*. _closeStaleSession replays a past timestamp to
+    // retire a session in the window it actually ended in, and a user-rolled
+    // clock can also move time back; in neither case should we zero the
+    // counters (that would hand the kid a fresh budget).
+    if (today < this._dayStart || thisWeek < this._weekStart) return
 
     // If a session is open across the boundary, split it: credit time up to
     // the boundary to the old window, then restart the session at the

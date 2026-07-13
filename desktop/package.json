@@ -17,6 +17,8 @@
     "smoke": "ELECTRON_DISABLE_SANDBOX=1 PEARGUARD_SMOKE=1 electron --disable-gpu --disable-software-rasterizer .",
     "smoke:ui": "ELECTRON_DISABLE_SANDBOX=1 PEARGUARD_UI_SMOKE=1 electron --disable-gpu --disable-software-rasterizer .",
     "test:enforcement": "node tests/enforcement.smoke.js",
+    "test:usage-sleep": "node tests/usage-sleep.smoke.js",
+    "test": "node tests/enforcement.smoke.js && node tests/usage-sleep.smoke.js",
     "rebuild": "electron-rebuild",
     "build": "node scripts/prepack.js && electron-builder --win",
     "build:linux": "node scripts/prepack.js && electron-builder --linux",

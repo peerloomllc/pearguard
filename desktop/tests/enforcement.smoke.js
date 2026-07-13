@@ -580,16 +580,29 @@ function localNoonToday() {
   return d.getTime()
 }
 
+// ForegroundMonitor emits a 'tick' heartbeat on EVERY 1s poll, not just when the
+// focused app changes, and UsageTracker depends on it: with no observations it
+// refuses to credit elapsed wall-clock, because an unobserved gap is
+// indistinguishable from a suspended machine or a locked screen. (That refusal
+// is the fix — see tests/usage-sleep.smoke.js.) So advancing the fake clock has
+// to drive the heartbeat the way production does.
+function advance(clock, u, ms, packageName, appName = null) {
+  for (let i = 0; i < ms; i += 1000) {
+    clock.t += 1000
+    u.noteObserved({ packageName, appName })
+  }
+}
+
 test('UsageTracker.noteForeground accrues seconds to the previous package', () => {
-  let t = localNoonToday()
-  const u = new UsageTracker({ now: () => t })
+  const clock = { t: localNoonToday() }
+  const u = new UsageTracker({ now: () => clock.t })
   u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-  t += 45_000
+  advance(clock, u, 45_000, 'com.discord', 'Discord')
   u.noteForeground({ packageName: 'com.roblox.client', appName: 'Roblox' })
   assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 45)
   // New session has just started, so ~0 seconds accrued so far.
   assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 0)
-  t += 30_000
+  advance(clock, u, 30_000, 'com.roblox.client', 'Roblox')
   assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 30)
 })
 
@@ -602,23 +615,23 @@ test('UsageTracker includes in-flight session in getDailyUsageSeconds', () => {
 })
 
 test('UsageTracker ignores unmapped foreground (no packageName)', () => {
-  let t = localNoonToday()
-  const u = new UsageTracker({ now: () => t })
+  const clock = { t: localNoonToday() }
+  const u = new UsageTracker({ now: () => clock.t })
   u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-  t += 20_000
+  advance(clock, u, 20_000, 'com.discord', 'Discord')
   u.noteForeground({ packageName: null })
-  t += 60_000
+  advance(clock, u, 60_000, null)
   assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 20)
   assert.strictEqual(u.getLastForegroundPackage(), null)
 })
 
 test('UsageTracker.takeSessions drains and re-opens the active session', () => {
-  let t = localNoonToday()
-  const u = new UsageTracker({ now: () => t })
+  const clock = { t: localNoonToday() }
+  const u = new UsageTracker({ now: () => clock.t })
   u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-  t += 30_000
+  advance(clock, u, 30_000, 'com.discord', 'Discord')
   u.noteForeground({ packageName: 'com.roblox.client', appName: 'Roblox' })
-  t += 20_000
+  advance(clock, u, 20_000, 'com.roblox.client', 'Roblox')
 
   const first = u.takeSessions()
   assert.strictEqual(first.length, 2, 'expected discord-close + roblox-snapshot')
@@ -633,7 +646,7 @@ test('UsageTracker.takeSessions drains and re-opens the active session', () => {
   assert.strictEqual(u.getDailyUsageSeconds('com.roblox.client'), 20)
 
   // Continuing in Roblox — next takeSessions should contain only the new slice.
-  t += 10_000
+  advance(clock, u, 10_000, 'com.roblox.client', 'Roblox')
   const second = u.takeSessions()
   assert.strictEqual(second.length, 1)
   assert.strictEqual(second[0].packageName, 'com.roblox.client')
@@ -643,19 +656,20 @@ test('UsageTracker.takeSessions drains and re-opens the active session', () => {
 })
 
 test('UsageTracker daily rollover zeros daily but preserves weekly', () => {
-  let t = localNoonToday()
-  const u = new UsageTracker({ now: () => t })
+  const clock = { t: localNoonToday() }
+  const u = new UsageTracker({ now: () => clock.t })
   u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-  t += 60_000
+  advance(clock, u, 60_000, 'com.discord', 'Discord')
   u.noteForeground({ packageName: null })  // close the session cleanly
   assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 60)
 
   // Jump forward 24h — daily resets, weekly keeps the 60s (same week unless
   // we also cross Sunday; localNoonToday + 24h stays inside the same week as
   // long as "today" isn't Saturday). Check both and adjust expectations.
+  // No session is open here, so the 24h jump needs no heartbeat.
   const startOfThisWeek = localWeekStart(localNoonToday())
-  t = localNoonToday() + 24 * 3600 * 1000
-  const acrossWeek = localWeekStart(t) !== startOfThisWeek
+  clock.t = localNoonToday() + 24 * 3600 * 1000
+  const acrossWeek = localWeekStart(clock.t) !== startOfThisWeek
 
   assert.strictEqual(u.getDailyUsageSeconds('com.discord'), 0)
   const weekly = u.getWeeklyUsageAll().find((x) => x.packageName === 'com.discord')
@@ -672,10 +686,11 @@ test('UsageTracker splits a session that straddles local midnight', () => {
   tomorrow.setHours(0, 0, 0, 0)
   tomorrow.setDate(tomorrow.getDate() + 1)
   const midnight = tomorrow.getTime()
-  let t = midnight - 30 * 60 * 1000
-  const u = new UsageTracker({ now: () => t })
+  const clock = { t: midnight - 30 * 60 * 1000 }
+  const u = new UsageTracker({ now: () => clock.t })
   u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-  t = midnight + 10 * 60 * 1000
+  // 40 minutes of real, observed foreground use straddling the boundary.
+  advance(clock, u, 40 * 60 * 1000, 'com.discord', 'Discord')
   u.noteForeground({ packageName: null })  // close
 
   // After midnight, the old day is gone — daily counter for discord is the
@@ -686,13 +701,13 @@ test('UsageTracker splits a session that straddles local midnight', () => {
 test('UsageTracker persists daily/weekly across instantiations on the same day', () => {
   const filePath = tmpUsagePath()
   try {
-    let t = localNoonToday()
-    const a = new UsageTracker({ filePath, now: () => t })
+    const clock = { t: localNoonToday() }
+    const a = new UsageTracker({ filePath, now: () => clock.t })
     a.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-    t += 120_000
+    advance(clock, a, 120_000, 'com.discord', 'Discord')
     a.endActive()  // persists
 
-    const b = new UsageTracker({ filePath, now: () => t })
+    const b = new UsageTracker({ filePath, now: () => clock.t })
     assert.strictEqual(b.getDailyUsageSeconds('com.discord'), 120)
   } finally {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
@@ -721,10 +736,10 @@ test('UsageTracker drops stored daily totals from a prior day on load', () => {
 })
 
 test('UsageTracker getDailyUsageAll surfaces display names', () => {
-  let t = localNoonToday()
-  const u = new UsageTracker({ now: () => t })
+  const clock = { t: localNoonToday() }
+  const u = new UsageTracker({ now: () => clock.t })
   u.noteForeground({ packageName: 'com.discord', appName: 'Discord' })
-  t += 30_000
+  advance(clock, u, 30_000, 'com.discord', 'Discord')
   u.noteForeground({ packageName: 'com.roblox.client', appName: 'Roblox' })
   const list = u.getDailyUsageAll()
   const discord = list.find((x) => x.packageName === 'com.discord')
@@ -991,6 +1006,9 @@ test('Controller daily-limit crossing flips an in-flight session to blocked', as
     _used: 0,
     _last: null,
     noteForeground(info) { this._last = info.packageName },
+    // The controller now drives a per-poll observation heartbeat; the stub has
+    // to answer it. Accrual is faked via _used, so this is a no-op.
+    noteObserved() {},
     getDailyUsageSeconds() { return this._used },
     getDailyUsageAll() { return [] },
     getWeeklyUsageAll() { return [] },

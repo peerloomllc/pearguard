@@ -4,6 +4,10 @@ import Avatar from './Avatar.jsx';
 import Icon from '../icons.js';
 import Badge from './primitives/Badge.jsx';
 
+// Shared by the lock icon and the alert badges stacked beneath it, so the two
+// can't drift apart and start overlapping again.
+const LOCK_ICON_SIZE = 20;
+
 function formatSeconds(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -58,30 +62,54 @@ export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
       >
         <Icon
           name={locked ? 'LockSimple' : 'LockSimpleOpen'}
-          size={20}
+          size={LOCK_ICON_SIZE}
           color={locked ? colors.error : colors.text.muted}
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
+      {/* Alert badges used to sit at the end of the name row, which put them in the
+          same band as the absolutely-positioned lock icon above — the padlock
+          overlapped them. Stack them directly BELOW the lock instead, sharing its
+          right edge so the two read as one column. */}
+      {hasAlerts && (
+        <div style={{
+          position: 'absolute',
+          top: `${spacing.sm + LOCK_ICON_SIZE + spacing.xs}px`,
+          right: `${spacing.sm}px`,
+          display: 'flex',
+          gap: `${spacing.xs}px`,
+        }}>
+          {bypassAlerts > 0 && <Badge color={colors.error}>{bypassAlerts}</Badge>}
+          {pendingApprovals > 0 && <Badge color={colors.secondary}>{pendingApprovals}</Badge>}
+          {pendingTimeRequests > 0 && <Badge color={colors.primary}>{pendingTimeRequests}</Badge>}
+        </div>
+      )}
+
+      {/* paddingRight reserves the lock icon's column so a long child name can't
+          slide underneath it now that the badges no longer hold that space open. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: `${spacing.md}px`,
+        marginBottom: `${spacing.sm}px`,
+        paddingRight: `${LOCK_ICON_SIZE + spacing.sm}px`,
+      }}>
         <Avatar avatar={child.avatarThumb} name={displayName} size={32} />
         <span style={{
           width: '10px', height: '10px', borderRadius: '50%',
           backgroundColor: isOnline ? colors.success : colors.text.muted,
           flexShrink: 0,
         }} />
-        <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1 }}>
+        <span style={{
+          ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
           {displayName}
         </span>
-        {hasAlerts && (
-          <div style={{ display: 'flex', gap: `${spacing.xs}px` }}>
-            {bypassAlerts > 0 && <Badge color={colors.error}>{bypassAlerts}</Badge>}
-            {pendingApprovals > 0 && <Badge color={colors.secondary}>{pendingApprovals}</Badge>}
-            {pendingTimeRequests > 0 && <Badge color={colors.primary}>{pendingTimeRequests}</Badge>}
-          </div>
-        )}
       </div>
-      <div style={{ ...typography.caption, color: statusColor, marginBottom: `${spacing.xs}px` }}>
+      <div style={{
+        ...typography.caption, color: statusColor, marginBottom: `${spacing.xs}px`,
+        // The badges now live in this band, right-aligned; keep the status text clear.
+        paddingRight: hasAlerts ? `${spacing.xl * 2}px` : 0,
+      }}>
         {statusText}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', ...typography.caption, color: colors.text.secondary }}>

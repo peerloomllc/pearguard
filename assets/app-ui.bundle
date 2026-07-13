@@ -14827,6 +14827,7 @@
 
   // src/ui/components/ChildCard.jsx
   var import_jsx_runtime7 = __toESM(require_jsx_runtime());
+  var LOCK_ICON_SIZE = 20;
   function formatSeconds(seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor(seconds % 3600 / 60);
@@ -14892,13 +14893,30 @@
                 Icon,
                 {
                   name: locked ? "LockSimple" : "LockSimpleOpen",
-                  size: 20,
+                  size: LOCK_ICON_SIZE,
                   color: locked ? colors.error : colors.text.muted
                 }
               )
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.md}px`, marginBottom: `${spacing2.sm}px` }, children: [
+          hasAlerts && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: {
+            position: "absolute",
+            top: `${spacing2.sm + LOCK_ICON_SIZE + spacing2.xs}px`,
+            right: `${spacing2.sm}px`,
+            display: "flex",
+            gap: `${spacing2.xs}px`
+          }, children: [
+            bypassAlerts > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { color: colors.error, children: bypassAlerts }),
+            pendingApprovals > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { color: colors.secondary, children: pendingApprovals }),
+            pendingTimeRequests > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { color: colors.primary, children: pendingTimeRequests })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: {
+            display: "flex",
+            alignItems: "center",
+            gap: `${spacing2.md}px`,
+            marginBottom: `${spacing2.sm}px`,
+            paddingRight: `${LOCK_ICON_SIZE + spacing2.sm}px`
+          }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Avatar, { avatar: child.avatarThumb, name: displayName, size: 32 }),
             /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: {
               width: "10px",
@@ -14907,14 +14925,23 @@
               backgroundColor: isOnline ? colors.success : colors.text.muted,
               flexShrink: 0
             } }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...typography2.subheading, color: colors.text.primary, fontWeight: "600", flex: 1 }, children: displayName }),
-            hasAlerts && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { display: "flex", gap: `${spacing2.xs}px` }, children: [
-              bypassAlerts > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { color: colors.error, children: bypassAlerts }),
-              pendingApprovals > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { color: colors.secondary, children: pendingApprovals }),
-              pendingTimeRequests > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { color: colors.primary, children: pendingTimeRequests })
-            ] })
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: {
+              ...typography2.subheading,
+              color: colors.text.primary,
+              fontWeight: "600",
+              flex: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap"
+            }, children: displayName })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: { ...typography2.caption, color: statusColor, marginBottom: `${spacing2.xs}px` }, children: statusText }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: {
+            ...typography2.caption,
+            color: statusColor,
+            marginBottom: `${spacing2.xs}px`,
+            // The badges now live in this band, right-aligned; keep the status text clear.
+            paddingRight: hasAlerts ? `${spacing2.xl * 2}px` : 0
+          }, children: statusText }),
           /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", ...typography2.caption, color: colors.text.secondary }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { display: "flex", alignItems: "center", gap: `${spacing2.xs}px` }, children: [
               currentAppIcon && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("img", { src: `data:image/png;base64,${currentAppIcon}`, style: { width: "16px", height: "16px", borderRadius: "3px" } }),

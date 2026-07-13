@@ -3003,7 +3003,11 @@ test('GnomeExtensionWatchdog stays quiet while state is ACTIVE', async () => {
   assert.strictEqual(tampers, 0)
 })
 
-test('GnomeExtensionWatchdog fires tamper + re-enables when state is INITIALIZED', async () => {
+// Reports + repairs when the extension isn't running — but the REASON depends on
+// whether the child actually turned it off. This test used to assert
+// 'extension-disabled' for a bare `State: INITIALIZED` with no Enabled: line,
+// i.e. it asserted that we accuse the child on no evidence. That was the bug.
+async function runWatchdogOnce(infoStdout) {
   const calls = []
   let tamperPayload = null
   const watchdog = new GnomeExtensionWatchdog({
@@ -3012,14 +3016,27 @@ test('GnomeExtensionWatchdog fires tamper + re-enables when state is INITIALIZED
     logger: { log() {}, warn() {} },
     runExtensions: async (args) => {
       calls.push(args.join(' '))
-      if (args[0] === 'info') return { ok: true, stdout: '  State: INITIALIZED\n', stderr: '' }
+      if (args[0] === 'info') return { ok: true, stdout: infoStdout, stderr: '' }
       return { ok: true, stdout: '', stderr: '' }
     },
   })
   await watchdog._check()
-  assert.ok(tamperPayload, 'expected tamper payload')
+  return { tamperPayload, calls }
+}
+
+test('GnomeExtensionWatchdog reports the child ONLY when they turned it off', async () => {
+  const { tamperPayload, calls } = await runWatchdogOnce('  Enabled: No\n  State: INITIALIZED\n')
+  assert.ok(tamperPayload, 'expected a report')
   assert.strictEqual(tamperPayload.reason, 'extension-disabled')
-  assert.ok(calls.some((c) => c.startsWith('enable')), 'expected an enable call; got: ' + calls.join(', '))
+  assert.ok(calls.some((c) => c.startsWith('enable')), 'should still try to repair')
+})
+
+test('GnomeExtensionWatchdog does NOT blame the child for an unloaded extension', async () => {
+  // Enabled: Yes + not running == the Shell never loaded it. Nobody tampered.
+  const { tamperPayload, calls } = await runWatchdogOnce('  Enabled: Yes\n  State: INACTIVE\n')
+  assert.ok(tamperPayload, 'parent must still be told blocking is off')
+  assert.strictEqual(tamperPayload.reason, 'extension-not-loaded')
+  assert.ok(calls.some((c) => c.startsWith('enable')), 'should still try to repair')
 })
 
 test('GnomeExtensionWatchdog throttles repeated tamper reports', async () => {
@@ -3411,4 +3428,38 @@ test('but an unlocked session with a dead D-Bus really is broken', () => {
   })
   assert.strictEqual(r.ok, false)
   assert.strictEqual(r.reason, REASON_NOT_LOADED)
+})
+
+// --- watchdog must not falsely accuse the child ----------------------------
+const { classifyFailure, extractEnabled } = require('../src/main/gnome-extension-watchdog')
+
+test('extractEnabled parses the Enabled: line', () => {
+  assert.strictEqual(extractEnabled('  Enabled: Yes\n  State: ACTIVE'), true)
+  assert.strictEqual(extractEnabled('  Enabled: No\n  State: INITIALIZED'), false)
+  assert.strictEqual(extractEnabled('  State: ACTIVE'), null)   // older GNOME
+  assert.strictEqual(extractEnabled(null), null)
+})
+
+// THE bug, reproduced: this is the exact state observed on the live Debian child
+// (Enabled: Yes, State: INACTIVE) that pushed "Ben disabled PearGuard's
+// app-blocking extension" to the parent. Ben had done nothing.
+test('enabled-but-INACTIVE is NOT tampering (the false accusation)', () => {
+  assert.strictEqual(classifyFailure('INACTIVE', true), 'extension-not-loaded')
+})
+
+test('only an affirmative Enabled:No counts as the child disabling it', () => {
+  assert.strictEqual(classifyFailure('INITIALIZED', false), 'extension-disabled')
+  assert.strictEqual(classifyFailure('INACTIVE', false), 'extension-disabled')
+})
+
+test('crashes and version mismatches are the app\'s fault, not the child\'s', () => {
+  assert.strictEqual(classifyFailure('ERROR', true), 'extension-error')
+  assert.strictEqual(classifyFailure('OUT_OF_DATE', true), 'extension-out-of-date')
+})
+
+test('unknown enabled-state fails towards NOT accusing the child', () => {
+  // Older GNOME without an Enabled: line -> enabled === null. A missed
+  // accusation is far cheaper than a false one.
+  assert.strictEqual(classifyFailure('INACTIVE', null), 'extension-not-loaded')
+  assert.strictEqual(classifyFailure('SOMETHING_NEW', null), 'extension-not-loaded')
 })

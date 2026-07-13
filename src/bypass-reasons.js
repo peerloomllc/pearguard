@@ -20,10 +20,17 @@
 const NON_TAMPER_REASONS = new Set([
   'linux:unsupported-compositor',
   'linux:extension-not-loaded',
+  'linux:extension-out-of-date',
+  'linux:extension-error',
+  'linux:extension-missing',
 ])
 
+// Delegate to describeBypassReason so there is exactly ONE definition of what
+// counts as tampering. Deriving it from the Set instead would silently disagree
+// with the wording for any reason not listed there (e.g. an unknown one, which
+// the switch deliberately treats as "not the child's fault").
 function isTamperReason(reason) {
-  return !NON_TAMPER_REASONS.has(String(reason || ''))
+  return describeBypassReason(reason, 'x').tamper
 }
 
 /**
@@ -84,23 +91,46 @@ function describeBypassReason(reason, childName) {
           + 'Blocking is inactive until then.',
         tamper: false,
       }
+    case 'linux:extension-out-of-date':
+      return {
+        title: "App blocking is off on " + who + "'s PC",
+        body: "PearGuard's app-blocking extension isn't compatible with the version of GNOME on this PC, "
+          + 'so blocking is inactive. A PearGuard update is needed — ' + who + ' did not do this.',
+        tamper: false,
+      }
+    case 'linux:extension-error':
+      return {
+        title: "App blocking is off on " + who + "'s PC",
+        body: "PearGuard's app-blocking extension crashed, so blocking is inactive. "
+          + 'Restarting the PC usually fixes it. This is a PearGuard fault, not something ' + who + ' did.',
+        tamper: false,
+      }
+    case 'linux:extension-missing':
+      // Could be a destructive child OR a failed install — we genuinely cannot
+      // tell from here, so state the fact and assign no blame.
+      return {
+        title: "App blocking is off on " + who + "'s PC",
+        body: "PearGuard's app-blocking extension is missing, so blocking is inactive. "
+          + 'PearGuard will try to reinstall it.',
+        tamper: false,
+      }
+
+    // The one Linux extension case we CAN attribute: the switch was turned off.
+    case 'linux:extension-disabled':
+      return {
+        title: who + "'s parental controls disabled",
+        body: who + " turned off PearGuard's app-blocking extension.",
+        tamper: true,
+      }
 
     default:
-      // Includes the GNOME extension-watchdog reasons ('linux:extension-*'),
-      // which DO mean the child disabled or deleted the blocking extension.
-      if (r.startsWith('linux:extension')) {
-        return {
-          title: who + "'s parental controls disabled",
-          body: who + " disabled PearGuard's app-blocking extension.",
-          tamper: true,
-        }
-      }
-      // Unknown/legacy reason: say the true, minimal thing rather than guessing
-      // at a cause and risking a false accusation.
+      // Unknown/legacy reason: state the true, minimal thing. Do NOT guess at a
+      // cause — inventing "your child disabled protection" for a reason we don't
+      // recognise is exactly the false accusation this module exists to prevent.
       return {
-        title: 'Protection disabled',
+        title: 'App blocking is off',
         body: 'App blocking is not running on ' + who + "'s device.",
-        tamper: true,
+        tamper: false,
       }
   }
 }

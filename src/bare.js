@@ -17,6 +17,9 @@ const Hyperswarm = require('hyperswarm')
 const sodium     = require('sodium-native')
 const b4a        = require('b4a')
 const { generateKeypair, sign, verify } = require('./identity')
+// `log` is silent unless the host enables it on init (see src/log.js). warn/error
+// stay unconditional — those are the ones worth having in production.
+const { log, setLogEnabled } = require('./log')
 const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
@@ -63,6 +66,10 @@ BareKit.IPC.on('data', chunk => {
       continue
     }
     if (msg.method === 'init') {
+      // The host owns the debug decision (__DEV__ on RN, !app.isPackaged on
+      // Electron). Absent flag => stay quiet, so a host that forgets to pass it
+      // fails safe into production behaviour rather than shipping verbose logs.
+      setLogEnabled(msg.debug === true)
       init(msg.dataDir).catch(e => console.error('[bare] init error:', e.message))
     } else {
       handleDispatch(msg.method, msg.args ?? [], msg.id)
@@ -182,7 +189,7 @@ async function init (dataDir, attempt = 0) {
       const healed = { ...peersMissingTopic[0].value, swarmTopic: orphanTopics[0] }
       await db.put(peersMissingTopic[0].key, healed).catch(() => {})
       activePeerTopics.add(orphanTopics[0])
-      console.log('[bare] healed peer', peersMissingTopic[0].key, 'with topic', orphanTopics[0].slice(0, 8))
+      log('[bare] healed peer', peersMissingTopic[0].key, 'with topic', orphanTopics[0].slice(0, 8))
     } else if (orphanTopics.length > 1) {
       // Ambiguous (multiple orphan topics, e.g. install/pair cycles left leftovers):
       // we can't know which topic belongs to which peer. Drop the orphans and their
@@ -208,11 +215,11 @@ async function init (dataDir, attempt = 0) {
     const joinedAt = typeof value.joinedAt === 'number' ? value.joinedAt : 0
     const ageMs = joinedAt > 0 ? now - joinedAt : Infinity
     if (isOrphan && ageMs >= PRUNE_ORPHAN_AFTER_MS) {
-      console.log('[bare] pruning orphaned topic at startup:', value.topicHex.slice(0, 8))
+      log('[bare] pruning orphaned topic at startup:', value.topicHex.slice(0, 8))
       await db.del(key).catch(() => {})
     } else {
       if (isOrphan) {
-        console.log('[bare] keeping recent orphan topic (joined <7d ago):', value.topicHex.slice(0, 8))
+        log('[bare] keeping recent orphan topic (joined <7d ago):', value.topicHex.slice(0, 8))
       }
       topicHexSet.add(value.topicHex)
     }
@@ -221,7 +228,7 @@ async function init (dataDir, attempt = 0) {
   // never persisted (older pairings predate topic persistence — #144).
   for (const t of activePeerTopics) topicHexSet.add(t)
   const topicHexes = [...topicHexSet]
-  console.log('[bare] rejoining', topicHexes.length, 'topic(s) on startup (async)')
+  log('[bare] rejoining', topicHexes.length, 'topic(s) on startup (async)')
   // Fire-and-forget: swarm.flush() blocks ~5s per topic on DHT ack, which would
   // delay the 'ready' event (and therefore the UI) by that much. Peers reconnect
   // as soon as the joins complete in the background.
@@ -337,7 +344,7 @@ async function init (dataDir, attempt = 0) {
     for (const key of toDelete) await db.del(key)
     for (const [key, sessions] of toWrite) await db.put(key, sessions)
     await db.put('_migration:sessionLocalDates', { done: true, at: Date.now() })
-    if (toDelete.length > 0) console.log('[bare] migrated', toDelete.length, 'session keys from UTC to local dates')
+    if (toDelete.length > 0) log('[bare] migrated', toDelete.length, 'session keys from UTC to local dates')
   }
 
   migrateSessionDatesToLocal().catch(e => console.error('[bare] session date migration error:', e))
@@ -353,12 +360,12 @@ async function init (dataDir, attempt = 0) {
     try {
       const { total } = await storageBreakdown()
       if (total < AUTO_RECLAIM_THRESHOLD) return
-      console.log('[bare] auto-reclaim triggered: on-disk', total, 'bytes exceeds threshold')
+      log('[bare] auto-reclaim triggered: on-disk', total, 'bytes exceeds threshold')
       // keepAll: compact the append-only log but preserve all live keys. The
       // user-facing "Reclaim Storage" button is documented as destructive;
       // the automatic path must not silently drop usage reports or sessions.
       const result = await rebuildLocalDb({ keepAll: true })
-      console.log('[bare] auto-reclaim freed', result.freed, 'bytes (kept', result.kept, 'dropped', result.dropped + ')')
+      log('[bare] auto-reclaim freed', result.freed, 'bytes (kept', result.kept, 'dropped', result.dropped + ')')
       send({ type: 'event', event: 'storage:autoReclaimed', data: result })
     } catch (e) {
       console.error('[bare] auto-reclaim error:', e.message)
@@ -603,7 +610,7 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         if (cpk) {
           await db.put('policy:' + cpk, msg.payload)
           send({ type: 'event', event: 'policy:updated', data: msg.payload })
-          console.log('[bare] parent stored relayed policy for child', cpk.slice(0, 8), 'v' + msg.payload.version)
+          log('[bare] parent stored relayed policy for child', cpk.slice(0, 8), 'v' + msg.payload.version)
         }
       } else {
         await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from)
@@ -635,12 +642,12 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       await handleAppDecision(msg.payload, db, send, sendToAllParents)
       break
     case 'request:resolved':
-      console.log('[bare] received request:resolved from', msg.from?.slice(0, 8), 'id:', msg.payload?.requestId?.slice(0, 20), 'status:', msg.payload?.status)
+      log('[bare] received request:resolved from', msg.from?.slice(0, 8), 'id:', msg.payload?.requestId?.slice(0, 20), 'status:', msg.payload?.status)
       await handleRequestResolved(msg.payload, db, send, msg.from)
       break
     case 'requests:syncResolved': {
       // Parent is asking for resolved request statuses (#122 pull-based sync).
-      console.log('[bare] received requests:syncResolved from', msg.from?.slice(0, 8))
+      log('[bare] received requests:syncResolved from', msg.from?.slice(0, 8))
       const resolvedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
       for await (const { value } of db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
         if (!value || value.status === 'pending') continue
@@ -716,7 +723,7 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         await db.put(dtKey, { date: day.date, apps: day.apps, updatedAt: reportTs })
         dtWrote++
       }
-      if (dtWrote + dtSkipped > 0) console.log('[bare] dailyTotals:', dtWrote, 'written,', dtSkipped, 'unchanged for', childPublicKey.slice(0, 8))
+      if (dtWrote + dtSkipped > 0) log('[bare] dailyTotals:', dtWrote, 'written,', dtSkipped, 'unchanged for', childPublicKey.slice(0, 8))
       // Apply parent-local exclusions to the event payload so Dashboard and
       // Usage tab subscribers see hidden packages stripped and the recomputed
       // todayScreenTimeSeconds. Storage above keeps the unfiltered data so
@@ -936,7 +943,7 @@ function sendToPeer (remoteKeyHex, msg) {
  */
 async function sendToAllParents (message, excludeKey) {
   if (parentPeers.size === 0) {
-    console.log('[bare] sendToAllParents: no parents connected, queuing', message.type)
+    log('[bare] sendToAllParents: no parents connected, queuing', message.type)
     await queueMessage(message, db)
     return
   }
@@ -947,7 +954,7 @@ async function sendToAllParents (message, excludeKey) {
     if (excludeKey && ik === excludeKey) continue
     try {
       pp.conn.write(payload)
-      console.log('[bare] sendToAllParents:', message.type, 'sent to parent', ik.slice(0, 8))
+      log('[bare] sendToAllParents:', message.type, 'sent to parent', ik.slice(0, 8))
       sentToAny = true
     } catch (e) {
       console.warn('[bare] sendToAllParents: write failed for parent', ik.slice(0, 8), e.message)
@@ -955,7 +962,7 @@ async function sendToAllParents (message, excludeKey) {
     }
   }
   if (!sentToAny) {
-    console.log('[bare] sendToAllParents: no eligible recipients, queuing', message.type)
+    log('[bare] sendToAllParents: no eligible recipients, queuing', message.type)
     await queueMessage(message, db)
   }
 }
@@ -970,7 +977,7 @@ async function flushPendingMessages (conn) {
     conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
   })
   if (count > 0) {
-    console.log('[bare] flushed', count, 'queued messages to parent')
+    log('[bare] flushed', count, 'queued messages to parent')
   }
 }
 
@@ -1026,7 +1033,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
       }
     }
     if (matchesFreshInvite) {
-      console.log('[bare] clearing obsolete block on fresh invite for peer:', peerIdentityKeyHex.slice(0, 8))
+      log('[bare] clearing obsolete block on fresh invite for peer:', peerIdentityKeyHex.slice(0, 8))
       await db.del('blocked:' + peerIdentityKeyHex).catch(() => {})
     } else {
       console.warn('[bare] rejected hello from blocked peer:', peerIdentityKeyHex.slice(0, 8))
@@ -1054,7 +1061,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
   if (!existingRecord) {
     for await (const { key, value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
       if (value && value.noiseKey === remoteKeyHex && value.publicKey !== peerIdentityKeyHex) {
-        console.log('[bare] removing stale peer entry that claimed this noise key:', value.publicKey?.slice(0, 8))
+        log('[bare] removing stale peer entry that claimed this noise key:', value.publicKey?.slice(0, 8))
         await db.del(key).catch(() => {})
         if (value.publicKey) knownPeerKeys.delete(value.publicKey)
       }
@@ -1151,7 +1158,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
   // lingers in the peers map (#74).
   for (const [existingNoiseKey, existingPeer] of peers) {
     if (existingNoiseKey !== remoteKeyHex && existingPeer.identityKey === peerIdentityKeyHex) {
-      console.log('[bare] evicting stale peer entry for', peerIdentityKeyHex.slice(0, 8), 'noise:', existingNoiseKey.slice(0, 8))
+      log('[bare] evicting stale peer entry for', peerIdentityKeyHex.slice(0, 8), 'noise:', existingNoiseKey.slice(0, 8))
       peers.delete(existingNoiseKey)
       try { existingPeer.conn.destroy() } catch (_e) {}
     }
@@ -1165,7 +1172,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
   }
 
   const isFirstPairing = !existingRecord
-  console.log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName, isFirstPairing ? '(new)' : '(reconnect)')
+  log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName, isFirstPairing ? '(new)' : '(reconnect)')
   send({ type: 'event', event: 'peer:paired', data: peerRecord })
 
   // Notify the parent UI that a child has connected
@@ -1173,7 +1180,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
     // Both parents share the child's swarm topic. Skip pairing if the incoming
     // peer is another parent - only pair with children.
     if (msg.payload?.mode === 'parent') {
-      console.log('[bare] ignoring hello from fellow parent:', peerIdentityKeyHex.slice(0, 12))
+      log('[bare] ignoring hello from fellow parent:', peerIdentityKeyHex.slice(0, 12))
       return
     }
 
@@ -1189,7 +1196,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
     if (storedPolicy && storedPolicy.value) {
       try {
         sendToPeer(remoteKeyHex, { type: 'policy:update', payload: storedPolicy.value })
-        console.log('[bare] sent stored policy to child:', peerIdentityKeyHex.slice(0, 12))
+        log('[bare] sent stored policy to child:', peerIdentityKeyHex.slice(0, 12))
       } catch (e) {
         console.warn('[bare] could not send stored policy:', e.message)
       }
@@ -1209,7 +1216,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
           }
         }
         if (missed.length > 0) {
-          console.log('[bare] backfilling', missed.length, 'unnotified request(s) for child:', peerIdentityKeyHex.slice(0, 12))
+          log('[bare] backfilling', missed.length, 'unnotified request(s) for child:', peerIdentityKeyHex.slice(0, 12))
           for (const req of missed) {
             send({ type: 'event', event: 'time:request:received', data: req })
           }
@@ -1277,7 +1284,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
       if (currentPolicy && currentPolicy.value) {
         const signed = signMessage({ type: 'policy:update', payload: currentPolicy.value }, identity)
         conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
-        console.log('[bare] pushed current policy to reconnecting parent', peerIdentityKeyHex.slice(0, 8), 'v' + currentPolicy.value.version)
+        log('[bare] pushed current policy to reconnecting parent', peerIdentityKeyHex.slice(0, 8), 'v' + currentPolicy.value.version)
       }
     } catch (e) {
       console.warn('[bare] could not push current policy to parent:', e.message)
@@ -1309,7 +1316,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
         conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
         resent++
       }
-      if (resent > 0) console.log('[bare] re-sent', resent, 'pending request(s) to parent on reconnect')
+      if (resent > 0) log('[bare] re-sent', resent, 'pending request(s) to parent on reconnect')
     } catch (e) {
       console.warn('[bare] pending request resend failed:', e.message)
     }
@@ -1329,7 +1336,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
         conn.write(Buffer.from(JSON.stringify(resolved) + '\n'))
         backfilled++
       }
-      if (backfilled > 0) console.log('[bare] backfilled', backfilled, 'resolved request(s) to parent on reconnect')
+      if (backfilled > 0) log('[bare] backfilled', backfilled, 'resolved request(s) to parent on reconnect')
     } catch (e) {
       console.warn('[bare] resolved request backfill failed:', e.message)
     }

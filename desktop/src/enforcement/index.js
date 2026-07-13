@@ -68,6 +68,11 @@ class EnforcementController extends EventEmitter {
     this._pinVerified = null  // { expiresAt }
 
     this.monitor.on('foreground-changed', (info) => this._onForegroundChanged(info))
+    // Every poll, not just changes: keeps the usage tracker's observation clock
+    // fresh so it can tell "still in the foreground" from "we stopped looking".
+    this.monitor.on('tick', () => this._onMonitorTick())
+    // The foreground vanished (workstation locked / screen off) — stop accruing.
+    this.monitor.on('foreground-lost', () => this.usage.noteObserved({ packageName: null }))
     this.monitor.on('error', (err) => this._logger.warn('[enforcement] active-win error:', err.message))
 
     // Re-evaluate when policy changes — a parent toggling status, lock, or
@@ -266,20 +271,34 @@ class EnforcementController extends EventEmitter {
       }
     }
 
+    // Feed the usage tracker. Unmapped exes are recorded as null so the
+    // previous session closes cleanly without accruing to an unknown bucket.
+    const policy = this.policyCache.getPolicy()
+    const appName = (packageName && policy && policy.apps && policy.apps[packageName] && policy.apps[packageName].appName)
+      || info.ownerName || exeBasename || null
+
     this._lastForeground = {
       exePath: info.exePath,
       exeBasename,
       pid: info.pid,
       title: info.title,
       packageName,
+      appName,
     }
-    // Feed the usage tracker. Unmapped exes are recorded as null so the
-    // previous session closes cleanly without accruing to an unknown bucket.
-    const policy = this.policyCache.getPolicy()
-    const appName = (packageName && policy && policy.apps && policy.apps[packageName] && policy.apps[packageName].appName)
-      || info.ownerName || exeBasename || null
     this.usage.noteForeground({ packageName, appName })
     this._evaluateAndApply()
+  }
+
+  // Fired on every monitor poll. Refreshes the usage tracker's observation
+  // clock, and lets it reopen a session that the stale guard or a screen-lock
+  // closed while the same app stayed focused (foreground-changed only fires on
+  // a *change*, so nothing else would ever restart accrual).
+  _onMonitorTick() {
+    const fg = this._lastForeground
+    this.usage.noteObserved({
+      packageName: fg ? fg.packageName : null,
+      appName: fg ? fg.appName : null,
+    })
   }
 
   // Re-run the evaluator against whatever exe is currently in the foreground,

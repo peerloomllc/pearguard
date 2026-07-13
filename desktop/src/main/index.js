@@ -7,7 +7,7 @@ if (process.platform === 'linux') {
 
 const path = require('path')
 const fs = require('fs')
-const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, clipboard, dialog } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, clipboard, dialog, powerMonitor } = require('electron')
 
 // Tee console output to a rolling log file. Desktop shortcuts launch
 // electron.exe directly with no stdout redirection, so without this the only
@@ -648,6 +648,25 @@ app.whenReady().then(() => {
         path.join(app.getPath('userData'), 'exemap.json'),
       ),
     })
+
+    // Close the in-flight usage session the moment the machine suspends or the
+    // screen locks. The foreground monitor's poll timer simply stops firing
+    // while suspended, so without this the session stays open and the next read
+    // after wake credits the entire sleep as foreground usage — an overnight
+    // suspend with a browser focused showed up as ~8h of usage and burned
+    // through the screen-time cap. UsageTracker's stale-observation guard also
+    // catches this, but these events give an exact boundary instead of losing
+    // the grace window. Accrual resumes on the next poll after resume/unlock.
+    for (const event of ['suspend', 'lock-screen']) {
+      powerMonitor.on(event, () => {
+        console.log('[main] power event:', event, '- closing active usage session')
+        try {
+          enforcement.usage.endActive()
+        } catch (e) {
+          console.warn('[main] endActive on', event, 'failed:', e.message)
+        }
+      })
+    }
 
     // Countdown notifications for daily limits and approaching schedules.
     // Mirrors Android's pre-expiry warnings (EnforcementService.check*Warnings)

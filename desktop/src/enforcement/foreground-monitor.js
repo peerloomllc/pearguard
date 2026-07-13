@@ -102,7 +102,19 @@ class ForegroundMonitor extends EventEmitter {
     this._inflight = true
     try {
       const win = await this._activeWin()
-      if (!win || !win.owner) return
+      if (!win || !win.owner) {
+        // No focusable window: the workstation is locked, the screen is off, or
+        // active-win couldn't read the desktop. Previously this returned
+        // silently, leaving the usage tracker's session open so it kept
+        // accruing idle time against the last-focused app for as long as the
+        // machine sat locked. Tell listeners so the session is closed.
+        // Clearing _lastKey means returning to the same app after unlocking
+        // re-emits foreground-changed (reopening the session, re-evaluating any
+        // block) rather than being swallowed as "no change".
+        this._lastKey = null
+        this.emit('foreground-lost')
+        return
+      }
       const exePath = win.owner.path || ''
       const pid = win.owner.processId
       const title = win.title || ''
@@ -117,6 +129,12 @@ class ForegroundMonitor extends EventEmitter {
           this.emit('app-first-seen', { exePath, exeBasename, title, ownerName })
         }
       }
+
+      // Heartbeat on EVERY successful poll, not just on a change. The usage
+      // tracker needs proof it is still observing the foreground; without it,
+      // "app still open" and "we stopped looking" (suspend/stall) are
+      // indistinguishable and the open session silently accrues the gap.
+      this.emit('tick', { exePath, pid, title, ownerName })
 
       const key = exePath + '|' + pid
       if (key === this._lastKey) return

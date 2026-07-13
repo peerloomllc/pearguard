@@ -13,6 +13,25 @@
 // Returned shape matches active-win's so ForegroundMonitor doesn't care which
 // backend produced it:
 //   { platform: 'linux', title, id?, owner: { name, processId, path } }
+//
+// LOCK-SCREEN SAFETY — DO NOT BREAK THIS (verified on GNOME Wayland 2026-07-13).
+// Electron's powerMonitor 'lock-screen' event is macOS/Windows only, so on Linux
+// nothing tells the usage tracker that the screen locked. The only thing that
+// stops UsageTracker accruing the whole lock as foreground time is that this
+// adapter returns null while locked: GNOME disables extensions on the lock
+// screen (our metadata.json deliberately has NO "session-modes" key, so it
+// defaults to ["user"]), the bus name is unexported, callGdbus() below fails,
+// and ForegroundMonitor emits 'foreground-lost' -> session closed. Measured:
+// 0 of 30 polls returned a window while locked.
+//
+// If anyone adds "unlock-dialog" to the extension's session-modes (tempting, to
+// "keep enforcing on the lock screen"), GetFocus keeps reporting the last
+// focused window and the child silently accrues hours of phantom usage again —
+// which also burns their screen-time budget, since block-evaluator reads the
+// same counters. A 3-minute lock previously logged 190 phantom seconds. If you
+// ever need the extension alive on the lock screen, you MUST first give the
+// tracker another lock signal (e.g. logind LockedHint or
+// org.freedesktop.ScreenSaver ActiveChanged -> usage.endActive()).
 const { execFile } = require('child_process')
 const fs = require('fs')
 

@@ -9,6 +9,17 @@
 //
 // Targets GNOME 45+ (ESM module loader). Older Shells use the imports.* style
 // and would need a separate extension build.
+//
+// DO NOT add "session-modes" to metadata.json. Its absence means GNOME defaults
+// to ["user"] and DISABLES this extension on the lock screen, which unexports
+// the bus name below. That is load-bearing: PearGuard's usage tracker relies on
+// the resulting D-Bus failure to notice the screen locked, because Electron's
+// powerMonitor 'lock-screen' event does not fire on Linux. Adding
+// "unlock-dialog" would keep GetFocus() reporting the last focused window while
+// the screen is locked, and the child would silently accrue phantom foreground
+// time (measured: 190 phantom seconds across a 3-minute lock) that also eats
+// their screen-time budget. See the LOCK-SCREEN SAFETY note in
+// desktop/src/enforcement/foreground-wayland.js before changing this.
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js'
 import Gio from 'gi://Gio'

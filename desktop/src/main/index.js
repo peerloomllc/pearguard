@@ -572,6 +572,28 @@ app.whenReady().then(() => {
     )
   }
 
+  // vendor/src/ is a gitignored COPY of the repo's src/, and the line below is
+  // what actually runs the worklet. If someone edits src/ and launches without
+  // re-running prepack, the desktop app silently executes the OLD protocol code
+  // while the source they're reading says otherwise — a genuinely nasty class of
+  // bug we've hit before. npm start/smoke now re-vendor automatically, but a bare
+  // `electron .` bypasses those hooks, so shout here too. Dev-only: a packaged
+  // app has no src/ to compare against and the check no-ops.
+  if (!app.isPackaged) {
+    try {
+      const { checkVendorFreshness } = require('../../scripts/check-vendor')
+      const r = checkVendorFreshness()
+      if (!r.ok && !r.skipped) {
+        console.error('[main] *** vendor/src is STALE — running OLD worklet code ***')
+        for (const f of r.drifted) console.error('[main]     drifted: src/' + f)
+        for (const f of r.missing) console.error('[main]     missing: src/' + f)
+        console.error('[main] Fix with: node scripts/prepack.js')
+      }
+    } catch (e) {
+      console.warn('[main] vendor freshness check failed:', e.message)
+    }
+  }
+
   // Load bare AFTER shim is installed so its module-top IPC.on('data') binds
   // to our EventEmitter rather than throwing on undefined BareKit.
   bare = require('../../vendor/src/bare.js')

@@ -835,7 +835,10 @@ app.whenReady().then(() => {
   // created as soon as `ready` fires from bare, so UI calls made during
   // component mount land after dispatch is wired up.
   const dataDir = app.getPath('userData')
-  sendToBare({ method: 'init', dataDir })
+  // Gate the worklet's verbose logs in packaged builds. They're tee'd to the
+  // rolling 5 MB pearguard.log, where per-heartbeat chatter otherwise evicts the
+  // crash forensics the rotation exists to keep. warn/error still come through.
+  sendToBare({ method: 'init', dataDir, debug: !app.isPackaged })
 
   const onReady = async () => {
     // This Windows client is child-only. If no mode is persisted yet, pin it

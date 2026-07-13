@@ -58,6 +58,9 @@ class EnforcementController extends EventEmitter {
     // re-evaluate without waiting for the next monitor tick. This mirrors
     // Android's behavior of dismissing the overlay the moment a grant arrives.
     this._lastForeground = null  // { packageName, exeBasename, title }
+    // Last "<pkg>|allow" / "<pkg>|block:<reason>" we logged, so the 5s
+    // re-evaluate tick doesn't re-emit an identical decision line every time.
+    this._lastDecisionKey = null
     // Visibility tracking for the overlay. We can't use _currentOverlayKey ===
     // null as the "hidden" sentinel because unmapped exes legitimately have
     // packageName === null when blocked by lock or schedule.
@@ -325,15 +328,30 @@ class EnforcementController extends EventEmitter {
       bonusSeconds: this._bonusSecondsForToday(),
     })
 
+    // Log transitions, not ticks. _evaluateAndApply runs on the 5s re-evaluate
+    // timer (and on every policy change), not just on focus changes, so logging
+    // unconditionally emitted the same "allow" line ~17k times a day. That spam
+    // dominated pearguard.log on real children and, since the file rotates at
+    // 5 MB, actively evicted the crash forensics the rotation is there to keep.
+    // Re-log only when the app or the verdict actually changes.
+    const decisionKey = (fg.packageName || fg.exeBasename || '') + '|' +
+      (decision ? 'block:' + (decision.reason || '') : 'allow')
+    const changed = decisionKey !== this._lastDecisionKey
+    this._lastDecisionKey = decisionKey
+
     if (decision) {
-      this._logger.log('[enforcement] BLOCK', {
-        exe: fg.exeBasename, pid: fg.pid, packageName: fg.packageName, title: fg.title, ...decision,
-      })
+      if (changed) {
+        this._logger.log('[enforcement] BLOCK', {
+          exe: fg.exeBasename, pid: fg.pid, packageName: fg.packageName, title: fg.title, ...decision,
+        })
+      }
       this._showOverlay(fg, decision)
     } else {
-      this._logger.log('[enforcement] allow', {
-        exe: fg.exeBasename, pid: fg.pid, packageName: fg.packageName || '(unmapped)',
-      })
+      if (changed) {
+        this._logger.log('[enforcement] allow', {
+          exe: fg.exeBasename, pid: fg.pid, packageName: fg.packageName || '(unmapped)',
+        })
+      }
       this._hideOverlayIfShown()
     }
   }

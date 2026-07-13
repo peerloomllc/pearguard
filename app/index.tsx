@@ -788,7 +788,7 @@ export default function Root () {
       // but the event handlers from the old mount are stale — set dbReady directly here).
       if (_workletStarted && _worklet) {
         setDbReady(true)
-        sendToWorklet({ method: 'init', dataDir })
+        sendToWorklet({ method: 'init', dataDir, debug: __DEV__ })
         return
       }
 
@@ -1023,7 +1023,7 @@ export default function Root () {
       })
 
       // When bare.js loads, it emits 'bareReady' — then we call init
-      onEvent('bareReady', () => sendToWorklet({ method: 'init', dataDir }))
+      onEvent('bareReady', () => sendToWorklet({ method: 'init', dataDir, debug: __DEV__ }))
 
       // When init completes, bare emits 'ready' — dispatch is now initialized
       onEvent('ready', (data) => {

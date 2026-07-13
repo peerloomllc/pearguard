@@ -4,6 +4,8 @@
 // Separated from IPC wiring so it can be unit tested in Node/jest.
 // src/bare.js imports this and wires it to BareKit.IPC.
 
+// Gated by the host on init (see src/log.js); warn/error stay unconditional.
+const { log } = require('./log')
 const { nextScheduleWindow } = require('./policy')
 const { validatePin } = require('./pin-rules')
 
@@ -215,7 +217,7 @@ function createDispatch (ctx) {
             })
             for (let i = 1; i < entries.length; i++) {
               const stale = entries[i]
-              console.log('[bare] auto-dedup parent peer:', stale.displayName, stale.publicKey?.slice(0, 12))
+              log('[bare] auto-dedup parent peer:', stale.displayName, stale.publicKey?.slice(0, 12))
               await ctx.db.del('peers:' + stale.publicKey).catch(() => {})
               await ctx.db.del('pendingParent:' + stale.publicKey).catch(() => {})
               if (ctx.knownPeerKeys) ctx.knownPeerKeys.delete(stale.publicKey)
@@ -283,7 +285,7 @@ function createDispatch (ctx) {
           for (const key of ctx.knownPeerKeys) {
             if (seenKeys.has(key)) continue
             const record = await ctx.db.get('peers:' + key).catch(() => null)
-            console.log('[bare] children:list fallback for', key.slice(0, 12), ':', record ? 'FOUND' : 'NOT FOUND',
+            log('[bare] children:list fallback for', key.slice(0, 12), ':', record ? 'FOUND' : 'NOT FOUND',
               'streamCount=' + streamCount, 'knownKeys=' + ctx.knownPeerKeys.size)
             if (!record) { ctx.knownPeerKeys.delete(key); continue }
             const isBlocked = await ctx.db.get('blocked:' + key).catch(() => null)
@@ -297,7 +299,7 @@ function createDispatch (ctx) {
           }
         }
         if (children.length === 0 && ctx.knownPeerKeys && ctx.knownPeerKeys.size > 0) {
-          console.log('[bare] children:list returned 0 but knownPeerKeys has', ctx.knownPeerKeys.size, 'keys:', [...ctx.knownPeerKeys].map(k => k.slice(0, 12)).join(', '))
+          log('[bare] children:list returned 0 but knownPeerKeys has', ctx.knownPeerKeys.size, 'keys:', [...ctx.knownPeerKeys].map(k => k.slice(0, 12)).join(', '))
         }
         return children
       }
@@ -1293,7 +1295,7 @@ function createDispatch (ctx) {
             })
           }
         }
-        if (resolvedRequests.length > 0) console.log('[bare] usage:flush piggyback:', resolvedRequests.length, 'resolved requests')
+        if (resolvedRequests.length > 0) log('[bare] usage:flush piggyback:', resolvedRequests.length, 'resolved requests')
 
         // dailyTotals: per-day per-app aggregates from the native UsageStatsManager
         // for the last N days. Carries the full window each flush so the parent
@@ -1826,7 +1828,7 @@ function createDispatch (ctx) {
             const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
             if (noiseKey) {
               ctx.sendToPeer(noiseKey, { type: 'requests:syncResolved', payload: { childPublicKey } })
-              console.log('[bare] alerts:list triggered syncResolved for', childPublicKey?.slice(0, 8))
+              log('[bare] alerts:list triggered syncResolved for', childPublicKey?.slice(0, 8))
             }
           } catch (e) { console.warn('[bare] alerts:list syncResolved failed:', e.message) }
         }
@@ -2502,7 +2504,7 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
     // Include childPublicKey so alerts:list can filter by child.
     const peerRecord = childPublicKey ? await db.get('peers:' + childPublicKey).catch(() => null) : null
     const childDisplayName = peerRecord?.value?.displayName || 'Child'
-    console.log('[bare] request:resolved creating missing entry for', requestId, 'child:', childPublicKey?.slice(0, 8))
+    log('[bare] request:resolved creating missing entry for', requestId, 'child:', childPublicKey?.slice(0, 8))
     await db.put('request:' + requestId, {
       id: requestId,
       packageName: packageName || 'unknown',

@@ -30,10 +30,31 @@ describe('describeBypassReason', () => {
     expect(r.body).not.toMatch(/turned off/i)
   })
 
-  test('but disabling the extension IS tampering', () => {
+  // The ONE Linux extension case we can actually attribute: the switch was
+  // affirmatively turned off (Enabled: No).
+  test('but turning the extension OFF is real tampering', () => {
     const r = describeBypassReason('linux:extension-disabled', 'Ben')
     expect(r.tamper).toBe(true)
-    expect(r.body).toMatch(/disabled/i)
+    expect(r.body).toMatch(/turned off/i)
+  })
+
+  // These are the false accusations that shipped: the watchdog reported every
+  // non-ACTIVE extension state as "extension-disabled", so a Shell that simply
+  // hadn't loaded the extension (Enabled: Yes, State: INACTIVE) told the parent
+  // their child had disabled protection. The child had done nothing.
+  test('extension failures the child did not cause never blame the child', () => {
+    for (const reason of [
+      'linux:extension-not-loaded',
+      'linux:extension-out-of-date',
+      'linux:extension-error',
+      'linux:extension-missing',
+    ]) {
+      const r = describeBypassReason(reason, 'Ben')
+      expect(r.tamper).toBe(false)
+      expect(r.body).not.toMatch(/Ben turned off|Ben disabled|Ben removed/i)
+      // ...but the parent must still be told blocking is off.
+      expect(r.title + ' ' + r.body).toMatch(/off|inactive|not running/i)
+    }
   })
 
   test('never says "Accessibility Service" for a desktop reason', () => {

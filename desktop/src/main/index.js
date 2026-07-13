@@ -281,6 +281,21 @@ function sendToBare(msg) {
 }
 
 function callBare(method, args) {
+  // Buffer until bare has finished init. bare.js only assigns its dispatch table
+  // at the END of init(), so anything sent before that comes back as "dispatch is
+  // not a function" and is silently lost. The renderer path already buffered
+  // (ipcMain 'bare-call'), but main-process callers did not — so a tamper or
+  // enforcement-offline alert raised during startup (the GNOME extension watchdog
+  // runs its first check immediately) was dropped and the PARENT WAS NEVER TOLD.
+  // For a parental-control app, losing exactly the alerts that fire at boot is
+  // the worst possible thing to drop. Observed live on the Debian child:
+  //   [bare] dispatch error: bypass:detected dispatch is not a function
+  // flushReadyQueue() drains this the moment bare emits 'ready'.
+  if (!bareReady) {
+    return new Promise((resolve, reject) => {
+      pendingRendererCalls.push({ method, args, resolve, reject })
+    })
+  }
   return new Promise((resolve, reject) => {
     const id = nextId++
     pendingCalls.set(id, { resolve, reject })

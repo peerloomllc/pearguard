@@ -34,12 +34,31 @@ const CONSECUTIVE_REPORT_COOLDOWN_MS = 5 * 60_000
 //   ENABLED, ACTIVE   — both indicate the extension is running. Newer GNOME
 //                       releases prefer ACTIVE but ENABLED still appears in
 //                       some intermediate states.
-//   INITIALIZED       — loaded into shell but disabled by the user.
-//   OUT_OF_DATE       — shell-version mismatch; treated as tamper-equivalent
-//                       so the parent gets a heads-up; we still try
-//                       gnome-extensions enable which on success bumps it.
-//   ERROR             — extension crashed; same response as INITIALIZED.
+//   INITIALIZED       — object created but the Shell hasn't run it.
+//   INACTIVE          — enabled in settings, but the Shell never loaded it
+//                       (typically: files changed and it needs a Shell restart,
+//                       i.e. a logout on Wayland).
+//   OUT_OF_DATE       — shell-version mismatch.
+//   ERROR             — the extension crashed.
 const ACTIVE_STATES = new Set(['ENABLED', 'ACTIVE'])
+
+// `Enabled:` is the USER'S TOGGLE. `State:` is whether the Shell actually loaded
+// it. Conflating the two is how we ended up telling a parent "Ben disabled
+// PearGuard's app-blocking extension" when Ben had done nothing at all: the
+// extension was `Enabled: Yes, State: INACTIVE` (the Shell simply hadn't loaded
+// it), and every non-ACTIVE state was being reported as `extension-disabled`.
+//
+// A parental-control app must not accuse a child of defeating protection when
+// the truth is that the protection failed on its own. So: only `Enabled: No` —
+// the user affirmatively switching it off — counts as tampering. Everything else
+// is reported as a capability failure, which the parent still hears about (they
+// must know blocking is off) but which does not blame the child.
+function classifyFailure(state, enabled) {
+  if (enabled === false) return 'extension-disabled'      // the kid flipped the switch
+  if (state === 'OUT_OF_DATE') return 'extension-out-of-date'
+  if (state === 'ERROR') return 'extension-error'
+  return 'extension-not-loaded'                            // INACTIVE / INITIALIZED / unknown
+}
 
 function runGnomeExtensions(args, { timeoutMs = 5000 } = {}) {
   return new Promise((resolve) => {
@@ -60,6 +79,17 @@ function extractState(infoStdout) {
   if (typeof infoStdout !== 'string') return null
   const m = infoStdout.match(/^\s*State:\s*(\S+)/m)
   return m ? m[1] : null
+}
+
+// `  Enabled: Yes` / `  Enabled: No`. Returns true/false, or null when the line
+// is absent (older GNOME) — in which case we can't prove the user disabled it,
+// so classifyFailure falls through to the non-accusatory branch. Fail towards
+// "not the child's fault": a missed accusation is far cheaper than a false one.
+function extractEnabled(infoStdout) {
+  if (typeof infoStdout !== 'string') return null
+  const m = infoStdout.match(/^\s*Enabled:\s*(\S+)/m)
+  if (!m) return null
+  return /^yes$/i.test(m[1]) ? true : (/^no$/i.test(m[1]) ? false : null)
 }
 
 class GnomeExtensionWatchdog extends EventEmitter {
@@ -126,11 +156,17 @@ class GnomeExtensionWatchdog extends EventEmitter {
       // can delete it. We can't reinstall from here (the source dir is in
       // the packaged resources path the host knows about) — emit tamper and
       // let main/index.js re-run the installer.
+      // The extension directory is gone. A destructive kid deleting it is one
+      // explanation, but a failed/partial install is another, and we cannot tell
+      // them apart from here — so report it as "missing", not as "the child
+      // disabled it". The parent still learns blocking is off; nobody gets
+      // accused of something we can't prove.
       this._logger.warn('[gnome-watchdog] info failed:', info.error)
-      this._reportTamper('extension-info-failed')
+      this._reportTamper('extension-missing')
       return
     }
     const state = extractState(info.stdout)
+    const enabled = extractEnabled(info.stdout)
     if (!state) {
       this._logger.warn('[gnome-watchdog] could not parse State from gnome-extensions info; stdout=', info.stdout.slice(0, 120))
       return
@@ -142,13 +178,15 @@ class GnomeExtensionWatchdog extends EventEmitter {
       this._lastState = state
       return
     }
-    // Tampered (or out-of-date / errored). Always log; throttle the tamper
-    // callback so the parent's alert feed doesn't get flooded.
+    // Not running. Classify WHY before telling the parent: only an affirmative
+    // `Enabled: No` means the child switched it off. INACTIVE/ERROR/OUT_OF_DATE
+    // are the app failing, not the kid defeating it.
     if (this._lastState !== state) {
-      this._logger.warn('[gnome-watchdog] extension state changed to', state, '(was', this._lastState, ') — attempting re-enable')
+      this._logger.warn('[gnome-watchdog] extension state changed to', state,
+        '(was', this._lastState, ', enabled=' + enabled + ') — attempting re-enable')
     }
     this._lastState = state
-    this._reportTamper(state === 'OUT_OF_DATE' ? 'extension-out-of-date' : 'extension-disabled')
+    this._reportTamper(classifyFailure(state, enabled))
     // Try to re-enable. On OUT_OF_DATE this typically fails until the
     // metadata.json grows a new shell-version; we still try since it's free.
     const enableResult = await this._run(['enable', this._uuid])
@@ -172,6 +210,8 @@ class GnomeExtensionWatchdog extends EventEmitter {
 module.exports = {
   GnomeExtensionWatchdog,
   extractState,
+  extractEnabled,
+  classifyFailure,
   DEFAULT_UUID,
   CHECK_INTERVAL_MS,
   CONSECUTIVE_REPORT_COOLDOWN_MS,

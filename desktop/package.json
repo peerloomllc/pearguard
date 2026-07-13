@@ -11,6 +11,11 @@
   "main": "src/main/index.js",
   "scripts": {
     "prepack": "node scripts/prepack.js",
+    "prestart": "node scripts/prepack.js",
+    "presmoke": "node scripts/prepack.js",
+    "presmoke:ui": "node scripts/prepack.js",
+    "prestart:dev-linux": "node scripts/prepack.js",
+    "check:vendor": "node scripts/check-vendor.js",
     "postinstall": "node scripts/prepack.js",
     "start": "electron .",
     "start:dev-linux": "ELECTRON_DISABLE_SANDBOX=1 electron --disable-gpu --disable-software-rasterizer .",

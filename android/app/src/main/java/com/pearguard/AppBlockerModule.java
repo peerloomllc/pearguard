@@ -849,8 +849,14 @@ public class AppBlockerModule extends AccessibilityService {
                     sessionStart = -1;
                 }
             }
-            // App is still in the foreground — add elapsed time since session start.
-            if (sessionStart >= 0) {
+            // App is still in the foreground — add elapsed time since session
+            // start, but only if it is genuinely on screen right now. A session
+            // left open by a missing MOVE_TO_BACKGROUND (or one running under a
+            // screen-off media app) would otherwise accrue idle hours and block
+            // the child far below their real usage.
+            if (sessionStart >= 0
+                    && UsageSessionUtil.shouldAccrueOpenSession(
+                            UsageSessionUtil.isScreenInteractive(ctx), packageName, getLastForegroundPackage())) {
                 totalMs += now - sessionStart;
             }
             return (int)(totalMs / 1000);
@@ -964,9 +970,18 @@ public class AppBlockerModule extends AccessibilityService {
                     if (start != null) totalMs += event.getTimeStamp() - start;
                 }
             }
-            // Any package still in the foreground — add elapsed time since its start.
-            for (Long start : sessionStart.values()) {
-                if (start != null) totalMs += now - start;
+            // Any package still in the foreground — add elapsed time since its
+            // start, but only for the app actually on screen right now. Extending
+            // every open session to `now` (stale never-closed sessions, or a
+            // screen-off media app) inflated the device-wide total by hours and
+            // tripped the cumulative cap prematurely.
+            boolean screenInteractive = UsageSessionUtil.isScreenInteractive(ctx);
+            String currentForeground = getLastForegroundPackage();
+            for (Map.Entry<String, Long> e : sessionStart.entrySet()) {
+                Long start = e.getValue();
+                if (start == null) continue;
+                if (!UsageSessionUtil.shouldAccrueOpenSession(screenInteractive, e.getKey(), currentForeground)) continue;
+                totalMs += now - start;
             }
             return (int)(totalMs / 1000);
         } catch (Exception e) {

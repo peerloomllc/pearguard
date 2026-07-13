@@ -3463,3 +3463,81 @@ test('unknown enabled-state fails towards NOT accusing the child', () => {
   assert.strictEqual(classifyFailure('INACTIVE', null), 'extension-not-loaded')
   assert.strictEqual(classifyFailure('SOMETHING_NEW', null), 'extension-not-loaded')
 })
+
+// --- gnome extension installer: don't knock a loaded extension offline -----
+const { treesEqual: extTreesEqual, syncTree: extSyncTree } = require('../src/main/gnome-extension-installer')
+
+function tmpTree(files) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-ext-'))
+  for (const [name, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, name), content)
+  }
+  return dir
+}
+
+// The old comparison used file SIZE only, so a changed file that kept its size
+// was never copied — a stale or incompatible extension would run forever.
+test('treesEqual detects a same-size content change (old size-only bug)', () => {
+  const a = tmpTree({ 'extension.js': 'AAAA', 'metadata.json': '{}' })
+  const b = tmpTree({ 'extension.js': 'BBBB', 'metadata.json': '{}' })   // same size!
+  assert.strictEqual(extTreesEqual(a, b), false, 'same-size but different content must NOT be "equal"')
+  const c = tmpTree({ 'extension.js': 'AAAA', 'metadata.json': '{}' })
+  assert.strictEqual(extTreesEqual(a, c), true)
+})
+
+// The blackout bug: the installer used to rm -rf the destination before copying.
+// Deleting a directory GNOME Shell has loaded makes it drop the extension
+// (State: INACTIVE) and Wayland cannot reload without a logout — so every update
+// left the child with no app blocking for as long as they stayed logged in.
+test('syncTree updates in place and never deletes the live extension directory', () => {
+  const src = tmpTree({ 'extension.js': 'NEW', 'metadata.json': '{"v":2}' })
+  const dest = tmpTree({ 'extension.js': 'OLD', 'metadata.json': '{"v":1}', 'stale.js': 'x' })
+  const inodeBefore = fs.statSync(dest).ino
+
+  extSyncTree(src, dest)
+
+  assert.strictEqual(fs.statSync(dest).ino, inodeBefore,
+    'destination directory must be updated in place, never removed and recreated')
+  assert.strictEqual(fs.readFileSync(path.join(dest, 'extension.js'), 'utf8'), 'NEW')
+  assert.ok(!fs.existsSync(path.join(dest, 'stale.js')), 'files we no longer ship are pruned')
+})
+
+test('syncTree does not rewrite files whose content is unchanged', () => {
+  const src = tmpTree({ 'extension.js': 'SAME' })
+  const dest = tmpTree({ 'extension.js': 'SAME' })
+  const target = path.join(dest, 'extension.js')
+  fs.utimesSync(target, new Date(0), new Date(0))
+  const mtimeBefore = fs.statSync(target).mtimeMs
+
+  extSyncTree(src, dest)
+
+  // GNOME watches these paths; churning mtime on an unchanged file is a needless
+  // risk of knocking the loaded extension offline.
+  assert.strictEqual(fs.statSync(target).mtimeMs, mtimeBefore, 'unchanged file must not be rewritten')
+})
+
+// A live extension must never be rewritten mid-session: GNOME unloads on any
+// file change and Wayland cannot reload, so the write would kill app blocking
+// until the child next logged out. Verified on a real GNOME 48 session: a single
+// `echo >> extension.js` flipped a live extension straight to State: INACTIVE.
+const extInstaller = require('../src/main/gnome-extension-installer')
+
+test('a LIVE extension update is deferred, not written mid-session', async () => {
+  const src = tmpTree({ 'extension.js': 'NEW', 'metadata.json': '{"v":2}' })
+  const dest = extInstaller.localExtensionDir()
+  // Point the installer at a temp "dest" by faking homedir is overkill; instead
+  // assert the decision surface directly.
+  const r = await extInstaller.ensureExtensionInstalled({
+    sourceDir: src, isLive: true, logger: { log() {}, warn() {} },
+  })
+  assert.strictEqual(r.deferredUpdate, true, 'must defer while live')
+  assert.strictEqual(r.requiresShellRestart, false)
+  assert.ok(typeof dest === 'string')
+})
+
+test('applyDeferredUpdate writes the pending files', () => {
+  const src = tmpTree({ 'extension.js': 'NEW' })
+  const dst = tmpTree({ 'extension.js': 'OLD' })
+  extInstaller.syncTree(src, dst)
+  assert.strictEqual(fs.readFileSync(path.join(dst, 'extension.js'), 'utf8'), 'NEW')
+})

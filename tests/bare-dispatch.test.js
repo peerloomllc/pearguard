@@ -244,6 +244,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -690,6 +700,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -979,6 +999,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1058,6 +1088,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1265,6 +1305,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1333,6 +1383,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1525,6 +1585,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1597,6 +1667,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1677,6 +1757,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1734,6 +1824,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1781,6 +1881,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1839,6 +1949,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -1883,6 +2003,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        // A new pending app scans for an existing approval before creating a
+        // duplicate card, so the mock has to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
+        _stored: stored,
       }
     }
 
@@ -1996,6 +2126,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        // A new pending app scans for an existing approval before creating a
+        // duplicate card, so the mock has to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
+        _stored: stored,
       }
     }
 
@@ -2048,6 +2188,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        // A new pending app now scans for an existing approval before creating a
+        // duplicate card, so the mock has to be able to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
         _stored: stored,
       }
     }
@@ -2137,6 +2287,16 @@ describe('bare dispatch', () => {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        // A new pending app scans for an existing approval before creating a
+        // duplicate card, so the mock has to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
+        _stored: stored,
       }
     }
 
@@ -2211,11 +2371,160 @@ describe('bare dispatch', () => {
     })
   })
 
+  // A newly installed app arrives as 'pending', but before this nothing ever ASKED
+  // the parent to decide — the approve/deny lived in the Apps tab, which they had
+  // to know to go looking in. Now the install raises the same kind of request a
+  // time request raises, so it lands in the Activity inbox with Approve/Deny.
+  describe('a new app asks the parent to decide', () => {
+    function makeMockDb (stored = {}) {
+      return {
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
+        _stored: stored,
+      }
+    }
+
+    const requestRows = (db) => Object.entries(db._stored)
+      .filter(([k]) => k.startsWith('request:'))
+      .map(([, v]) => v)
+
+    test('an installed app creates a pending approval request', async () => {
+      const db = makeMockDb({ 'peers:childpk1': { displayName: 'Ben' } })
+      const send = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.mojang', appName: 'Minecraft', detectedAt: 1000 },
+        'childpk1', db, send,
+      )
+
+      const [req] = requestRows(db)
+      expect(req).toMatchObject({
+        packageName: 'com.mojang',
+        appName: 'Minecraft',
+        status: 'pending',
+        requestType: 'approval',
+        origin: 'install',       // the app appeared; the child did not beg for it
+        childPublicKey: 'childpk1',
+      })
+      // Reuses the event the child's own requests fire, so the Activity tab and
+      // the pending badge pick it up with no new wiring.
+      const events = send.mock.calls.filter(([m]) => m.event === 'time:request:received')
+      expect(events).toHaveLength(1)
+    })
+
+    // The same undecided app can reach the parent three ways: the install relay,
+    // a batch sync, and the child hitting the block screen and asking. That is ONE
+    // decision — the parent must not get a stack of identical cards.
+    test('the child asking for an app it just installed does not stack a second card', async () => {
+      const db = makeMockDb({ 'peers:childpk1': { displayName: 'Ben' } })
+      const send = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.mojang', appName: 'Minecraft', detectedAt: 1000 }, 'childpk1', db, send,
+      )
+      await handleIncomingTimeRequest(
+        { requestId: 'req:2:com.mojang', packageName: 'com.mojang', appName: 'Minecraft', requestedAt: 2000 },
+        'childpk1', db, send,
+      )
+
+      expect(requestRows(db)).toHaveLength(1)
+    })
+
+    test('a redelivered install does not stack a second card either', async () => {
+      const db = makeMockDb({ 'peers:childpk1': { displayName: 'Ben' } })
+      const send = jest.fn()
+      const payload = { packageName: 'com.mojang', appName: 'Minecraft', detectedAt: 1000 }
+
+      await handleIncomingAppInstalled(payload, 'childpk1', db, send)
+      await handleIncomingAppInstalled(payload, 'childpk1', db, send)
+
+      expect(requestRows(db)).toHaveLength(1)
+    })
+
+    // ...but a request for MORE TIME on an already-allowed app is a genuinely new
+    // ask, and must never be swallowed by the dedupe.
+    test('an extra-time request is never deduped against an approval', async () => {
+      const db = makeMockDb({ 'peers:childpk1': { displayName: 'Ben' } })
+      const send = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.mojang', appName: 'Minecraft', detectedAt: 1000 }, 'childpk1', db, send,
+      )
+      await handleIncomingTimeRequest(
+        {
+          requestId: 'req:2:com.mojang', packageName: 'com.mojang', appName: 'Minecraft',
+          requestedAt: 2000, requestType: 'extra_time', extraSeconds: 1800,
+        },
+        'childpk1', db, send,
+      )
+
+      const rows = requestRows(db)
+      expect(rows).toHaveLength(2)
+      expect(rows.some((r) => r.requestType === 'extra_time' && r.extraSeconds === 1800)).toBe(true)
+    })
+
+    test('approving from the inbox resolves the install request and pushes the policy', async () => {
+      const db = makeMockDb({ 'peers:childpk1': { displayName: 'Ben', noiseKey: 'noise-abc' } })
+      const send = jest.fn()
+      const sendToPeer = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.mojang', appName: 'Minecraft', detectedAt: 1000 }, 'childpk1', db, send, sendToPeer,
+      )
+      const dispatch = createDispatch({ db, send, sendToPeer, getMode: () => 'parent' })
+      await dispatch('app:decide', { childPublicKey: 'childpk1', packageName: 'com.mojang', decision: 'approve' })
+
+      expect(requestRows(db)[0].status).toBe('approved')
+      expect(db._stored['policy:childpk1'].apps['com.mojang'].status).toBe('allowed')
+      expect(sendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({ type: 'app:decision' }))
+    })
+
+    test('a batch sync raises one request per new app, and none at first pairing', async () => {
+      const first = makeMockDb({ 'peers:childpk1': { displayName: 'Ben' } })
+      await handleIncomingAppsSync(
+        { apps: [{ packageName: 'a', appName: 'A' }, { packageName: 'b', appName: 'B' }] },
+        'childpk1', first, jest.fn(),
+      )
+      // First pairing auto-allows everything — there is nothing to decide.
+      expect(requestRows(first)).toHaveLength(0)
+
+      const later = makeMockDb({
+        'peers:childpk1': { displayName: 'Ben' },
+        'policy:childpk1': { apps: { a: { status: 'allowed', appName: 'A' } }, childPublicKey: 'childpk1', version: 1 },
+      })
+      await handleIncomingAppsSync(
+        { apps: [{ packageName: 'a', appName: 'A' }, { packageName: 'b', appName: 'B' }] },
+        'childpk1', later, jest.fn(),
+      )
+      const rows = requestRows(later)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ packageName: 'b', requestType: 'approval', origin: 'install' })
+    })
+  })
+
   describe('handleIncomingTimeRequest', () => {
     function makeMockDb (stored = {}) {
       return {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        // A new pending app scans for an existing approval before creating a
+        // duplicate card, so the mock has to stream its own rows.
+        createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (gt !== undefined && !(key > gt)) continue
+            if (lt !== undefined && !(key < lt)) continue
+            yield { key, value }
+          }
+        }),
+        _stored: stored,
       }
     }
 

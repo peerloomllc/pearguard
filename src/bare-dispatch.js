@@ -1913,6 +1913,10 @@ function createDispatch (ctx) {
             resolved: value.status !== 'pending',
             childPublicKey,
             requestType: value.requestType || 'approval',
+            // 'install' => the app just appeared and needs a decision; absent =>
+            // the child actively asked. The UI must not imply the child begged
+            // for an app they merely installed.
+            ...(value.origin && { origin: value.origin }),
           }
           // extra_time and general_time both carry a requested duration.
           if (value.requestType !== 'approval' && typeof value.extraSeconds === 'number') {
@@ -2405,10 +2409,67 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
     }
     await db.put('alert:' + childPublicKey + ':' + now, alertEntry)
 
+    // ...and an actionable one, so the parent can decide from the Activity inbox
+    // instead of hunting for the app in the Apps tab.
+    await createInstallApprovalRequest(db, send, {
+      childPublicKey, childDisplayName, packageName, appName, now,
+    })
+
     // apps:synced refreshes the Apps tab; app:installed carries data for the notification
     send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })
     send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, childDisplayName } })
   }
+}
+
+// One pending approval per app, no matter how many times we hear about it.
+//
+// The same undecided app can be described to us three different ways: an
+// `app:installed` relay, a batch `apps:sync` covering apps added while the child
+// was offline, and the child tapping "Request access" on the block overlay. Three
+// messages, ONE decision to make. Without this the parent gets a stack of
+// identical Approve/Deny cards for a single app.
+async function findPendingApproval (db, childPublicKey, packageName) {
+  for await (const { value } of db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
+    if (value
+      && value.childPublicKey === childPublicKey
+      && value.packageName === packageName
+      && value.status === 'pending'
+      && (value.requestType || 'approval') === 'approval') {
+      return value
+    }
+  }
+  return null
+}
+
+// A newly installed app lands as 'pending', but nothing ever ASKED the parent to
+// decide. All they got was an informational "App Installed" row, while the actual
+// approve/deny lived over in the Apps tab, where a parent had to know to go
+// looking. Give the install its own inbox item, exactly like a time request:
+// same record shape, and the same resolution path (app:decide already resolves
+// every pending request for this child+package and pushes the policy to the
+// child), so both kinds of ask ride ONE pipeline instead of growing a second.
+async function createInstallApprovalRequest (db, send, { childPublicKey, childDisplayName, packageName, appName, now }) {
+  if (await findPendingApproval(db, childPublicKey, packageName)) return null
+
+  const request = {
+    id: 'install:' + packageName + ':' + now,
+    packageName,
+    appName: appName || packageName,
+    requestedAt: now,
+    status: 'pending',
+    notified: false,
+    childPublicKey,
+    childDisplayName,
+    requestType: 'approval',
+    // The app simply appeared; the child has not asked for it (yet). Lets the UI
+    // say "just installed" rather than implying the child requested it.
+    origin: 'install',
+  }
+  await db.put('request:' + request.id, request)
+  // Same event the child's own requests fire, so the Activity tab reloads and
+  // the parent's pending-request badge counts it without any new wiring.
+  send({ type: 'event', event: 'time:request:received', data: request })
+  return request
 }
 
 /**
@@ -2474,6 +2535,7 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
     }
 
     // On first sync only suppress per-app alert entries and app:installed events.
+    // (Everything is auto-allowed at first pairing, so there is nothing to decide.)
     if (!isFirstSync) {
       for (const { packageName, appName } of newApps) {
         const now = Date.now()
@@ -2487,6 +2549,13 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
           childDisplayName,
         }
         await db.put('alert:' + childPublicKey + ':' + now + ':' + packageName, alertEntry)
+        // These apps were added as 'pending' above, so each one is a decision the
+        // parent still owes. A sync that ran while the child was offline can carry
+        // several; every one gets its own inbox item, and findPendingApproval keeps
+        // it from double-listing an app the child has already asked about.
+        await createInstallApprovalRequest(db, send, {
+          childPublicKey, childDisplayName, packageName, appName, now,
+        })
         send({ type: 'event', event: 'app:installed', data: { packageName, appName, childPublicKey, childDisplayName } })
       }
     }
@@ -2526,6 +2595,19 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
   const resolvedType = (requestType === 'extra_time' || requestType === 'general_time')
     ? requestType
     : 'approval'
+
+  // The parent may already owe a decision on this app: installing it created an
+  // approval card, and now the child has hit the block screen and asked for the
+  // same app. That is ONE decision, so don't stack a second identical card on the
+  // parent — approving either resolves both (app:decide matches on child+package,
+  // and the child's own req: row is resolved by the app:decision it gets back).
+  // extra_time/general_time are exempt: those are genuinely new asks about an app
+  // the parent already allowed.
+  if (resolvedType === 'approval' && await findPendingApproval(db, childPublicKey, packageName)) {
+    log('[bare] approval already pending for', packageName, '- not duplicating the request')
+    return
+  }
+
   const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', notified: false, childPublicKey, childDisplayName, requestType: resolvedType }
   if (resolvedType !== 'approval' && typeof extraSeconds === 'number') request.extraSeconds = extraSeconds
   await db.put('request:' + requestId, request)

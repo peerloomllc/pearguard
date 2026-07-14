@@ -104,3 +104,67 @@ test('no Clear button when there is no alert history', async () => {
   await waitFor(() => expect(screen.getByText('Pending Requests')).toBeInTheDocument());
   expect(screen.queryByLabelText('Clear activity log')).not.toBeInTheDocument();
 });
+
+// --- a newly installed app is an inbox item, not a "Time Request" ------------
+
+const INSTALL_REQUEST = {
+  id: 'install:com.mojang:1', type: 'time_request', timestamp: NOW - 500,
+  packageName: 'com.mojang', appDisplayName: 'Minecraft',
+  status: 'pending', resolved: false,
+  requestType: 'approval', origin: 'install',
+};
+
+test('a newly installed app shows as an approve/deny card, badged as a new app', async () => {
+  mockBare([INSTALL_REQUEST]);
+  render(<ActivityTab childPublicKey="pk1" />);
+
+  await waitFor(() => expect(screen.getByText('Pending Requests')).toBeInTheDocument());
+  expect(screen.getByText('Minecraft')).toBeInTheDocument();
+  // NOT "Time Request" — the child never asked for extra screen time.
+  expect(screen.getByText('New App')).toBeInTheDocument();
+  expect(screen.queryByText('Time Request')).not.toBeInTheDocument();
+  // Says why it is being asked, without implying the child begged for the app.
+  expect(screen.getByText(/just installed, not yet approved/i)).toBeInTheDocument();
+});
+
+test('approving a new app calls app:decide for that package', async () => {
+  mockBare([INSTALL_REQUEST]);
+  render(<ActivityTab childPublicKey="pk1" />);
+  await waitFor(() => expect(screen.getByText('Minecraft')).toBeInTheDocument());
+
+  fireEvent.click(screen.getByRole('button', { name: /Approve request for com.mojang/i }));
+
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith(
+      'app:decide',
+      { childPublicKey: 'pk1', packageName: 'com.mojang', decision: 'approve' },
+    );
+  });
+});
+
+test('denying a new app blocks it rather than granting time', async () => {
+  mockBare([INSTALL_REQUEST]);
+  render(<ActivityTab childPublicKey="pk1" />);
+  await waitFor(() => expect(screen.getByText('Minecraft')).toBeInTheDocument());
+
+  fireEvent.click(screen.getByRole('button', { name: /Deny request for com.mojang/i }));
+
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith(
+      'app:decide',
+      { childPublicKey: 'pk1', packageName: 'com.mojang', decision: 'deny' },
+    );
+  });
+  // time:deny would resolve it as a time grant, which is a different thing entirely.
+  expect(window.callBare).not.toHaveBeenCalledWith('time:deny', expect.anything());
+});
+
+// A child-initiated approval (they hit the block screen) is the same kind of ask,
+// but it is NOT an install — the wording must not claim it just appeared.
+test('an app the child asked for is badged as a request, not an install', async () => {
+  mockBare([{ ...INSTALL_REQUEST, id: 'req:1', origin: undefined }]);
+  render(<ActivityTab childPublicKey="pk1" />);
+
+  await waitFor(() => expect(screen.getByText('App Request')).toBeInTheDocument());
+  expect(screen.queryByText(/just installed/i)).not.toBeInTheDocument();
+});

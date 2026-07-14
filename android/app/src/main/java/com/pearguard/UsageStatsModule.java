@@ -1490,7 +1490,14 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 ? appName + " has been installed on your device"
                 : appName + " is pending your approval";
 
-        PendingIntent pi = buildAppsTabPendingIntent(childPublicKey, notificationId);
+        // The parent's copy of this notification says the app "is pending your
+        // approval", so it must land ON the approval — the Activity inbox, where
+        // the Approve/Deny card now lives. It used to open the Apps tab, leaving
+        // the parent to hunt for the app they had just been told about.
+        // The child's own copy ("You installed X") has nothing to approve.
+        PendingIntent pi = isSelf
+                ? buildAppsTabPendingIntent(childPublicKey, notificationId)
+                : buildRequestsPendingIntent(childPublicKey, notificationId);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)

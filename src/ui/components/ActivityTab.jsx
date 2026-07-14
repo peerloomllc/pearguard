@@ -20,6 +20,17 @@ const TYPE_META = {
   pin_failure:     { label: 'PIN Guessing',     icon: 'Warning' },
 };
 
+// A request row's badge depends on what is actually being asked, not just on the
+// record type. Every request rendered as "Time Request", including approvals -
+// so a newly installed app awaiting a decision claimed the child had asked for
+// more screen time.
+function metaFor(item) {
+  if (item.type === 'time_request' && (item.requestType || 'approval') === 'approval') {
+    return { label: item.origin === 'install' ? 'New App' : 'App Request', icon: 'Plus' };
+  }
+  return TYPE_META[item.type] || { label: item.type, icon: 'Bell' };
+}
+
 function typeColor(type, colors) {
   // Amber, not red: the parent must still act, but nobody is being accused.
   if (type === 'enforcement_off') return colors.secondary;
@@ -111,9 +122,13 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
   // Requests raised from the child's home screen carry no real app, just the
   // 'general' sentinel — there is no "blocked while opening X" to show.
   const triggeredBy = isGeneralTime && req.packageName !== 'general' ? appLabel : null;
+  // Say WHY we're asking. An install is not the child pleading for an app — it
+  // appeared on their device and now needs a decision. Wording that implied they
+  // asked for it would misrepresent them to their own parent.
+  const askedBecause = req.origin === 'install' ? 'just installed, not yet approved' : null;
 
   const badgeColor = typeColor(req.type, colors);
-  const meta = TYPE_META[req.type] || { label: req.type, icon: 'Clock' };
+  const meta = metaFor(req);
 
   return (
     <Card style={{ marginBottom: `${spacing.sm}px` }}>
@@ -125,6 +140,11 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
           {triggeredBy && (
             <div style={{ ...typography.caption, color: colors.text.secondary, marginBottom: '4px' }}>
               blocked while opening {triggeredBy}
+            </div>
+          )}
+          {askedBecause && (
+            <div style={{ ...typography.caption, color: colors.text.secondary, marginBottom: '4px' }}>
+              {askedBecause}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
@@ -170,7 +190,7 @@ function isDismissible(item) {
 function ActivityRow({ item, onDismiss }) {
   const { colors, typography, spacing } = useTheme();
 
-  const meta = TYPE_META[item.type] || { label: item.type, icon: 'Bell' };
+  const meta = metaFor(item);
   const iconColor = typeColor(item.type, colors);
 
   return (

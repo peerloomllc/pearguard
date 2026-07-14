@@ -939,7 +939,15 @@ export default function Root () {
                   if (isAndroid) {
                     NativeModules.UsageStatsModule?.showAppInstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
                   } else {
-                    showNotification('New App Installed', childDisplayName + ' installed ' + appLabel, childPublicKey)
+                    // Route the tap to Activity, where the Approve/Deny card for this
+                    // install now is. Without the tab the parent lands on the dashboard
+                    // and has to go looking for the decision we just told them to make.
+                    showNotification(
+                      'New App Installed',
+                      childDisplayName + ' installed ' + appLabel + ' — approve or deny?',
+                      childPublicKey,
+                      'activity',
+                    )
                   }
                 } else if (_mode === 'child' && isAndroid) {
                   // Child device — local install event, notify the child themselves

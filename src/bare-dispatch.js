@@ -79,6 +79,45 @@ function applyExclusionsToReport(report, exclusions) {
   return { ...report, apps, sessions, todayScreenTimeSeconds }
 }
 
+// Pick the friendliest name we have for a package.
+//
+// Usage rows carry whatever display name the child had to hand at flush time,
+// and that is not always a name: usage:flush falls back to `appName ||
+// packageName`, so a row can arrive displaying the raw slug ('linux.firefox_esr',
+// 'win.notepad'). The desktop child hits this routinely because its tracker
+// keeps friendly names in memory only, so every package it restores from disk
+// after a restart has counters but no name.
+//
+// The parent never has to accept that: apps:sync already handed it
+// policy.apps[pkg].appName ('Firefox ESR') for every installed app. Prefer the
+// policy name, fall back to whatever the child sent, and only show the slug when
+// neither side has anything better. Resolving at the read boundary (rather than
+// rewriting rows) also fixes reports already sitting in Hyperbee.
+function resolveAppName(packageName, policyName, reportedName) {
+  const usable = (s) => typeof s === 'string' && s && s !== packageName
+  if (usable(policyName)) return policyName
+  if (usable(reportedName)) return reportedName
+  return packageName
+}
+
+function applyPolicyNamesToReport(report, policyApps) {
+  if (!report || !policyApps) return report
+  const named = (rows) => (Array.isArray(rows)
+    ? rows.map((r) => (r && r.packageName
+      ? { ...r, displayName: resolveAppName(r.packageName, policyApps[r.packageName]?.appName, r.displayName) }
+      : r))
+    : rows)
+  const out = { ...report, apps: named(report.apps), sessions: named(report.sessions) }
+  if (out.currentAppPackage) {
+    out.currentApp = resolveAppName(
+      out.currentAppPackage,
+      policyApps[out.currentAppPackage]?.appName,
+      out.currentApp,
+    )
+  }
+  return out
+}
+
 // Zero out today-scoped fields on a stored usage report if its timestamp is
 // from a previous local day. The Hyperbee row is not mutated — this runs at
 // the IPC read boundary so every consumer of the latest-report snapshot sees
@@ -1367,9 +1406,14 @@ function createDispatch (ctx) {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid usage:getLatest args')
         const exclusions = await getExclusions(ctx.db, childPublicKey)
+        // The stored report may name apps by slug (see resolveAppName); the
+        // policy we hold for this child has the friendly names.
+        const policyRaw = await ctx.db.get('policy:' + childPublicKey).catch(() => null)
+        const policyApps = policyRaw?.value?.apps || {}
+        const present = (r) => dateGateReport(applyPolicyNamesToReport(applyExclusionsToReport(r, exclusions), policyApps))
         // Fast path: single overwriting key.
         const direct = await ctx.db.get('usageReport:' + childPublicKey + ':latest').catch(() => null)
-        if (direct?.value) return dateGateReport(applyExclusionsToReport(direct.value, exclusions))
+        if (direct?.value) return present(direct.value)
         // Fallback for pre-migration data that still uses timestamped keys.
         let latest = null
         for await (const { value } of ctx.db.createReadStream({
@@ -1380,13 +1424,17 @@ function createDispatch (ctx) {
         })) {
           latest = value
         }
-        return latest ? dateGateReport(applyExclusionsToReport(latest, exclusions)) : null
+        return latest ? present(latest) : null
       }
 
       case 'usage:getSessions': {
         const { childPublicKey, date } = args
         if (!childPublicKey || !date) throw new Error('invalid usage:getSessions args')
         const exclusions = await getExclusions(ctx.db, childPublicKey)
+        // Sessions from the desktop child can carry displayName: null, so the
+        // Reports drill-down would label them with the slug. Same policy join.
+        const policyRaw = await ctx.db.get('policy:' + childPublicKey).catch(() => null)
+        const policyApps = policyRaw?.value?.apps || {}
         const bestByKey = new Map()
         for await (const { value } of ctx.db.createReadStream({
           gt: 'sessions:' + childPublicKey + ':' + date + ':',
@@ -1405,7 +1453,10 @@ function createDispatch (ctx) {
             }
           }
         }
-        return Array.from(bestByKey.values())
+        return Array.from(bestByKey.values()).map((s) => ({
+          ...s,
+          displayName: resolveAppName(s.packageName, policyApps[s.packageName]?.appName, s.displayName),
+        }))
       }
 
       case 'usage:getDailySummaries': {
@@ -1584,7 +1635,9 @@ function createDispatch (ctx) {
           categories[category].totalSeconds += seconds
           categories[category].apps[pkg] = {
             packageName: pkg,
-            displayName: perAppDisplayName.get(pkg) || pkg,
+            // Policy name first: stored totals/sessions can carry the slug as
+            // their displayName (see resolveAppName).
+            displayName: resolveAppName(pkg, appInfo.appName, perAppDisplayName.get(pkg)),
             totalSeconds: seconds,
             iconBase64: appInfo?.iconBase64 || null,
           }
@@ -2520,4 +2573,4 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport }

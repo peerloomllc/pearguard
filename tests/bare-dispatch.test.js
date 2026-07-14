@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -752,6 +752,94 @@ describe('bare dispatch', () => {
       const dispatch = createDispatch(ctx)
 
       await expect(dispatch('usage:getLatest', {})).rejects.toThrow('invalid usage:getLatest args')
+    })
+
+    // The Linux child's usage rows can arrive naming apps by their slug: its
+    // tracker cached names in memory only, so anything restored after a restart
+    // had counters but no name, and usage:flush fell back to the packageName.
+    // The parent already knows the real name from apps:sync, so it fixes the
+    // label on read — including for reports already stored.
+    test('names apps from the policy when the child sent the raw slug', async () => {
+      const mockDb = makeMockDb({
+        'usageReport:pk-child:latest': {
+          timestamp: Date.now(),
+          apps: [
+            { packageName: 'linux.firefox_esr', displayName: 'linux.firefox_esr', todaySeconds: 420 },
+            { packageName: 'linux.calculator', displayName: 'linux.calculator', todaySeconds: 1140 },
+          ],
+          sessions: [{ packageName: 'linux.firefox_esr', displayName: null, startedAt: Date.now(), durationSeconds: 420 }],
+          currentAppPackage: 'linux.firefox_esr',
+          currentApp: 'linux.firefox_esr',
+          childPublicKey: 'pk-child',
+        },
+        'policy:pk-child': {
+          apps: {
+            'linux.firefox_esr': { appName: 'Firefox ESR', status: 'allowed' },
+            'linux.calculator': { appName: 'Calculator', status: 'allowed' },
+          },
+        },
+      })
+      mockDb.createReadStream = jest.fn(async function * () {})
+      const dispatch = createDispatch({ db: mockDb, send: jest.fn() })
+
+      const result = await dispatch('usage:getLatest', { childPublicKey: 'pk-child' })
+      expect(result.apps.map((a) => a.displayName)).toEqual(['Firefox ESR', 'Calculator'])
+      expect(result.sessions[0].displayName).toBe('Firefox ESR')
+      expect(result.currentApp).toBe('Firefox ESR')
+      // The counters must survive the relabel untouched.
+      expect(result.apps[0].todaySeconds).toBe(420)
+    })
+
+    test('keeps a name the child sent for an app the policy has never seen', async () => {
+      const mockDb = makeMockDb({
+        'usageReport:pk-child:latest': {
+          timestamp: Date.now(),
+          apps: [{ packageName: 'linux.brand_new', displayName: 'Brand New', todaySeconds: 60 }],
+          childPublicKey: 'pk-child',
+        },
+        'policy:pk-child': { apps: {} },
+      })
+      mockDb.createReadStream = jest.fn(async function * () {})
+      const dispatch = createDispatch({ db: mockDb, send: jest.fn() })
+
+      const result = await dispatch('usage:getLatest', { childPublicKey: 'pk-child' })
+      expect(result.apps[0].displayName).toBe('Brand New')
+    })
+  })
+
+  describe('resolveAppName', () => {
+    test('prefers the policy name, which is the one the Apps tab shows', () => {
+      expect(resolveAppName('linux.firefox_esr', 'Firefox ESR', 'firefox-esr')).toBe('Firefox ESR')
+    })
+
+    test('falls back to the reported name when the policy has none', () => {
+      expect(resolveAppName('win.notepad', undefined, 'Notepad')).toBe('Notepad')
+      expect(resolveAppName('win.notepad', null, 'Notepad')).toBe('Notepad')
+    })
+
+    // Both sides store `appName || packageName`, so "the name is the slug" is
+    // the shape a missing name actually takes. It must never win over a real one.
+    test('treats a name equal to the package as no name at all', () => {
+      expect(resolveAppName('linux.calculator', 'linux.calculator', 'Calculator')).toBe('Calculator')
+      expect(resolveAppName('linux.calculator', 'Calculator', 'linux.calculator')).toBe('Calculator')
+    })
+
+    test('shows the package only when nothing better exists anywhere', () => {
+      expect(resolveAppName('linux.software', null, null)).toBe('linux.software')
+      expect(resolveAppName('linux.software', 'linux.software', 'linux.software')).toBe('linux.software')
+    })
+  })
+
+  describe('applyPolicyNamesToReport', () => {
+    test('leaves a report with no apps/sessions arrays alone', () => {
+      const r = applyPolicyNamesToReport({ timestamp: 1, todayScreenTimeSeconds: 0 }, {})
+      expect(r.timestamp).toBe(1)
+      expect(r.todayScreenTimeSeconds).toBe(0)
+    })
+
+    test('is a no-op without a policy rather than throwing', () => {
+      const report = { apps: [{ packageName: 'a', displayName: 'A' }] }
+      expect(applyPolicyNamesToReport(report, null)).toBe(report)
     })
   })
 

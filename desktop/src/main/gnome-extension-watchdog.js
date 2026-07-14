@@ -23,6 +23,7 @@
 
 const { EventEmitter } = require('events')
 const { execFile } = require('child_process')
+const { isSessionLocked } = require('../enforcement/session-lock')
 
 const DEFAULT_UUID = 'pearguard-focus@peerloomllc.com'
 const CHECK_INTERVAL_MS = 15_000
@@ -100,6 +101,7 @@ class GnomeExtensionWatchdog extends EventEmitter {
     onTamper = null,
     logger = console,
     runExtensions = runGnomeExtensions,
+    isLocked = isSessionLocked,
     now = Date.now,
   } = {}) {
     super()
@@ -109,8 +111,11 @@ class GnomeExtensionWatchdog extends EventEmitter {
     this._onTamper = onTamper
     this._logger = logger
     this._run = runExtensions
+    this._isLocked = isLocked
     this._now = now
     this._timer = null
+    // Logged once per lock so a long lock doesn't write a line every 15s.
+    this._loggedLockSkip = false
     // Sentinel meaning "never reported"; a real Date.now() value will always
     // exceed -Infinity + cooldown so the very first tamper always reports.
     this._lastReportAt = -Infinity
@@ -140,6 +145,35 @@ class GnomeExtensionWatchdog extends EventEmitter {
     this._stopped = true
   }
 
+  // A locked screen is not a failure, and it is not tampering — it is GNOME
+  // doing exactly what we rely on it doing (see enforcement/session-lock.js).
+  // While locked the extension is *supposed* to be unloaded, so anything that
+  // looks broken right now proves nothing: say nothing, repair nothing, and
+  // leave _lastState alone so the unlock doesn't read as a state transition.
+  // Only consulted once something already looks wrong, so the healthy path
+  // stays a single `gnome-extensions info` call per tick.
+  async _suppressedByLock() {
+    let locked = false
+    try {
+      locked = await this._isLocked()
+    } catch (e) {
+      // Can't tell => carry on and report. Never let a broken lock probe
+      // swallow a real bypass.
+      this._logger.warn('[gnome-watchdog] lock probe failed:', e.message)
+      return false
+    }
+    if (!locked) {
+      this._loggedLockSkip = false
+      return false
+    }
+    if (!this._loggedLockSkip) {
+      this._logger.log('[gnome-watchdog] session is locked; GNOME unloads the extension on the '
+        + 'lock screen by design — not reporting, not re-enabling until it unlocks')
+      this._loggedLockSkip = true
+    }
+    return true
+  }
+
   async _check() {
     const info = await this._run(['info', this._uuid])
     if (!info.ok) {
@@ -161,6 +195,7 @@ class GnomeExtensionWatchdog extends EventEmitter {
       // them apart from here — so report it as "missing", not as "the child
       // disabled it". The parent still learns blocking is off; nobody gets
       // accused of something we can't prove.
+      if (await this._suppressedByLock()) return
       this._logger.warn('[gnome-watchdog] info failed:', info.error)
       this._reportTamper('extension-missing')
       return
@@ -176,11 +211,20 @@ class GnomeExtensionWatchdog extends EventEmitter {
         this._logger.log('[gnome-watchdog] extension back to ACTIVE')
       }
       this._lastState = state
+      // Healthy again, so the session is plainly unlocked: re-arm the lock log
+      // so the NEXT lock says so too. Otherwise it only ever prints once per
+      // process and a later lock looks unexplained in the log.
+      this._loggedLockSkip = false
       return
     }
-    // Not running. Classify WHY before telling the parent: only an affirmative
-    // `Enabled: No` means the child switched it off. INACTIVE/ERROR/OUT_OF_DATE
-    // are the app failing, not the kid defeating it.
+    // Not running. Before anything else: is the screen simply locked? That alone
+    // takes the extension INACTIVE (measured), and reporting it told the parent
+    // "app blocking is off" every time the child locked their screen.
+    if (await this._suppressedByLock()) return
+
+    // Not running, and not locked. Classify WHY before telling the parent: only
+    // an affirmative `Enabled: No` means the child switched it off.
+    // INACTIVE/ERROR/OUT_OF_DATE are the app failing, not the kid defeating it.
     if (this._lastState !== state) {
       this._logger.warn('[gnome-watchdog] extension state changed to', state,
         '(was', this._lastState, ', enabled=' + enabled + ') — attempting re-enable')

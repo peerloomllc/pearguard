@@ -1847,6 +1847,36 @@ function createDispatch (ctx) {
         return { ok: true }
       }
 
+      // Let the parent clear alert history. Deliberately scoped to `alert:` rows
+      // only: the Activity feed is also fed from `request:` rows, and those are
+      // ACTIONABLE (a pending approval or time request). Deleting one of those
+      // here would silently drop a child's request instead of dismissing a piece
+      // of history, so requests are untouchable from this path — the child would
+      // wait forever for an answer that was thrown away.
+      case 'alerts:dismiss': {
+        const { childPublicKey, timestamp } = args
+        if (!childPublicKey || !timestamp) throw new Error('invalid alerts:dismiss args')
+        await ctx.db.del('alert:' + childPublicKey + ':' + timestamp)
+        return { dismissed: 1 }
+      }
+
+      case 'alerts:clear': {
+        const { childPublicKey } = args
+        if (!childPublicKey) throw new Error('invalid alerts:clear args')
+        const keys = []
+        for await (const { key } of ctx.db.createReadStream({
+          gt: 'alert:' + childPublicKey + ':',
+          lt: 'alert:' + childPublicKey + ':~',
+        })) {
+          keys.push(key)
+        }
+        // Collect first, delete after: mutating a Hyperbee while streaming it is
+        // asking for a skipped row.
+        for (const key of keys) await ctx.db.del(key)
+        log('[bare] cleared', keys.length, 'alerts for', childPublicKey.slice(0, 8))
+        return { dismissed: keys.length }
+      }
+
       case 'alerts:list': {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid alerts:list args')

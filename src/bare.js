@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport } = require('./bare-dispatch')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -729,7 +729,15 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       // todayScreenTimeSeconds. Storage above keeps the unfiltered data so
       // toggling a package back on restores it instantly.
       const exclusions = await getExclusions(db, childPublicKey)
-      const filteredPayload = applyExclusionsToReport(msg.payload, exclusions)
+      // The policy is where the friendly app names live (apps:sync put them
+      // there). Usage rows can name apps by slug, so resolve against it before
+      // the payload reaches the UI, exactly as usage:getLatest does on read.
+      const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
+      const policyApps = policyRaw?.value?.apps || {}
+      const filteredPayload = applyPolicyNamesToReport(
+        applyExclusionsToReport(msg.payload, exclusions),
+        policyApps,
+      )
       // Look up icon for the current foreground app from parent's policy store
       let currentAppIcon = null
       let currentAppPackage = filteredPayload.currentAppPackage
@@ -739,8 +747,6 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         currentApp = null
       }
       if (currentAppPackage) {
-        const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
-        const policyApps = policyRaw?.value?.apps || {}
         currentAppIcon = policyApps[currentAppPackage]?.iconBase64 || null
       }
       // Process piggybacked resolved requests so co-parents see status updates (#122).
@@ -757,12 +763,18 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
       const childDisplayName = peerRecord?.value?.displayName || 'Child'
       let currentAppIcon = null
+      // The dashboard card renders currentApp verbatim, and the desktop child
+      // sends whatever name its tracker has — a slug, once names are lost to a
+      // restart. Resolve it here too, or the card reads "linux.firefox_esr".
+      let currentApp = msg.payload.currentApp
       if (msg.payload.currentAppPackage) {
         const policyRaw = await db.get('policy:' + childPublicKey).catch(() => null)
         const policyApps = policyRaw?.value?.apps || {}
-        currentAppIcon = policyApps[msg.payload.currentAppPackage]?.iconBase64 || null
+        const pkg = msg.payload.currentAppPackage
+        currentAppIcon = policyApps[pkg]?.iconBase64 || null
+        currentApp = resolveAppName(pkg, policyApps[pkg]?.appName, currentApp)
       }
-      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey, childDisplayName, currentAppIcon } })
+      send({ type: 'event', event: 'heartbeat:received', data: { ...msg.payload, childPublicKey, childDisplayName, currentApp, currentAppIcon } })
       break
     }
     case 'bypass:alert': {

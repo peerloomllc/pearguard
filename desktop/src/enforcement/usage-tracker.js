@@ -343,6 +343,15 @@ class UsageTracker {
       if (typeof parsed.weekStart === 'number' && parsed.weekStart === thisWeek) {
         this._weekly = new Map(Object.entries(parsed.weekly || {}).filter(([, v]) => typeof v === 'number' && v > 0))
       }
+      // Names are restored unconditionally — they don't expire at a day or week
+      // boundary the way the counters do, and a name we can't reload is a name
+      // the parent never sees. Without this, a restart left the tracker holding
+      // counters for packages it could no longer name, getDailyUsageAll emitted
+      // appName: null, and usage:flush fell back to the slug: the parent's Usage
+      // tab read "linux.firefox_esr" instead of "Firefox ESR".
+      this._appNames = new Map(
+        Object.entries(parsed.appNames || {}).filter(([, v]) => typeof v === 'string' && v),
+      )
       this._dayStart = today
       this._weekStart = thisWeek
     } catch (e) {
@@ -360,6 +369,7 @@ class UsageTracker {
         weekStart: this._weekStart,
         daily: Object.fromEntries(this._daily),
         weekly: Object.fromEntries(this._weekly),
+        appNames: Object.fromEntries(this._appNames),
       }
       fs.writeFileSync(this._filePath, JSON.stringify(payload))
     } catch (e) {

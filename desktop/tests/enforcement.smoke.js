@@ -714,6 +714,60 @@ test('UsageTracker persists daily/weekly across instantiations on the same day',
   }
 })
 
+// The bug behind the parent's Usage tab reading "linux.firefox_esr" instead of
+// "Firefox ESR": names lived only in the in-memory _appNames cache, so a restart
+// restored the counters and lost every name. getDailyUsageAll then reported
+// appName: null, and usage:flush's `appName || packageName` fallback shipped the
+// slug to the parent, which stored it as the display name.
+test('UsageTracker keeps app names across a restart, not just counters', () => {
+  const filePath = tmpUsagePath()
+  try {
+    const clock = { t: localNoonToday() }
+    const a = new UsageTracker({ filePath, now: () => clock.t })
+    a.noteForeground({ packageName: 'linux.firefox_esr', appName: 'Firefox ESR' })
+    advance(clock, a, 120_000, 'linux.firefox_esr', 'Firefox ESR')
+    a.endActive()
+
+    // Restart: nothing is focused, so nothing re-teaches the name.
+    const b = new UsageTracker({ filePath, now: () => clock.t })
+    const row = b.getDailyUsageAll().find((x) => x.packageName === 'linux.firefox_esr')
+    assert.strictEqual(row.secondsToday, 120)
+    assert.strictEqual(row.appName, 'Firefox ESR')
+  } finally {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
+})
+
+// Names outlive the counters they were learned alongside: yesterday's total is
+// stale tomorrow, but yesterday's *name* is still correct. So the day-rollover
+// reset must zero the counters without discarding the name cache — and the name
+// must still apply to a session opened without one (the caller's policy lookup
+// can miss, which is how it ends up passing null in the first place).
+test('UsageTracker keeps app names even when the stored day has rolled over', () => {
+  const filePath = tmpUsagePath()
+  try {
+    const yesterday = localDayStart(Date.now()) - 24 * 3600 * 1000
+    fs.writeFileSync(filePath, JSON.stringify({
+      dayStart: yesterday,
+      weekStart: localWeekStart(Date.now()),
+      daily: { 'linux.firefox_esr': 999 },
+      weekly: { 'linux.firefox_esr': 999 },
+      appNames: { 'linux.firefox_esr': 'Firefox ESR' },
+    }))
+    const clock = { t: localNoonToday() }
+    const u = new UsageTracker({ filePath, now: () => clock.t })
+    assert.strictEqual(u.getDailyUsageSeconds('linux.firefox_esr'), 0)
+
+    u.noteForeground({ packageName: 'linux.firefox_esr', appName: null })
+    advance(clock, u, 30_000, 'linux.firefox_esr', null)
+    const row = u.getDailyUsageAll().find((x) => x.packageName === 'linux.firefox_esr')
+    assert.strictEqual(row.secondsToday, 30)
+    assert.strictEqual(row.appName, 'Firefox ESR')
+  } finally {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
+})
+
 test('UsageTracker drops stored daily totals from a prior day on load', () => {
   const filePath = tmpUsagePath()
   try {

@@ -160,7 +160,14 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
   );
 }
 
-function ActivityRow({ item }) {
+// A time_request row is a record of a request the child made, and the parent's
+// answer to it lives on the child. Dismissing history is fine; making a request
+// disappear from the parent's side is not, so only alert rows get an X.
+function isDismissible(item) {
+  return item.type !== 'time_request';
+}
+
+function ActivityRow({ item, onDismiss }) {
   const { colors, typography, spacing } = useTheme();
 
   const meta = TYPE_META[item.type] || { label: item.type, icon: 'Bell' };
@@ -204,6 +211,18 @@ function ActivityRow({ item }) {
             : null}
         </div>
       </div>
+      {isDismissible(item) && (
+        <button
+          onClick={() => onDismiss(item)}
+          aria-label={`Dismiss ${meta.label}`}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: `0 ${spacing.xs}px`, flexShrink: 0, lineHeight: 1,
+          }}
+        >
+          <Icon name="X" size={14} color={colors.text.muted} />
+        </button>
+      )}
     </div>
   );
 }
@@ -212,6 +231,7 @@ export default function ActivityTab({ childPublicKey }) {
   const { colors, typography, spacing } = useTheme();
   const [allAlerts, setAllAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
 
   function reload() {
     window.callBare('alerts:list', { childPublicKey })
@@ -231,12 +251,31 @@ export default function ActivityTab({ childPublicKey }) {
     return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); unsubUpdated(); unsubOverride(); unsubFailure(); };
   }, [childPublicKey]);
 
+  function handleDismiss(item) {
+    window.callBare('haptic:tap');
+    // Drop it from the list immediately; a failed delete just reappears on the
+    // next reload rather than leaving the row in a wedged half-dismissed state.
+    setAllAlerts((prev) => prev.filter((a) => a !== item));
+    window.callBare('alerts:dismiss', { childPublicKey, timestamp: item.timestamp })
+      .catch((e) => { console.error('[ActivityTab] dismiss failed:', e); reload(); });
+  }
+
+  function handleClearAll() {
+    window.callBare('haptic:tap');
+    setClearing(false);
+    window.callBare('alerts:clear', { childPublicKey })
+      .then(reload)
+      .catch((e) => { console.error('[ActivityTab] clear failed:', e); reload(); });
+  }
+
   const pendingRequests = allAlerts.filter(
     (a) => a.type === 'time_request' && !a.resolved,
   );
   const history = allAlerts.filter(
     (a) => !(a.type === 'time_request' && !a.resolved),
   );
+  // Clearing only removes alert rows, so only offer it when there are some.
+  const clearableCount = history.filter(isDismissible).length;
 
   if (loading) {
     return (
@@ -265,14 +304,60 @@ export default function ActivityTab({ childPublicKey }) {
       )}
 
       <div>
-        <div style={{ ...typography.subheading, color: colors.text.primary, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
-          Activity Log
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px`,
+        }}>
+          {/* Spacer keeps the title optically centred against the button. */}
+          <div style={{ width: '60px', flexShrink: 0 }} />
+          <div style={{ ...typography.subheading, color: colors.text.primary, textAlign: 'center' }}>
+            Activity Log
+          </div>
+          <div style={{ width: '60px', flexShrink: 0, textAlign: 'right' }}>
+            {clearableCount > 0 && !clearing && (
+              <button
+                onClick={() => { window.callBare('haptic:tap'); setClearing(true); }}
+                aria-label="Clear activity log"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                  ...typography.caption, color: colors.text.secondary,
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Clearing is irreversible, so confirm — but inline, not behind a modal
+            the parent has to dismiss. Pending requests are never cleared. */}
+        {clearing && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px`,
+            padding: `${spacing.sm}px`,
+            backgroundColor: colors.surface.elevated,
+            borderRadius: `${spacing.xs}px`,
+          }}>
+            <span style={{ ...typography.caption, color: colors.text.secondary }}>
+              Clear {clearableCount} activity {clearableCount === 1 ? 'entry' : 'entries'}?
+              Pending requests are kept.
+            </span>
+            <div style={{ display: 'flex', gap: `${spacing.xs}px`, flexShrink: 0 }}>
+              <Button variant="secondary" onClick={() => setClearing(false)} style={{ fontSize: '12px', padding: '4px 10px' }}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleClearAll} style={{ fontSize: '12px', padding: '4px 10px' }}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
         {history.length === 0 ? (
           <div style={{ ...typography.body, color: colors.text.muted, textAlign: 'center' }}>No activity yet.</div>
         ) : (
           history.map((item) => (
-            <ActivityRow key={item.id} item={item} />
+            <ActivityRow key={item.id} item={item} onDismiss={handleDismiss} />
           ))
         )}
       </div>

@@ -874,6 +874,70 @@ describe('bare dispatch', () => {
     })
   })
 
+  describe('alerts:dismiss / alerts:clear', () => {
+    function makeStore (stored) {
+      return {
+        stored,
+        get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+        put: jest.fn(async (k, v) => { stored[k] = v }),
+        del: jest.fn(async (k) => { delete stored[k] }),
+        createReadStream: jest.fn(async function * ({ gt, lt }) {
+          for (const [key, value] of Object.entries(stored)) {
+            if (key > gt && key < lt) yield { key, value }
+          }
+        }),
+      }
+    }
+
+    test('dismiss removes exactly the one alert', async () => {
+      const db = makeStore({
+        'alert:pk-child:100': { id: 'bypass:100', type: 'bypass', timestamp: 100 },
+        'alert:pk-child:200': { id: 'bypass:200', type: 'bypass', timestamp: 200 },
+      })
+      const dispatch = createDispatch({ db, send: jest.fn() })
+
+      await dispatch('alerts:dismiss', { childPublicKey: 'pk-child', timestamp: 100 })
+      expect(db.stored['alert:pk-child:100']).toBeUndefined()
+      expect(db.stored['alert:pk-child:200']).toBeDefined()
+    })
+
+    // The Activity feed is fed from BOTH alert: and request: rows. A request is
+    // an unanswered question from the child — clearing history must never throw
+    // one away, or the child waits forever for an answer that no longer exists.
+    test('clear wipes alerts but NEVER touches requests', async () => {
+      const db = makeStore({
+        'alert:pk-child:100': { id: 'bypass:100', type: 'bypass', timestamp: 100 },
+        'alert:pk-child:200': { id: 'bypass:200', type: 'enforcement_off', timestamp: 200 },
+        'request:req-1': { id: 'req-1', childPublicKey: 'pk-child', status: 'pending', requestedAt: 150 },
+      })
+      const dispatch = createDispatch({ db, send: jest.fn() })
+
+      const result = await dispatch('alerts:clear', { childPublicKey: 'pk-child' })
+      expect(result.dismissed).toBe(2)
+      expect(db.stored['alert:pk-child:100']).toBeUndefined()
+      expect(db.stored['alert:pk-child:200']).toBeUndefined()
+      expect(db.stored['request:req-1']).toBeDefined()
+    })
+
+    test('clear only touches the child it was asked about', async () => {
+      const db = makeStore({
+        'alert:pk-child:100': { id: 'bypass:100', timestamp: 100 },
+        'alert:pk-other:100': { id: 'bypass:100', timestamp: 100 },
+      })
+      const dispatch = createDispatch({ db, send: jest.fn() })
+
+      await dispatch('alerts:clear', { childPublicKey: 'pk-child' })
+      expect(db.stored['alert:pk-child:100']).toBeUndefined()
+      expect(db.stored['alert:pk-other:100']).toBeDefined()
+    })
+
+    test('both reject a missing childPublicKey', async () => {
+      const dispatch = createDispatch({ db: makeStore({}), send: jest.fn() })
+      await expect(dispatch('alerts:dismiss', { timestamp: 1 })).rejects.toThrow(/invalid/)
+      await expect(dispatch('alerts:clear', {})).rejects.toThrow(/invalid/)
+    })
+  })
+
   describe('resolveAppName', () => {
     test('prefers the policy name, which is the one the Apps tab shows', () => {
       expect(resolveAppName('linux.firefox_esr', 'Firefox ESR', 'firefox-esr')).toBe('Firefox ESR')

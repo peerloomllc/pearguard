@@ -86,6 +86,14 @@ const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
 const { ensureExtensionInstalled: ensureGnomeExtension, applyDeferredUpdate: applyDeferredExtensionUpdate } = require('./gnome-extension-installer')
 const { GnomeExtensionWatchdog } = require('./gnome-extension-watchdog')
 const { migrateUserData } = require('./userdata-migrate')
+const { shouldAlert, recordAlert } = require('./alert-dedupe')
+const { isSessionLocked } = require('../enforcement/session-lock')
+
+// One quiet-window record per alert source. Kept apart so a capability alert at
+// launch and a watchdog alert mid-session can't suppress each other — they
+// answer different questions and a parent needs both.
+const capabilityAlertStatePath = () => path.join(app.getPath('userData'), 'capability-alert.json')
+const watchdogAlertStatePath = () => path.join(app.getPath('userData'), 'watchdog-alert.json')
 
 // How often we hand usage telemetry to bare for replication to the parent.
 // Matches Android's UsageFlushWorker cadence (15 min).
@@ -548,15 +556,24 @@ app.whenReady().then(() => {
       // enforcement in 30 seconds via Settings → Extensions.
       gnomeExtensionWatchdog = new GnomeExtensionWatchdog({
         onTamper: ({ reason }) => {
-          console.warn('[main] gnome extension tamper detected:', reason)
+          console.warn('[main] gnome extension problem detected:', reason)
           // Re-run the installer so a deleted directory comes back too;
           // the installer also re-issues `gnome-extensions enable` which
-          // covers the toggle-off case.
+          // covers the toggle-off case. Always attempt the repair, even when
+          // we stay quiet below: fixing it matters more than reporting it.
           ensureGnomeExtension({ sourceDir: gnomeExtensionSourceDir })
             .catch((e) => console.warn('[main] tamper repair install failed:', e.message))
+          // Most of these conditions persist until the child logs out, and the
+          // watchdog re-checks every 15s. Without a persisted per-reason guard
+          // the parent got the same alert every 5 minutes, all night.
+          const fullReason = 'linux:' + reason
+          const statePath = watchdogAlertStatePath()
+          if (!shouldAlert({ statePath, reason: fullReason })) return
           // Relay to the parent via bare. callBare is fire-and-forget here;
-          // bare-dispatch records the event and forwards bypass:alert.
-          callBare('bypass:detected', { reason: 'linux:' + reason })
+          // bare-dispatch records the event and forwards bypass:alert. Only mark
+          // it as alerted once it actually went out.
+          callBare('bypass:detected', { reason: fullReason })
+            .then(() => recordAlert({ statePath, reason: fullReason }))
             .catch((e) => console.warn('[main] bypass:detected relay failed:', e.message))
         },
       })
@@ -1000,8 +1017,13 @@ async function reportLinuxEnforcementCapability() {
   const hasGnome = enabledList !== null   // tool absent => not a GNOME session
   const extensionEnabled = !!enabledList && enabledList.includes('pearguard-focus@peerloomllc.com')
 
-  const lockedHint = await run('loginctl', ['show-session', process.env.XDG_SESSION_ID || 'self', '-p', 'LockedHint', '--value'])
-  const sessionLocked = !!lockedHint && lockedHint.trim() === 'yes'
+  // Lock state decides whether a dead D-Bus probe means anything, so it has to
+  // be RIGHT. This used to read logind's LockedHint alone, which is useless on
+  // some sessions: the Debian child's session is Type=unspecified, logind says
+  // "Session does not support lock screen", and LockedHint reads `no` even with
+  // the screen plainly locked. isSessionLocked() asks GNOME's screensaver first
+  // and only falls back to logind. See enforcement/session-lock.js.
+  const sessionLocked = await isSessionLocked({ run })
 
   // Only meaningful when enabled AND unlocked; assess() enforces that itself.
   //
@@ -1052,18 +1074,9 @@ async function reportLinuxEnforcementCapability() {
   // Don't re-notify the parent on every launch. A broken session usually stays
   // broken until the user logs out, and the app restarts on every login (plus
   // whenever the child reopens it) — without this the parent would get the same
-  // push over and over and learn to ignore it, which defeats the point. Re-alert
-  // at most once per REALERT_MS per reason, persisted so it survives restarts.
-  const REALERT_MS = 12 * 60 * 60 * 1000
-  const statePath = path.join(app.getPath('userData'), 'capability-alert.json')
-  let last = {}
-  try { last = JSON.parse(fs.readFileSync(statePath, 'utf8')) } catch (_e) {}
-  const now = Date.now()
-  if (last.reason === verdict.reason && typeof last.at === 'number' && now - last.at < REALERT_MS) {
-    console.log('[main] parent already alerted for', verdict.reason,
-      Math.round((now - last.at) / 60000), 'min ago; not re-notifying')
-    return
-  }
+  // push over and over and learn to ignore it, which defeats the point.
+  const statePath = capabilityAlertStatePath()
+  if (!shouldAlert({ statePath, reason: verdict.reason })) return
 
   // Tell the parent. Reuses the existing bypass pipeline (persisted + relayed to
   // every paired parent); src/bypass-reasons.js maps these reasons to wording
@@ -1071,7 +1084,7 @@ async function reportLinuxEnforcementCapability() {
   // limitation, not their tampering.
   try {
     await callBare('bypass:detected', { reason: verdict.reason })
-    try { fs.writeFileSync(statePath, JSON.stringify({ reason: verdict.reason, at: now })) } catch (_e) {}
+    recordAlert({ statePath, reason: verdict.reason })
     console.log('[main] parent notified that enforcement is unavailable:', verdict.reason)
   } catch (e) {
     console.warn('[main] failed to notify parent of enforcement failure:', e.message)

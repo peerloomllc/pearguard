@@ -3047,6 +3047,7 @@ test('GnomeExtensionWatchdog stays quiet while state is ACTIVE', async () => {
     checkIntervalMs: 1_000_000,
     onTamper: () => { tampers++ },
     logger: { log() {}, warn() {} },
+    isLocked: async () => false,
     runExtensions: async (args) => {
       if (args[0] === 'info') return { ok: true, stdout: '  State: ACTIVE\n', stderr: '' }
       return { ok: true, stdout: '', stderr: '' }
@@ -3061,13 +3062,14 @@ test('GnomeExtensionWatchdog stays quiet while state is ACTIVE', async () => {
 // whether the child actually turned it off. This test used to assert
 // 'extension-disabled' for a bare `State: INITIALIZED` with no Enabled: line,
 // i.e. it asserted that we accuse the child on no evidence. That was the bug.
-async function runWatchdogOnce(infoStdout) {
+async function runWatchdogOnce(infoStdout, { locked = false } = {}) {
   const calls = []
   let tamperPayload = null
   const watchdog = new GnomeExtensionWatchdog({
     checkIntervalMs: 1_000_000,
     onTamper: (p) => { tamperPayload = p },
     logger: { log() {}, warn() {} },
+    isLocked: async () => locked,
     runExtensions: async (args) => {
       calls.push(args.join(' '))
       if (args[0] === 'info') return { ok: true, stdout: infoStdout, stderr: '' }
@@ -3102,6 +3104,7 @@ test('GnomeExtensionWatchdog throttles repeated tamper reports', async () => {
     onTamper: () => { tampers++ },
     now: () => fakeNow,
     logger: { log() {}, warn() {} },
+    isLocked: async () => false,
     runExtensions: async () => ({ ok: true, stdout: '  State: INITIALIZED\n', stderr: '' }),
   })
   await watchdog._check()
@@ -3112,12 +3115,73 @@ test('GnomeExtensionWatchdog throttles repeated tamper reports', async () => {
   assert.strictEqual(tampers, 2)
 })
 
+// --- The lock screen is not a bypass -------------------------------------
+//
+// Measured on the Debian child (GNOME 48 Wayland): locking the screen takes the
+// extension to `Enabled: Yes / State: INACTIVE`, because GNOME unloads user
+// extensions on the lock screen BY DESIGN — which foreground-wayland.js relies
+// on to stop phantom usage accruing. The watchdog read that as a failure and
+// told the parent "app blocking is off on Ben's PC" every time Ben locked his
+// screen, all night, every ~5 minutes.
+test('GnomeExtensionWatchdog says NOTHING about an unloaded extension while the screen is locked', async () => {
+  const { tamperPayload, calls } = await runWatchdogOnce('  Enabled: Yes\n  State: INACTIVE\n', { locked: true })
+  assert.strictEqual(tamperPayload, null, 'a locked screen must not alert the parent')
+  // Nor should we fight the Shell over it: re-enabling during the lock is noise.
+  assert.ok(!calls.some((c) => c.startsWith('enable')), 'must not try to re-enable while locked')
+})
+
+// The lock gate must not become a way to hide real tampering: a kid cannot open
+// Settings from the lock screen, but the moment the session is back we must be
+// checking again.
+test('GnomeExtensionWatchdog reports the same state once the screen is unlocked', async () => {
+  const { tamperPayload } = await runWatchdogOnce('  Enabled: Yes\n  State: INACTIVE\n', { locked: false })
+  assert.ok(tamperPayload, 'unlocked + not loaded is still a real problem')
+  assert.strictEqual(tamperPayload.reason, 'extension-not-loaded')
+})
+
+test('GnomeExtensionWatchdog still reports a deleted extension while locked? no — but does when unlocked', async () => {
+  const calls = []
+  let payload = null
+  const make = (locked) => new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    onTamper: (p) => { payload = p },
+    logger: { log() {}, warn() {} },
+    isLocked: async () => locked,
+    runExtensions: async (args) => {
+      calls.push(args.join(' '))
+      return { ok: false, error: 'no such extension', code: 1, stdout: '', stderr: '' }
+    },
+  })
+  await make(true)._check()
+  assert.strictEqual(payload, null, 'locked: an info failure proves nothing')
+  await make(false)._check()
+  assert.ok(payload && payload.reason === 'extension-missing', 'unlocked: report it')
+})
+
+// A lock probe that throws must never swallow a real bypass.
+test('GnomeExtensionWatchdog reports when the lock probe itself fails', async () => {
+  let payload = null
+  const watchdog = new GnomeExtensionWatchdog({
+    checkIntervalMs: 1_000_000,
+    onTamper: (p) => { payload = p },
+    logger: { log() {}, warn() {} },
+    isLocked: async () => { throw new Error('gdbus exploded') },
+    runExtensions: async (args) => (args[0] === 'info'
+      ? { ok: true, stdout: '  Enabled: No\n  State: INACTIVE\n', stderr: '' }
+      : { ok: true, stdout: '', stderr: '' }),
+  })
+  await watchdog._check()
+  assert.ok(payload, 'unknown lock state must fail towards reporting')
+  assert.strictEqual(payload.reason, 'extension-disabled')
+})
+
 test('GnomeExtensionWatchdog distinguishes OUT_OF_DATE from disabled', async () => {
   let payload = null
   const watchdog = new GnomeExtensionWatchdog({
     checkIntervalMs: 1_000_000,
     onTamper: (p) => { payload = p },
     logger: { log() {}, warn() {} },
+    isLocked: async () => false,
     runExtensions: async (args) => {
       if (args[0] === 'info') return { ok: true, stdout: '  State: OUT_OF_DATE\n', stderr: '' }
       return { ok: true, stdout: '', stderr: '' }
@@ -3594,4 +3658,91 @@ test('applyDeferredUpdate writes the pending files', () => {
   const dst = tmpTree({ 'extension.js': 'OLD' })
   extInstaller.syncTree(src, dst)
   assert.strictEqual(fs.readFileSync(path.join(dst, 'extension.js'), 'utf8'), 'NEW')
+})
+
+// --- session-lock ---------------------------------------------------------
+
+const { isSessionLocked, parseScreenSaverActive, parseLockedHint } = require('../src/enforcement/session-lock')
+const { shouldAlert, recordAlert } = require('../src/main/alert-dedupe')
+
+test('parseScreenSaverActive reads gdbus boolean tuples', () => {
+  assert.strictEqual(parseScreenSaverActive('(true,)\n'), true)
+  assert.strictEqual(parseScreenSaverActive('(false,)\n'), false)
+  // Anything that isn't a boolean reply is "don't know", NOT "unlocked".
+  assert.strictEqual(parseScreenSaverActive('Error: no such name'), null)
+  assert.strictEqual(parseScreenSaverActive(''), null)
+  assert.strictEqual(parseScreenSaverActive(null), null)
+})
+
+// The trap the capability check fell into: on the Debian child the session is
+// Type=unspecified, so logind replies "Session does not support lock screen".
+// Read as a plain string that is not "yes", that looks exactly like "unlocked" —
+// which is why LockedHint must never be the primary signal.
+test('parseLockedHint treats a non-answer as unknown, not as unlocked', () => {
+  assert.strictEqual(parseLockedHint('yes\n'), true)
+  assert.strictEqual(parseLockedHint('no\n'), false)
+  assert.strictEqual(parseLockedHint('Session does not support lock screen'), null)
+  assert.strictEqual(parseLockedHint(null), null)
+})
+
+test('isSessionLocked trusts GNOME screensaver over logind', async () => {
+  if (process.platform !== 'linux') return
+  const run = async (cmd) => (cmd === 'gdbus' ? '(true,)\n' : 'no\n')
+  assert.strictEqual(await isSessionLocked({ run }), true)
+})
+
+test('isSessionLocked falls back to logind when the screensaver does not answer', async () => {
+  if (process.platform !== 'linux') return
+  const run = async (cmd) => (cmd === 'gdbus' ? null : 'yes\n')
+  assert.strictEqual(await isSessionLocked({ run }), true)
+})
+
+test('isSessionLocked reports unlocked when nothing answers', async () => {
+  if (process.platform !== 'linux') return
+  // Fail towards checking: a missed lock costs one spurious alert, a wrongly
+  // assumed lock would mask a real bypass.
+  assert.strictEqual(await isSessionLocked({ run: async () => null }), false)
+})
+
+// --- alert dedupe ---------------------------------------------------------
+
+function fakeStore(initial) {
+  let data = initial
+  return {
+    readFile: () => { if (data === undefined) throw new Error('ENOENT'); return data },
+    writeFile: (_p, v) => { data = v },
+    get: () => data,
+  }
+}
+
+test('alert dedupe: first alert goes out, a repeat inside the window does not', () => {
+  const store = fakeStore(undefined)
+  const logger = { log() {}, warn() {} }
+  const args = { statePath: '/x', reason: 'linux:extension-not-loaded', logger, ...store }
+
+  assert.strictEqual(shouldAlert({ ...args, now: 1000 }), true)
+  recordAlert({ ...args, now: 1000 })
+  assert.strictEqual(shouldAlert({ ...args, now: 1000 + 5 * 60_000 }), false, '5 min later: stay quiet')
+  assert.strictEqual(shouldAlert({ ...args, now: 1000 + 13 * 3600_000 }), true, 'past the window: alert again')
+})
+
+test('alert dedupe: a DIFFERENT reason is always new information', () => {
+  const store = fakeStore(JSON.stringify({ reason: 'linux:extension-not-loaded', at: 1000 }))
+  const logger = { log() {}, warn() {} }
+  assert.strictEqual(
+    shouldAlert({ statePath: '/x', reason: 'linux:extension-disabled', now: 2000, logger, ...store }),
+    true,
+  )
+})
+
+// Suppression must be EARNED by an alert that actually went out. If the relay to
+// bare throws, the caller never calls recordAlert, so the next check retries —
+// otherwise one failed send would mute the parent for 12 hours.
+test('alert dedupe: nothing is suppressed until the alert is recorded', () => {
+  const store = fakeStore(undefined)
+  const logger = { log() {}, warn() {} }
+  const args = { statePath: '/x', reason: 'linux:extension-error', logger, ...store }
+  assert.strictEqual(shouldAlert({ ...args, now: 1000 }), true)
+  // ...relay failed; no recordAlert call...
+  assert.strictEqual(shouldAlert({ ...args, now: 2000 }), true, 'must retry a send that never landed')
 })

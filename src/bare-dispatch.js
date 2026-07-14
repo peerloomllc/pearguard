@@ -8,6 +8,7 @@
 const { log } = require('./log')
 const { nextScheduleWindow } = require('./policy')
 const { validatePin } = require('./pin-rules')
+const { describeBypassReason } = require('./bypass-reasons')
 
 // Return YYYY-MM-DD in local time (not UTC) so session date keys
 // match the user's calendar day regardless of timezone.
@@ -77,6 +78,22 @@ function applyExclusionsToReport(report, exclusions) {
   const sessions = Array.isArray(report.sessions) ? report.sessions.filter((s) => !exclusions.has(s.packageName)) : report.sessions
   const todayScreenTimeSeconds = Array.isArray(apps) ? apps.reduce((sum, a) => sum + (a.todaySeconds || 0), 0) : report.todayScreenTimeSeconds
   return { ...report, apps, sessions, todayScreenTimeSeconds }
+}
+
+// Re-derive an alert's parent-facing label and type from its `reason`.
+//
+// Applied on read so alerts already in Hyperbee are shown correctly: the rows
+// written before this existed are labelled with the raw reason slug and are all
+// typed 'bypass', which paints "PearGuard's extension didn't load" as a red
+// Bypass Attempt by the child. describeBypassReason owns both decisions.
+function relabelAlert(alert) {
+  const described = describeBypassReason(alert.reason, alert.childDisplayName)
+  return {
+    ...alert,
+    type: described.tamper ? 'bypass' : 'enforcement_off',
+    appDisplayName: described.title,
+    body: described.body,
+  }
 }
 
 // Pick the friendliest name we have for a package.
@@ -1842,7 +1859,11 @@ function createDispatch (ctx) {
             await ctx.db.del(key) // auto-expire stale alerts
             continue
           }
-          results.push(value)
+          // Rows written before the label fix carry the raw reason slug as their
+          // display text ("linux:extension-disabled") and are all typed 'bypass',
+          // which badges a PearGuard failure as a red Bypass Attempt. Re-derive
+          // both from the reason on read, so history reads correctly too.
+          results.push(value.reason ? relabelAlert(value) : value)
         }
 
         // Time requests received from this child

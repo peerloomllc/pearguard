@@ -807,6 +807,73 @@ describe('bare dispatch', () => {
     })
   })
 
+  // The Activity feed showed a wall of rows reading literally
+  // "linux:extension-disabled", each badged red as a "Bypass Attempt". The label
+  // came from a hardcoded map of the five Android reasons, so every desktop
+  // reason fell through to the raw slug; and every reason was typed 'bypass',
+  // which accuses the child even when PearGuard is the thing that failed.
+  // Relabelling on READ fixes the rows already stored, not just new ones.
+  describe('alerts:list relabels stored bypass alerts', () => {
+    function makeAlertDb (alerts) {
+      const stored = {}
+      for (const a of alerts) stored['alert:pk-child:' + a.timestamp] = a
+      return {
+        get: jest.fn(async () => null),
+        put: jest.fn(),
+        del: jest.fn(),
+        createReadStream: jest.fn(async function * ({ gt }) {
+          if (!gt.startsWith('alert:')) return
+          for (const [key, value] of Object.entries(stored)) yield { key, value }
+        }),
+      }
+    }
+
+    test('a capability failure is not shown as a bypass attempt', async () => {
+      const db = makeAlertDb([{
+        id: 'bypass:1', type: 'bypass', timestamp: Date.now(),
+        reason: 'linux:extension-not-loaded',
+        appDisplayName: 'linux:extension-not-loaded',   // the raw slug, as stored
+        childPublicKey: 'pk-child', childDisplayName: 'Ben',
+      }])
+      const dispatch = createDispatch({ db, send: jest.fn(), getMode: () => 'parent', sendToPeer: jest.fn() })
+
+      const [alert] = await dispatch('alerts:list', { childPublicKey: 'pk-child' })
+      expect(alert.type).toBe('enforcement_off')
+      expect(alert.appDisplayName).not.toMatch(/^linux:/)
+      expect(alert.appDisplayName).toMatch(/Ben/)
+      expect(alert.body).toMatch(/log out/i)
+    })
+
+    test('real tampering is still typed as a bypass and still names what they did', async () => {
+      const db = makeAlertDb([{
+        id: 'bypass:2', type: 'bypass', timestamp: Date.now(),
+        reason: 'linux:extension-disabled',
+        appDisplayName: 'linux:extension-disabled',
+        childPublicKey: 'pk-child', childDisplayName: 'Ben',
+      }])
+      const dispatch = createDispatch({ db, send: jest.fn(), getMode: () => 'parent', sendToPeer: jest.fn() })
+
+      const [alert] = await dispatch('alerts:list', { childPublicKey: 'pk-child' })
+      expect(alert.type).toBe('bypass')
+      expect(alert.appDisplayName).toMatch(/Ben/)
+      expect(alert.body).toMatch(/turned off/i)
+    })
+
+    test('an Android reason keeps its meaning', async () => {
+      const db = makeAlertDb([{
+        id: 'bypass:3', type: 'bypass', timestamp: Date.now(),
+        reason: 'accessibility_disabled',
+        appDisplayName: 'Accessibility Service disabled',
+        childPublicKey: 'pk-child', childDisplayName: 'Ben',
+      }])
+      const dispatch = createDispatch({ db, send: jest.fn(), getMode: () => 'parent', sendToPeer: jest.fn() })
+
+      const [alert] = await dispatch('alerts:list', { childPublicKey: 'pk-child' })
+      expect(alert.type).toBe('bypass')
+      expect(alert.body).toMatch(/Accessibility Service/)
+    })
+  })
+
   describe('resolveAppName', () => {
     test('prefers the policy name, which is the one the Apps tab shows', () => {
       expect(resolveAppName('linux.firefox_esr', 'Firefox ESR', 'firefox-esr')).toBe('Firefox ESR')

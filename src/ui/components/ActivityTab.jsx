@@ -7,6 +7,11 @@ import Badge from './primitives/Badge.jsx';
 
 const TYPE_META = {
   bypass:          { label: 'Bypass Attempt',  icon: 'Warning' },
+  // Enforcement is off, but the child did not do it (an extension that failed to
+  // load, an unsupported compositor). Same urgency, no accusation - badging these
+  // as a "Bypass Attempt" in red told parents their kid defeated protection when
+  // PearGuard had simply failed. See src/bypass-reasons.js.
+  enforcement_off: { label: 'Protection Off',   icon: 'Warning' },
   pin_use:         { label: 'PIN Used',         icon: 'LockSimpleOpen' },
   time_request:    { label: 'Time Request',     icon: 'Clock' },
   app_installed:   { label: 'App Installed',    icon: 'Plus' },
@@ -16,6 +21,8 @@ const TYPE_META = {
 };
 
 function typeColor(type, colors) {
+  // Amber, not red: the parent must still act, but nobody is being accused.
+  if (type === 'enforcement_off') return colors.secondary;
   if (type === 'bypass' || type === 'app_uninstalled' || type === 'pin_failure') return colors.error;
   if (type === 'time_request' || type === 'pin_use' || type === 'pin_override') return colors.secondary;
   if (type === 'app_installed') return colors.success;

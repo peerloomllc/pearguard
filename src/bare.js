@@ -21,6 +21,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
 const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport } = require('./bare-dispatch')
+const { describeBypassReason } = require('./bypass-reasons')
 const { signMessage, verifyMessage } = require('./message')
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -780,21 +781,23 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'bypass:alert': {
       const childPublicKey = msg.from
       const { reason, detectedAt } = msg.payload
-      const reasonLabels = {
-        accessibility_disabled: 'Accessibility Service disabled',
-        force_stopped: 'App was force-closed',
-        device_admin_disabled: 'Device Admin disabled',
-        clock_changed: 'Device clock changed',
-        timezone_changed: 'Device time zone changed',
-      }
       const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
       const childDisplayName = peerRecord?.value?.displayName || 'Child'
+      // The Activity row used to be labelled from a hardcoded map of the five
+      // Android reasons, so every desktop reason fell through to the raw string
+      // and the parent read a literal "linux:extension-not-loaded". Worse, all
+      // of them were typed 'bypass' — a red "Bypass Attempt" badge — including
+      // the reasons that are PearGuard's own failure and not the child's doing.
+      // describeBypassReason is the single source of truth for both the wording
+      // and whether this is really tampering; the notification already used it.
+      const described = describeBypassReason(reason, childDisplayName)
       const alertEntry = {
         id: 'bypass:' + detectedAt,
-        type: 'bypass',
+        type: described.tamper ? 'bypass' : 'enforcement_off',
         timestamp: detectedAt,
         reason,
-        appDisplayName: reasonLabels[reason] || reason,
+        appDisplayName: described.title,
+        body: described.body,
         childPublicKey,
         childDisplayName,
       }

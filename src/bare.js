@@ -355,9 +355,11 @@ async function init (dataDir, attempt = 0) {
   // alone cannot shrink disk use; a full core rebuild is required.
   const AUTO_RECLAIM_THRESHOLD = 75 * 1024 * 1024
   async function maybeAutoReclaim () {
-    // bare-fs/bare-path read `Bare.platform` at module load, so storageBreakdown
-    // throws on the Electron Windows child client where the global is absent.
-    if (typeof Bare === 'undefined') return
+    // storageBreakdown/rebuildLocalDb resolve fs/path via reclaimFs/reclaimPath,
+    // which fall back to Node's built-ins on the Electron desktop client (where
+    // the bare-* modules throw because `Bare` is absent). So this runs on both
+    // the Bare worklet and desktop; previously it was skipped on desktop and the
+    // append-only Hyperbee log grew unbounded (multi-GB core/db).
     try {
       const { total } = await storageBreakdown()
       if (total < AUTO_RECLAIM_THRESHOLD) return
@@ -525,8 +527,16 @@ async function onPeerConnection (conn, info) {
   // Child sends hello proactively on new connection — include real profile name + avatar
   if (mode === 'child') {
     const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
-    const profileRaw = await db.get('profile').catch(() => null)
-    const profile = profileRaw ? profileRaw.value : {}
+    // A reclaim rebuild closes and swaps `core`/`db`; a read during that window
+    // throws SESSION_CLOSED *synchronously* (so `.catch()` never attaches). Wait
+    // out any in-flight rebuild and read defensively so a connection that lands
+    // mid-swap doesn't surface as an unhandled rejection.
+    if (_rebuildBusy) await _rebuildBusy
+    let profile = {}
+    try {
+      const profileRaw = await db.get('profile')
+      if (profileRaw) profile = profileRaw.value
+    } catch { profile = {} }
     const displayName = profile.displayName || 'Child Device'
     const avatarThumb = profile.avatar
       ? (profile.avatar.type === 'preset' ? 'preset:' + profile.avatar.id
@@ -1392,9 +1402,26 @@ function classifyKey (k) {
   return 'other'
 }
 
+// fs/path resolvers that work under both runtimes. On the Bare worklet (mobile)
+// these resolve to bare-fs/bare-path; on the Electron desktop client the bare-*
+// modules throw "Bare is not defined" at require time, so we fall back to Node's
+// built-ins. Both expose a compatible promises API (stat/readdir/rm/rename).
+let _fsMod = null
+let _pathMod = null
+function reclaimFs () {
+  if (_fsMod) return _fsMod
+  try { _fsMod = require('bare-fs') } catch { _fsMod = require('fs') }
+  return _fsMod
+}
+function reclaimPath () {
+  if (_pathMod) return _pathMod
+  try { _pathMod = require('bare-path') } catch { _pathMod = require('path') }
+  return _pathMod
+}
+
 async function storageBreakdown () {
-  const fs = require('bare-fs')
-  const path = require('bare-path')
+  const fs = reclaimFs()
+  const path = reclaimPath()
   const root = _dataDir + '/pearguard/core'
   let total = 0
   const cats = {
@@ -1505,7 +1532,7 @@ async function rebuildLocalDb (opts = {}) {
     }
     await new Promise(r => setTimeout(r, 25))
   }
-  const fs = require('bare-fs')
+  const fs = reclaimFs()
   async function dirSize (dir) {
     let total = 0
     let entries

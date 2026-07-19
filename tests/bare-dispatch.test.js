@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -2767,5 +2767,67 @@ describe('bare dispatch', () => {
       const dispatchB = createDispatch(ctxB)
       await expect(dispatchB('backup:import', { jsonString: json })).rejects.toThrow(/not fresh/)
     })
+  })
+})
+
+describe('isBlockClearedByFreshInvite (handleHello block-clear guard)', () => {
+  function makeMockDb (stored = {}) {
+    return {
+      get: jest.fn(async (k) => (stored[k] ? { value: stored[k] } : null)),
+    }
+  }
+  const PEER = 'childpk_A'
+  const BLOCKED_AT = 1000
+
+  test('clears when a pendingInviteTopic matches THIS connection topic and is newer', async () => {
+    const db = makeMockDb({ 'pendingInviteTopic:topicA': { topicHex: 'topicA', createdAt: 2000 } })
+    const ok = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex: PEER, incomingTopic: 'topicA', isChildHello: true, blockedAt: BLOCKED_AT,
+    })
+    expect(ok).toBe(true)
+  })
+
+  test('clears when a pendingChild is keyed by THIS peer and is newer', async () => {
+    const db = makeMockDb({ ['pendingChild:' + PEER]: { publicKey: PEER, ts: 2000 } })
+    const ok = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex: PEER, incomingTopic: null, isChildHello: true, blockedAt: BLOCKED_AT,
+    })
+    expect(ok).toBe(true)
+  })
+
+  // The regression: a blocked child reconnecting with empty info.topics[] must NOT
+  // clear its block just because an UNRELATED new-child invite is open (opened for a
+  // different child). Previously a "any newer pendingInviteTopic" fallback did exactly
+  // that, letting a removed child re-pair itself.
+  test('does NOT clear on an unrelated fresh invite (no bound topic, no pendingChild)', async () => {
+    const db = makeMockDb({ 'pendingInviteTopic:topicForChildB': { topicHex: 'topicForChildB', createdAt: 5000 } })
+    const ok = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex: PEER, incomingTopic: null, isChildHello: true, blockedAt: BLOCKED_AT,
+    })
+    expect(ok).toBe(false)
+  })
+
+  test('does NOT clear when the matching invite topic is OLDER than the block', async () => {
+    const db = makeMockDb({ 'pendingInviteTopic:topicA': { topicHex: 'topicA', createdAt: 500 } })
+    const ok = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex: PEER, incomingTopic: 'topicA', isChildHello: true, blockedAt: BLOCKED_AT,
+    })
+    expect(ok).toBe(false)
+  })
+
+  test('does NOT clear when the pendingChild belongs to a DIFFERENT peer', async () => {
+    const db = makeMockDb({ 'pendingChild:someOtherChild': { publicKey: 'someOtherChild', ts: 9000 } })
+    const ok = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex: PEER, incomingTopic: null, isChildHello: true, blockedAt: BLOCKED_AT,
+    })
+    expect(ok).toBe(false)
+  })
+
+  test('does NOT clear when nothing pending exists', async () => {
+    const db = makeMockDb({})
+    const ok = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex: PEER, incomingTopic: 'topicA', isChildHello: true, blockedAt: BLOCKED_AT,
+    })
+    expect(ok).toBe(false)
   })
 })

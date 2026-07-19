@@ -2745,4 +2745,40 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport }
+/**
+ * Decide whether a blocked peer's hello arrives on a FRESH invite that should clear
+ * the block (used by handleHello). A pending invite only counts when it is
+ * demonstrably bound to THIS peer:
+ *   1. a pendingInviteTopic matching this connection's OWN topic — the peer actually
+ *      joined the fresh invite topic, so it is the invited party; or
+ *   2. a pendingChild record keyed by this peer's identity — the parent accepted this
+ *      specific child's own (QR) invite.
+ *
+ * It deliberately does NOT clear on "any newer pending invite". Doing so let a
+ * previously-unpaired child that reconnects (on a cached connection with empty
+ * info.topics[], so no bound topic) match an UNRELATED new-child invite opened for a
+ * different child, delete its own blocked: record and re-pair itself — an enforcement
+ * bypass triggered just by opening "Add Child". A legitimate re-pair of a still-blocked
+ * child instead clears via path 1 once it connects on the actual invite topic (or via
+ * the explicit child:clearBlocked escape hatch).
+ *
+ * @param {object} db — Hyperbee instance
+ * @param {object} ctx — { peerIdentityKeyHex, incomingTopic, isChildHello, blockedAt }
+ * @returns {Promise<boolean>}
+ */
+async function isBlockClearedByFreshInvite (db, { peerIdentityKeyHex, incomingTopic, isChildHello, blockedAt }) {
+  // 1. pendingInviteTopic matching this connection's topic (parent-hosted invite the
+  //    peer actually joined).
+  if (incomingTopic) {
+    const pending = await db.get('pendingInviteTopic:' + incomingTopic).catch(() => null)
+    if (pending && (pending.value?.createdAt || 0) > blockedAt) return true
+  }
+  // 2. pendingChild bound to THIS peer (parent accepted this child's own QR invite).
+  if (isChildHello) {
+    const pendingChild = await db.get('pendingChild:' + peerIdentityKeyHex).catch(() => null)
+    if (pendingChild && (pendingChild.value?.ts || 0) > blockedAt) return true
+  }
+  return false
+}
+
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

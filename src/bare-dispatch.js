@@ -324,6 +324,7 @@ function createDispatch (ctx) {
           const lockedField = {
             locked: !!(policyRaw?.value?.locked),
             lockMessage: policyRaw?.value?.lockMessage || '',
+            pauseUntil: policyRaw?.value?.pauseUntil || 0,
           }
           const exclusions = await getExclusions(ctx.db, value.publicKey)
           for await (const { value: report } of ctx.db.createReadStream({
@@ -1838,6 +1839,8 @@ function createDispatch (ctx) {
         if (locked) {
           const msg = typeof lockMessage === 'string' ? lockMessage.trim() : ''
           policy.lockMessage = msg ? msg.slice(0, 280) : ''
+          // Lock and free-time pause are opposites — locking cancels any pause.
+          delete policy.pauseUntil
         } else {
           policy.lockMessage = ''
         }
@@ -1853,6 +1856,36 @@ function createDispatch (ctx) {
           // child offline — policy stored; will be sent on reconnect
         }
         return { ok: true }
+      }
+
+      case 'policy:setPause': {
+        // Free-time / holiday mode: suspend ALL enforcement until `pauseUntil`
+        // (epoch ms). The inverse of policy:setLock. A non-future value clears the
+        // pause (resume protection now). Mutually exclusive with a device lock.
+        const { childPublicKey, pauseUntil } = args
+        if (!childPublicKey) throw new Error('invalid policy:setPause args')
+        const raw = await ctx.db.get('policy:' + childPublicKey)
+        const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
+        const until = Number(pauseUntil)
+        if (Number.isFinite(until) && until > Date.now()) {
+          policy.pauseUntil = until
+          policy.locked = false
+          policy.lockMessage = ''
+        } else {
+          delete policy.pauseUntil
+        }
+        policy.version = (policy.version || 0) + 1
+        await ctx.db.put('policy:' + childPublicKey, policy)
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) {
+            ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: policy })
+          }
+        } catch (_e) {
+          // child offline — policy stored; will be sent on reconnect
+        }
+        return { ok: true, pauseUntil: policy.pauseUntil || 0 }
       }
 
       case 'settings:get': {

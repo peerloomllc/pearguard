@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -2871,5 +2871,60 @@ describe('groupSessionsByLocalDate (usage:report day bucketing)', () => {
     expect(groupSessionsByLocalDate([], jan16noon).size).toBe(0)
     expect(groupSessionsByLocalDate(null, jan16noon).size).toBe(0)
     expect(groupSessionsByLocalDate(undefined, jan16noon).size).toBe(0)
+  })
+})
+
+describe('pruneStaleKeys (cleanup sweep helper)', () => {
+  // Mock db with a range-scannable store and a del spy.
+  function makeMockDb (stored) {
+    return {
+      _stored: stored,
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if ((gt == null || key > gt) && (lt == null || key < lt)) yield { key, value }
+        }
+      },
+    }
+  }
+  const NOW = new Date(2024, 5, 1, 12, 0, 0).getTime()
+  const cutoff = NOW - 7 * 24 * 60 * 60 * 1000
+  const old = cutoff - 60_000     // just past the window
+  const recent = cutoff + 60_000  // just inside the window
+
+  test('deletes only entries older than cutoff, keyed on the given field', async () => {
+    const stored = {
+      ['screentime:grant:childA:' + old]: { grantedAt: old },
+      ['screentime:grant:childA:' + recent]: { grantedAt: recent },
+      ['screentime:grant:childB:' + old]: { grantedAt: old },
+    }
+    const db = makeMockDb(stored)
+    const removed = await pruneStaleKeys(db, 'screentime:grant:', 'grantedAt', cutoff)
+    expect(removed).toBe(2)
+    expect(Object.keys(stored)).toEqual(['screentime:grant:childA:' + recent])
+  })
+
+  test('stays within the prefix range (does not touch neighbouring key spaces)', async () => {
+    const stored = {
+      'pendingChild:aaaa': { ts: old },
+      'pendingParent:bbbb': { ts: old }, // different prefix — must be untouched
+      'peers:cccc': { pairedAt: old },
+    }
+    const db = makeMockDb(stored)
+    const removed = await pruneStaleKeys(db, 'pendingChild:', 'ts', cutoff)
+    expect(removed).toBe(1)
+    expect(Object.keys(stored).sort()).toEqual(['peers:cccc', 'pendingParent:bbbb'])
+  })
+
+  test('treats a missing timestamp field as 0 (stale) and skips null values', async () => {
+    const stored = {
+      'pendingChild:noTs': { publicKey: 'x' }, // no ts -> 0 -> pruned
+      'pendingChild:nullVal': null,            // null value -> skipped, not a crash
+      'pendingChild:fresh': { ts: recent },
+    }
+    const db = makeMockDb(stored)
+    const removed = await pruneStaleKeys(db, 'pendingChild:', 'ts', cutoff)
+    expect(removed).toBe(1)
+    expect(Object.keys(stored).sort()).toEqual(['pendingChild:fresh', 'pendingChild:nullVal'])
   })
 })

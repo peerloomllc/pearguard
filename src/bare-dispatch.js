@@ -251,36 +251,21 @@ function createDispatch (ctx) {
       }
 
       case 'children:list': {
-        // Child-mode auto-dedup (#151): same parent re-paired with a fresh identity
-        // leaves a stale peers:{oldKey} record. Group by normalized displayName;
-        // keep (isOnline desc, lastSeen desc, pairedAt desc); delete the rest.
-        if (ctx.mode === 'child') {
-          const groups = new Map()
-          for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
-            const name = (value.displayName || '').trim().toLowerCase()
-            if (!name) continue
-            if (!groups.has(name)) groups.set(name, [])
-            groups.get(name).push(value)
-          }
-          for (const entries of groups.values()) {
-            if (entries.length < 2) continue
-            entries.sort((a, b) => {
-              const aOnline = a.noiseKey && ctx.peers.has(a.noiseKey) ? 1 : 0
-              const bOnline = b.noiseKey && ctx.peers.has(b.noiseKey) ? 1 : 0
-              if (aOnline !== bOnline) return bOnline - aOnline
-              if ((b.lastSeen || 0) !== (a.lastSeen || 0)) return (b.lastSeen || 0) - (a.lastSeen || 0)
-              return (b.pairedAt || 0) - (a.pairedAt || 0)
-            })
-            for (let i = 1; i < entries.length; i++) {
-              const stale = entries[i]
-              log('[bare] auto-dedup parent peer:', stale.displayName, stale.publicKey?.slice(0, 12))
-              await ctx.db.del('peers:' + stale.publicKey).catch(() => {})
-              await ctx.db.del('pendingParent:' + stale.publicKey).catch(() => {})
-              if (ctx.knownPeerKeys) ctx.knownPeerKeys.delete(stale.publicKey)
-            }
-          }
-        }
-
+        // NOTE: there used to be a child-mode auto-dedup here that grouped parent
+        // records by normalized displayName and db.del'd all but the "best" one
+        // (#151). That silently DELETED a genuine co-parent whenever two parents
+        // shared a name (or the default) — displayName is not an identity, and
+        // since the swarm keyPair IS the identity (bare.js: `new Hyperswarm({
+        // keyPair: identity })`), a re-paired parent gets a brand-new noiseKey
+        // too, so no key-based signal can even distinguish "same parent re-paired"
+        // from "different co-parent". Removed to stop the data loss.
+        //
+        // Consequence: a re-paired parent now leaves a visible stale entry. The
+        // read-time noiseKey dedup below does NOT collapse it — that dedup only
+        // merges entries that share the SAME noiseKey (handleHello races), and
+        // the re-paired parent has a different noiseKey and is offline. Showing a
+        // harmless duplicate is the accepted cost of never deleting a real
+        // co-parent, since no reliable signal tells the two cases apart.
         const children = []
         const seenKeys = new Set()
         const seenNoiseKeys = new Set()

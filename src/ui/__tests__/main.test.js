@@ -31,6 +31,32 @@ describe('callBare IPC helper', () => {
     await expect(promise).rejects.toThrow('not initialized');
   });
 
+  test('callBare rejects after the timeout when no response ever arrives', async () => {
+    jest.useFakeTimers();
+    try {
+      const promise = window.callBare('identity:getMode', {});
+      const assertion = expect(promise).rejects.toThrow(/timed out/);
+      jest.advanceTimersByTime(30000);
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a delivered response clears the timeout (no late rejection)', async () => {
+    jest.useFakeTimers();
+    try {
+      const promise = window.callBare('identity:getMode', {});
+      const msg = JSON.parse(window.ReactNativeWebView.postMessage.mock.calls[0][0]);
+      window.__pearResponse(msg.id, { mode: 'child' });
+      await expect(promise).resolves.toEqual({ mode: 'child' });
+      // Firing the (now-cleared) timer must not produce a late unhandled rejection.
+      jest.advanceTimersByTime(60000);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('onBareEvent delivers events to registered handlers', () => {
     const handler = jest.fn();
     window.onBareEvent('child:connected', handler);

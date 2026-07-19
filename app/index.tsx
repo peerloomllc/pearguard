@@ -37,7 +37,32 @@ let _workletStarted = false
 let _mode: string | null = null
 let _dbReady = false
 let _nextId = 1
-const _pending = new Map<number, (msg: any) => void>()
+const _pending = new Map<number, { cb: (msg: any) => void; timer: ReturnType<typeof setTimeout> }>()
+const IPC_TIMEOUT_MS = 30000
+// Register a pending IPC call with a timeout so a lost worklet reply — a dropped
+// message, or a dead Bare thread — rejects the caller instead of hanging the promise
+// (and its spinner) forever.
+function addPending (id: number, cb: (msg: any) => void) {
+  const timer = setTimeout(() => {
+    if (_pending.has(id)) { _pending.delete(id); cb({ error: 'IPC timeout' }) }
+  }, IPC_TIMEOUT_MS)
+  _pending.set(id, { cb, timer })
+}
+function settlePending (id: number, msg: any) {
+  const entry = _pending.get(id)
+  if (!entry) return
+  clearTimeout(entry.timer)
+  _pending.delete(id)
+  entry.cb(msg)
+}
+// Settle every in-flight call with an error at once — used when the worklet
+// terminates, so pending promises reject immediately rather than each waiting out
+// its own timeout.
+function rejectAllPending (reason: string) {
+  const entries = [..._pending.values()]
+  _pending.clear()
+  for (const entry of entries) { clearTimeout(entry.timer); entry.cb({ error: reason }) }
+}
 const _eventHandlers = new Map<string, ((data: any) => void)[]>()
 // Invite URL received before worklet was ready — sent once dispatch is initialized
 let _pendingInviteUrl: string | null = null
@@ -94,10 +119,7 @@ function sendToWorklet (msg: object, pendingId?: number) {
     _worklet?.IPC.write(b4a.from(JSON.stringify(msg) + '\n'))
   } catch (e) {
     console.error('[RN] IPC write error:', e)
-    if (pendingId !== undefined) {
-      const resolve = _pending.get(pendingId)
-      if (resolve) { _pending.delete(pendingId); resolve({ error: 'IPC write failed' }) }
-    }
+    if (pendingId !== undefined) settlePending(pendingId, { error: 'IPC write failed' })
   }
 }
 
@@ -539,7 +561,7 @@ export default function Root () {
       // Forward everything else to Bare
       // bareId routes response back to the right callback; msg.id is preserved for the WebView response
       const bareId = _nextId++
-      _pending.set(bareId, result => {
+      addPending(bareId, result => {
         webViewRef.current?.injectJavaScript(
           'window.__pearResponse(' + msg.id + ', ' + JSON.stringify(result.result ?? null) + ', ' + JSON.stringify(result.error ?? null) + ');true;'
         )
@@ -617,7 +639,7 @@ export default function Root () {
       function callBare (method: string, args: any[]): Promise<any> {
         return new Promise((resolve, reject) => {
           const id = _nextId++
-          _pending.set(id, (msg) => {
+          addPending(id, (msg) => {
             if (msg.error) reject(new Error(msg.error))
             else resolve(msg.result)
           })
@@ -804,11 +826,9 @@ export default function Root () {
       const bundleAsset = Asset.fromModule(bareModule)
       await bundleAsset.downloadAsync()
       const source = await fetch(bundleAsset.localUri!).then(r => r.text())
-      _workletStarted = true
-      _worklet = new Worklet()
-
-      // Listen for messages from Bare
-      _worklet.IPC.on('data', (chunk: Uint8Array) => {
+      // Handler for messages from Bare. Defined once and re-attached on every
+      // (re)spawn of the worklet.
+      const onWorkletData = (chunk: Uint8Array) => {
         buf += b4a.toString(chunk)
         const lines = buf.split('\n')
         buf = lines.pop() ?? ''
@@ -1031,12 +1051,11 @@ export default function Root () {
                 msg.args.decision
               )
             } else if (msg.type === 'response') {
-              const resolve = _pending.get(msg.id)
-              if (resolve) { _pending.delete(msg.id); resolve(msg) }
+              settlePending(msg.id, msg)
             }
           } catch (e) { console.error('[RN] IPC parse error:', e) }
         }
-      })
+      }
 
       // When bare.js loads, it emits 'bareReady' — then we call init
       onEvent('bareReady', () => sendToWorklet({ method: 'init', dataDir, debug: __DEV__ }))
@@ -1132,7 +1151,32 @@ export default function Root () {
         }
       })
 
-      await _worklet.start('bare.bundle', source)
+      // (Re)create the Bare worklet, wire its data + termination handlers, and start
+      // it. The worklet emits 'terminate' if the native Bare thread dies; without a
+      // handler the app looked alive but did nothing and every pending call hung.
+      const spawnWorklet = () => {
+        buf = ''
+        _workletStarted = true
+        _worklet = new Worklet()
+        _worklet.on('terminate', onWorkletTerminate)
+        _worklet.IPC.on('data', onWorkletData)
+        // A fresh worklet re-emits 'bareReady', which re-triggers init (registered
+        // once below), so the DB reopens and the swarm rejoins on restart.
+        _worklet.start('bare.bundle', source)
+          .catch((e: unknown) => console.error('[RN] worklet start error:', e))
+      }
+
+      function onWorkletTerminate () {
+        console.error('[RN] Bare worklet terminated — rejecting pending calls and restarting')
+        rejectAllPending('worklet terminated')
+        _worklet = null
+        _workletStarted = false
+        setDbReady(false)
+        // Short backoff so a crash-on-start can't spin hot.
+        setTimeout(() => { if (!_workletStarted) spawnWorklet() }, 1500)
+      }
+
+      spawnWorklet()
     }
 
     start().catch(e => console.error('[RN] start error:', e))

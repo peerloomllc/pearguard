@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import { APP_CATEGORIES, CATEGORY_COLORS } from './appCategories.js';
+import PresetModal from './PresetModal.jsx';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -778,6 +779,7 @@ export default function RulesTab({ childPublicKey }) {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [footerEl, setFooterEl] = useState(null);
+  const [presetOpen, setPresetOpen] = useState(false);
   const footerRef = useCallback((node) => setFooterEl(node), []);
 
   const loadPolicy = useCallback(() => {
@@ -808,10 +810,32 @@ export default function RulesTab({ childPublicKey }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: `${spacing.base}px` }}>
+        <button
+          onClick={() => { window.callBare('haptic:tap'); setPresetOpen(true); }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `${spacing.xs}px`,
+            width: '100%', marginBottom: `${spacing.base}px`,
+            padding: `${spacing.sm}px`, cursor: 'pointer',
+            background: colors.surface.card, border: `1px dashed ${colors.border}`,
+            borderRadius: `${radius.md}px`,
+            ...typography.caption, color: colors.primary, fontWeight: '600',
+          }}
+        >
+          <Icon name="Lightning" size={16} color={colors.primary} />
+          Quick setup by age
+        </button>
         <ScreenTimeSection {...sectionProps} />
         <ScheduleSection {...sectionProps} />
       </div>
       <div ref={footerRef} />
+
+      <PresetModal
+        childPublicKey={childPublicKey}
+        policy={policy}
+        visible={presetOpen}
+        onClose={() => setPresetOpen(false)}
+        onApplied={loadPolicy}
+      />
     </div>
   );
 }

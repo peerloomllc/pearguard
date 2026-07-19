@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { signMessage, verifyMessage } = require('./message')
 const { createLineDecoder } = require('./line-decoder')
@@ -312,6 +312,16 @@ async function init (dataDir, attempt = 0) {
     for await (const { key, value } of db.createReadStream({ gt: 'bypass:', lt: 'bypass:~' })) {
       if (value && (value.detectedAt || 0) < cutoff7Ms) await db.del(key)
     }
+
+    // General-time screen-time grants (parent): key screentime:grant:{child}:{grantedAt},
+    // value.grantedAt. These are day-scoped (bonusSecondsForToday ignores non-today grants),
+    // so a 7-day window is ample. Previously unpruned - the key sorts to 'other' in reclaim,
+    // so only the destructive manual rebuild dropped it and every top-up left a permanent row.
+    await pruneStaleKeys(db, 'screentime:grant:', 'grantedAt', cutoff7Ms)
+    // Stale pairing intents (parent accepted a child-hosted invite that never completed):
+    // key pendingChild:{childPublicKey}, value.ts. Cleared on a successful pair; this drops
+    // leftovers from invites that were never accepted.
+    await pruneStaleKeys(db, 'pendingChild:', 'ts', cutoff7Ms)
   }
 
   // One-time migration: re-key sessions from UTC dates to local dates.

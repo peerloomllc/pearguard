@@ -167,6 +167,21 @@ function mergeSessions(existing, incoming) {
   return Array.from(byKey.values())
 }
 
+// Delete every key under `prefix` whose value[tsField] is older than cutoffMs. Used by
+// the periodic cleanup sweep to bound growth of write-only history keys that read paths
+// otherwise never prune (auto-reclaim only removes tombstones, not live rows). Returns
+// the number of keys removed.
+async function pruneStaleKeys(db, prefix, tsField, cutoffMs) {
+  let removed = 0
+  for await (const { key, value } of db.createReadStream({ gt: prefix, lt: prefix + '~' })) {
+    if (value && (value[tsField] || 0) < cutoffMs) {
+      await db.del(key).catch(() => {})
+      removed++
+    }
+  }
+  return removed
+}
+
 // Bucket sessions by the local calendar day of each session's OWN startedAt, falling
 // back to fallbackTs when a session lacks a startedAt. The parent's usage:report used
 // to file every session in a flush under one key derived from the flush timestamp, so
@@ -2799,4 +2814,4 @@ async function isBlockClearedByFreshInvite (db, { peerIdentityKeyHex, incomingTo
   return false
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

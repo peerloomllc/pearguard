@@ -3023,3 +3023,57 @@ describe('apps:sync reconciliation (child prunes uninstalled apps)', () => {
     expect(sendToAllParents).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'app:uninstalled' }))
   })
 })
+
+describe('time:grantGeneral (proactive parent grant, no request)', () => {
+  function makeCtx (stored = {}) {
+    const db = {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => (stored[k] ? { value: stored[k] } : null)),
+    }
+    const send = jest.fn()
+    const sendToPeer = jest.fn()
+    return { ctx: { db, send, sendToPeer }, stored, send, sendToPeer }
+  }
+
+  test('grants without a requestId: stores a grant, pushes to child, emits no request:updated', async () => {
+    const { ctx, stored, send, sendToPeer } = makeCtx({ 'peers:childpk': { noiseKey: 'noise1' } })
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('time:grantGeneral', { childPublicKey: 'childpk', extraSeconds: 1800 })
+    expect(res).toEqual({ ok: true })
+
+    const grantKey = Object.keys(stored).find((k) => k.startsWith('screentime:grant:childpk:'))
+    expect(grantKey).toBeDefined()
+    const grant = stored[grantKey]
+    expect(grant.extraSeconds).toBe(1800)
+    expect(grant.source).toBe('parent-approved')
+    // A unique synthetic id was minted for child-side idempotency/replay.
+    expect(grant.requestId).toMatch(/^grant:childpk:/)
+
+    // Child was pushed the extension using that same id.
+    expect(sendToPeer).toHaveBeenCalledWith('noise1', { type: 'time:extendGeneral', payload: { requestId: grant.requestId, extraSeconds: 1800 } })
+    // No pending request exists, so no request:updated event fires.
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'request:updated' }))
+  })
+
+  test('still flips a real request to approved and emits request:updated when requestId is given', async () => {
+    const { ctx, stored, send } = makeCtx({
+      'peers:childpk': { noiseKey: 'noise1' },
+      'request:req1': { id: 'req1', status: 'pending' },
+    })
+    const dispatch = createDispatch(ctx)
+
+    await dispatch('time:grantGeneral', { childPublicKey: 'childpk', requestId: 'req1', extraSeconds: 900 })
+
+    expect(stored['request:req1'].status).toBe('approved')
+    expect(send).toHaveBeenCalledWith({ type: 'event', event: 'request:updated', data: { requestId: 'req1', status: 'approved' } })
+  })
+
+  test('rejects a non-positive or missing duration', async () => {
+    const { ctx } = makeCtx()
+    const dispatch = createDispatch(ctx)
+    await expect(dispatch('time:grantGeneral', { childPublicKey: 'childpk', extraSeconds: 0 })).rejects.toThrow()
+    await expect(dispatch('time:grantGeneral', { childPublicKey: 'childpk' })).rejects.toThrow()
+    await expect(dispatch('time:grantGeneral', { extraSeconds: 600 })).rejects.toThrow()
+  })
+})

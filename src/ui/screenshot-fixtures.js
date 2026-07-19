@@ -339,6 +339,7 @@ function makeCallBare (scene) {
       case 'apps:decideBatch':     return Promise.resolve(true)
       case 'app:decide':           return Promise.resolve(true)
       case 'time:grant':           return Promise.resolve(true)
+      case 'time:grantGeneral':    return Promise.resolve({ ok: true })
       case 'time:deny':            return Promise.resolve(true)
 
       // usage (tab and reports)

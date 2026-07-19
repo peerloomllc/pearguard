@@ -731,6 +731,18 @@ public class AppBlockerModule extends AccessibilityService {
                     String categoryReason = getCategoryLimitBlockReason(policy, apps, appPolicy);
                     if (categoryReason != null) return categoryReason;
                 }
+            } else if (apps != null && isUnapprovedUserApp(packageName)) {
+                // Step 5: Unknown app. A launchable, non-system app that is absent
+                // from the parent's policy was installed after the last apps:sync
+                // and has never been approved. Fail CLOSED (pending) rather than
+                // allowing it: the install broadcast (PackageMonitorModule) is
+                // dropped whenever the RN bridge is down — which is most of the
+                // time in normal backgrounded operation — so enforcement cannot
+                // rely on a pending entry ever being written. Without this a fresh
+                // install is fully usable until a parent happens to connect and
+                // apps:sync records it (hours or days). Exempt/system/background
+                // packages returned earlier or are filtered by isUnapprovedUserApp.
+                return "Needs parent approval.";
             }
 
         } catch (Exception e) {
@@ -738,6 +750,35 @@ public class AppBlockerModule extends AccessibilityService {
         }
 
         return null; // allow
+    }
+
+    // A launchable, non-system app that is not in the parent's policy is treated
+    // as a newly installed, unapproved app (pending). This mirrors the
+    // launcher-visible enumeration that builds the policy
+    // (UsageStatsModule.getInstalledPackages), so only user-facing third-party
+    // installs are caught here; system and background packages are never blocked.
+    // Results are cached — launcher/system status is immutable for an installed
+    // package, and once the parent approves an app it lands in the policy map and
+    // is handled by the apps.has(...) branch before this check is reached.
+    private final java.util.Map<String, Boolean> unapprovedAppCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private boolean isUnapprovedUserApp(String packageName) {
+        Boolean cached = unapprovedAppCache.get(packageName);
+        if (cached != null) return cached;
+        boolean result = false;
+        try {
+            PackageManager pm = getPackageManager();
+            if (pm.getLaunchIntentForPackage(packageName) != null) {
+                ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
+                boolean isSystem = (info.flags
+                        & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
+                result = !isSystem;
+            }
+        } catch (Exception e) {
+            result = false; // unknown / just-removed package — do not block
+        }
+        unapprovedAppCache.put(packageName, result);
+        return result;
     }
 
     private String getScheduleBlockReason(JSONObject policy, String packageName) {

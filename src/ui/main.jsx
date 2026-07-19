@@ -6,14 +6,18 @@ import { installFixtures } from './screenshot-fixtures.js';
 
 injectFonts();
 
-// Pending IPC calls: id → { resolve, reject }
+// Pending IPC calls: id → { resolve, reject, timer }
 const pending = {};
 let nextId = 1;
+// Reject a call whose reply never arrives (worklet died, RN dropped the response)
+// so a spinner cannot hang forever. Matches the RN shell's own IPC timeout.
+const CALL_TIMEOUT_MS = 30000;
 
 // Called by RN shell when bare responds to a request
 window.__pearResponse = function (id, result, error) {
   const p = pending[id];
   if (!p) return;
+  clearTimeout(p.timer);
   delete pending[id];
   if (error) p.reject(new Error(error));
   else p.resolve(result);
@@ -58,7 +62,13 @@ window.onBareEvent = function (eventName, handler) {
 window.callBare = function (method, args) {
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    pending[id] = { resolve, reject };
+    const timer = setTimeout(function () {
+      if (pending[id]) {
+        delete pending[id];
+        reject(new Error('callBare timed out: ' + method));
+      }
+    }, CALL_TIMEOUT_MS);
+    pending[id] = { resolve, reject, timer };
     window.ReactNativeWebView.postMessage(JSON.stringify({ id, method, args: args || {} }));
   });
 };

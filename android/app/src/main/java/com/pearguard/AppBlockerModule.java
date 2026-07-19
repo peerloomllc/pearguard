@@ -81,15 +81,6 @@ public class AppBlockerModule extends AccessibilityService {
     // but the count survives, so the next wrong guess costs strictly more.
     private static final long[] PIN_LOCKOUT_LADDER_MS = { 30_000L, 120_000L, 600_000L, 3_600_000L };
 
-    // Phone/messaging package identifiers — these get contact-based exceptions
-    private static final Set<String> PHONE_PACKAGES = new HashSet<>();
-    static {
-        PHONE_PACKAGES.add("com.android.dialer");
-        PHONE_PACKAGES.add("com.google.android.dialer");
-        PHONE_PACKAGES.add("com.android.mms");
-        PHONE_PACKAGES.add("com.google.android.apps.messaging");
-    }
-
     // --- Overlay Theme (matches dark palette in src/ui/theme.js) ---
     private static final class OT {
         static final int SURFACE_BASE   = Color.argb(240, 13, 13, 13);
@@ -669,7 +660,7 @@ public class AppBlockerModule extends AccessibilityService {
         if (packageName == null) return null;
         if (packageName.equals(getPackageName())) return null;
         if (isSystemOverlayPackage(packageName)) return null;
-        if (isPhoneOrMessagingApp(packageName)) return null;
+        if (PhoneAppHelper.isPhoneOrMessagingApp(this, packageName)) return null;
 
         JSONObject policy = loadPolicy();
         if (policy == null) return null; // no policy yet, allow everything
@@ -747,13 +738,6 @@ public class AppBlockerModule extends AccessibilityService {
         }
 
         return null; // allow
-    }
-
-    static boolean isPhoneOrMessagingApp(String packageName) {
-        if (PHONE_PACKAGES.contains(packageName)) return true;
-        return packageName.contains("dialer")
-                || packageName.contains("sms")
-                || packageName.contains("messaging");
     }
 
     private String getScheduleBlockReason(JSONObject policy, String packageName) {
@@ -961,7 +945,7 @@ public class AppBlockerModule extends AccessibilityService {
                 if (pkg == null) continue;
                 if (pkg.equals(ctx.getPackageName())) continue;
                 if (isSystemOverlayPackage(ctx, pkg)) continue;
-                if (isPhoneOrMessagingApp(pkg)) continue;
+                if (PhoneAppHelper.isPhoneOrMessagingApp(ctx, pkg)) continue;
                 if (screenTimeExempt.contains(pkg)) continue;
                 if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     sessionStart.put(pkg, event.getTimeStamp());

@@ -6,6 +6,7 @@ import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
+import GrantTimeModal from './GrantTimeModal.jsx';
 import InviteCard from './InviteCard.jsx';
 import { useLocalDate } from '../useLocalDate.js';
 
@@ -18,6 +19,7 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [inviteActive, setInviteActive] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
   const [lockMessage, setLockMessage] = useState('');
+  const [grantTarget, setGrantTarget] = useState(null);
   const childrenRef = useRef(children);
   childrenRef.current = children;
   const localDate = useLocalDate();
@@ -276,8 +278,15 @@ export default forwardRef(function Dashboard(_props, ref) {
           tourId={idx === 0 ? 'dashboard-child-card' : undefined}
           onPress={() => navigateToChild(child.publicKey)}
           onLockToggle={() => handleLockToggle(child)}
+          onGrant={() => { window.callBare('haptic:tap'); setGrantTarget(child); }}
         />
       ))}
+
+      <GrantTimeModal
+        child={grantTarget}
+        visible={!!grantTarget}
+        onClose={() => setGrantTarget(null)}
+      />
 
       <Modal
         visible={!!lockTarget}

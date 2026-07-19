@@ -16,7 +16,7 @@ function formatSeconds(seconds) {
   return `${seconds}s`;
 }
 
-export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
+export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourId }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
     displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
@@ -56,15 +56,29 @@ export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
       aria-label={`Open ${displayName}`}
       data-tour-id={tourId}
     >
-      <div
-        style={{ position: 'absolute', top: `${spacing.sm}px`, right: `${spacing.sm}px` }}
-        onClick={(e) => { e.stopPropagation(); onLockToggle(); }}
-      >
-        <Icon
-          name={locked ? 'LockSimple' : 'LockSimpleOpen'}
-          size={LOCK_ICON_SIZE}
-          color={locked ? colors.error : colors.text.muted}
-        />
+      <div style={{
+        position: 'absolute', top: `${spacing.sm}px`, right: `${spacing.sm}px`,
+        display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`,
+      }}>
+        {onGrant && (
+          <div
+            role="button"
+            aria-label={`Grant bonus time to ${displayName}`}
+            onClick={(e) => { e.stopPropagation(); onGrant(); }}
+          >
+            <Icon name="Clock" size={LOCK_ICON_SIZE} color={colors.text.muted} />
+          </div>
+        )}
+        <div
+          aria-label={locked ? `Unlock ${displayName}` : `Lock ${displayName}`}
+          onClick={(e) => { e.stopPropagation(); onLockToggle(); }}
+        >
+          <Icon
+            name={locked ? 'LockSimple' : 'LockSimpleOpen'}
+            size={LOCK_ICON_SIZE}
+            color={locked ? colors.error : colors.text.muted}
+          />
+        </div>
       </div>
 
       {/* Alert badges used to sit at the end of the name row, which put them in the
@@ -85,12 +99,13 @@ export default function ChildCard({ child, onPress, onLockToggle, tourId }) {
         </div>
       )}
 
-      {/* paddingRight reserves the lock icon's column so a long child name can't
-          slide underneath it now that the badges no longer hold that space open. */}
+      {/* paddingRight reserves the top-right icon column (grant clock + lock) so a
+          long child name can't slide underneath it now that the badges no longer
+          hold that space open. */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: `${spacing.md}px`,
         marginBottom: `${spacing.sm}px`,
-        paddingRight: `${LOCK_ICON_SIZE + spacing.sm}px`,
+        paddingRight: `${2 * LOCK_ICON_SIZE + spacing.sm * 2}px`,
       }}>
         <Avatar avatar={child.avatarThumb} name={displayName} size={32} />
         <span style={{

@@ -11,6 +11,7 @@ import AdvancedTab from './AdvancedTab.jsx';
 import UsageReports from './UsageReports.jsx';
 import Modal from './primitives/Modal.jsx';
 import Input from './primitives/Input.jsx';
+import GrantTimeModal from './GrantTimeModal.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', icon: 'ChartBar' },
@@ -37,6 +38,8 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   const [confirmLock, setConfirmLock] = useState(false);
   const [locked, setLocked] = useState(child.locked || false);
   const [lockMessage, setLockMessage] = useState('');
+  // Proactive "grant bonus time" — hand out screen time with no child request.
+  const [grantOpen, setGrantOpen] = useState(false);
 
   function onLockButtonClick() {
     window.callBare('haptic:tap');
@@ -57,6 +60,11 @@ export default function ChildDetail({ child, initialTab, onBack }) {
     setConfirmLock(false);
     await applyLock(true, lockMessage);
     setLockMessage('');
+  }
+
+  function openGrant() {
+    window.callBare('haptic:tap');
+    setGrantOpen(true);
   }
 
   // Android back gesture: close UsageReports sub-view
@@ -100,6 +108,14 @@ export default function ChildDetail({ child, initialTab, onBack }) {
         <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1 }}>
           {child.displayName}
         </span>
+
+        <button
+          onClick={openGrant}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}
+          aria-label="Grant bonus time"
+        >
+          <Icon name="Clock" size={20} color={colors.text.muted} />
+        </button>
 
         <button
           onClick={onLockButtonClick}
@@ -173,6 +189,8 @@ export default function ChildDetail({ child, initialTab, onBack }) {
           maxLength={280}
         />
       </Modal>
+
+      <GrantTimeModal child={child} visible={grantOpen} onClose={() => setGrantOpen(false)} />
     </div>
   );
 }

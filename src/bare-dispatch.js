@@ -864,32 +864,44 @@ function createDispatch (ctx) {
         // per-app override: schedules, per-app limits and blocked apps all
         // still apply, the child simply gets a bigger daily budget.
         const { childPublicKey, requestId, extraSeconds } = args
-        if (!childPublicKey || !requestId || typeof extraSeconds !== 'number' || extraSeconds <= 0) {
+        if (!childPublicKey || typeof extraSeconds !== 'number' || extraSeconds <= 0) {
           throw new Error('invalid time:grantGeneral args')
         }
-        const existing = await ctx.db.get('request:' + requestId).catch(() => null)
-        if (existing) {
-          await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
-        }
-
         // Parent-side record so the UI can show what was granted today.
         const grantedAt = Date.now()
+        // A proactive grant (parent hands out time with no pending request) carries
+        // no requestId; synthesize a unique one so the child still dedups the grant
+        // and it replays correctly to an offline child via replayActiveGrants. The
+        // child uses requestId only as an idempotency key, not as a real request.
+        const rid = requestId || 'grant:' + childPublicKey + ':' + grantedAt
+
+        // Only a real pending request needs its status flipped to approved.
+        if (requestId) {
+          const existing = await ctx.db.get('request:' + requestId).catch(() => null)
+          if (existing) {
+            await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
+          }
+        }
+
         await ctx.db.put('screentime:grant:' + childPublicKey + ':' + grantedAt, {
           // requestId lets handleHello re-send this grant to a child that was
           // offline when it was approved (grants were otherwise lost).
-          childPublicKey, grantedAt, extraSeconds, source: 'parent-approved', requestId,
+          childPublicKey, grantedAt, extraSeconds, source: 'parent-approved', requestId: rid,
         })
 
         try {
           const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
           const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
           if (noiseKey) {
-            ctx.sendToPeer(noiseKey, { type: 'time:extendGeneral', payload: { requestId, extraSeconds } })
+            ctx.sendToPeer(noiseKey, { type: 'time:extendGeneral', payload: { requestId: rid, extraSeconds } })
           }
         } catch (_e) {
           // child offline — grant stored; replayed on reconnect via handleHello
         }
-        ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
+        // Only signal a request state change when there actually was a request.
+        if (requestId) {
+          ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
+        }
         return { ok: true }
       }
 

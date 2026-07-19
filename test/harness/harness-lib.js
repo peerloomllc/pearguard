@@ -74,6 +74,24 @@ function kill (inst) {
   })
 }
 
+// Convenience: run the parent↔child pairing handshake on two already-inited
+// instances and resolve once both sides emit peer:paired. Returns the two peer
+// records ({ parent: <child's view of parent>, child: <parent's view of child> }).
+async function pair (parent, child, { parentName = 'Daddy', childName = 'Kiddo' } = {}) {
+  await call(parent, 'setMode', ['parent'])
+  await call(child, 'setMode', ['child'])
+  await call(parent, 'identity:setName', { name: parentName })
+  await call(child, 'identity:setName', { name: childName })
+  const invite = await call(parent, 'invite:generate')
+  const paired = Promise.all([
+    waitEvent(parent, (m) => m.event === 'peer:paired', 90000),
+    waitEvent(child, (m) => m.event === 'peer:paired', 90000),
+  ])
+  await call(child, 'acceptInvite', [invite.inviteLink])
+  const [pOnParent, pOnChild] = await paired
+  return { child: pOnParent.data, parent: pOnChild.data }
+}
+
 function teardown (insts) {
   for (const inst of insts) {
     try { inst.child.kill('SIGKILL') } catch {}
@@ -81,4 +99,4 @@ function teardown (insts) {
   }
 }
 
-module.exports = { spawnInstance, respawn, call, waitEvent, init, kill, teardown, BARE_ENTRY }
+module.exports = { spawnInstance, respawn, call, waitEvent, init, kill, pair, teardown, BARE_ENTRY }

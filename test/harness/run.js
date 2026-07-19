@@ -12,6 +12,10 @@ const path = require('path')
 const SCEN_DIR = path.join(__dirname, 'scenarios')
 const filter = process.argv[2]
 
+// Write synchronously so progress is not lost to Node's block-buffered stdout when
+// the run is piped to a file and killed (scenarios can take tens of seconds each).
+const say = (s = '') => { try { fs.writeSync(1, s + '\n') } catch { console.log(s) } }
+
 async function main () {
   const files = fs.readdirSync(SCEN_DIR).filter((f) => f.endsWith('.js')).sort()
   const scenarios = files
@@ -20,25 +24,25 @@ async function main () {
 
   const results = []
   for (const s of scenarios) {
-    const log = (...a) => console.log(`  [${s.name}]`, ...a)
-    process.stdout.write(`\n▶ ${s.name}\n`)
+    const log = (...a) => say(`  [${s.name}] ${a.join(' ')}`)
+    say(`\n▶ ${s.name}`)
     const t0 = Date.now()
     try {
       await s.run(require('./harness-lib'), log)
       const secs = ((Date.now() - t0) / 1000).toFixed(1)
-      console.log(`✔ PASS ${s.name} (${secs}s)`)
+      say(`✔ PASS ${s.name} (${secs}s)`)
       results.push({ name: s.name, ok: true })
     } catch (e) {
       const secs = ((Date.now() - t0) / 1000).toFixed(1)
-      console.log(`✗ FAIL ${s.name} (${secs}s): ${e.message}`)
+      say(`✗ FAIL ${s.name} (${secs}s): ${e.message}`)
       results.push({ name: s.name, ok: false, error: e.message })
     }
   }
 
   const passed = results.filter((r) => r.ok).length
-  console.log(`\n${'─'.repeat(48)}`)
-  console.log(`${passed}/${results.length} scenarios passed`)
-  for (const r of results.filter((x) => !x.ok)) console.log(`  FAIL ${r.name}: ${r.error}`)
+  say(`\n${'─'.repeat(48)}`)
+  say(`${passed}/${results.length} scenarios passed`)
+  for (const r of results.filter((x) => !x.ok)) say(`  FAIL ${r.name}: ${r.error}`)
   process.exit(passed === results.length ? 0 : 1)
 }
 

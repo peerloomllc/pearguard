@@ -42,6 +42,14 @@ real networking and would be slow and flaky there.
 | `01-pair.js` | Two instances pair over Hyperswarm; both sides see each other in `children:list`. |
 | `02-coparent-dedup.js` | PR #211 — two different parents sharing a display name both survive on the child (the old dedup deleted one). |
 | `03-offline-time-grant.js` | PR #210 — a grant approved while the child is offline is re-sent and applied when the child reconnects. |
+| `04-policy-propagation.js` | Parent `policy:update` reaches the child; `policy:getCurrent` reflects it. |
+| `05-unpair-repair.js` | Parent `child:unpair` resets the child (identity rotates); the two then re-pair cleanly. |
+| `06-new-app-approval.js` | Child `app:installed` surfaces in the parent inbox; `app:decide` propagates the decision back. |
+| `07-offline-message-queue.js` | A child message sent while the parent is offline is queued and delivered on reconnect. |
+
+Total run ~90s (the offline scenarios each wait ~15-20s for the peer to notice a
+hard disconnect). Run individually while iterating: `npm run test:harness <name>`
+(substring match — note `pair` also matches `unpair-repair`).
 
 ## Adding a scenario
 

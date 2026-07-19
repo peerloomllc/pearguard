@@ -91,21 +91,35 @@ let _heartbeatTimer: ReturnType<typeof setInterval> | null = null
 // Notification deep links (alerts, child-requests) are now intercepted by
 // MainActivity.interceptNotificationDeepLink() and stored in SharedPreferences.
 // Only invite join links still arrive via Linking (they use a separate Expo Router route).
+// A join link opened while the app is running reaches us twice: once via the OS
+// Linking 'url' event, and once via join.tsx re-emitting 'pearguardLink'. Dedup by
+// invite token within a short window so acceptInvite runs only once.
+let _lastInviteToken: string | null = null
+let _lastInviteAt = 0
+function handleInviteUrl (url: string) {
+  if (!url) return
+  const token = (url.match(/[?&]t=([^&]+)/) || [])[1] || url
+  const now = Date.now()
+  if (token === _lastInviteToken && now - _lastInviteAt < 5000) {
+    console.log('[RN] ignoring duplicate invite')
+    return
+  }
+  _lastInviteToken = token
+  _lastInviteAt = now
+  if (_worklet) sendToWorklet({ method: 'acceptInvite', args: [url] })
+  else _pendingInviteUrl = url  // worklet not ready (cold start) — sent from the ready handler
+}
+
 Linking.addEventListener('url', ({ url }) => {
   if (url && url.startsWith('pear://pearguard/join')) {
     console.log('[RN] invite URL (module-level Linking):', url)
-    sendToWorklet({ method: 'acceptInvite', args: [url] })
+    handleInviteUrl(url)
   }
 })
 
 DeviceEventEmitter.addListener('pearguardLink', (url: string) => {
   console.log('[RN] pearguardLink (module-level):', url)
-  if (_worklet) {
-    sendToWorklet({ method: 'acceptInvite', args: [url] })
-  } else {
-    // Worklet not yet ready (cold start) — buffer and send from ready handler
-    _pendingInviteUrl = url
-  }
+  handleInviteUrl(url)
 })
 
 function onEvent (event: string, fn: (data: any) => void) {

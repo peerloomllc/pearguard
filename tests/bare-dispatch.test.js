@@ -1184,15 +1184,18 @@ describe('bare dispatch', () => {
       expect(mockSend).not.toHaveBeenCalled()
     })
 
-    test('skips request-record put if requestId not found, but still stores override grant and sends native/events', async () => {
-      const mockDb = makeMockDb({})  // empty db — request not found
+    test('creates an approved request record if requestId not found (so a re-send is deduped), stores override grant and sends native/events', async () => {
+      const mockDb = makeMockDb({})  // empty db — child was offline, so never saw the request
       const mockSend = jest.fn()
 
       await handleTimeExtend({ requestId: 'req:999:com.example.app', packageName: 'com.example.app', extraSeconds: 300 }, mockDb, mockSend)
 
-      // Request record is NOT updated (it was not found)...
-      expect(mockDb.put).not.toHaveBeenCalledWith('req:999:com.example.app', expect.anything())
-      // ...but the override grant is still persisted so overrides:list can find it (#61)
+      // The request record is CREATED with status 'approved' so the idempotency guard
+      // drops the parent's next re-send of the same offline grant (#210).
+      const reqPuts = mockDb.put.mock.calls.filter(([k]) => k === 'req:999:com.example.app')
+      expect(reqPuts).toHaveLength(1)
+      expect(reqPuts[0][1]).toMatchObject({ id: 'req:999:com.example.app', packageName: 'com.example.app', status: 'approved' })
+      // The override grant is still persisted so overrides:list can find it (#61)
       const overridePuts = mockDb.put.mock.calls.filter(([k]) => k.startsWith('override:'))
       expect(overridePuts).toHaveLength(1)
 

@@ -4,6 +4,11 @@ import Icon from '../icons.js';
 import Button from './primitives/Button.jsx';
 import QRCode from 'qrcode';
 
+// Fall back out of the "Connecting..." state if the child:connected event never
+// arrives (child went offline mid-pair, DHT never bridged) so the card can't pin on
+// a spinner forever.
+const CONNECT_TIMEOUT_MS = 30000;
+
 export default function InviteCard({ onConnected, onDismiss }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const [invite, setInvite] = useState(null);
@@ -21,6 +26,19 @@ export default function InviteCard({ onConnected, onDismiss }) {
     });
     return unsub;
   }, [onConnected]);
+
+  // While waiting for the child to connect after a scan/paste, arm a timeout so a
+  // connection that never completes surfaces an actionable error instead of an
+  // endless "Connecting..." (child:connected → onConnected unmounts the card, which
+  // clears this via cleanup; a real connect therefore never trips it).
+  useEffect(() => {
+    if (scanState !== 'connecting') return;
+    const t = setTimeout(() => {
+      setScanState('error');
+      setScanError('Timed out waiting for the child to connect. Make sure the child device is online, then try again.');
+    }, CONNECT_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [scanState]);
 
   useEffect(() => {
     if (uiMode !== 'showQr') return;

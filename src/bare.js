@@ -23,6 +23,7 @@ const { log, setLogEnabled } = require('./log')
 const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { signMessage, verifyMessage } = require('./message')
+const { createLineDecoder } = require('./line-decoder')
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -53,13 +54,12 @@ const knownPeerKeys = new Set()
 
 const send = (msg) => BareKit.IPC.write(Buffer.from(JSON.stringify(msg) + '\n'))
 
-let _buf = ''
+// Buffer raw bytes across chunk boundaries; decoding whole lines (never a partial
+// chunk) keeps a multi-byte UTF-8 char split across chunks from being corrupted.
+const _decodeIpc = createLineDecoder()
 
 BareKit.IPC.on('data', chunk => {
-  _buf += chunk.toString()
-  const lines = _buf.split('\n')
-  _buf = lines.pop()
-  for (const line of lines) {
+  for (const line of _decodeIpc(chunk)) {
     if (!line.trim()) continue
     let msg
     try { msg = JSON.parse(line) } catch (e) {
@@ -453,7 +453,9 @@ async function onPeerConnection (conn, info) {
     ? b4a.toString(info.topics[0], 'hex')
     : null
 
-  let peerBuf = ''
+  // Per-connection byte buffer: decode only complete lines so a multi-byte UTF-8
+  // char split across chunks can't corrupt a signed payload (and fail verify).
+  const decodeConn = createLineDecoder()
   // Sequential message processing: use a promise chain so each message fully
   // completes (including DB writes) before the next one starts. Without this,
   // rapid messages (e.g. queued time:request followed by request:resolved
@@ -461,10 +463,7 @@ async function onPeerConnection (conn, info) {
   // first (#122).
   let msgChain = Promise.resolve()
   conn.on('data', chunk => {
-    peerBuf += chunk.toString()
-    const lines = peerBuf.split('\n')
-    peerBuf = lines.pop()
-    for (const line of lines) {
+    for (const line of decodeConn(chunk)) {
       if (!line.trim()) continue
       try {
         const msg = JSON.parse(line)

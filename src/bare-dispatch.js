@@ -167,6 +167,24 @@ function mergeSessions(existing, incoming) {
   return Array.from(byKey.values())
 }
 
+// Bucket sessions by the local calendar day of each session's OWN startedAt, falling
+// back to fallbackTs when a session lacks a startedAt. The parent's usage:report used
+// to file every session in a flush under one key derived from the flush timestamp, so
+// a session begun before local midnight (or a flush that arrived on the next day)
+// landed on the wrong day, and a flush spanning midnight lumped both days together.
+// Keying by startedAt matches the one-time migrateSessionDatesToLocal re-keying.
+// Returns Map<'YYYY-MM-DD', session[]>.
+function groupSessionsByLocalDate(sessions, fallbackTs) {
+  const byDate = new Map()
+  for (const s of sessions || []) {
+    const ts = (s && typeof s.startedAt === 'number') ? s.startedAt : fallbackTs
+    const date = localDateStr(ts)
+    if (!byDate.has(date)) byDate.set(date, [])
+    byDate.get(date).push(s)
+  }
+  return byDate
+}
+
 // Order-independent content signature of a day's per-app totals. The parent uses
 // it to skip re-writing an unchanged dailyTotals row: the child re-sends the full
 // multi-day window every flush, but past-day totals are static, so a naive write
@@ -2781,4 +2799,4 @@ async function isBlockClearedByFreshInvite (db, { peerIdentityKeyHex, incomingTo
   return false
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

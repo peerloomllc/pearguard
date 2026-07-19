@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('../src/bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -2829,5 +2829,47 @@ describe('isBlockClearedByFreshInvite (handleHello block-clear guard)', () => {
       peerIdentityKeyHex: PEER, incomingTopic: 'topicA', isChildHello: true, blockedAt: BLOCKED_AT,
     })
     expect(ok).toBe(false)
+  })
+})
+
+describe('groupSessionsByLocalDate (usage:report day bucketing)', () => {
+  // Use local-time Date construction so the assertions are timezone-independent:
+  // whatever the runner's tz, these two instants are on different local calendar days.
+  const jan15late = new Date(2024, 0, 15, 23, 59, 0).getTime()
+  const jan16early = new Date(2024, 0, 16, 0, 1, 0).getTime()
+  const jan16noon = new Date(2024, 0, 16, 12, 0, 0).getTime()
+
+  // The core fix: two sessions two minutes apart but across local midnight must land
+  // on their own days, not both on the flush day. The old code filed both under
+  // localDateStr(flushTimestamp).
+  test('splits a flush that straddles local midnight by each session startedAt', () => {
+    const g = groupSessionsByLocalDate([
+      { packageName: 'a', startedAt: jan15late },
+      { packageName: 'b', startedAt: jan16early },
+    ], jan16early)
+    expect([...g.keys()].sort()).toEqual(['2024-01-15', '2024-01-16'])
+    expect(g.get('2024-01-15').map((s) => s.packageName)).toEqual(['a'])
+    expect(g.get('2024-01-16').map((s) => s.packageName)).toEqual(['b'])
+  })
+
+  test('groups multiple same-day sessions into one bucket', () => {
+    const g = groupSessionsByLocalDate([
+      { packageName: 'a', startedAt: jan16early },
+      { packageName: 'b', startedAt: jan16noon },
+    ], jan16noon)
+    expect([...g.keys()]).toEqual(['2024-01-16'])
+    expect(g.get('2024-01-16')).toHaveLength(2)
+  })
+
+  test('falls back to the flush timestamp when a session has no startedAt', () => {
+    const g = groupSessionsByLocalDate([{ packageName: 'a' }], jan15late)
+    expect([...g.keys()]).toEqual(['2024-01-15'])
+    expect(g.get('2024-01-15')).toHaveLength(1)
+  })
+
+  test('returns an empty map for empty or nullish input', () => {
+    expect(groupSessionsByLocalDate([], jan16noon).size).toBe(0)
+    expect(groupSessionsByLocalDate(null, jan16noon).size).toBe(0)
+    expect(groupSessionsByLocalDate(undefined, jan16noon).size).toBe(0)
   })
 })

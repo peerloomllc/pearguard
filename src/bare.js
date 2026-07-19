@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { signMessage, verifyMessage } = require('./message')
 const { createLineDecoder } = require('./line-decoder')
@@ -697,12 +697,17 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       // post-restart backfill) doesn't wipe earlier sessions.
       const incomingSessions = msg.payload.sessions || []
       const reportTs = msg.payload.timestamp || Date.now()
-      const dateStr = localDateStr(reportTs)
-      const sessionKey = 'sessions:' + childPublicKey + ':' + dateStr + ':full'
+      // Bucket each session by its OWN startedAt local day rather than the single
+      // flush timestamp, so a session begun before local midnight (or a flush that
+      // arrives on the next day) is filed on the day it actually happened instead of
+      // being lumped onto the flush day.
       if (incomingSessions.length > 0) {
-        const existingRaw = await db.get(sessionKey).catch(() => null)
-        const merged = mergeSessions(existingRaw?.value, incomingSessions)
-        if (merged.length > 0) await db.put(sessionKey, merged)
+        for (const [dateStr, daySessions] of groupSessionsByLocalDate(incomingSessions, reportTs)) {
+          const sessionKey = 'sessions:' + childPublicKey + ':' + dateStr + ':full'
+          const existingRaw = await db.get(sessionKey).catch(() => null)
+          const merged = mergeSessions(existingRaw?.value, daySessions)
+          if (merged.length > 0) await db.put(sessionKey, merged)
+        }
       }
       // dailyTotals comes as [{ date: 'YYYY-MM-DD', apps: [{ packageName, displayName, secondsToday }] }]
       // Each flush carries the full window so prior-day records get refreshed

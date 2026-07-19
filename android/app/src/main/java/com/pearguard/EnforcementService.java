@@ -561,7 +561,7 @@ public class EnforcementService extends Service {
             String foregroundPkg = AppBlockerModule.getLastForegroundPackage();
             if (foregroundPkg == null) return;
             if (foregroundPkg.equals(getPackageName())) return;
-            if (isPhoneOrMessagingApp(foregroundPkg)) return;
+            if (PhoneAppHelper.isPhoneOrMessagingApp(this, foregroundPkg)) return;
             // An exempt app doesn't spend the budget, so a countdown would be noise.
             if (AppBlockerModule.isScreenTimeExempt(policy, foregroundPkg)) return;
 
@@ -585,13 +585,6 @@ public class EnforcementService extends Service {
                 }
             }
         } catch (Exception ignored) {}
-    }
-
-    private boolean isPhoneOrMessagingApp(String packageName) {
-        if (packageName == null) return false;
-        return packageName.contains("dialer")
-                || packageName.contains("sms")
-                || packageName.contains("messaging");
     }
 
     /**
@@ -629,7 +622,7 @@ public class EnforcementService extends Service {
                 String pkg = event.getPackageName();
                 if (pkg == null) continue;
                 if (pkg.equals(getPackageName())) continue;
-                if (isPhoneOrMessagingApp(pkg)) continue;
+                if (PhoneAppHelper.isPhoneOrMessagingApp(this, pkg)) continue;
                 if (screenTimeExempt.contains(pkg)) continue;
                 if (event.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     sessionStart.put(pkg, event.getTimeStamp());

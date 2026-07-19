@@ -821,6 +821,9 @@ function createDispatch (ctx) {
         const expiresAt = grantedAt + extraSeconds * 1000
         await ctx.db.put('override:' + childPublicKey + ':' + grantedAt, {
           packageName, appName, childPublicKey, grantedAt, expiresAt, source: 'parent-approved',
+          // requestId + extraSeconds let handleHello re-send this grant to a child
+          // that was offline when it was approved (grants were otherwise lost).
+          requestId, extraSeconds,
         })
 
         try {
@@ -853,7 +856,9 @@ function createDispatch (ctx) {
         // Parent-side record so the UI can show what was granted today.
         const grantedAt = Date.now()
         await ctx.db.put('screentime:grant:' + childPublicKey + ':' + grantedAt, {
-          childPublicKey, grantedAt, extraSeconds, source: 'parent-approved',
+          // requestId lets handleHello re-send this grant to a child that was
+          // offline when it was approved (grants were otherwise lost).
+          childPublicKey, grantedAt, extraSeconds, source: 'parent-approved', requestId,
         })
 
         try {
@@ -2211,6 +2216,39 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
+/**
+ * Re-send active grants to a child that just reconnected, so a grant approved
+ * while the child was offline is not lost. Replays unexpired per-app overrides
+ * and today's device-wide (general) grants. The child dedups by request status,
+ * so an already-applied grant is ignored (no double-credit). Returns the number
+ * of messages sent. Extracted from bare.js handleHello for direct testing.
+ *
+ * @param {object} db — parent Hyperbee
+ * @param {string} childPublicKey — reconnecting child's identity key (hex)
+ * @param {function} sendToPeer — (remoteKeyHex, msg) => void
+ * @param {string} remoteKeyHex — the child connection's noise key
+ * @param {number} now — current epoch ms
+ */
+async function replayActiveGrants (db, childPublicKey, sendToPeer, remoteKeyHex, now) {
+  let replayed = 0
+  for await (const { value } of db.createReadStream({ gt: 'override:' + childPublicKey + ':', lt: 'override:' + childPublicKey + ':~' })) {
+    if (value && value.requestId && value.packageName && typeof value.extraSeconds === 'number' &&
+        (value.expiresAt || 0) > now) {
+      sendToPeer(remoteKeyHex, { type: 'time:extend', payload: { requestId: value.requestId, packageName: value.packageName, extraSeconds: value.extraSeconds } })
+      replayed++
+    }
+  }
+  const todayStr = localDateStr(now)
+  for await (const { value } of db.createReadStream({ gt: 'screentime:grant:' + childPublicKey + ':', lt: 'screentime:grant:' + childPublicKey + ':~' })) {
+    if (value && value.requestId && typeof value.extraSeconds === 'number' &&
+        localDateStr(value.grantedAt) === todayStr) {
+      sendToPeer(remoteKeyHex, { type: 'time:extendGeneral', payload: { requestId: value.requestId, extraSeconds: value.extraSeconds } })
+      replayed++
+    }
+  }
+  return replayed
+}
+
 async function handleTimeExtendGeneral (payload, db, send) {
   const { requestId, extraSeconds } = payload || {}
   if (!requestId || typeof extraSeconds !== 'number' || extraSeconds <= 0) {
@@ -2218,13 +2256,20 @@ async function handleTimeExtendGeneral (payload, db, send) {
     return
   }
 
+  // Idempotency: the parent re-sends unexpired grants on every reconnect (so a
+  // grant approved while this child was offline is not lost). applyScreenTimeBonus
+  // is additive, so without this guard a re-delivered grant would top up the
+  // budget again. A request we already marked 'approved' has been applied.
+  const existing = await db.get(requestId).catch(() => null)
+  if (existing && existing.value && existing.value.status === 'approved') return
+
   const now = Date.now()
   const bonus = await applyScreenTimeBonus(db, extraSeconds, now)
 
-  const existing = await db.get(requestId).catch(() => null)
-  if (existing) {
-    await db.put(requestId, { ...existing.value, status: 'approved', grantedSeconds: extraSeconds })
-  }
+  // Record the request as approved (creating it if the child never had it) so a
+  // later re-send is deduped by the guard above.
+  const base = (existing && existing.value) || { id: requestId, requestType: 'general_time' }
+  await db.put(requestId, { ...base, status: 'approved', grantedSeconds: extraSeconds })
 
   // Push the new budget to native enforcement, then tell the child UI.
   send({ method: 'native:setScreenTimeBonus', args: { date: bonus.date, seconds: bonus.seconds } })
@@ -2246,18 +2291,27 @@ async function handleTimeExtend (payload, db, send, sendToAllParents) {
     return
   }
 
+  // Idempotency: the parent re-sends unexpired grants on every reconnect (so a
+  // grant approved while this child was offline is not lost). Re-applying would
+  // create a second override and re-grant native time with a fresh expiry, so
+  // skip a request we already marked 'approved'.
+  const existing = await db.get(requestId).catch(() => null)
+  if (existing && existing.value && existing.value.status === 'approved') return
+
   const expiresAt = Date.now() + extraSeconds * 1000
   const grant = { packageName, grantedAt: Date.now(), expiresAt, source: 'parent-approved' }
 
-  // Update request status in Hyperbee
-  const existing = await db.get(requestId)
+  // Update request status in Hyperbee (creating it if the child never had the
+  // request, so a later re-send is deduped by the guard above).
   let appName = null
-  if (existing) {
+  if (existing && existing.value) {
     const req = existing.value
     appName = req.appName || null
     req.status = 'approved'
     req.expiresAt = expiresAt
     await db.put(requestId, req)
+  } else {
+    await db.put(requestId, { id: requestId, packageName, requestType: 'extra_time', status: 'approved', expiresAt })
   }
 
   // Store grant to Hyperbee so overrides:list can find it (#61)
@@ -2706,4 +2760,4 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   send({ type: 'event', event: 'request:updated', data: { requestId, status, packageName, appName } })
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport }
+module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport }

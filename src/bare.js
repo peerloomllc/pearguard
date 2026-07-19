@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { signMessage, verifyMessage } = require('./message')
 
@@ -1227,6 +1227,19 @@ async function handleHello (msg, conn, remoteKeyHex) {
       }
     }
 
+    // Re-send any active grants the child may have missed while offline. The
+    // grant handlers (time:grant / time:grantGeneral) only sendToPeer at approval
+    // time; if the child was offline the grant was stored parent-side but never
+    // delivered and nothing replayed it, so the child got no time and its request
+    // stayed pending. The child dedups by request status so an already-applied
+    // grant is ignored (no double-credit).
+    try {
+      const replayed = await replayActiveGrants(db, peerIdentityKeyHex, sendToPeer, remoteKeyHex, Date.now())
+      if (replayed > 0) log('[bare] replayed', replayed, 'active grant(s) to reconnecting child:', peerIdentityKeyHex.slice(0, 12))
+    } catch (e) {
+      console.warn('[bare] reconnect grant replay failed:', e.message)
+    }
+
     // Backfill notifications missed while the parent was force-stopped.
     // Scan for pending requests from this child that never had their notification
     // shown (notified: false). Re-emitting time:request:received causes index.tsx
@@ -1408,14 +1421,20 @@ function classifyKey (k) {
 // built-ins. Both expose a compatible promises API (stat/readdir/rm/rename).
 let _fsMod = null
 let _pathMod = null
+// bare-pack (the mobile bundle builder) statically resolves every require(), and
+// Node's built-in 'fs'/'path' don't exist in the Bare runtime, so a literal
+// require('fs') breaks the bundle build. The Node fallback only ever runs under
+// Electron (where bare-fs/bare-path throw at require time), so hide it behind an
+// indirection whose argument the static traversal can't follow.
+function nodeBuiltin (name) { return require(name) }
 function reclaimFs () {
   if (_fsMod) return _fsMod
-  try { _fsMod = require('bare-fs') } catch { _fsMod = require('fs') }
+  try { _fsMod = require('bare-fs') } catch { _fsMod = nodeBuiltin('fs') }
   return _fsMod
 }
 function reclaimPath () {
   if (_pathMod) return _pathMod
-  try { _pathMod = require('bare-path') } catch { _pathMod = require('path') }
+  try { _pathMod = require('bare-path') } catch { _pathMod = nodeBuiltin('path') }
   return _pathMod
 }
 

@@ -130,6 +130,11 @@ function evaluate({
     return { reason: msg, category: 'lock' }
   }
 
+  // Step 0.5: Free-time / holiday pause — parent temporarily suspended ALL
+  // enforcement until pauseUntil. The inverse of a lock (mutually exclusive with
+  // it), so it allows everything, including unmapped exes.
+  if (policy.pauseUntil && now < policy.pauseUntil) return null
+
   // Step 1: Active override beats everything below. Overrides key by
   // packageName, so unmapped exes have nothing to look up here.
   if (packageName && overrides) {

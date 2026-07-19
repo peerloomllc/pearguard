@@ -214,8 +214,23 @@ function isSmsCallException(packageName, contactPhone, policy) {
  * @param {Date}   now            Current time (injected for testability)
  * @returns {boolean}
  */
+// Free-time / holiday pause (#pause). A parent can temporarily suspend ALL
+// enforcement until a chosen epoch — the inverse of a device lock. While active
+// every app is allowed; when `pauseUntil` passes, normal enforcement resumes.
+// Trusts the wall clock, like bonus grants and schedules.
+function isPaused(policy, now) {
+  const until = policy && policy.pauseUntil
+  if (!until) return false
+  return (now == null ? Date.now() : now) < until
+}
+
 function isAppBlocked(packageName, policy, usageStats, now, bonus) {
   if (!policy) return false
+
+  // Free-time pause suspends everything, including a 'blocked' status. Checked
+  // first so it wins over schedules, limits and explicit blocks. (A device lock
+  // is mutually exclusive with pause — setting one clears the other.)
+  if (isPaused(policy, now)) return false
 
   const appPolicy = policy.apps && policy.apps[packageName]
 
@@ -245,6 +260,7 @@ function isAppBlocked(packageName, policy, usageStats, now, bonus) {
 
 module.exports = {
   isAppBlocked,
+  isPaused,
   isScheduleActive,
   hasExceededLimit,
   hasExceededCategoryLimit,

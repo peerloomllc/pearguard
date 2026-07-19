@@ -12,6 +12,7 @@ import UsageReports from './UsageReports.jsx';
 import Modal from './primitives/Modal.jsx';
 import Input from './primitives/Input.jsx';
 import GrantTimeModal from './GrantTimeModal.jsx';
+import PauseModal from './PauseModal.jsx';
 
 const TABS = [
   { key: 'usage', label: 'Usage', icon: 'ChartBar' },
@@ -40,6 +41,10 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   const [lockMessage, setLockMessage] = useState('');
   // Proactive "grant bonus time" — hand out screen time with no child request.
   const [grantOpen, setGrantOpen] = useState(false);
+  // Free-time / holiday pause — suspend all enforcement until pauseUntil.
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [pauseUntil, setPauseUntil] = useState(child.pauseUntil || 0);
+  const isPaused = pauseUntil && Date.now() < pauseUntil;
 
   function onLockButtonClick() {
     window.callBare('haptic:tap');
@@ -65,6 +70,11 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   function openGrant() {
     window.callBare('haptic:tap');
     setGrantOpen(true);
+  }
+
+  function openPause() {
+    window.callBare('haptic:tap');
+    setPauseOpen(true);
   }
 
   // Android back gesture: close UsageReports sub-view
@@ -108,6 +118,14 @@ export default function ChildDetail({ child, initialTab, onBack }) {
         <span style={{ ...typography.subheading, color: colors.text.primary, fontWeight: '600', flex: 1 }}>
           {child.displayName}
         </span>
+
+        <button
+          onClick={openPause}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `${spacing.xs}px` }}
+          aria-label={isPaused ? 'Free time active' : 'Pause protection'}
+        >
+          <Icon name="SunDim" size={20} color={isPaused ? colors.secondary : colors.text.muted} weight={isPaused ? 'fill' : 'regular'} />
+        </button>
 
         <button
           onClick={openGrant}
@@ -191,6 +209,14 @@ export default function ChildDetail({ child, initialTab, onBack }) {
       </Modal>
 
       <GrantTimeModal child={child} visible={grantOpen} onClose={() => setGrantOpen(false)} />
+
+      <PauseModal
+        child={child}
+        pauseUntil={pauseUntil}
+        visible={pauseOpen}
+        onClose={() => setPauseOpen(false)}
+        onChanged={setPauseUntil}
+      />
     </div>
   );
 }

@@ -3077,3 +3077,61 @@ describe('time:grantGeneral (proactive parent grant, no request)', () => {
     await expect(dispatch('time:grantGeneral', { extraSeconds: 600 })).rejects.toThrow()
   })
 })
+
+describe('policy:setPause (free-time / holiday mode)', () => {
+  function makeCtx (stored = {}) {
+    const db = {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => (stored[k] ? { value: stored[k] } : null)),
+    }
+    const sendToPeer = jest.fn()
+    return { ctx: { db, sendToPeer, send: jest.fn() }, stored, sendToPeer }
+  }
+
+  test('sets a future pauseUntil, clears lock, bumps version, pushes to child', async () => {
+    const until = Date.now() + 3600_000
+    const { ctx, stored, sendToPeer } = makeCtx({
+      'peers:childpk': { noiseKey: 'noise1' },
+      'policy:childpk': { apps: {}, childPublicKey: 'childpk', version: 4, locked: true, lockMessage: 'nope' },
+    })
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('policy:setPause', { childPublicKey: 'childpk', pauseUntil: until })
+    expect(res).toEqual({ ok: true, pauseUntil: until })
+
+    const p = stored['policy:childpk']
+    expect(p.pauseUntil).toBe(until)
+    expect(p.locked).toBe(false) // pause and lock are mutually exclusive
+    expect(p.lockMessage).toBe('')
+    expect(p.version).toBe(5)
+    expect(sendToPeer).toHaveBeenCalledWith('noise1', { type: 'policy:update', payload: p })
+  })
+
+  test('a non-future pauseUntil clears the pause (resume protection)', async () => {
+    const { ctx, stored } = makeCtx({
+      'policy:childpk': { apps: {}, childPublicKey: 'childpk', version: 2, pauseUntil: Date.now() + 1000 },
+    })
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('policy:setPause', { childPublicKey: 'childpk', pauseUntil: 0 })
+    expect(res.pauseUntil).toBe(0)
+    expect(stored['policy:childpk']).not.toHaveProperty('pauseUntil')
+  })
+
+  test('locking a paused child clears the pause', async () => {
+    const { ctx, stored } = makeCtx({
+      'policy:childpk': { apps: {}, childPublicKey: 'childpk', version: 1, pauseUntil: Date.now() + 3600_000 },
+    })
+    const dispatch = createDispatch(ctx)
+
+    await dispatch('policy:setLock', { childPublicKey: 'childpk', locked: true, lockMessage: 'bed' })
+    expect(stored['policy:childpk'].locked).toBe(true)
+    expect(stored['policy:childpk']).not.toHaveProperty('pauseUntil')
+  })
+
+  test('rejects a missing childPublicKey', async () => {
+    const { ctx } = makeCtx()
+    const dispatch = createDispatch(ctx)
+    await expect(dispatch('policy:setPause', { pauseUntil: Date.now() + 1000 })).rejects.toThrow()
+  })
+})

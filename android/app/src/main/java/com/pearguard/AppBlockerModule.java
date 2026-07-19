@@ -674,6 +674,14 @@ public class AppBlockerModule extends AccessibilityService {
                 return "Device is locked by your parent.";
             }
 
+            // Step 0.5: Free-time / holiday pause — parent temporarily suspended ALL
+            // enforcement until pauseUntil. Wins over schedules, limits and blocks
+            // (mutually exclusive with a lock, which is handled above).
+            long pauseUntil = policy.optLong("pauseUntil", 0L);
+            if (pauseUntil > System.currentTimeMillis()) {
+                return null;
+            }
+
             // Step 1: Active override — PIN success (in-memory) or parent P2P grant (SharedPrefs).
             // Overrides win over schedule, daily limits, and policy status.
             Long overrideExpiry = overrides.get(packageName);

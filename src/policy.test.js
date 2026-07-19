@@ -3,6 +3,7 @@
 const assert = require('assert')
 const {
   isAppBlocked,
+  isPaused,
   isScheduleActive,
   hasExceededLimit,
   hasExceededScreenTimeLimit,
@@ -438,6 +439,40 @@ function makeDate(dayOfWeek, hour, minute) {
     true,
     'screen-time cap: blocks even apps not listed in policy'
   )
+}
+
+// isPaused + isAppBlocked — free-time / holiday pause
+{
+  const now = 1_000_000
+  assert.strictEqual(isPaused(null, now), false, 'null policy is not paused')
+  assert.strictEqual(isPaused({}, now), false, 'no pauseUntil is not paused')
+  assert.strictEqual(isPaused({ pauseUntil: now + 1000 }, now), true, 'future pauseUntil is paused')
+  assert.strictEqual(isPaused({ pauseUntil: now - 1000 }, now), false, 'past pauseUntil is not paused')
+  assert.strictEqual(isPaused({ pauseUntil: now }, now), false, 'pauseUntil == now has expired')
+
+  // While paused, EVERYTHING is allowed — even an explicitly blocked/pending app
+  // and a bedtime schedule.
+  const policy = {
+    apps: {
+      'com.example.tiktok': { status: 'blocked' },
+      'com.example.pending': { status: 'pending' },
+      'com.example.youtube': { status: 'allowed', dailyLimitSeconds: 1 },
+    },
+    schedules: [{ label: 'Bedtime', days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59' }],
+    dailyScreenTimeLimitSeconds: 1,
+    pauseUntil: now + 60_000,
+  }
+  assert.strictEqual(isAppBlocked('com.example.tiktok', policy, {}, now), false, 'pause unblocks a blocked app')
+  assert.strictEqual(isAppBlocked('com.example.pending', policy, {}, now), false, 'pause unblocks a pending app')
+  assert.strictEqual(
+    isAppBlocked('com.example.youtube', policy, { 'com.example.youtube': { dailySeconds: 9999 } }, now),
+    false,
+    'pause overrides a schedule / screen-time / daily limit'
+  )
+
+  // Once the pause expires, enforcement resumes.
+  const expired = { ...policy, pauseUntil: now - 1 }
+  assert.strictEqual(isAppBlocked('com.example.tiktok', expired, {}, now), true, 'expired pause re-blocks')
 }
 
 console.log('All policy.js tests passed.')

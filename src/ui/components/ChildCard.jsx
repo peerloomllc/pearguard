@@ -28,6 +28,7 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
   const timeLeft = hasBudget ? screenTime.remainingSeconds : null;
 
   const hasAlerts = bypassAlerts > 0 || pendingApprovals > 0 || pendingTimeRequests > 0;
+  const isPaused = child.pauseUntil && Date.now() < child.pauseUntil;
 
   let statusText = 'All good';
   let statusColor = colors.success;
@@ -37,6 +38,10 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
   } else if (bypassAlerts > 0) {
     statusText = `${bypassAlerts} bypass alert${bypassAlerts > 1 ? 's' : ''}`;
     statusColor = colors.error;
+  } else if (isPaused) {
+    // Free-time / holiday pause — surface it so a parent sees enforcement is off.
+    statusText = 'Free time (protection paused)';
+    statusColor = colors.secondary;
   }
 
   return (

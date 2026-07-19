@@ -335,6 +335,7 @@ function makeCallBare (scene) {
       case 'policy:get':           return Promise.resolve(POLICY)
       case 'policy:update':        return Promise.resolve(true)
       case 'policy:setLock':       return Promise.resolve(true)
+      case 'policy:setPause':      return Promise.resolve({ ok: true })
       case 'overrides:list':       return Promise.resolve({ overrides: [] })
       case 'apps:decideBatch':     return Promise.resolve(true)
       case 'app:decide':           return Promise.resolve(true)

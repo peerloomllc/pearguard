@@ -25,6 +25,9 @@ import Constants from 'expo-constants'
 // Shared with the worklet so parent-facing bypass wording stays truthful:
 // some reasons are tampering, others are PearGuard's own limitation.
 import { describeBypassReason } from '../src/bypass-reasons'
+// Bounded seq-keyed buffer of recent Bare→WebView events, replayed on every
+// WebView (re)load so a reloaded context catches up on events it missed.
+import { ReplayBuffer } from '../src/webview-replay'
 
 const isAndroid = Platform.OS === 'android'
 const { PearGuardNotifications, PearGuardHaptic, PearGuardBGSync, PearGuardLink, PearGuardCamera } = NativeModules
@@ -70,11 +73,16 @@ let _pendingInviteUrl: string | null = null
 let _pendingAlertsNav: { childPublicKey: string; tab?: string } | null = null
 // pear://pearguard/child-requests deep link — navigate child app to Requests tab
 let _pendingChildRequestsNav = false
-// Events that fired before the WebView finished loading — replayed once onLoad fires.
-// Bare auto-reconnects on startup (reloads persisted topics), so peer:paired /
-// child:connected can fire before the WebView is ready to receive them.
+// Recent Bare→WebView events, retained in a bounded seq-keyed buffer and replayed
+// on every WebView load. Covers two cases: (1) events that fired before the first
+// paint — Bare auto-reconnects on startup (reloads persisted topics), so
+// peer:paired / child:connected can arrive before the WebView is ready; (2) events
+// delivered to a context that was then reloaded (black-screen watchdog, or Android
+// killing the render/content process) — the fresh page has no memory of them and
+// would otherwise lose them. The seq lets the WebView drop anything it already
+// applied, so replaying on every load is idempotent.
 let _webViewLoaded = false
-const _pendingWebViewEvents: { event: string; data: any }[] = []
+const _webViewReplay = new ReplayBuffer()
 // Stable inject function updated each render so buffered events reach current WebView ref.
 let _injectToWebView: ((js: string) => void) | null = null
 // 60s child-mode ticker that pushes fresh app/usage into bare's heartbeat cache.
@@ -1014,12 +1022,14 @@ export default function Root () {
                 return
               }
 
-              // Forward all other Bare events to WebView (buffer if not yet loaded)
-              const pearEventJs = 'window.__pearEvent(' + JSON.stringify(msg.event) + ',' + JSON.stringify(msg.data) + ');true;'
+              // Forward all other Bare events to WebView. Every event is recorded in a
+              // bounded seq-keyed replay buffer (retained across WebView reloads, which
+              // reset the page but not this RN JS context) so a freshly (re)loaded WebView
+              // catches up on anything it missed. Inject live only once the WebView is up;
+              // pre-load events ride out via the same buffer, replayed in onLoad below.
+              const rec = _webViewReplay.record(msg.event, msg.data)
               if (_webViewLoaded) {
-                _injectToWebView?.(pearEventJs)
-              } else {
-                _pendingWebViewEvents.push({ event: msg.event, data: msg.data })
+                _injectToWebView?.('window.__pearEvent(' + JSON.stringify(rec.event) + ',' + JSON.stringify(rec.data) + ',' + rec.seq + ');true;')
               }
               // iOS: complete background sync task on successful P2P activity
               if (!isAndroid && (msg.event === 'peer:connected' || msg.event === 'child:connected' || msg.event === 'usage:received' || msg.event === 'policy:synced')) {
@@ -1252,12 +1262,14 @@ export default function Root () {
           setWebViewReady(true)
           // Expose platform to WebView UI (used by AvatarPicker to show single Camera button on iOS)
           webViewRef.current?.injectJavaScript('window.__pearPlatform=' + JSON.stringify(Platform.OS) + ';true;')
-          // Replay events that fired before the WebView was ready (e.g. peer:paired
-          // from bare's startup topic-rejoin running before the WebView finishes loading)
-          const queued = _pendingWebViewEvents.splice(0)
-          for (const { event, data } of queued) {
+          // Replay the recent-event buffer so a freshly (re)loaded WebView catches up:
+          // events that fired before first paint (e.g. peer:paired from bare's startup
+          // topic-rejoin) AND events delivered to a prior context that was then reloaded
+          // (watchdog / render-process-gone). A fresh page has applied nothing, so it
+          // gets the whole retained window; the WebView drops any seq it already saw.
+          for (const { event, data, seq } of _webViewReplay.replay()) {
             webViewRef.current?.injectJavaScript(
-              'window.__pearEvent(' + JSON.stringify(event) + ',' + JSON.stringify(data) + ');true;'
+              'window.__pearEvent(' + JSON.stringify(event) + ',' + JSON.stringify(data) + ',' + seq + ');true;'
             )
           }
           // Cold-start notification navigation: start the 600ms timer from here (after

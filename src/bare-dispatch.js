@@ -9,6 +9,7 @@ const { log } = require('./log')
 const { nextScheduleWindow } = require('./policy')
 const { validatePin } = require('./pin-rules')
 const { describeBypassReason } = require('./bypass-reasons')
+const { pendingUninstalls } = require('./package-reconcile')
 
 // Return YYYY-MM-DD in local time (not UTC) so session date keys
 // match the user's calendar day regardless of timezone.
@@ -1125,7 +1126,7 @@ function createDispatch (ctx) {
         // Batch version of app:installed — receives all installed apps at once.
         // Avoids the race condition where concurrent individual app:installed messages
         // all read the same policy key before any write completes.
-        const { apps } = args
+        const { apps, installedAll } = args
         if (!Array.isArray(apps) || apps.length === 0) return { count: 0 }
 
         const raw = await ctx.db.get('policy')
@@ -1149,20 +1150,41 @@ function createDispatch (ctx) {
           }
         }
 
-        if (newCount > 0) {
+        // Prune apps that have been uninstalled since the last sync. The real-time
+        // PackageMonitor receiver never fires on Android 8+, so a removed app would
+        // otherwise linger forever (apps:sync only ever adds). `installedAll` is the
+        // FULL installed package set — reconcile the policy against it. Never prune on
+        // the initial sync (nothing to remove yet) or when installedAll is absent/empty
+        // (treated as "unknown" — fail safe rather than wipe the whole policy).
+        const removed = []
+        if (!isInitialSync && Array.isArray(installedAll) && installedAll.length > 0) {
+          for (const packageName of pendingUninstalls(Object.keys(policy.apps), installedAll)) {
+            removed.push({ packageName, appName: policy.apps[packageName].appName || packageName })
+            delete policy.apps[packageName]
+          }
+        }
+
+        if (newCount > 0 || removed.length > 0) {
           await ctx.db.put('policy', policy)
           ctx.send({ method: 'native:setPolicy', args: { json: JSON.stringify(policy) } })
           ctx.send({ type: 'event', event: 'policy:updated', data: policy })
         }
 
-        // Always relay to parents — even when no new apps were added locally.
-        // A second parent may have just paired and needs the full app list even
-        // though the child already has all apps in its own policy (#109).
+        // Relay each pruned app to parents so their Apps list drops the stale entry —
+        // the parent's apps:sync is add-only, so a fresh full list would not remove it;
+        // app:uninstalled is the message its handler prunes on.
         if (ctx.sendToAllParents) {
+          for (const { packageName, appName } of removed) {
+            ctx.send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName } })
+            await ctx.sendToAllParents({ type: 'app:uninstalled', payload: { packageName, appName } })
+          }
+          // Always relay the full list too — even when nothing changed locally.
+          // A second parent may have just paired and needs the full app list even
+          // though the child already has all apps in its own policy (#109).
           await ctx.sendToAllParents({ type: 'apps:sync', payload: { apps } })
         }
 
-        return { count: newCount }
+        return { count: newCount, removed: removed.length }
       }
 
       case 'swarm:reconnect': {

@@ -861,11 +861,19 @@ export default function Root () {
             if (msg.type === 'event') {
               // Handle apps:syncRequested locally — do NOT forward to WebView
               if (msg.event === 'apps:syncRequested') {
-                NativeModules.UsageStatsModule?.getInstalledPackages?.()
-                  .then((apps: { packageName: string; appName: string }[]) => {
+                // `apps` (launcher set) drives adds; `installedAll` (every installed
+                // package) lets bare prune policy entries for apps uninstalled while the
+                // bridge was down. The real-time PackageMonitor receiver never fires on
+                // Android 8+ (manifest receivers are banned from PACKAGE_ADDED/REMOVED),
+                // so this full-scan reconciliation on each sync is the reliable path.
+                Promise.all([
+                  NativeModules.UsageStatsModule?.getInstalledPackages?.(),
+                  NativeModules.UsageStatsModule?.getAllInstalledPackageNames?.(),
+                ])
+                  .then(([apps, installedAll]: [{ packageName: string; appName: string }[], string[]]) => {
                     // Send all apps in one batch to avoid race-condition on parent side
                     // (individual messages all read same policy DB key concurrently, last-writer-wins)
-                    sendToWorklet({ method: 'apps:sync', args: { apps } })
+                    sendToWorklet({ method: 'apps:sync', args: { apps, installedAll } })
                   })
                   .catch((e: any) => console.warn('[RN] getInstalledPackages failed:', e))
                 return
@@ -1127,6 +1135,7 @@ export default function Root () {
         } else {
           stopHeartbeatTimer()
         }
+
 
         // Force-stop and background-bypass detection (child only).
         if (data.mode === 'child') {

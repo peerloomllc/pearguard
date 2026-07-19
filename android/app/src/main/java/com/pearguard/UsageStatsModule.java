@@ -1065,6 +1065,29 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Returns EVERY installed package name (not just launcher apps) as a string
+     * array. Used to reconcile the child's policy against reality: any policy app
+     * absent from this full set has been uninstalled and should be pruned. Must be
+     * the full set - a launcher-only list would wrongly prune an installed but
+     * non-launchable app the parent explicitly blocked.
+     */
+    @ReactMethod
+    public void getAllInstalledPackageNames(Promise promise) {
+        WritableArray result = Arguments.createArray();
+        try {
+            PackageManager pm = reactContext.getPackageManager();
+            List<ApplicationInfo> apps = pm.getInstalledApplications(0);
+            for (ApplicationInfo ai : apps) {
+                if (ai.packageName != null) result.pushString(ai.packageName);
+            }
+        } catch (Exception e) {
+            // Never reject: a scan failure must not stall apps:sync. An empty result
+            // is treated by the bare handler as "unknown", so nothing is pruned.
+        }
+        promise.resolve(result);
+    }
+
+    /**
      * Returns rolling 7-day usage for a single package as
      * { packageName, secondsThisWeek }. Window is midnight of (today - 6) to now.
      */

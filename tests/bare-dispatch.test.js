@@ -2928,3 +2928,98 @@ describe('pruneStaleKeys (cleanup sweep helper)', () => {
     expect(Object.keys(stored).sort()).toEqual(['pendingChild:fresh', 'pendingChild:nullVal'])
   })
 })
+
+describe('apps:sync reconciliation (child prunes uninstalled apps)', () => {
+  function makeMockDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => (stored[k] ? { value: stored[k] } : null)),
+      _stored: stored,
+    }
+  }
+
+  function makeCtx (stored) {
+    const db = makeMockDb(stored)
+    const send = jest.fn()
+    const sendToAllParents = jest.fn(async () => {})
+    return { ctx: { db, send, sendToAllParents }, db, send, sendToAllParents }
+  }
+
+  const policyWith = (statuses) => ({
+    apps: Object.fromEntries(Object.entries(statuses).map(([p, s]) => [p, { status: s, appName: p }])),
+    version: 1,
+  })
+
+  test('prunes a policy app absent from installedAll and relays app:uninstalled', async () => {
+    const stored = { policy: policyWith({ 'com.a': 'allowed', 'com.b': 'blocked', 'com.c': 'pending' }) }
+    const { ctx, send, sendToAllParents } = makeCtx(stored)
+    const dispatch = createDispatch(ctx)
+
+    // com.c has been uninstalled: it is in neither the launcher list nor installedAll.
+    const res = await dispatch('apps:sync', {
+      apps: [{ packageName: 'com.a', appName: 'A' }, { packageName: 'com.b', appName: 'B' }],
+      installedAll: ['com.a', 'com.b'],
+    })
+
+    expect(res.removed).toBe(1)
+    expect(Object.keys(stored.policy.apps).sort()).toEqual(['com.a', 'com.b'])
+    // Native policy refreshed and parent notified so its Apps list drops com.c.
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ method: 'native:setPolicy' }))
+    expect(sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({ type: 'app:uninstalled', payload: expect.objectContaining({ packageName: 'com.c' }) }))
+  })
+
+  test('does NOT prune a blocked app that is still installed but non-launchable', async () => {
+    // com.b is blocked and installed but not a launcher app, so it is absent from
+    // `apps` (launcher-only) yet present in installedAll — it must be kept.
+    const stored = { policy: policyWith({ 'com.a': 'allowed', 'com.b': 'blocked' }) }
+    const { ctx, sendToAllParents } = makeCtx(stored)
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('apps:sync', {
+      apps: [{ packageName: 'com.a', appName: 'A' }],
+      installedAll: ['com.a', 'com.b'],
+    })
+
+    expect(res.removed).toBe(0)
+    expect(Object.keys(stored.policy.apps).sort()).toEqual(['com.a', 'com.b'])
+    expect(sendToAllParents).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'app:uninstalled' }))
+  })
+
+  test('never prunes when installedAll is missing (fail safe, do not wipe policy)', async () => {
+    const stored = { policy: policyWith({ 'com.a': 'allowed', 'com.b': 'blocked' }) }
+    const { ctx } = makeCtx(stored)
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('apps:sync', { apps: [{ packageName: 'com.a', appName: 'A' }] })
+
+    expect(res.removed).toBe(0)
+    expect(Object.keys(stored.policy.apps).sort()).toEqual(['com.a', 'com.b'])
+  })
+
+  test('never prunes when installedAll is empty (treated as unknown)', async () => {
+    const stored = { policy: policyWith({ 'com.a': 'allowed' }) }
+    const { ctx } = makeCtx(stored)
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('apps:sync', { apps: [{ packageName: 'com.a', appName: 'A' }], installedAll: [] })
+
+    expect(res.removed).toBe(0)
+    expect(Object.keys(stored.policy.apps)).toEqual(['com.a'])
+  })
+
+  test('initial sync (empty policy) adds without pruning', async () => {
+    const stored = {} // no policy yet
+    const { ctx, sendToAllParents } = makeCtx(stored)
+    const dispatch = createDispatch(ctx)
+
+    const res = await dispatch('apps:sync', {
+      apps: [{ packageName: 'com.a', appName: 'A', isLauncher: true }],
+      installedAll: ['com.a'],
+    })
+
+    expect(res.removed).toBe(0)
+    expect(res.count).toBe(1)
+    expect(stored.policy.apps['com.a'].status).toBe('allowed')
+    expect(sendToAllParents).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'app:uninstalled' }))
+  })
+})

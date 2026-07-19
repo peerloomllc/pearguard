@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport } = require('./bare-dispatch')
+const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { signMessage, verifyMessage } = require('./message')
 
@@ -1035,28 +1035,13 @@ async function handleHello (msg, conn, remoteKeyHex) {
     const blockedAt = blockedEntry.value?.blockedAt || 0
     const incomingTopic = (peers.get(remoteKeyHex) || {}).topicHex
     const isChildHello = msg.payload && msg.payload.mode === 'child'
-    let matchesFreshInvite = false
-    // 1. pendingInviteTopic matching this connection's topic (parent-hosted invite).
-    if (incomingTopic) {
-      const pending = await db.get('pendingInviteTopic:' + incomingTopic).catch(() => null)
-      if (pending && (pending.value?.createdAt || 0) > blockedAt) matchesFreshInvite = true
-    }
-    // 2. pendingChild for this peer — parent accepted a child-hosted invite (QR scan).
-    // Check regardless of incomingTopic: when the parent and child already share a
-    // stale connection from a prior pair, Hyperswarm may deliver the re-discovery
-    // on that existing connection rather than opening a fresh one on the new topic.
-    if (!matchesFreshInvite && isChildHello) {
-      const pendingChild = await db.get('pendingChild:' + peerIdentityKeyHex).catch(() => null)
-      if (pendingChild && (pendingChild.value?.ts || 0) > blockedAt) matchesFreshInvite = true
-    }
-    // 3. Fallback: any pendingInviteTopic newer than the block, when the topic was
-    // not delivered on this connection (Hyperswarm dedup can deliver empty
-    // info.topics[] on reconnect paths).
-    if (!matchesFreshInvite && isChildHello && !incomingTopic) {
-      for await (const { value } of db.createReadStream({ gt: 'pendingInviteTopic:', lt: 'pendingInviteTopic:~' })) {
-        if (value && (value.createdAt || 0) > blockedAt) { matchesFreshInvite = true; break }
-      }
-    }
+    // Only clear the block on an invite demonstrably bound to THIS peer (its own
+    // connection topic, or a pendingChild keyed by its identity) — never on "any
+    // newer pending invite", which let a blocked child steal an unrelated new-child
+    // invite and re-pair itself. See isBlockClearedByFreshInvite.
+    const matchesFreshInvite = await isBlockClearedByFreshInvite(db, {
+      peerIdentityKeyHex, incomingTopic, isChildHello, blockedAt,
+    })
     if (matchesFreshInvite) {
       log('[bare] clearing obsolete block on fresh invite for peer:', peerIdentityKeyHex.slice(0, 8))
       await db.del('blocked:' + peerIdentityKeyHex).catch(() => {})

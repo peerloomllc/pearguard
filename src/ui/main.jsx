@@ -31,8 +31,20 @@ const eventListeners = {};
 const BUFFERED_EVENTS = new Set(['navigate:child:alerts', 'navigate:child:requests']);
 const bufferedEvents = {};
 
+// Highest event seq this WebView context has applied. Resets to 0 on a page
+// reload — which is exactly what we want: the RN shell replays its recent-event
+// buffer on every load, and a fresh context should re-apply the whole retained
+// window. Within one context the guard drops any seq already applied, so replay
+// is idempotent. Legacy/direct callers (navigation, block:occurred) omit seq and
+// are always delivered.
+let __lastEventSeq = 0;
+
 // Called by RN shell to push bare→UI events
-window.__pearEvent = function (eventName, data) {
+window.__pearEvent = function (eventName, data, seq) {
+  if (typeof seq === 'number') {
+    if (seq <= __lastEventSeq) return;
+    __lastEventSeq = seq;
+  }
   const handlers = eventListeners[eventName];
   if (handlers && handlers.length > 0) {
     handlers.forEach((fn) => fn(data));

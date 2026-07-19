@@ -15,6 +15,7 @@
     "build:fonts": "node scripts/build-fonts.js",
     "build:ui": "npm run build:fonts && esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --loader:.js=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
     "test": "jest",
+    "test:harness": "node test/harness/run.js",
     "test:policy": "node src/policy.test.js",
     "ios": "expo run:ios"
   },

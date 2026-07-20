@@ -40,6 +40,18 @@ let _workletStarted = false
 let _mode: string | null = null
 let _dbReady = false
 let _nextId = 1
+// Startup-handshake watchdog. dbReady only flips after the worklet completes
+// bareReady -> init -> ready; none of those steps retries, so a dropped event or
+// a silently-failed Worklet.start() leaves the UI blank until the user swipes the
+// app away and reopens (observed intermittently on iPhone SE). This timer
+// automates that recovery. Held at module scope so it survives re-renders.
+let _handshakeTimer: ReturnType<typeof setTimeout> | null = null
+let _handshakeRespawns = 0
+const HANDSHAKE_TIMEOUT_MS = 8000
+const MAX_HANDSHAKE_RESPAWNS = 2
+function clearHandshakeWatchdog () {
+  if (_handshakeTimer) { clearTimeout(_handshakeTimer); _handshakeTimer = null }
+}
 const _pending = new Map<number, { cb: (msg: any) => void; timer: ReturnType<typeof setTimeout> }>()
 const IPC_TIMEOUT_MS = 30000
 // Register a pending IPC call with a timeout so a lost worklet reply — a dropped
@@ -1092,8 +1104,12 @@ export default function Root () {
       // When bare.js loads, it emits 'bareReady' — then we call init
       onEvent('bareReady', () => sendToWorklet({ method: 'init', dataDir, debug: __DEV__ }))
 
-      // When init completes, bare emits 'ready' — dispatch is now initialized
+      // When init completes, bare emits 'ready' — dispatch is now initialized.
+      // Handshake done: cancel the watchdog and reset its respawn budget so a
+      // future terminate/respawn cycle gets a fresh set of attempts.
       onEvent('ready', (data) => {
+        clearHandshakeWatchdog()
+        _handshakeRespawns = 0
         _mode = data.mode
         _dbReady = true
         setDbReady(true)
@@ -1195,8 +1211,44 @@ export default function Root () {
         _worklet.IPC.on('data', onWorkletData)
         // A fresh worklet re-emits 'bareReady', which re-triggers init (registered
         // once below), so the DB reopens and the swarm rejoins on restart.
-        _worklet.start('bare.bundle', source)
-          .catch((e: unknown) => console.error('[RN] worklet start error:', e))
+        // react-native-bare-kit's start() may return undefined rather than a
+        // promise — guard so `.catch` doesn't throw a TypeError (which previously
+        // aborted the rest of start()). A start that fails silently is caught by
+        // the handshake watchdog below, not by this handler.
+        const started = _worklet.start('bare.bundle', source)
+        if (started && typeof started.catch === 'function') {
+          started.catch((e: unknown) => console.error('[RN] worklet start error:', e))
+        }
+        armHandshakeWatchdog()
+      }
+
+      // Re-arm the startup-handshake watchdog. If dbReady is still false after
+      // HANDSHAKE_TIMEOUT_MS, first re-send init (cheap and idempotent — bare's
+      // _initialized guard just re-emits 'ready' — which recovers a lost
+      // bareReady/init/ready event). If it's STILL false one more interval later,
+      // respawn the worklet from scratch (recovers a Worklet.start() that never
+      // brought the Bare thread up). Bounded by MAX_HANDSHAKE_RESPAWNS.
+      const armHandshakeWatchdog = () => {
+        clearHandshakeWatchdog()
+        _handshakeTimer = setTimeout(() => {
+          if (_dbReady) return
+          console.warn('[RN] handshake watchdog: no ready after', HANDSHAKE_TIMEOUT_MS, 'ms — re-sending init')
+          sendToWorklet({ method: 'init', dataDir, debug: __DEV__ })
+          _handshakeTimer = setTimeout(() => {
+            if (_dbReady) return
+            if (_handshakeRespawns >= MAX_HANDSHAKE_RESPAWNS) {
+              console.error('[RN] handshake watchdog: no ready after', MAX_HANDSHAKE_RESPAWNS, 'respawns — giving up')
+              return
+            }
+            _handshakeRespawns++
+            console.warn('[RN] handshake watchdog: re-init did not take — respawning worklet (attempt', _handshakeRespawns, 'of', MAX_HANDSHAKE_RESPAWNS + ')')
+            rejectAllPending('worklet handshake timeout')
+            try { _worklet?.terminate?.() } catch {}
+            _worklet = null
+            _workletStarted = false
+            spawnWorklet()  // re-arms the watchdog for the fresh worklet
+          }, HANDSHAKE_TIMEOUT_MS)
+        }, HANDSHAKE_TIMEOUT_MS)
       }
 
       function onWorkletTerminate () {

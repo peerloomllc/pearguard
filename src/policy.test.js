@@ -4,6 +4,7 @@ const assert = require('assert')
 const {
   isAppBlocked,
   isPaused,
+  isBlockedByAppWindow,
   isScheduleActive,
   hasExceededLimit,
   hasExceededScreenTimeLimit,
@@ -473,6 +474,38 @@ function makeDate(dayOfWeek, hour, minute) {
   // Once the pause expires, enforcement resumes.
   const expired = { ...policy, pauseUntil: now - 1 }
   assert.strictEqual(isAppBlocked('com.example.tiktok', expired, {}, now), true, 'expired pause re-blocks')
+}
+
+// isBlockedByAppWindow + isAppBlocked — per-app time-of-day windows
+{
+  const allDays = [0, 1, 2, 3, 4, 5, 6];
+  // Monday (makeDate day 1) at 15:00 and 17:00.
+  const at3pm = makeDate(1, 15, 0);
+  const at5pm = makeDate(1, 17, 0);
+
+  // "allow" window 16:00-18:00 → usable ONLY inside it.
+  const allowWin = { window: { mode: 'allow', days: allDays, start: '16:00', end: '18:00' } };
+  assert.strictEqual(isBlockedByAppWindow(allowWin, at3pm), true, 'allow: outside window → blocked');
+  assert.strictEqual(isBlockedByAppWindow(allowWin, at5pm), false, 'allow: inside window → allowed');
+
+  // "block" window 08:00-15:30 (school) → blocked DURING it.
+  const blockWin = { window: { mode: 'block', days: allDays, start: '08:00', end: '15:30' } };
+  assert.strictEqual(isBlockedByAppWindow(blockWin, at3pm), true, 'block: inside window → blocked');
+  assert.strictEqual(isBlockedByAppWindow(blockWin, at5pm), false, 'block: outside window → allowed');
+
+  // Day-of-week gating: an allow window only on Tuesday(2) → Monday is outside.
+  const tueOnly = { window: { mode: 'allow', days: [2], start: '00:00', end: '23:59' } };
+  assert.strictEqual(isBlockedByAppWindow(tueOnly, at3pm), true, 'allow window not scheduled today → blocked');
+
+  // Malformed windows never take effect.
+  assert.strictEqual(isBlockedByAppWindow({ window: null }, at3pm), false, 'no window → not blocked');
+  assert.strictEqual(isBlockedByAppWindow({ window: { mode: 'allow', days: [], start: '1:00', end: '2:00' } }, at3pm), false, 'empty days → no effect');
+  assert.strictEqual(isBlockedByAppWindow({ window: { mode: 'bogus', days: allDays, start: '1:00', end: '2:00' } }, at3pm), false, 'unknown mode → no effect');
+
+  // Integrated with isAppBlocked: an allowed app blocked outside its allow window.
+  const policy = { apps: { 'com.game': { status: 'allowed', window: { mode: 'allow', days: allDays, start: '16:00', end: '18:00' } } } };
+  assert.strictEqual(isAppBlocked('com.game', policy, {}, at3pm), true, 'allowed app blocked outside its allow window');
+  assert.strictEqual(isAppBlocked('com.game', policy, {}, at5pm), false, 'allowed app usable inside its allow window');
 }
 
 console.log('All policy.js tests passed.')

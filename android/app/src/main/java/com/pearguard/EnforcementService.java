@@ -52,6 +52,13 @@ public class EnforcementService extends Service {
     private long lastUsageFlushTime = 0;
     private long lastReconnectEmitTime = 0;
     private boolean lastAccessibilityState = true;
+    // Consecutive ticks where the service reads as ENABLED in settings but its
+    // process is not connected (AppBlockerModule.isServiceConnected() == false).
+    // Requires a run of stalled ticks before alerting so the normal reconnect lag
+    // after a process/boot restart doesn't cry wolf. 3 ticks x 5s poll ~= 15s.
+    private int accessibilityStalledTicks = 0;
+    private static final int ACCESSIBILITY_STALL_ALERT_TICKS = 3;
+    private boolean accessibilityStallAlerted = false;
     private final Set<String> shownWarnings = new HashSet<>();
     private int lastWarningDayOfYear = -1;
     private ConnectivityManager connectivityManager;
@@ -182,30 +189,42 @@ public class EnforcementService extends Service {
     }
 
     /**
-     * Checks whether the PearGuard Accessibility Service is enabled.
-     * If it transitions from enabled → disabled, fires onBypassDetected to RN
-     * and shows the bypass warning notification.
+     * Checks whether the PearGuard Accessibility Service is both enabled AND
+     * actually enforcing.
+     *
+     * Two distinct failure modes are caught:
+     *   1. enabled → disabled: the child turned the service off. Reported once as
+     *      "accessibility_disabled".
+     *   2. enabled-but-not-connected: the service reads as enabled in settings,
+     *      but its process is gone (OS-reclaimed, not disabled), so blocking
+     *      silently no-ops. isAccessibilityServiceEnabled() can't see this — only
+     *      the live sInstance can. Reported as "accessibility_not_connected" after
+     *      a short grace so the normal reconnect lag after a restart doesn't
+     *      falsely accuse. Cleared once the service reconnects.
      */
     private void checkAccessibilityService() {
         boolean isEnabled = isAccessibilityServiceEnabled();
 
         if (lastAccessibilityState && !isEnabled) {
-            // Just became disabled — persist to SharedPreferences so the next app launch
-            // can detect and relay this even if the RN JS thread was suspended right now.
-            getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
-                .edit()
-                .putString("bypass_detected_reason", "accessibility_disabled")
-                .putLong("bypass_detected_at", System.currentTimeMillis())
-                .apply();
+            // Just became disabled — reportBypass persists to SharedPreferences so
+            // the next app launch can relay it even if the RN JS thread is suspended.
+            reportBypass("accessibility_disabled");
+        }
 
-            AppBlockerModule.showBypassNotification(this);
-
-            ReactContext reactContext = PearGuardReactHost.get();
-            if (reactContext != null && reactContext.hasActiveReactInstance()) {
-                reactContext
-                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                    .emit("onBypassDetected", "accessibility_disabled");
+        // Enabled-but-not-connected blind spot: settings say enabled but the
+        // service object isn't there to enforce. Only meaningful while enabled —
+        // a genuinely disabled service is already handled above.
+        if (isEnabled && !AppBlockerModule.isServiceConnected()) {
+            accessibilityStalledTicks++;
+            if (accessibilityStalledTicks >= ACCESSIBILITY_STALL_ALERT_TICKS
+                    && !accessibilityStallAlerted) {
+                accessibilityStallAlerted = true;
+                reportBypass("accessibility_not_connected");
             }
+        } else {
+            // Connected (or disabled) — reset so a later stall alerts again.
+            accessibilityStalledTicks = 0;
+            accessibilityStallAlerted = false;
         }
 
         lastAccessibilityState = isEnabled;

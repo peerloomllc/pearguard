@@ -240,6 +240,17 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     /**
+     * True when the accessibility service is actually bound and connected — i.e.
+     * it can enforce right now. Distinct from the Settings.Secure "enabled" flag,
+     * which stays set even after the OS kills the service process. Used by
+     * EnforcementService to catch the enabled-but-not-connected blind spot where
+     * blocking silently no-ops but the child never disabled anything.
+     */
+    public static boolean isServiceConnected() {
+        return sInstance != null;
+    }
+
+    /**
      * Called from UsageStatsModule when a policy update or P2P override arrives that
      * makes a previously-blocked package now allowed.  If the overlay is currently
      * showing for that package it is dismissed immediately so the child doesn't have
@@ -303,13 +314,20 @@ public class AppBlockerModule extends AccessibilityService {
      * burst after a dismissal (recents-return bypass mitigation).
      */
     private void enforceCurrentForeground() {
-        if (lastForegroundPackage == null) return;
         // Query the actual foreground app. This catches cases where lastForegroundPackage
         // is stale - e.g. after the user enters recents (which sets lastForegroundPackage
         // to the launcher) and then returns to a blocked app without a
         // TYPE_WINDOW_STATE_CHANGED firing (#113).
+        //
+        // Do NOT early-return when lastForegroundPackage is null: a freshly
+        // (re)connected accessibility service starts with lastForegroundPackage
+        // null, and an app that was already in the foreground at reconnect fires
+        // no window-state event, so bailing here left an already-open blocked app
+        // usable until the next app switch. Querying the live foreground re-blocks
+        // it on the very next poll instead.
         String realFg = queryForegroundPackage();
         final String pkg = (realFg != null) ? realFg : lastForegroundPackage;
+        if (pkg == null) return;
         // Keep lastForegroundPackage in sync so onAccessibilityEvent doesn't
         // immediately dismiss the overlay we're about to show (#113).
         if (realFg != null && !realFg.equals(lastForegroundPackage)) {

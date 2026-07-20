@@ -57,6 +57,18 @@ describe('describeBypassReason', () => {
     }
   })
 
+  // Enabled-in-settings but OS-killed process: protection is off, but the child
+  // did not turn it off (that would be accessibility_disabled / force_stopped),
+  // so it must not accuse and must still say blocking is inactive.
+  test('accessibility-not-connected reports the gap without blaming the child', () => {
+    const r = describeBypassReason('accessibility_not_connected', 'Ben')
+    expect(r.tamper).toBe(false)
+    expect(r.body).not.toMatch(/Ben turned off|Ben disabled|Ben removed|Ben force-stopped/i)
+    expect(r.body).toMatch(/not something Ben did/i)
+    expect(r.title + ' ' + r.body).toMatch(/paused|inactive|not running/i)
+    expect(isTamperReason('accessibility_not_connected')).toBe(false)
+  })
+
   test('never says "Accessibility Service" for a desktop reason', () => {
     for (const reason of ['force_stopped', 'linux:unsupported-compositor', 'linux:extension-not-loaded']) {
       expect(describeBypassReason(reason, 'Ben').body).not.toMatch(/Accessibility Service/)

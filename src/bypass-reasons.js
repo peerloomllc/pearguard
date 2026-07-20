@@ -62,6 +62,21 @@ function describeBypassReason(reason, childName) {
         body: who + ' force-stopped PearGuard. App blocking is not running.',
         tamper: true,
       }
+
+    // The accessibility/protection service is switched ON in settings but its
+    // process is not currently connected — the OS reclaimed it (memory pressure,
+    // etc.) rather than the child disabling it. Blocking silently no-ops while it
+    // reconnects, so the parent must be told, but this is NOT the child's doing
+    // (a deliberate turn-off is 'accessibility_disabled'; a force-stop is
+    // 'force_stopped'). No blame.
+    case 'accessibility_not_connected':
+      return {
+        title: 'App blocking paused on ' + who + "'s device",
+        body: "PearGuard's protection service was stopped by the device and is "
+          + 'restarting. Blocking is inactive until it reconnects — this is not '
+          + 'something ' + who + ' did.',
+        tamper: false,
+      }
     case 'clock_changed':
       return {
         title: 'Device clock changed',

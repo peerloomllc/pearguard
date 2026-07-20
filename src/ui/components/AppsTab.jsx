@@ -3,6 +3,7 @@ import { useTheme } from '../theme.js';
 import Modal from './primitives/Modal.jsx';
 import Button from './primitives/Button.jsx';
 import { APP_CATEGORIES, CATEGORY_COLORS } from './appCategories.js';
+import AppWindowModal, { summarizeWindow } from './AppWindowModal.jsx';
 
 const ANIMATION_STYLES = `
 @keyframes pgFadeSlideOut {
@@ -49,7 +50,18 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
   const savedMinutes = hasOwnLimit ? String(Math.round(appData.dailyLimitSeconds / 60)) : '';
   const [limitInput, setLimitInput] = useState(savedMinutes);
   const [editingLimit, setEditingLimit] = useState(false);
+  const [windowOpen, setWindowOpen] = useState(false);
   const limitDirty = limitInput !== savedMinutes;
+  const windowSummary = summarizeWindow(appData.window);
+
+  function saveWindow(win) {
+    if (win) {
+      onUpdate(packageName, { ...appData, window: win });
+    } else {
+      const { window: _drop, ...rest } = appData;
+      onUpdate(packageName, rest);
+    }
+  }
 
   useEffect(() => { setLimitInput(savedMinutes); }, [savedMinutes]);
   useEffect(() => { if (hasOwnLimit) setEditingLimit(false); }, [hasOwnLimit]);
@@ -219,8 +231,26 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
               )}
             </label>
           )}
+          <button
+            onClick={() => { window.callBare('haptic:tap'); setWindowOpen(true); }}
+            style={{
+              padding: '3px 10px', border: `1px solid ${windowSummary ? colors.primary : colors.border}`,
+              borderRadius: `${radius.sm}px`, background: 'none',
+              color: windowSummary ? colors.primary : colors.text.muted, cursor: 'pointer', fontSize: '12px',
+            }}
+            aria-label={`Time window for ${appData.appName || packageName}`}
+          >
+            {windowSummary || 'Time window'}
+          </button>
         </div>
       )}
+      <AppWindowModal
+        appName={appData.appName || packageName}
+        window={appData.window}
+        visible={windowOpen}
+        onClose={() => setWindowOpen(false)}
+        onSave={saveWindow}
+      />
     </div>
   );
 }

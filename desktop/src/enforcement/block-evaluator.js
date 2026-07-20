@@ -175,6 +175,10 @@ function evaluate({
     return { reason: 'Needs parent approval.', category: 'status' }
   }
 
+  // Step 3.5: Per-app time-of-day window (allow-only or block-during).
+  const windowReason = getAppWindowBlockReason(appPolicy, now)
+  if (windowReason) return { reason: windowReason, category: 'schedule' }
+
   // Step 4: Daily limit. Per-app wins over category fallback.
   const limit = appPolicy.dailyLimitSeconds
   if (typeof limit === 'number' && limit > 0) {
@@ -248,6 +252,42 @@ function getScheduleBlockReason(policy, packageName, now) {
     }
   }
   return null
+}
+
+// Per-app time-of-day window. appPolicy.window = { mode:'allow'|'block',
+// days:[0-6], start:'HH:MM', end:'HH:MM' }. Mirrors isBlockedByAppWindow in
+// src/policy.js and getAppWindowBlockReason in AppBlockerModule.java.
+function getAppWindowBlockReason(appPolicy, now) {
+  const w = appPolicy && appPolicy.window
+  if (!w || (w.mode !== 'allow' && w.mode !== 'block')) return null
+  if (!Array.isArray(w.days) || w.days.length === 0 || !w.start || !w.end) return null
+
+  const d = new Date(now)
+  const dayOfWeek = d.getDay()
+  const nowMinutes = d.getHours() * 60 + d.getMinutes()
+  const start = parseHM(w.start)
+  const end = parseHM(w.end)
+  if (start == null || end == null) return null
+
+  const dayMatches = w.days.includes(dayOfWeek)
+  const inWindow = dayMatches && (start <= end
+    ? nowMinutes >= start && nowMinutes < end
+    : nowMinutes >= start || nowMinutes < end)
+
+  if (w.mode === 'block') {
+    return inWindow ? 'Blocked from ' + fmt12(w.start) + ' to ' + fmt12(w.end) + '.' : null
+  }
+  return inWindow ? null : 'Allowed only ' + fmt12(w.start) + ' to ' + fmt12(w.end) + '.'
+}
+
+function fmt12(hhmm) {
+  const m = parseHM(hhmm)
+  if (m == null) return hhmm
+  const h = Math.floor(m / 60)
+  const min = m % 60
+  const ap = h < 12 ? 'AM' : 'PM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return h12 + ':' + String(min).padStart(2, '0') + ' ' + ap
 }
 
 function getCategoryLimitReason(policy, apps, appPolicy, getUsageSeconds) {

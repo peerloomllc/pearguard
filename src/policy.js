@@ -42,6 +42,20 @@ function isScheduleActive(schedule, now) {
   }
 }
 
+// Per-app time-of-day window (#per-app-windows). An app can carry a single
+// `window` = { mode: 'allow'|'block', days:[0-6], start:'HH:MM', end:'HH:MM' }:
+//   - mode 'allow'  → usable ONLY inside the window ("games only 4-6pm")
+//   - mode 'block'  → blocked DURING the window ("social blocked during school")
+// Reuses isScheduleActive for the day + overnight-wrap maths. A malformed window
+// has no effect (returns false) so a half-configured rule never bricks an app.
+function isBlockedByAppWindow(appPolicy, now) {
+  const w = appPolicy && appPolicy.window
+  if (!w || (w.mode !== 'allow' && w.mode !== 'block')) return false
+  if (!Array.isArray(w.days) || w.days.length === 0 || !w.start || !w.end) return false
+  const inside = isScheduleActive(w, now)
+  return w.mode === 'block' ? inside : !inside
+}
+
 function hasExceededLimit(packageName, policy, usageStats) {
   if (!policy || !policy.apps) return false
   const appPolicy = policy.apps[packageName]
@@ -237,6 +251,9 @@ function isAppBlocked(packageName, policy, usageStats, now, bonus) {
   if (appPolicy && appPolicy.status === 'blocked') return true
   if (appPolicy && appPolicy.status === 'pending') return true
 
+  // Per-app time-of-day window — an extra restriction on top of the app's status.
+  if (isBlockedByAppWindow(appPolicy, now)) return true
+
   // Device-wide cumulative screen-time cap blocks every app once spent, except
   // the ones the parent marked exempt (#178). An exempt app still falls through
   // to the schedule and per-app/category limit checks below. A general-time
@@ -261,6 +278,7 @@ function isAppBlocked(packageName, policy, usageStats, now, bonus) {
 module.exports = {
   isAppBlocked,
   isPaused,
+  isBlockedByAppWindow,
   isScheduleActive,
   hasExceededLimit,
   hasExceededCategoryLimit,

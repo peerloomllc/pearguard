@@ -726,6 +726,10 @@ public class AppBlockerModule extends AccessibilityService {
                     return "Needs parent approval.";
                 }
 
+                // Step 3.5: Per-app time-of-day window (allow-only or block-during).
+                String windowReason = getAppWindowBlockReason(appPolicy);
+                if (windowReason != null) return windowReason;
+
                 // Step 4: Daily limit exceeded. Per-app limit wins; category
                 // limit is the fallback only when no per-app limit is set.
                 int limitSeconds = appPolicy.optInt("dailyLimitSeconds", -1);
@@ -839,6 +843,66 @@ public class AppBlockerModule extends AccessibilityService {
             }
         } catch (Exception ignored) {}
         return null;
+    }
+
+    /**
+     * Per-app time-of-day window. appPolicy.window = { mode:'allow'|'block',
+     * days:[0-6], start:'HH:MM', end:'HH:MM' }. 'allow' → usable only inside the
+     * window; 'block' → blocked during it. Returns a block reason or null.
+     * Mirrors isBlockedByAppWindow in src/policy.js.
+     */
+    private String getAppWindowBlockReason(JSONObject appPolicy) {
+        try {
+            JSONObject w = appPolicy.optJSONObject("window");
+            if (w == null) return null;
+            String mode = w.optString("mode", "");
+            if (!"allow".equals(mode) && !"block".equals(mode)) return null;
+            JSONArray days = w.optJSONArray("days");
+            String start = w.optString("start", "");
+            String end = w.optString("end", "");
+            if (days == null || days.length() == 0 || start.isEmpty() || end.isEmpty()) return null;
+
+            Calendar now = Calendar.getInstance();
+            int dayOfWeek = now.get(Calendar.DAY_OF_WEEK) - 1; // 0=Sunday
+            int nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+            boolean dayMatches = false;
+            for (int d = 0; d < days.length(); d++) {
+                if (days.getInt(d) == dayOfWeek) { dayMatches = true; break; }
+            }
+
+            String[] sp = start.split(":");
+            String[] ep = end.split(":");
+            int startMin = Integer.parseInt(sp[0]) * 60 + Integer.parseInt(sp[1]);
+            int endMin = Integer.parseInt(ep[0]) * 60 + Integer.parseInt(ep[1]);
+            boolean inWindow;
+            if (startMin <= endMin) {
+                inWindow = dayMatches && nowMinutes >= startMin && nowMinutes < endMin;
+            } else {
+                inWindow = dayMatches && (nowMinutes >= startMin || nowMinutes < endMin);
+            }
+
+            if ("block".equals(mode)) {
+                return inWindow ? "Blocked from " + fmt12(start) + " to " + fmt12(end) + "." : null;
+            }
+            // allow: blocked whenever we're outside the window.
+            return inWindow ? null : "Allowed only " + fmt12(start) + " to " + fmt12(end) + ".";
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /** Format "HH:MM" (24h) as a 12-hour clock time, e.g. "16:00" -> "4:00 PM". */
+    private String fmt12(String hhmm) {
+        try {
+            String[] p = hhmm.split(":");
+            int h = Integer.parseInt(p[0]);
+            int m = Integer.parseInt(p[1]);
+            String ap = h < 12 ? "AM" : "PM";
+            int h12 = h % 12;
+            if (h12 == 0) h12 = 12;
+            return h12 + ":" + String.format("%02d", m) + " " + ap;
+        } catch (Exception e) {
+            return hhmm;
+        }
     }
 
     /**
@@ -1105,6 +1169,8 @@ public class AppBlockerModule extends AccessibilityService {
         if (reason.contains("Daily limit")) return "daily_limit";
         if (reason.contains("Screen time limit")) return "screen_time";
         if (reason.contains("Blocked during")) return "schedule";
+        // Per-app time-of-day window reasons are time-based like a schedule.
+        if (reason.startsWith("Allowed only") || reason.startsWith("Blocked from")) return "schedule";
         // Category-limit reasons are formatted as "<category> limit reached (<n> min/day).";
         // matching this last so it doesn't shadow the per-app "Daily limit" check above.
         if (reason.contains("limit reached")) return "category_limit";

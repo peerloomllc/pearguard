@@ -937,7 +937,31 @@ public class AppBlockerModule extends AccessibilityService {
         return getDailyUsageSeconds(this, packageName);
     }
 
+    // --- Short-TTL usage cache (battery) ---
+    // getBlockReason runs ~12x during the 3s recheck burst, and the category-limit
+    // fallback scans every app in the category — each getDailyUsageSeconds /
+    // getTotalDailyUsageSeconds does a full-day UsageStatsManager.queryEvents scan
+    // over the whole day's events (thousands by evening). Cache each result for a
+    // couple of seconds so a burst reuses one scan instead of dozens. Foreground
+    // usage only grows ~1s per wall-clock second, so a value up to TTL old never
+    // flips an enforcement decision. Keyed by package; the device-wide total keeps
+    // its own reserved slot. Reads/writes come from the main looper and the RN
+    // bridge thread, so a concurrent map + atomic long[] swap keeps it torn-read-free.
+    private static final long USAGE_CACHE_TTL_MS = 2000;
+    private static final String TOTAL_USAGE_KEY = "total/";  // "/" is illegal in a package name
+    private static final Map<String, long[]> usageCache =
+            new java.util.concurrent.ConcurrentHashMap<>();  // key -> { seconds, computedAtMs }
+
     static int getDailyUsageSeconds(Context ctx, String packageName) {
+        long now = System.currentTimeMillis();
+        long[] cached = usageCache.get(packageName);
+        if (cached != null && now - cached[1] < USAGE_CACHE_TTL_MS) return (int) cached[0];
+        int seconds = computeDailyUsageSeconds(ctx, packageName);
+        usageCache.put(packageName, new long[]{ seconds, now });
+        return seconds;
+    }
+
+    private static int computeDailyUsageSeconds(Context ctx, String packageName) {
         UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
         if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();
@@ -1046,6 +1070,15 @@ public class AppBlockerModule extends AccessibilityService {
     }
 
     static int getTotalDailyUsageSeconds(Context ctx, JSONObject policy) {
+        long now = System.currentTimeMillis();
+        long[] cached = usageCache.get(TOTAL_USAGE_KEY);
+        if (cached != null && now - cached[1] < USAGE_CACHE_TTL_MS) return (int) cached[0];
+        int seconds = computeTotalDailyUsageSeconds(ctx, policy);
+        usageCache.put(TOTAL_USAGE_KEY, new long[]{ seconds, now });
+        return seconds;
+    }
+
+    private static int computeTotalDailyUsageSeconds(Context ctx, JSONObject policy) {
         UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
         if (usm == null) return 0;
         Calendar cal = Calendar.getInstance();

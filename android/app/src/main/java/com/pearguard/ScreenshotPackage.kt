@@ -6,7 +6,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class ScreenshotPackage : ReactPackage {
     override fun createNativeModules(ctx: ReactApplicationContext): List<NativeModule> =
-        listOf(ScreenshotModule(ctx))
+        listOf(ScreenshotModule(ctx), WebViewRecoveryModule(ctx))
     override fun createViewManagers(ctx: ReactApplicationContext): List<ViewManager<*, *>> =
         emptyList()
 }

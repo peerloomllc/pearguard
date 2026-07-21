@@ -3746,3 +3746,218 @@ test('alert dedupe: nothing is suppressed until the alert is recorded', () => {
   // ...relay failed; no recordAlert call...
   assert.strictEqual(shouldAlert({ ...args, now: 2000 }), true, 'must retry a send that never landed')
 })
+
+// --- PolicyCache persistence ---------------------------------------------
+//
+// The bug these cover: PolicyCache was memory-only, so every desktop restart
+// left the child unenforced until a parent happened to connect and push a
+// policy - hours or days, because a parent's phone app is closed most of the
+// time. evaluate() returns null (allow everything, including the device lock)
+// for a null policy, so that window was a total enforcement hole.
+
+function tmpPolicyCachePath() {
+  return path.join(os.tmpdir(), 'pearguard-test-policy-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.json')
+}
+
+test('PolicyCache persists a policy and reloads it in a fresh instance', () => {
+  const filePath = tmpPolicyCachePath()
+  try {
+    const first = new PolicyCache({ filePath })
+    assert.strictEqual(first.hasPolicy(), false, 'nothing on disk yet')
+    first.setPolicyJson(JSON.stringify({ locked: true, apps: {}, version: 7 }))
+
+    // A brand-new instance is what a restart actually looks like.
+    const second = new PolicyCache({ filePath })
+    assert.strictEqual(second.hasPolicy(), true, 'restart must not lose the policy')
+    assert.strictEqual(second.getPolicy().locked, true)
+    assert.strictEqual(second.getPolicy().version, 7)
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})
+
+// The regression, stated as the thing that actually matters: a restarted child
+// with a locked policy must still evaluate as locked. Proven against evaluate()
+// rather than the cache alone, because "cache holds a policy" is not the claim -
+// "the kid is still blocked" is.
+test('PolicyCache: a device lock survives a restart and still blocks', () => {
+  const filePath = tmpPolicyCachePath()
+  try {
+    new PolicyCache({ filePath }).setPolicyJson(JSON.stringify({
+      locked: true, lockMessage: 'Locked by Mum', apps: {}, version: 1,
+    }))
+
+    const restarted = new PolicyCache({ filePath })
+    const decision = evaluate({
+      policy: restarted.getPolicy(),
+      packageName: 'com.roblox.client',
+      exeBasename: 'RobloxPlayerBeta.exe',
+      overrides: new Map(),
+      getUsageSeconds: () => 0,
+    })
+    assert.ok(decision, 'restarted child must still be locked, not fail open')
+    assert.strictEqual(decision.category, 'lock')
+    assert.strictEqual(decision.reason, 'Locked by Mum')
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})
+
+test('PolicyCache tolerates a corrupt file by failing open, not crashing', () => {
+  const filePath = tmpPolicyCachePath()
+  try {
+    fs.writeFileSync(filePath, '{ this is not json')
+    const c = new PolicyCache({ filePath })
+    assert.strictEqual(c.hasPolicy(), false)
+    assert.strictEqual(c.getPolicy(), null)
+    // And it must still accept a fresh push afterwards.
+    assert.strictEqual(c.setPolicyJson(JSON.stringify({ apps: {} })), true)
+    assert.strictEqual(c.hasPolicy(), true)
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})
+
+// A truthy non-object would pass evaluate()'s `if (!policy)` guard and then
+// throw on the first property read - a crash loop instead of a fail-open.
+test('PolicyCache ignores a non-object payload on disk', () => {
+  const filePath = tmpPolicyCachePath()
+  try {
+    fs.writeFileSync(filePath, '"just a string"')
+    const c = new PolicyCache({ filePath })
+    assert.strictEqual(c.getPolicy(), null)
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})
+
+test('PolicyCache with no filePath stays ephemeral (touches no disk)', () => {
+  const c = new PolicyCache()
+  c.setPolicyJson(JSON.stringify({ apps: {} }))
+  assert.strictEqual(c.hasPolicy(), true)
+})
+
+// --- ForegroundMonitor active-win timeout --------------------------------
+//
+// The bug: _tick() set _inflight = true, awaited active-win with no timeout and
+// only cleared it in finally. active-win shells out and can hang forever, after
+// which every future tick early-returned at `if (this._inflight) return`. No
+// blocks were ever evaluated again and nothing detected the stall.
+
+test('ForegroundMonitor: a hung active-win does not wedge the poll loop', async () => {
+  let calls = 0
+  // Never settles - exactly the pathological case.
+  const hungActiveWin = () => { calls++; return new Promise(() => {}) }
+  const m = new ForegroundMonitor({ activeWin: hungActiveWin, intervalMs: 5, activeWinTimeoutMs: 20 })
+  const errors = []
+  m.on('error', (e) => errors.push(e))
+  m.start()
+  await new Promise(r => setTimeout(r, 150))
+  m.stop()
+
+  // Pre-fix this was stuck at exactly 1 forever.
+  assert.ok(calls > 1, 'poll loop must keep issuing calls after a hang, got ' + calls)
+  assert.ok(errors.length > 0, 'timeouts must surface as error events')
+  assert.strictEqual(errors[0].code, 'ACTIVE_WIN_TIMEOUT')
+})
+
+test('ForegroundMonitor emits stalled once after consecutive timeouts', async () => {
+  const m = new ForegroundMonitor({
+    activeWin: () => new Promise(() => {}),
+    intervalMs: 5,
+    activeWinTimeoutMs: 15,
+  })
+  const stalls = []
+  const lost = []
+  m.on('stalled', (info) => stalls.push(info))
+  m.on('foreground-lost', () => lost.push(1))
+  m.on('error', () => {})
+  m.start()
+  await new Promise(r => setTimeout(r, 200))
+  m.stop()
+
+  assert.strictEqual(stalls.length, 1, 'stall is reported once, not once per tick')
+  assert.ok(stalls[0].consecutiveTimeouts >= 3)
+  assert.ok(lost.length > 0, 'a blind monitor must close the open usage session')
+})
+
+test('ForegroundMonitor recovers when active-win starts answering again', async () => {
+  let hang = true
+  const m = new ForegroundMonitor({
+    activeWin: () => hang
+      ? new Promise(() => {})
+      : Promise.resolve({ owner: { path: '/usr/bin/firefox', processId: 9, name: 'firefox' }, title: 't' }),
+    intervalMs: 5,
+    activeWinTimeoutMs: 15,
+  })
+  const events = []
+  m.on('stalled', () => events.push('stalled'))
+  m.on('recovered', () => events.push('recovered'))
+  m.on('foreground-changed', () => events.push('changed'))
+  m.on('error', () => {})
+  m.start()
+  await new Promise(r => setTimeout(r, 120))
+  hang = false
+  await new Promise(r => setTimeout(r, 80))
+  m.stop()
+
+  assert.ok(events.includes('stalled'), 'should have stalled first')
+  assert.ok(events.includes('recovered'), 'should report recovery')
+  assert.ok(events.includes('changed'), 'and resume normal foreground reporting')
+})
+
+// A slow-but-successful call must NOT be treated as a stall.
+test('ForegroundMonitor does not time out a call that returns within budget', async () => {
+  const m = new ForegroundMonitor({
+    activeWin: () => new Promise(r => setTimeout(
+      () => r({ owner: { path: '/usr/bin/firefox', processId: 1, name: 'firefox' }, title: 't' }), 10)),
+    intervalMs: 30,
+    activeWinTimeoutMs: 100,
+  })
+  const errors = []
+  const changes = []
+  m.on('error', (e) => errors.push(e))
+  m.on('foreground-changed', (i) => changes.push(i))
+  m.start()
+  await new Promise(r => setTimeout(r, 100))
+  m.stop()
+
+  assert.strictEqual(errors.length, 0, 'a 10ms call under a 100ms budget is not a timeout')
+  assert.strictEqual(changes.length, 1)
+})
+
+// --- EnforcementController wiring ----------------------------------------
+
+test('EnforcementController re-emits monitor-stalled so the host can alert', async () => {
+  const controller = new EnforcementController({
+    activeWin: () => new Promise(() => {}),
+    intervalMs: 5,
+    logger: { log() {}, warn() {}, error() {} },
+  })
+  // The controller builds its own monitor, so reach in and retime it rather than
+  // waiting 5s of real time for the production default.
+  controller.monitor._activeWinTimeoutMs = 15
+  const stalls = []
+  controller.on('monitor-stalled', (i) => stalls.push(i))
+  controller.monitor.start()
+  await new Promise(r => setTimeout(r, 200))
+  controller.monitor.stop()
+
+  assert.strictEqual(stalls.length, 1)
+})
+
+test('EnforcementController hydrates its policy cache from disk on construction', () => {
+  const filePath = tmpPolicyCachePath()
+  try {
+    new PolicyCache({ filePath }).setPolicyJson(JSON.stringify({ locked: true, apps: {}, version: 3 }))
+    const controller = new EnforcementController({
+      activeWin: async () => null,
+      policyCachePath: filePath,
+      logger: { log() {}, warn() {}, error() {} },
+    })
+    assert.strictEqual(controller.policyCache.hasPolicy(), true, 'must enforce from the first tick, not from first parent connect')
+    assert.strictEqual(controller.policyCache.getPolicy().version, 3)
+  } finally {
+    try { fs.unlinkSync(filePath) } catch (_) {}
+  }
+})

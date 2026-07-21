@@ -4,6 +4,16 @@ const path = require('path')
 
 const DEFAULT_INTERVAL_MS = 1000
 const SAVE_DEBOUNCE_MS = 500
+// active-win shells out (xprop on X11, a gdbus call on our Wayland adapter) and
+// can hang indefinitely if the child process never returns. Without a bound,
+// one hung call sets _inflight forever and every subsequent tick early-returns
+// at `if (this._inflight) return` - the monitor stops evaluating blocks, and
+// nothing anywhere notices. 5s is far above a healthy poll (single-digit ms)
+// while staying under the 5s re-evaluate tick.
+const DEFAULT_ACTIVE_WIN_TIMEOUT_MS = 5000
+// Consecutive timeouts before we stop treating it as a blip and declare the
+// monitor stalled. Three means ~15s of no foreground reads.
+const STALL_TIMEOUT_STREAK = 3
 
 // Polls the active foreground window and emits 'foreground-changed' whenever
 // the focused exe changes. Mirrors Android's TYPE_WINDOW_STATE_CHANGED hook
@@ -21,7 +31,12 @@ class ForegroundMonitor extends EventEmitter {
   // require('active-win'), which returns a function returning a Promise.
   // seenExesPath is optional; when provided, the Set of seen basenames is
   // loaded on start() and persisted (debounced) after each new entry.
-  constructor({ activeWin, intervalMs = DEFAULT_INTERVAL_MS, seenExesPath = null } = {}) {
+  constructor({
+    activeWin,
+    intervalMs = DEFAULT_INTERVAL_MS,
+    seenExesPath = null,
+    activeWinTimeoutMs = DEFAULT_ACTIVE_WIN_TIMEOUT_MS,
+  } = {}) {
     super()
     if (typeof activeWin !== 'function') {
       throw new Error('ForegroundMonitor requires activeWin function')
@@ -29,12 +44,42 @@ class ForegroundMonitor extends EventEmitter {
     this._activeWin = activeWin
     this._intervalMs = intervalMs
     this._seenExesPath = seenExesPath
+    this._activeWinTimeoutMs = activeWinTimeoutMs
     this._seenExes = new Set()
     this._seenLoaded = false
     this._saveTimer = null
     this._timer = null
     this._lastKey = null
     this._inflight = false
+    // How many polls in a row have timed out, and whether we've already said so.
+    // The 'stalled' event fires once per stall, not once per tick, so the host
+    // can alert the parent without spamming them every second.
+    this._timeoutStreak = 0
+    this._stallReported = false
+  }
+
+  // Resolve/reject with whatever active-win does, but never later than the
+  // timeout. The underlying promise is deliberately abandoned rather than
+  // awaited: if it is genuinely wedged it may never settle, and the whole point
+  // is to free the next tick to run.
+  _activeWinBounded() {
+    const p = Promise.resolve(this._activeWin())
+    if (!this._activeWinTimeoutMs) return p
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        const err = new Error('active-win timed out after ' + this._activeWinTimeoutMs + 'ms')
+        err.code = 'ACTIVE_WIN_TIMEOUT'
+        reject(err)
+      }, this._activeWinTimeoutMs)
+      if (typeof timer.unref === 'function') timer.unref()
+      p.then(
+        (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v) } },
+        (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e) } },
+      )
+    })
   }
 
   // Hydrate the seen set from disk. Called automatically by start(); exposed
@@ -101,7 +146,14 @@ class ForegroundMonitor extends EventEmitter {
     if (this._inflight) return
     this._inflight = true
     try {
-      const win = await this._activeWin()
+      const win = await this._activeWinBounded()
+      // A successful read means whatever was wedged has cleared.
+      if (this._timeoutStreak > 0) {
+        const recovered = this._stallReported
+        this._timeoutStreak = 0
+        this._stallReported = false
+        if (recovered) this.emit('recovered')
+      }
       if (!win || !win.owner) {
         // No focusable window: the workstation is locked, the screen is off, or
         // active-win couldn't read the desktop. Previously this returned
@@ -141,8 +193,22 @@ class ForegroundMonitor extends EventEmitter {
       this._lastKey = key
       this.emit('foreground-changed', { exePath, pid, title, ownerName })
     } catch (e) {
+      if (e && e.code === 'ACTIVE_WIN_TIMEOUT') {
+        this._timeoutStreak++
+        // Once we're persistently blind, the foreground is unknown, so close the
+        // open usage session rather than keep accruing against the last-seen app
+        // (same reasoning as the no-focusable-window branch above).
+        if (this._timeoutStreak >= STALL_TIMEOUT_STREAK && !this._stallReported) {
+          this._stallReported = true
+          this._lastKey = null
+          this.emit('foreground-lost')
+          this.emit('stalled', { consecutiveTimeouts: this._timeoutStreak, timeoutMs: this._activeWinTimeoutMs })
+        }
+      }
       this.emit('error', e)
     } finally {
+      // Always clear, including on a timeout. This is the whole fix: the
+      // abandoned call may still be pending, but the next tick gets to run.
       this._inflight = false
     }
   }

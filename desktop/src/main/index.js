@@ -676,6 +676,9 @@ app.whenReady().then(() => {
     enforcement = new EnforcementController({
       activeWin,
       seenExesPath: path.join(app.getPath('userData'), 'seen-exes.json'),
+      // Last-known policy on disk, so a restart enforces from the first tick
+      // instead of from whenever a parent next connects. See policy-cache.js.
+      policyCachePath: path.join(app.getPath('userData'), 'policy-cache.json'),
       overridesStore,
       pinLockoutStore,
       usageTracker,
@@ -852,6 +855,20 @@ app.whenReady().then(() => {
         overlay.notifyResult('overlay:pin-verify-result', { ok: false, error: reason })
       }
     })
+    // active-win wedged for several polls running. Nothing is being evaluated
+    // while that lasts, and the parent's dashboard would otherwise keep showing
+    // a healthy child, so relay it. Deduped per reason like the other capability
+    // alerts, since a stall usually persists until the session is restarted.
+    enforcement.on('monitor-stalled', (info) => {
+      const reason = 'desktop:foreground-monitor-stalled'
+      console.error('[main] *** ENFORCEMENT INERT *** foreground monitor stalled', info)
+      const statePath = capabilityAlertStatePath()
+      if (!shouldAlert({ statePath, reason })) return
+      callBare('bypass:detected', { reason })
+        .then(() => recordAlert({ statePath, reason }))
+        .catch((e) => console.warn('[main] monitor-stalled relay failed:', e.message))
+    })
+
     overlay.on('apply-pin-override', async (payload) => {
       const { packageName, durationSeconds } = payload || {}
       const result = enforcement.applyPinOverride({ packageName, durationSeconds })
@@ -874,7 +891,15 @@ app.whenReady().then(() => {
       }
     })
   } catch (e) {
-    console.error('[main] enforcement disabled, active-win failed to load:', e.message)
+    // Every native:* directive is dropped from here on and nothing is ever
+    // blocked, but the parent's dashboard still shows a healthy, connected
+    // child. That silence was the whole bug: Linux relays a bypass alert when
+    // it can't enforce (reportLinuxEnforcementCapability below) and Windows
+    // relayed nothing at all, so the platform with no other mitigation was also
+    // the one that failed invisibly. Tell both sides.
+    enforcement = null
+    console.error('[main] *** ENFORCEMENT DISABLED *** init failed:', e.message)
+    reportEnforcementInitFailure(e)
   }
 
   // Kick off bare.js init with Electron's per-user data dir. The window is
@@ -897,6 +922,30 @@ app.whenReady().then(() => {
       }
     } catch (e) {
       console.error('[main] mode bootstrap failed:', e.message)
+    }
+
+    // Pull the stored policy out of bare's Hyperbee and hand it to the
+    // enforcement controller. bare only PUSHES native:setPolicy on a change or
+    // when a parent connects, so without this pull the only policy the child had
+    // at boot was whatever the disk cache held - and before the cache existed,
+    // nothing at all. Belt and braces with the cache: the cache makes us enforce
+    // from the very first tick, this makes us enforce the CURRENT policy rather
+    // than the one from last run, without waiting for a parent to show up.
+    if (enforcement) {
+      try {
+        const { policy } = await callBare('policy:getCurrent')
+        if (policy) {
+          enforcement.setPolicyJson(JSON.stringify(policy))
+          console.log('[main] seeded enforcement from stored policy at boot')
+        } else {
+          // Genuinely no policy on record: an unpaired child, or one a parent has
+          // never configured. Fail-open here is deliberate (see policy-cache.js).
+          console.log('[main] no stored policy at boot; enforcement idle until a parent syncs')
+        }
+      } catch (e) {
+        // The disk cache is still in force, so this is a degradation, not a hole.
+        console.warn('[main] boot policy pull failed, using cached policy:', e.message)
+      }
     }
 
     createWindow()
@@ -1089,6 +1138,45 @@ async function reportLinuxEnforcementCapability() {
   } catch (e) {
     console.warn('[main] failed to notify parent of enforcement failure:', e.message)
   }
+}
+
+// Enforcement never came up (active-win missing, a native prebuild for the wrong
+// arch, sodium failing to load, a userData path we can't write). The app keeps
+// running as a chat/status client and looks entirely normal, which is precisely
+// why this has to be loud on both ends.
+//
+// Fire-and-forget: it runs inside the init catch, where there is nothing left to
+// await on and nothing sensible to do if the relay itself fails.
+function reportEnforcementInitFailure(err) {
+  try {
+    new Notification({
+      title: "App blocking isn't running on this PC",
+      body: 'PearGuard could not start its app-blocking service. Your parent has been notified.',
+      icon: NOTIFICATION_ICON_PATH,
+      urgency: 'critical',
+    }).show()
+  } catch (e) {
+    console.warn('[main] enforcement-init notification failed:', e.message)
+  }
+
+  const reason = 'desktop:enforcement-init-failed'
+  const statePath = capabilityAlertStatePath()
+  // Same dedupe as the Linux capability alert: a broken install stays broken
+  // across relaunches, and the watchdog relaunches us on a timer, so without
+  // this the parent gets the identical alert every couple of minutes and learns
+  // to ignore the one alert that must never be ignored.
+  if (!shouldAlert({ statePath, reason })) return
+
+  // The relay needs bare, which may not have finished init yet at this point in
+  // startup. callBare queues until dispatch is wired, but if bare itself is what
+  // failed there is nobody to answer - hence the catch, and hence recording the
+  // alert only once it actually went out.
+  callBare('bypass:detected', { reason })
+    .then(() => {
+      recordAlert({ statePath, reason })
+      console.log('[main] parent notified that enforcement failed to start:', err && err.message)
+    })
+    .catch((e) => console.warn('[main] enforcement-init bypass relay failed:', e.message))
 }
 
 async function flushUsageOnce() {

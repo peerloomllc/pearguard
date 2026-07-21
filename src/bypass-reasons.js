@@ -23,6 +23,8 @@ const NON_TAMPER_REASONS = new Set([
   'linux:extension-out-of-date',
   'linux:extension-error',
   'linux:extension-missing',
+  'desktop:enforcement-init-failed',
+  'desktop:foreground-monitor-stalled',
 ])
 
 // Delegate to describeBypassReason so there is exactly ONE definition of what
@@ -127,6 +129,27 @@ function describeBypassReason(reason, childName) {
         title: "App blocking is off on " + who + "'s PC",
         body: "PearGuard's app-blocking extension is missing, so blocking is inactive. "
           + 'PearGuard will try to reinstall it.',
+        tamper: false,
+      }
+
+    // --- Desktop (Windows/Linux) enforcement failed to run at all ------------
+    // Both are our fault, not the child's: the app-blocking service either never
+    // started, or its foreground poll wedged. Neither is reachable by anything a
+    // child does deliberately, so neither may read as an accusation.
+    case 'desktop:enforcement-init-failed':
+      return {
+        title: "App blocking isn't running on " + who + "'s PC",
+        body: "PearGuard couldn't start its app-blocking service on this PC, so nothing is being "
+          + 'blocked. Restarting the PC usually fixes it. This is a PearGuard fault, not something '
+          + who + ' did.',
+        tamper: false,
+      }
+    case 'desktop:foreground-monitor-stalled':
+      return {
+        title: 'App blocking has stopped on ' + who + "'s PC",
+        body: 'PearGuard can no longer tell which app is open on this PC, so blocking is inactive. '
+          + 'Restarting the PC usually fixes it. This is a PearGuard fault, not something '
+          + who + ' did.',
         tamper: false,
       }
 

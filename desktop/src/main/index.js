@@ -777,7 +777,14 @@ app.whenReady().then(() => {
           readFileDescription(exePath),
           extractWin32Icons([exePath]),
         ])
-        const packageName = enforcement.exeMap.resolve(exePath) || ('win.' + slugify(fileDescription || exeBasename))
+        // Match the prefix the enumerator uses on this platform. Hardcoding
+        // 'win.' minted `win.<slug>` identities on Linux that could never line
+        // up with apps-enumerator-linux's `linux.<slug>`, so a first-sighted
+        // Linux app became a second, parallel policy entry: the parent saw a
+        // duplicate, and decisions made against one identity never applied to
+        // the other.
+        const identityPrefix = process.platform === 'linux' ? 'linux.' : 'win.'
+        const packageName = enforcement.exeMap.resolve(exePath) || (identityPrefix + slugify(fileDescription || exeBasename))
         const appName = fileDescription || exeBasename || packageName
         const iconBase64 = iconMap.get(exePath) || null
         console.log('[main] app:installed first-sighting', { exeBasename, packageName, appName, hasIcon: !!iconBase64 })

@@ -818,6 +818,9 @@ public class AppBlockerModule extends AccessibilityService {
 
             Calendar now = Calendar.getInstance();
             int dayOfWeek = now.get(Calendar.DAY_OF_WEEK) - 1; // 0=Sunday
+            // An overnight window's after-midnight tail belongs to the PREVIOUS
+            // day's entry, so we need yesterday's index too.
+            int yesterday = (dayOfWeek + 6) % 7;
             int hour = now.get(Calendar.HOUR_OF_DAY);
             int minute = now.get(Calendar.MINUTE);
             int nowMinutes = hour * 60 + minute;
@@ -826,10 +829,15 @@ public class AppBlockerModule extends AccessibilityService {
                 JSONObject schedule = schedules.getJSONObject(i);
                 JSONArray days = schedule.getJSONArray("days");
                 boolean dayMatches = false;
+                boolean prevDayMatches = false;
                 for (int d = 0; d < days.length(); d++) {
-                    if (days.getInt(d) == dayOfWeek) { dayMatches = true; break; }
+                    int v = days.getInt(d);
+                    if (v == dayOfWeek) dayMatches = true;
+                    if (v == yesterday) prevDayMatches = true;
                 }
-                if (!dayMatches) continue;
+                // Yesterday counts too now: an overnight rule listed on Friday
+                // is still running at 02:00 on Saturday.
+                if (!dayMatches && !prevDayMatches) continue;
 
                 // Skip if this app is exempt from this rule (#49)
                 JSONArray exemptApps = schedule.optJSONArray("exemptApps");
@@ -848,11 +856,17 @@ public class AppBlockerModule extends AccessibilityService {
 
                 boolean inBlackout;
                 if (startMinutes <= endMinutes) {
-                    // Same-day range (e.g., 08:00–15:00)
-                    inBlackout = nowMinutes >= startMinutes && nowMinutes < endMinutes;
+                    // Same-day range (e.g., 08:00-15:00)
+                    inBlackout = dayMatches && nowMinutes >= startMinutes && nowMinutes < endMinutes;
                 } else {
-                    // Overnight range (e.g., 21:00–07:00)
-                    inBlackout = nowMinutes >= startMinutes || nowMinutes < endMinutes;
+                    // Overnight range (e.g., 21:00-07:00). One continuous window
+                    // starting on the listed day: the pre-midnight half belongs
+                    // to that day, the post-midnight half to the day after. The
+                    // old code let the listed day own BOTH halves, so a rule set
+                    // for Friday only blocked Friday morning and left Saturday
+                    // 00:00-06:00 free - the hours a kid is actually awake for.
+                    inBlackout = (dayMatches && nowMinutes >= startMinutes)
+                            || (prevDayMatches && nowMinutes < endMinutes);
                 }
 
                 if (inBlackout) {
@@ -882,10 +896,14 @@ public class AppBlockerModule extends AccessibilityService {
 
             Calendar now = Calendar.getInstance();
             int dayOfWeek = now.get(Calendar.DAY_OF_WEEK) - 1; // 0=Sunday
+            int yesterday = (dayOfWeek + 6) % 7;
             int nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
             boolean dayMatches = false;
+            boolean prevDayMatches = false;
             for (int d = 0; d < days.length(); d++) {
-                if (days.getInt(d) == dayOfWeek) { dayMatches = true; break; }
+                int v = days.getInt(d);
+                if (v == dayOfWeek) dayMatches = true;
+                if (v == yesterday) prevDayMatches = true;
             }
 
             String[] sp = start.split(":");
@@ -896,7 +914,13 @@ public class AppBlockerModule extends AccessibilityService {
             if (startMin <= endMin) {
                 inWindow = dayMatches && nowMinutes >= startMin && nowMinutes < endMin;
             } else {
-                inWindow = dayMatches && (nowMinutes >= startMin || nowMinutes < endMin);
+                // Overnight window: same continuous-interval rule as the
+                // schedule blackout above. Matters for BOTH modes here - an
+                // overnight "allow" window listed on Friday must keep the app
+                // usable through Saturday's small hours, not cut it off at
+                // midnight.
+                inWindow = (dayMatches && nowMinutes >= startMin)
+                        || (prevDayMatches && nowMinutes < endMin);
             }
 
             if ("block".equals(mode)) {

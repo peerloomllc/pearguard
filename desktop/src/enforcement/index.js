@@ -27,6 +27,7 @@ class EnforcementController extends EventEmitter {
     activeWin,
     intervalMs,
     seenExesPath = null,   // persistence path for first-seen dedupe
+    policyCachePath = null, // persistence path for the last-known policy
     overridesStore = new OverridesStore(),
     pinLockoutStore = new PinLockoutStore(),
     usageTracker = new UsageTracker(),
@@ -39,7 +40,9 @@ class EnforcementController extends EventEmitter {
   } = {}) {
     super()
     this._sodium = sodium
-    this.policyCache = new PolicyCache()
+    // Hydrates from disk when a path is given, so enforcement is live from the
+    // first foreground tick rather than from whenever a parent next connects.
+    this.policyCache = new PolicyCache({ filePath: policyCachePath })
     // Default to the Windows seed map when no instance is supplied so existing
     // unit tests (which `new EnforcementController({...})` without an exeMap)
     // keep their original behavior. The Linux host always passes its own.
@@ -77,6 +80,17 @@ class EnforcementController extends EventEmitter {
     // The foreground vanished (workstation locked / screen off) — stop accruing.
     this.monitor.on('foreground-lost', () => this.usage.noteObserved({ packageName: null }))
     this.monitor.on('error', (err) => this._logger.warn('[enforcement] active-win error:', err.message))
+    // The foreground poll is wedged (active-win hanging). Blocking is inert
+    // while this lasts, so surface it rather than letting it die quietly - the
+    // host relays it to the parent as a bypass alert.
+    this.monitor.on('stalled', (info) => {
+      this._logger.error('[enforcement] *** foreground monitor stalled ***', info)
+      this.emit('monitor-stalled', info)
+    })
+    this.monitor.on('recovered', () => {
+      this._logger.warn('[enforcement] foreground monitor recovered')
+      this.emit('monitor-recovered')
+    })
 
     // Re-evaluate when policy changes — a parent toggling status, lock, or
     // schedule should immediately reflect on the child without waiting for

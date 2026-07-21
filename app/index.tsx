@@ -28,6 +28,7 @@ import { describeBypassReason } from '../src/bypass-reasons'
 // Bounded seq-keyed buffer of recent Bare→WebView events, replayed on every
 // WebView (re)load so a reloaded context catches up on events it missed.
 import { ReplayBuffer } from '../src/webview-replay'
+// Diagnostic log for the intermittent background-return WebView freeze.
 
 const isAndroid = Platform.OS === 'android'
 const { PearGuardNotifications, PearGuardHaptic, PearGuardBGSync, PearGuardLink, PearGuardCamera } = NativeModules
@@ -49,6 +50,17 @@ let _handshakeTimer: ReturnType<typeof setTimeout> | null = null
 let _handshakeRespawns = 0
 const HANDSHAKE_TIMEOUT_MS = 8000
 const MAX_HANDSHAKE_RESPAWNS = 2
+// WebView-freeze fix state. The freeze = the OS silently reaping the WebView's
+// render process while backgrounded; on return the WebView reloads (onLoad fires
+// shortly after resume) but the fresh render process is never reattached to the
+// on-screen surface, so React runs (taps register, haptic fires) but nothing
+// repaints. Detecting that reload-on-resume and remounting the WebView rebuilds
+// the surface — the same recovery the user's manual swipe-away-and-reopen does.
+let _resumeAt = 0            // last AppState->active time; used to detect reload-on-resume
+let _remountInFlight = false
+let _remountWebView: (() => void) | null = null
+let _diagListenerAdded = false
+
 function clearHandshakeWatchdog () {
   if (_handshakeTimer) { clearTimeout(_handshakeTimer); _handshakeTimer = null }
 }
@@ -330,6 +342,11 @@ export default function Root () {
   const [html,         setHtml]         = useState<string | null>(null)
   const [dbReady,      setDbReady]      = useState(false)
   const [webViewReady, setWebViewReady] = useState(false)
+  // Bumping this key remounts the <WebView>, spawning a fresh render process. Used
+  // to recover the GrapheneOS/Vanadium freeze: after the render process is reaped
+  // on background, the resume-reloaded renderer exhausts its GPU tile budget and
+  // never paints; a fresh renderer created once the app is stable draws fine.
+  const [webViewKey, setWebViewKey] = useState(0)
   const webViewRef = useRef<any>(null)
   const [showScanner, setShowScanner] = useState(false)
   const scanResolve = useRef<((url: string) => void) | null>(null)
@@ -339,6 +356,7 @@ export default function Root () {
 
   // Keep module-level inject pointer in sync with current WebView ref on every render
   _injectToWebView = (js: string) => webViewRef.current?.injectJavaScript(js)
+  _remountWebView = () => { _webViewLoaded = false; setWebViewKey(k => k + 1) }
 
   // Handle messages from the WebView
   const onWebViewMessage = useCallback((e: any) => {
@@ -632,6 +650,13 @@ export default function Root () {
   useEffect(() => {
     let buf = ''
     const nativeSubs: ReturnType<typeof DeviceEventEmitter.addListener>[] = []
+
+    // Track the last resume so onLoad can detect a silent reload-on-resume (the
+    // GrapheneOS renderer-reap freeze). Registered once for the JS bundle lifetime.
+    if (!_diagListenerAdded) {
+      _diagListenerAdded = true
+      AppState.addEventListener('change', (state) => { if (state === 'active') _resumeAt = Date.now() })
+    }
 
     async function start () {
       // Resolve the initial deep-link URL first — before loading any bundles —
@@ -1297,6 +1322,7 @@ export default function Root () {
   return (
     <View style={styles.container}>
       <WebView
+        key={webViewKey}
         ref={webViewRef}
         source={{ html }}
         style={styles.webview}
@@ -1319,6 +1345,23 @@ export default function Root () {
           webViewRef.current?.reload()
         }}
         onLoad={() => {
+          const sinceResume = _resumeAt ? (Date.now() - _resumeAt) : Infinity
+          // A load we didn't request, firing right after a resume, is the OS
+          // silently reloading the WebView because its render process was reaped
+          // while backgrounded (no onRenderProcessGone fires). On GrapheneOS the
+          // resume-reloaded Vanadium renderer often exhausts its GPU tile budget
+          // and never paints (frozen screen). Recovery: once the app has settled,
+          // remount the WebView to spawn a FRESH render process with a fresh tile
+          // budget (verified live — a fresh renderer draws). The settle delay
+          // matters: an immediate remount respawns under the same memory pressure
+          // and freezes again.
+          if (!_remountInFlight && _webViewLoaded && sinceResume < 4000) {
+            _resumeAt = 0  // don't let the remount's own onLoad re-trigger
+            _remountInFlight = true
+            setTimeout(() => { _remountWebView?.() }, 1800)
+          } else if (_remountInFlight) {
+            _remountInFlight = false
+          }
           _webViewLoaded = true
           setWebViewReady(true)
           // Expose platform to WebView UI (used by AvatarPicker to show single Camera button on iOS)

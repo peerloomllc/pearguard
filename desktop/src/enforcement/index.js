@@ -95,6 +95,16 @@ class EnforcementController extends EventEmitter {
       this._logger.warn('[enforcement] foreground monitor recovered')
       this.emit('monitor-recovered')
     })
+    // The wall clock walked back into a day or week window we had already
+    // served. Counters are restored by the tracker so no budget is handed back,
+    // but enforcement still reads that same clock for schedules and blackout
+    // windows, so the parent needs to know the clock is not to be trusted.
+    if (this.usage && typeof this.usage.on === 'function') {
+      this.usage.on('clock-tamper', (info) => {
+        this._logger.warn('[enforcement] clock tamper detected', info)
+        this.emit('clock-tamper', info)
+      })
+    }
 
     // Re-evaluate when policy changes — a parent toggling status, lock, or
     // schedule should immediately reflect on the child without waiting for

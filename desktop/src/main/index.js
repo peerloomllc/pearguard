@@ -876,6 +876,20 @@ app.whenReady().then(() => {
         .catch((e) => console.warn('[main] monitor-stalled relay failed:', e.message))
     })
 
+    // The child moved the clock (or the timezone) backwards into a window we had
+    // already counted. Unlike the two alerts above this one IS attributable, so
+    // it relays as `clock_changed` — the same reason Android already sends from
+    // the AUTO_TIME signal (#209), so both platforms report it identically.
+    enforcement.on('clock-tamper', (info) => {
+      const reason = 'clock_changed'
+      console.warn('[main] clock tamper on this PC', info)
+      const statePath = capabilityAlertStatePath()
+      if (!shouldAlert({ statePath, reason })) return
+      callBare('bypass:detected', { reason })
+        .then(() => recordAlert({ statePath, reason }))
+        .catch((e) => console.warn('[main] clock-tamper relay failed:', e.message))
+    })
+
     overlay.on('apply-pin-override', async (payload) => {
       const { packageName, durationSeconds } = payload || {}
       const result = enforcement.applyPinOverride({ packageName, durationSeconds })

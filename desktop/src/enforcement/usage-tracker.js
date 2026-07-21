@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const EventEmitter = require('events')
 
 // Tracks per-package foreground time for the Windows child client. Mirrors the
 // shape of Android's UsageStatsModule but driven by the Electron-side
@@ -22,13 +23,22 @@ const path = require('path')
 // while bounding the damage from a genuine observation gap to a few seconds.
 const DEFAULT_MAX_OBSERVATION_GAP_MS = 15000
 
-class UsageTracker {
+// How many past day/week windows to keep counters for. A window we have already
+// served is one we must be able to restore if the clock walks back into it (see
+// _switchWindow). Eight days covers "advance a week and come back"; three weeks
+// covers the same trick against the weekly budget. Both are tiny on disk (a
+// package->seconds map each) and bounded so usage.json cannot grow forever.
+const MAX_ARCHIVED_DAYS = 8
+const MAX_ARCHIVED_WEEKS = 3
+
+class UsageTracker extends EventEmitter {
   constructor({
     filePath = null,
     now = () => Date.now(),
     logger = console,
     maxObservationGapMs = DEFAULT_MAX_OBSERVATION_GAP_MS,
   } = {}) {
+    super()
     this._filePath = filePath
     this._now = now
     this._logger = logger
@@ -39,6 +49,22 @@ class UsageTracker {
     this._weekStart = localWeekStart(t)
     this._daily = new Map()    // packageName -> seconds
     this._weekly = new Map()   // packageName -> seconds
+
+    // Counters for windows we have already served, keyed by their dayStart /
+    // weekStart. Entries are recorded even when empty: "have we been in this
+    // window before?" is the signal that catches a rolled-back clock, and a
+    // window the kid tampered out of before using anything still counts as seen.
+    this._dayArchive = new Map()   // dayStart -> { [pkg]: seconds }
+    this._weekArchive = new Map()  // weekStart -> { [pkg]: seconds }
+
+    // Clock-tamper events detected before anyone could subscribe (i.e. during
+    // _load, which runs in this constructor). Flushed on the first _syncTo.
+    this._pendingTamper = []
+
+    // Dedupe key for the zone-contradiction guard, which by design leaves state
+    // untouched and so would otherwise re-fire on every poll. See
+    // _resolveRollovers.
+    this._zoneTamperSignature = null
 
     // Active session state. `pkg` is null when the foreground isn't mapped or
     // nothing has been reported yet. `appName` is remembered so takeSessions()
@@ -215,6 +241,7 @@ class UsageTracker {
   // be in a previous day) BEFORE rollovers advance the day/week windows,
   // otherwise its seconds would land in the wrong bucket — or be wiped.
   _syncTo(ts) {
+    this._emitPendingTamper()
     this._closeStaleSession(ts)
     this._resolveRollovers(ts)
   }
@@ -235,7 +262,7 @@ class UsageTracker {
     const pkg = this._activePkg
     // Roll over relative to when the session ENDED, so a session that died
     // before midnight is credited to that day, not to today.
-    this._resolveRollovers(end)
+    this._resolveRollovers(end, { replay: true })
     this._closeActive(end)
     if (this._logger && typeof this._logger.log === 'function') {
       this._logger.log(
@@ -284,16 +311,55 @@ class UsageTracker {
 
   // If the current wall clock crossed a local midnight or Sunday boundary
   // since our last recorded dayStart/weekStart, flush the active session into
-  // the old window, then reset. Handles multi-day gaps by zeroing both maps.
-  _resolveRollovers(ts) {
+  // the old window, then switch. Handles multi-day gaps, and handles a clock
+  // that moved backwards, by restoring whatever we last had for the target
+  // window rather than starting it from zero (see _switchWindow).
+  //
+  // `replay` is set by _closeStaleSession, which deliberately passes a PAST
+  // timestamp to retire a session in the window it actually ended in. That is a
+  // replay of known-good history, not an observation of the wall clock, so it
+  // may only ever roll forward and must never be read as tampering.
+  _resolveRollovers(ts, { replay = false } = {}) {
     const today = localDayStart(ts)
     const thisWeek = localWeekStart(ts)
     if (today === this._dayStart && thisWeek === this._weekStart) return
-    // Never roll *backwards*. _closeStaleSession replays a past timestamp to
-    // retire a session in the window it actually ended in, and a user-rolled
-    // clock can also move time back; in neither case should we zero the
-    // counters (that would hand the kid a fresh budget).
-    if (today < this._dayStart || thisWeek < this._weekStart) return
+    if (replay && (today < this._dayStart || thisWeek < this._weekStart)) return
+
+    // Real elapsed time can never move the day forward while moving the week
+    // backward, or the reverse: both boundaries only ever advance. A move where
+    // they disagree is positive proof the local calendar was redefined under us,
+    // which on a child's PC means a timezone shift - and that needs no admin
+    // rights on Windows, unlike setting the clock. Refuse to touch the counters,
+    // so shifting the zone forward cannot mint a fresh daily budget.
+    //
+    // The pre-fix code happened to survive this case, but only as a side effect
+    // of a guard that bailed on any backward component; it never knew why, and
+    // never told the parent. This makes it deliberate and alertable.
+    //
+    // Known gap, unchanged from pre-fix: when the shift also carries the date
+    // from Saturday into Sunday, day and week both advance, so there is no
+    // contradiction to catch. That is the same advance-and-stay hole a plain
+    // clock change leaves open, and it needs monotonic corroboration to close.
+    const dayDir = Math.sign(today - this._dayStart)
+    const weekDir = Math.sign(thisWeek - this._weekStart)
+    if (dayDir * weekDir < 0) {
+      // Refusing leaves the windows untouched, so the contradiction is still
+      // there on the next poll and every poll after it. Emit once per distinct
+      // shift rather than once a second for as long as the kid stays shifted.
+      const signature = this._dayStart + ':' + today
+      if (signature !== this._zoneTamperSignature) {
+        this._zoneTamperSignature = signature
+        this._flagClockTamper({
+          window: 'zone',
+          direction: 'contradictory',
+          from: this._dayStart,
+          to: today,
+          restoredSeconds: 0,
+        })
+      }
+      return
+    }
+    this._zoneTamperSignature = null
 
     // If a session is open across the boundary, split it: credit time up to
     // the boundary to the old window, then restart the session at the
@@ -312,15 +378,96 @@ class UsageTracker {
       this._activeStartedAt = boundary
     }
 
+    const tampered = []
     if (today !== this._dayStart) {
-      this._daily = new Map()
-      this._dayStart = today
+      const t = this._switchWindow('day', today)
+      if (t && !replay) tampered.push(t)
     }
     if (thisWeek !== this._weekStart) {
-      this._weekly = new Map()
-      this._weekStart = thisWeek
+      const t = this._switchWindow('week', thisWeek)
+      if (t && !replay) tampered.push(t)
     }
     this._persist()
+    // One alert per resolve even if the day and the week both walked back —
+    // it is a single act by the child, and the parent-side dedupe keys on the
+    // reason alone anyway.
+    if (tampered.length) this._flagClockTamper(tampered[0])
+  }
+
+  // Move the day or week counters to `target`, archiving what we are leaving and
+  // restoring whatever we last had for the window we are entering.
+  //
+  // This is what closes the free-budget hole. The old code zeroed on any forward
+  // move and refused to move backwards at all, so setting the clock past midnight
+  // wiped the counters and setting it back left the wipe in place: a fresh daily
+  // budget for the rest of the real day. Two ways in, and neither needs admin
+  // rights on Windows — move the clock, or just shift the timezone, which leaves
+  // Date.now() untouched (it is UTC epoch ms) but moves the local midnight that
+  // localDayStart computes.
+  //
+  // Restoring instead of zeroing kills both, in either direction, without the
+  // tracker needing a trustworthy clock at all. Real time never re-enters a
+  // window it has left, so a target we have already served is also proof the
+  // clock moved: returns a tamper descriptor in that case, else null.
+  _switchWindow(kind, target) {
+    const isDay = kind === 'day'
+    const archive = isDay ? this._dayArchive : this._weekArchive
+    const current = isDay ? this._daily : this._weekly
+    const from = isDay ? this._dayStart : this._weekStart
+
+    archive.set(from, Object.fromEntries(current))
+    const restored = archive.get(target)
+    const next = restored ? new Map(Object.entries(restored)) : new Map()
+
+    if (isDay) {
+      this._daily = next
+      this._dayStart = target
+    } else {
+      this._weekly = next
+      this._weekStart = target
+    }
+
+    // Keep the newest N windows. Sorting by key is sorting by time, since both
+    // keys are epoch-ms window starts.
+    const limit = isDay ? MAX_ARCHIVED_DAYS : MAX_ARCHIVED_WEEKS
+    if (archive.size > limit) {
+      const oldest = [...archive.keys()].sort((a, b) => a - b).slice(0, archive.size - limit)
+      for (const key of oldest) archive.delete(key)
+    }
+
+    if (target >= from && !restored) return null
+    return {
+      window: kind,
+      direction: target < from ? 'backward' : 'forward',
+      from,
+      to: target,
+      restoredSeconds: sumValues(restored),
+    }
+  }
+
+  // Emit as soon as anything is listening. _load runs inside the constructor,
+  // before the controller can subscribe, so a tamper detected at startup would
+  // otherwise be dropped on the floor — exactly the restart case the kid gets
+  // for free by quitting the app between clock changes.
+  _flagClockTamper(info) {
+    this._pendingTamper.push(info)
+    this._emitPendingTamper()
+  }
+
+  _emitPendingTamper() {
+    if (!this._pendingTamper.length) return
+    if (this.listenerCount('clock-tamper') === 0) return
+    const queued = this._pendingTamper
+    this._pendingTamper = []
+    for (const info of queued) {
+      if (this._logger && typeof this._logger.warn === 'function') {
+        this._logger.warn(
+          '[usage-tracker] clock moved', info.direction, 'across a', info.window,
+          'boundary - restored', info.restoredSeconds, 's of counters for the window we re-entered'
+        )
+      }
+      this.emit('clock-tamper', info)
+    }
   }
 
   _displayName(pkg) {
@@ -337,12 +484,16 @@ class UsageTracker {
       const ts = this._now()
       const today = localDayStart(ts)
       const thisWeek = localWeekStart(ts)
-      if (typeof parsed.dayStart === 'number' && parsed.dayStart === today) {
-        this._daily = new Map(Object.entries(parsed.daily || {}).filter(([, v]) => typeof v === 'number' && v > 0))
-      }
-      if (typeof parsed.weekStart === 'number' && parsed.weekStart === thisWeek) {
-        this._weekly = new Map(Object.entries(parsed.weekly || {}).filter(([, v]) => typeof v === 'number' && v > 0))
-      }
+      // Restore exactly what was on disk, windows included, then let
+      // _resolveRollovers below move us to the current window through the same
+      // archive-aware path a running tracker uses. The old code compared the
+      // persisted window against today and dropped the counters on any mismatch,
+      // which handed back a fresh budget across a restart — the kid only had to
+      // quit the app between the two clock changes to sidestep an in-memory fix.
+      this._daily = new Map(Object.entries(parsed.daily || {}).filter(([, v]) => typeof v === 'number' && v > 0))
+      this._weekly = new Map(Object.entries(parsed.weekly || {}).filter(([, v]) => typeof v === 'number' && v > 0))
+      this._dayArchive = loadArchive(parsed.dayArchive)
+      this._weekArchive = loadArchive(parsed.weekArchive)
       // Names are restored unconditionally — they don't expire at a day or week
       // boundary the way the counters do, and a name we can't reload is a name
       // the parent never sees. Without this, a restart left the tracker holding
@@ -352,8 +503,9 @@ class UsageTracker {
       this._appNames = new Map(
         Object.entries(parsed.appNames || {}).filter(([, v]) => typeof v === 'string' && v),
       )
-      this._dayStart = today
-      this._weekStart = thisWeek
+      this._dayStart = typeof parsed.dayStart === 'number' ? parsed.dayStart : today
+      this._weekStart = typeof parsed.weekStart === 'number' ? parsed.weekStart : thisWeek
+      this._resolveRollovers(ts)
     } catch (e) {
       this._logger.error('[usage-tracker] load failed:', e.message)
     }
@@ -369,6 +521,8 @@ class UsageTracker {
         weekStart: this._weekStart,
         daily: Object.fromEntries(this._daily),
         weekly: Object.fromEntries(this._weekly),
+        dayArchive: Object.fromEntries(this._dayArchive),
+        weekArchive: Object.fromEntries(this._weekArchive),
         appNames: Object.fromEntries(this._appNames),
       }
       fs.writeFileSync(this._filePath, JSON.stringify(payload))
@@ -389,6 +543,31 @@ function localWeekStart(ts) {
   d.setHours(0, 0, 0, 0)
   d.setDate(d.getDate() - d.getDay())  // Sunday
   return d.getTime()
+}
+
+// { "1750000000000": { "linux.firefox": 120 } } -> Map(dayStart -> counters).
+// Keys come back from JSON as strings and are compared against numeric window
+// starts throughout, so they have to be coerced on the way in.
+function loadArchive(raw) {
+  const out = new Map()
+  if (!raw || typeof raw !== 'object') return out
+  for (const [key, counters] of Object.entries(raw)) {
+    const start = Number(key)
+    if (!Number.isFinite(start) || !counters || typeof counters !== 'object') continue
+    const clean = {}
+    for (const [pkg, seconds] of Object.entries(counters)) {
+      if (typeof seconds === 'number' && seconds > 0) clean[pkg] = seconds
+    }
+    out.set(start, clean)
+  }
+  return out
+}
+
+function sumValues(counters) {
+  if (!counters) return 0
+  let total = 0
+  for (const v of Object.values(counters)) total += v
+  return total
 }
 
 function secondsBetween(start, end) {

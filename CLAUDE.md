@@ -10,16 +10,16 @@ It uses the same three-layer architecture as PearCal:
 - WebView React UI: `src/ui/`
 - Bare worklet (P2P backend): `src/bare.js`
 
-A fourth layer — native Android enforcement (Accessibility Service, DeviceAdmin) — is
+A fourth layer - native Android enforcement (Accessibility Service, DeviceAdmin) - is
 added in Plan 2.
 
 ## Build & Deploy
 
 Two test devices connected via ADB:
-- Device 1: (parent device — update this with your ADB serial)
-- Device 2: (child device — update this with your ADB serial)
+- Device 1: (parent device - update this with your ADB serial)
+- Device 2: (child device - update this with your ADB serial)
 
-Always use `adb install -r` — **never uninstall** (preserves Hyperbee data).
+Always use `adb install -r` - **never uninstall** (preserves Hyperbee data).
 
 **UI-only changes** (`src/ui/`):
 ```bash
@@ -117,17 +117,35 @@ All cross-layer calls are JSON-over-newline, dispatched by `method` name:
 
 ## Branch Strategy
 
-Always create a branch before starting work — never commit directly to master.
+Always create a branch before starting work - never commit directly to master.
 - Feature branches: `feature/description`
 - Bug fix branches: `bugfix/description`
-- Merge via GitHub PR: `gh pr merge N --merge`
-- After merge: `git checkout master && git pull origin master`
+- Open a PR with `gh pr create`, then stop. Tim reviews and merges (see root `CLAUDE.md`).
+- After Tim merges: `git checkout master && git pull origin master`
 
 ## Testing
 
-Pure logic (identity, invite encode/decode, message signing) uses jest:
+The canonical verify gate - the one command that answers "safe to merge?":
+```bash
+npm run verify
+```
+
+It runs jest, the desktop smoke suites (`npm test --prefix desktop`) and all four
+bundle builds (bare universal, bare ios, bare ios-sim, UI), in about 7 seconds. The
+bundle builds are the point as much as the tests are: they catch a broken import or
+syntax error in the worklet or UI that jest never loads. Note it rewrites the
+tracked `assets/*.bundle` files, so a clean tree goes dirty after a run.
+
+Pure logic (identity, invite encode/decode, message signing) uses jest alone:
 ```bash
 npx jest
 ```
+
+Deliberately **not** in the gate:
+- `npm run test:harness` - drives real bare.js parent/child pairing over the live
+  Hyperswarm DHT. Needs outbound network and takes tens of seconds. Run it by hand
+  when touching pairing, invites or the swarm.
+- Any desktop/Windows packaging step. The build scripts are local-only and an
+  electron-builder run is far too slow per-merge.
 
 IPC round-trips and Hyperswarm connections require a physical Android device.

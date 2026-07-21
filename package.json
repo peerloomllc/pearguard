@@ -16,6 +16,9 @@
     "build:ui": "npm run build:fonts && esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --loader:.js=jsx --define:process.env.NODE_ENV=\\\"production\\\" --outfile=assets/app-ui.bundle",
     "test": "jest",
     "test:harness": "node test/harness/run.js",
+    "verify": "npm test && npm run verify:desktop && npm run verify:bundles",
+    "verify:desktop": "npm test --prefix desktop",
+    "verify:bundles": "npm run build:bare && npm run build:bare:ios && npm run build:bare:ios-sim && npm run build:ui",
     "test:policy": "node src/policy.test.js",
     "ios": "expo run:ios"
   },

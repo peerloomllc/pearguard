@@ -254,11 +254,32 @@ test('overnight schedule blocks at 23:00', () => {
   assert.strictEqual(r.category, 'schedule')
 })
 
-test('overnight schedule blocks at 05:00 (still in window)', () => {
-  // Note: overnight rules apply on the day they STARTED. Android compares
-  // against the current day-of-week at the wall clock instant we're testing,
-  // and the rule on that day's row says 21:00–07:00 wraps. So "Thursday's"
-  // bedtime rule should also be in effect at Thursday 05:00.
+// An overnight rule is ONE continuous window that starts on the listed day and
+// ends the next morning, so its after-midnight tail belongs to the previous
+// day's entry. This used to be read as "the listed day owns both ends of the
+// wrap", which is identical when a parent picks all seven days (the common
+// case, which is why it survived) but leaves a hole on a partial day set: a
+// "Fri 22:00-06:00" rule blocked Friday MORNING and left Saturday 00:00-06:00
+// completely free - the exact hours worth exploiting. Android had the same
+// logic and was changed with it.
+test('overnight schedule: the after-midnight tail belongs to the PREVIOUS day', () => {
+  // Wednesday's bedtime (days: [3]) runs Wed 21:00 -> Thu 07:00, so it is in
+  // force at Thursday 05:00.
+  const r = evaluate({
+    policy: policy({
+      schedules: [{ label: 'Bedtime', days: [3], start: '21:00', end: '07:00' }],
+    }),
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+    now: THURSDAY_0500,
+  })
+  assert.ok(r, 'Wednesday 21:00-07:00 must still block at Thursday 05:00')
+  assert.strictEqual(r.category, 'schedule')
+})
+
+test('overnight schedule does NOT block the morning of its own listed day', () => {
+  // Thursday's bedtime starts Thu 21:00. Thursday 05:00 is BEFORE it began and
+  // belongs to Wednesday's rule, which this policy does not have.
   const r = evaluate({
     policy: policy({
       schedules: [{ label: 'Bedtime', days: [4], start: '21:00', end: '07:00' }],
@@ -267,7 +288,42 @@ test('overnight schedule blocks at 05:00 (still in window)', () => {
     exeBasename: 'discord.exe',
     now: THURSDAY_0500,
   })
+  assert.strictEqual(r, null, "Thursday's window has not started at Thursday 05:00")
+})
+
+test('overnight schedule still blocks the pre-midnight half on its listed day', () => {
+  const r = evaluate({
+    policy: policy({
+      schedules: [{ label: 'Bedtime', days: [4], start: '21:00', end: '07:00' }],
+    }),
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+    now: THURSDAY_2300,
+  })
+  assert.ok(r)
   assert.strictEqual(r.category, 'schedule')
+})
+
+// The regression that motivated the change, in the parent's own terms.
+test('overnight schedule: a Friday-night rule covers the Saturday small hours', () => {
+  const FRIDAY_2300 = new Date('2026-04-17T23:00:00').getTime()
+  const SATURDAY_0200 = new Date('2026-04-18T02:00:00').getTime()
+  const pol = policy({ schedules: [{ label: 'Bedtime', days: [5], start: '22:00', end: '06:00' }] })
+  const args = { policy: pol, packageName: 'com.discord', exeBasename: 'discord.exe' }
+
+  assert.ok(evaluate({ ...args, now: FRIDAY_2300 }), 'Friday 23:00 is inside the window')
+  const sat = evaluate({ ...args, now: SATURDAY_0200 })
+  assert.ok(sat, 'Saturday 02:00 was FREE TIME before this fix')
+  assert.strictEqual(sat.category, 'schedule')
+})
+
+// All seven days selected is the common case and must be unaffected either way.
+test('overnight schedule with every day selected blocks both halves', () => {
+  const pol = policy({ schedules: [{ label: 'Bedtime', days: [0, 1, 2, 3, 4, 5, 6], start: '21:00', end: '07:00' }] })
+  const args = { policy: pol, packageName: 'com.discord', exeBasename: 'discord.exe' }
+  assert.ok(evaluate({ ...args, now: THURSDAY_2300 }), 'pre-midnight')
+  assert.ok(evaluate({ ...args, now: THURSDAY_0500 }), 'post-midnight')
+  assert.strictEqual(evaluate({ ...args, now: THURSDAY_NOON }), null, 'midday is outside the window')
 })
 
 test('status blocked → block', () => {
@@ -3960,4 +4016,93 @@ test('EnforcementController hydrates its policy cache from disk on construction'
   } finally {
     try { fs.unlinkSync(filePath) } catch (_) {}
   }
+})
+
+// --- Device-wide screen-time cap sums real usage --------------------------
+//
+// The bug: the cap summed only Object.keys(policy.apps), so any app missing
+// from the parent's catalog burned zero screen time. An app first-sighted since
+// the last apps:sync could be used all day against a cap that never moved.
+
+test('screen-time cap counts an app that is NOT in the parent catalog', () => {
+  const pol = policy({ dailyScreenTimeLimitSeconds: 600 })   // 10 min
+  // 20 minutes in an app the catalog has never heard of.
+  const usageRows = [{ packageName: 'linux.brand_new_game', secondsToday: 1200 }]
+  const r = evaluate({
+    policy: pol,
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+    getUsageSeconds: () => 0,           // catalog walk would total zero
+    getAllUsage: () => usageRows,
+    now: THURSDAY_NOON,
+  })
+  assert.ok(r, 'uncatalogued usage must still burn the device-wide cap')
+  assert.strictEqual(r.category, 'screen_time')
+})
+
+test('screen-time cap still honours the exempt list when summing usage', () => {
+  const pol = policy({
+    dailyScreenTimeLimitSeconds: 600,
+    screenTimeExemptApps: ['linux.homework_app'],
+  })
+  const r = evaluate({
+    policy: pol,
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+    getUsageSeconds: () => 0,
+    getAllUsage: () => [{ packageName: 'linux.homework_app', secondsToday: 5000 }],
+    now: THURSDAY_NOON,
+  })
+  assert.strictEqual(r, null, 'exempt time must not count toward the cap')
+})
+
+test('screen-time cap falls back to the catalog walk when no usage map is given', () => {
+  const pol = policy({ dailyScreenTimeLimitSeconds: 600 })
+  const r = evaluate({
+    policy: pol,
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+    getUsageSeconds: (pkg) => (pkg === 'com.discord' ? 1200 : 0),
+    now: THURSDAY_NOON,
+  })
+  assert.ok(r, 'older callers with no usage map keep the previous behavior')
+  assert.strictEqual(r.category, 'screen_time')
+})
+
+test('screen-time cap survives a throwing usage map', () => {
+  const pol = policy({ dailyScreenTimeLimitSeconds: 600 })
+  const r = evaluate({
+    policy: pol,
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+    getUsageSeconds: () => 0,
+    getAllUsage: () => { throw new Error('usage tracker exploded') },
+    now: THURSDAY_NOON,
+  })
+  assert.strictEqual(r, null, 'a broken usage read must not crash the evaluator')
+})
+
+// --- Overlay refreshes when the DECISION changes --------------------------
+//
+// The bug: the churn guard keyed on app identity alone, so an overlay already
+// up for a daily limit kept its "ask for more time" recovery buttons after the
+// parent locked the device - offering a way out of a lock that should have none.
+
+test('overlay re-renders when the reason changes for the same app', () => {
+  const shown = []
+  const overlay = { show: (p) => shown.push(p), hide: () => {}, getRendererPid: () => null }
+  const controller = new EnforcementController({
+    activeWin: async () => null,
+    overlay,
+    logger: { log() {}, warn() {}, error() {} },
+  })
+  const fg = { packageName: 'com.roblox.client', exeBasename: 'RobloxPlayerBeta.exe', title: '', pid: 1 }
+
+  controller._showOverlay(fg, { reason: 'Daily limit reached (30 min/day).', category: 'daily_limit' })
+  controller._showOverlay(fg, { reason: 'Daily limit reached (30 min/day).', category: 'daily_limit' })
+  assert.strictEqual(shown.length, 1, 'an identical decision must not churn the window')
+
+  controller._showOverlay(fg, { reason: 'Device is locked by your parent.', category: 'lock' })
+  assert.strictEqual(shown.length, 2, 'a changed decision must re-render the overlay')
+  assert.strictEqual(shown[1].category, 'lock')
 })

@@ -56,6 +56,10 @@ class EnforcementController extends EventEmitter {
     this._isOwnWindow = typeof isOwnWindow === 'function' ? isOwnWindow : () => false
     this._logger = logger
     this._getUsageSeconds = (pkg) => this.usage.getDailyUsageSeconds(pkg)
+    // Everything used today, so the device-wide screen-time cap can sum real
+    // usage instead of walking the parent's app catalog (which silently missed
+    // any app not in it).
+    this._getAllUsage = () => this.usage.getDailyUsageAll()
 
     // Track the latest foreground signal so applyGrant / setPolicyJson can
     // re-evaluate without waiting for the next monitor tick. This mirrors
@@ -340,6 +344,7 @@ class EnforcementController extends EventEmitter {
       overrides: this.overrides.asMap(),
       getUsageSeconds: this._getUsageSeconds,
       bonusSeconds: this._bonusSecondsForToday(),
+      getAllUsage: this._getAllUsage,
     })
 
     // Log transitions, not ticks. _evaluateAndApply runs on the 5s re-evaluate
@@ -372,8 +377,14 @@ class EnforcementController extends EventEmitter {
 
   _showOverlay(fg, decision) {
     if (!this._overlay) return
-    const key = fg.packageName || fg.exeBasename || ''
-    // If the same target is already overlaid, don't churn the window.
+    // Key on the DECISION, not just the app. Keying on app identity alone meant
+    // an overlay already up for one reason never refreshed when the reason
+    // changed underneath it: a daily-limit overlay kept its "ask for more time"
+    // recovery buttons after the parent locked the device, offering the kid a
+    // way out of a lock that should have none. Include reason and category so
+    // any change in the verdict re-renders, while a genuinely identical
+    // decision on the 5s tick still short-circuits and doesn't churn the window.
+    const key = [fg.packageName || fg.exeBasename || '', decision.category || '', decision.reason || ''].join('|')
     if (this._overlayVisible && this._currentOverlayKey === key) return
     const policy = this.policyCache.getPolicy()
     const appEntry = (policy && policy.apps && policy.apps[fg.packageName]) || {}

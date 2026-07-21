@@ -117,6 +117,10 @@ function evaluate({
   overrides,
   getUsageSeconds,
   bonusSeconds = 0,
+  // Optional () => [{ packageName, secondsToday }] over everything used today.
+  // Supplied by the controller; omitted by callers that only have per-package
+  // lookups, which keeps the old catalog-walk behavior.
+  getAllUsage = null,
   now = Date.now(),
 }) {
   if (isSystemExempt(exeBasename)) return null
@@ -149,7 +153,7 @@ function evaluate({
   // fall through to their own limits. Exemption matches by packageName, so an
   // unmapped exe can never be exempt — same rule as scheduled blackouts below.
   if (!isScreenTimeExempt(policy, packageName)) {
-    const screenTimeReason = getScreenTimeBlockReason(policy, getUsageSeconds, bonusSeconds)
+    const screenTimeReason = getScreenTimeBlockReason(policy, getUsageSeconds, bonusSeconds, getAllUsage)
     if (screenTimeReason) return { reason: screenTimeReason, category: 'screen_time' }
   }
 
@@ -208,17 +212,41 @@ function isScreenTimeExempt(policy, packageName) {
 
 // bonusSeconds is today's parent-granted top-up (#179), already date-checked by
 // the caller. It raises the cap and nothing else.
-function getScreenTimeBlockReason(policy, getUsageSeconds, bonusSeconds = 0) {
+function getScreenTimeBlockReason(policy, getUsageSeconds, bonusSeconds = 0, getAllUsage = null) {
   const base = policy.dailyScreenTimeLimitSeconds
   if (typeof base !== 'number' || base <= 0) return null
   const limit = base + (typeof bonusSeconds === 'number' && bonusSeconds > 0 ? bonusSeconds : 0)
 
-  const apps = policy.apps || {}
   let total = 0
-  for (const pkg of Object.keys(apps)) {
-    if (isScreenTimeExempt(policy, pkg)) continue
-    total += safeUsage(getUsageSeconds, pkg)
-    if (total >= limit) break
+  // Sum over what was actually USED, not over the parent's catalog. Iterating
+  // policy.apps meant any app missing from the catalog burned zero screen time:
+  // an app first-sighted since the last apps:sync, or one whose identity didn't
+  // match the catalog's, could be used all day against a device-wide cap that
+  // never moved. The usage map only ever contains resolved packages (unmapped
+  // exes are recorded as null), so this is still bounded to real apps.
+  if (typeof getAllUsage === 'function') {
+    let rows = []
+    try {
+      rows = getAllUsage() || []
+    } catch (_e) {
+      rows = []
+    }
+    for (const row of rows) {
+      const pkg = row && row.packageName
+      if (!pkg || isScreenTimeExempt(policy, pkg)) continue
+      const seconds = typeof row.secondsToday === 'number' ? row.secondsToday : 0
+      total += seconds > 0 ? seconds : 0
+      if (total >= limit) break
+    }
+  } else {
+    // No usage map supplied (older callers and most unit tests): fall back to
+    // the catalog walk so behavior is unchanged rather than silently zero.
+    const apps = policy.apps || {}
+    for (const pkg of Object.keys(apps)) {
+      if (isScreenTimeExempt(policy, pkg)) continue
+      total += safeUsage(getUsageSeconds, pkg)
+      if (total >= limit) break
+    }
   }
   if (total >= limit) {
     return 'Screen time limit reached (' + Math.floor(limit / 60) + ' min/day).'
@@ -232,19 +260,29 @@ function getScheduleBlockReason(policy, packageName, now) {
 
   const d = new Date(now)
   const dayOfWeek = d.getDay()  // 0=Sunday, matches Android (Calendar.DAY_OF_WEEK - 1)
+  // An overnight window's after-midnight tail belongs to the PREVIOUS day's
+  // schedule entry, so we need yesterday's index too.
+  const yesterday = (dayOfWeek + 6) % 7
   const nowMinutes = d.getHours() * 60 + d.getMinutes()
 
   for (const schedule of schedules) {
-    if (!Array.isArray(schedule.days) || !schedule.days.includes(dayOfWeek)) continue
+    if (!Array.isArray(schedule.days)) continue
     if (Array.isArray(schedule.exemptApps) && schedule.exemptApps.includes(packageName)) continue
 
     const start = parseHM(schedule.start)
     const end = parseHM(schedule.end)
     if (start == null || end == null) continue
 
+    // The day check has to happen INSIDE the wrap branch, not before it. A
+    // "Fri 22:00-06:00" rule has days=[5], and at 02:00 on Saturday the old
+    // code bailed at the day test (6 is not in [5]) and allowed everything -
+    // so the second half of every overnight blackout was free time, which is
+    // exactly the half a kid is awake for. The pre-midnight segment belongs to
+    // the listed day; the post-midnight segment belongs to the day BEFORE it.
     const inBlackout = start <= end
-      ? nowMinutes >= start && nowMinutes < end
-      : nowMinutes >= start || nowMinutes < end  // overnight wrap
+      ? schedule.days.includes(dayOfWeek) && nowMinutes >= start && nowMinutes < end
+      : (schedule.days.includes(dayOfWeek) && nowMinutes >= start)
+        || (schedule.days.includes(yesterday) && nowMinutes < end)
 
     if (inBlackout) {
       const label = schedule.label || 'scheduled time'

@@ -1,8 +1,12 @@
 # 🍐🛡️ PearGuard
 
-**A privacy-focused, peer-to-peer parental control app. Child device on Android or Windows; parent device on Android or iOS.**
+**A privacy-focused, peer-to-peer parental control app. Child device on Android, Windows or Linux; parent device on Android or iOS.**
 
 PearGuard lets a parent device manage screen time and app access on a child device directly - no accounts, no servers, no subscriptions. Your family's data lives only on the devices you pair.
+
+Every other product in this category renders a parent-facing dashboard, which means the child's activity has to sit on a company's servers for the product to work at all. PearGuard has no dashboard because it has nowhere to put one.
+
+Part of the [PeerLoom](https://peerloomllc.com) suite of account-free, peer-to-peer apps.
 
 ---
 
@@ -31,6 +35,8 @@ PearGuard lets a parent device manage screen time and app access on a child devi
 - **Time requests** - child can request extra time; parent approves or denies from their device
 - **Fully offline-first** - policies apply immediately on the child device; syncs whenever devices can reach each other
 - **No accounts** - identity is a cryptographic key pair generated on your device; nothing is tied to an email or phone number
+- **Narrow by design** - app usage and time, and nothing else. No message scanning, no image scanning, no browsing history, no location and no web filtering
+- **Visible to the child** - PearGuard does not hide itself. It is a household rule, not covert monitoring
 - **No data collection** - PeerLoom, Google and no third party ever sees your family's activity
 
 ---
@@ -53,8 +59,14 @@ On Android child devices, PearGuard uses Android's Accessibility Service and Dev
 
 On Windows child devices, enforcement runs in user space: a foreground-window monitor closes blocked apps and an overlay covers them when a time limit or schedule kicks in. A watchdog service and scheduled task relaunch the client if it stops. See the [Windows Client](#windows-client) section for details.
 
+Linux child builds ship as `.deb` and `.AppImage` alongside the Windows installer and use the same desktop client. Enforcement is more limited there: there is no process watchdog on Linux yet, so nothing relaunches the client if it is killed.
+
+**Desktop enforcement is deterrence, not containment.** On both Windows and Linux the overlay runs at the child's own privilege level and covers the primary display only, and the watchdog runs as a user-level service the child can remove. A technically capable child with admin rights can defeat it. Android enforcement is the strong path; desktop is suited to younger children and to households where the rules are agreed rather than contested.
+
 ### Pairing
-Parent and child pair via a one-time invite link or QR code. The link encodes the cryptographic address of the pairing - there's no server involved. After pairing, both devices remember each other; the invite link is single-use.
+Parent and child pair via an invite link or QR code. The link encodes the cryptographic address of the pairing - there's no server involved. After pairing, both devices remember each other.
+
+**Treat the invite as a secret and share it in person.** It currently carries no expiry, no authentication code and no single-use marker, so anyone who sees the link or QR before you pair could use it. In practice the 256-bit swarm topic is not guessable and the link is shared face to face, but binding the first pairing to the invited key is a known open item rather than a solved one.
 
 ---
 
@@ -73,7 +85,9 @@ Parent and child pair via a one-time invite link or QR code. The link encodes th
 In addition to the Android child app, PearGuard ships a Windows desktop child client. It runs the same P2P backend and UI as the mobile app, with user-space enforcement suited to younger kids.
 
 ### Install
-Download the `PearGuard-Setup-<version>.exe` installer from the GitHub release page and run it with administrator privileges. The installer places PearGuard under `Program Files`, creates a Start Menu shortcut and registers a watchdog Windows Service plus a scheduled task so the client relaunches if it stops.
+Download the `pearguard-v<version>.exe` installer from the [GitHub release page](../../releases) and run it with administrator privileges.
+
+> **Note:** the v1.0.20 release does not include the Windows `.exe`. Until that is fixed, install from [v1.0.19](../../releases/tag/v1.0.19), which does. The installer places PearGuard under `Program Files`, creates a Start Menu shortcut and registers a watchdog Windows Service plus a scheduled task so the client relaunches if it stops.
 
 ### Supported Versions
 Windows 10 (version 1809 or later) and Windows 11, 64-bit.
@@ -92,8 +106,17 @@ Desktop machines have no camera, so Windows pairs via copy/paste:
 
 ## Known Limitations
 
-- **Child device must be Android or Windows** - iOS does not expose the enforcement APIs required (Accessibility Service, Device Admin) and has no desktop equivalent. The parent device can run Android or iOS.
+- **Child device must be Android, Windows or Linux** - iOS does not expose the enforcement APIs required (Accessibility Service, Device Admin). The parent device can run Android or iOS.
 - **Both devices must be online simultaneously** to sync policy changes or activity in real time - changes made offline sync the next time devices connect
+- **Desktop enforcement is deterrence** - see the Enforcement section. Use the Android child app where enforcement has to hold against someone trying to break it
+- **The system clock is trusted** - schedules, bedtimes and daily limits all read the device's local time. Android detects a manual clock change and alerts the parent, and the desktop client refuses budget resets it can prove are a timezone shift, but a changed clock can still buy time before a parent reacts
+- **No web or content filtering, deliberately** - PearGuard does not filter URLs, DNS or search results, and will not. Doing so means routing or reading the child's browsing, which is exactly the thing this app exists not to do. Block the stock browser and allow-list a vetted kids' browser instead
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 PeerLoom LLC
 
 ---
 

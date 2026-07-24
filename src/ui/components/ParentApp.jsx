@@ -197,7 +197,7 @@ export default function ParentApp() {
 
 function ParentAppInner() {
   const { colors, typography, spacing } = useTheme();
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTab] = useState(() => (typeof window !== 'undefined' && window.__pearScreenshotParentTab) || 'dashboard');
   const [banner, setBanner] = useState(null);
   const [pinCheckState, setPinCheckState] = useState('loading'); // 'loading' | 'needed' | 'done'
   const [showDonation, setShowDonation] = useState(false);

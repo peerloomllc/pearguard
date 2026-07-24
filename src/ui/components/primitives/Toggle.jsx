@@ -1,6 +1,6 @@
 import { useTheme } from '../../theme.js';
 
-export default function Toggle({ checked, onChange, style }) {
+export default function Toggle({ checked, onChange, style, ariaLabel }) {
   const { colors } = useTheme();
 
   const trackW = 44;
@@ -12,6 +12,7 @@ export default function Toggle({ checked, onChange, style }) {
     <button
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       onClick={() => { window.callBare('haptic:tap'); onChange(!checked); }}
       style={{
         position: 'relative',

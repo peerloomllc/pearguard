@@ -22,6 +22,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 const { log, setLogEnabled } = require('./log')
 const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
+const { RELAY_PUBLIC_KEY, RELAY_PREF_KEY, relayEnabledFromPref, relayThroughFor } = require('./relay')
 const { signMessage, verifyMessage } = require('./message')
 const { createLineDecoder } = require('./line-decoder')
 
@@ -38,6 +39,12 @@ let _dataDir     = null   // Absolute data dir (set in init); used by storage br
 let _rebuildBusy = null   // Promise while reclaim is running, null otherwise; gates handlers
 let _inflightHandlers = 0 // Active handleDispatch + handlePeerMessage calls; reclaim waits for 0
 let _dispatchCtx = null   // Captured ctx object so storage rebuild can swap db reference
+
+// Blind-relay opt-out (see src/relay.js). Cached in memory because Hyperswarm calls
+// relayThrough synchronously per dial and cannot await a Hyperbee read. Loaded from
+// the pref on init and updated in place by pref:set, so a toggle applies to the very
+// next connect attempt without restarting the swarm.
+let _relayEnabled = true
 
 // Peers map: hex(publicKey) → { publicKey: Buffer, displayName: string, conn: object }
 const peers = new Map()
@@ -145,6 +152,11 @@ async function init (dataDir, attempt = 0) {
   const storedMode = await db.get('mode')
   mode = storedMode ? storedMode.value : null
 
+  // Load the relay opt-out before the swarm can possibly be built, so the very first
+  // dial already honours it.
+  const storedRelayPref = await db.get('pref:' + RELAY_PREF_KEY).catch(() => null)
+  _relayEnabled = relayEnabledFromPref(storedRelayPref ? storedRelayPref.value : undefined)
+
   // Build dispatch with live context
   _dispatchCtx = { db, identity, swarm, peers, send, sign, verify, b4a, mode,
     joinTopic, sendToPeer, sendToAllParents, sodium, knownPeerKeys,
@@ -157,6 +169,12 @@ async function init (dataDir, attempt = 0) {
     storageBreakdown: () => storageBreakdown(),
     analyzeStorage: () => analyzeStorage(),
     rebuildLocalDb: () => rebuildLocalDb(),
+    // Generic "a pref just changed" hook so bare-dispatch doesn't need to know which
+    // prefs have live in-memory counterparts.
+    onPrefChange: (key, value) => {
+      if (key === RELAY_PREF_KEY) _relayEnabled = relayEnabledFromPref(value)
+    },
+    relayStatus: () => relayStatus(),
   }
   dispatch = createDispatch(_dispatchCtx)
 
@@ -440,7 +458,21 @@ async function init (dataDir, attempt = 0) {
  */
 async function joinTopic (topicInput) {
   if (!swarm) {
-    swarm = new Hyperswarm({ keyPair: identity })
+    // relayThrough is a FUNCTION, not a static key, so the opt-out and the baked relay
+    // key are read live on every dial (Hyperswarm calls it per connect attempt). It
+    // returns null on the first attempt and only yields the relay key once Hyperswarm
+    // has flagged this peer forceRelaying after a real hole-punch failure - so a
+    // punchable peer is never relayed. With the toggle off it always returns null,
+    // which is byte-for-byte the behaviour we had before the relay existed.
+    swarm = new Hyperswarm({
+      keyPair: identity,
+      relayThrough: (force, s) => relayThroughFor({
+        force,
+        randomized: !!(s && s.dht && s.dht.randomized),
+        useRelay: _relayEnabled,
+        relayKey: RELAY_PUBLIC_KEY,
+      }),
+    })
     swarm.on('connection', onPeerConnection)
   }
   const topicBuf = typeof topicInput === 'string'
@@ -452,6 +484,28 @@ async function joinTopic (topicInput) {
   // Persist topic so we can rejoin on next app launch
   await db.put('topics:' + topicHex, { topicHex, joinedAt: Date.now() }).catch(() => {})
   send({ type: 'event', event: 'swarm:joined', data: { topic: topicHex } })
+}
+
+/**
+ * Snapshot of the relay's state, for the Settings -> Connection diagnostics.
+ *
+ * `relaying` comes from hyperdht's own counters (dht.stats.relaying, bumped in
+ * lib/server.js). They climb only when the swarm actually escalated to the relay, so
+ * successes > 0 is the relay demonstrably doing its job, and successes === 0 on a
+ * working connection is the direct punch doing its job. Both are useful answers.
+ */
+function relayStatus () {
+  const stats = swarm && swarm.dht && swarm.dht.stats && swarm.dht.stats.relaying
+  return {
+    enabled: _relayEnabled,
+    configured: !!RELAY_PUBLIC_KEY,
+    // True when this device's own NAT is double-randomized, i.e. it cannot punch at
+    // all and relays from the first attempt rather than after a failure.
+    randomized: !!(swarm && swarm.dht && swarm.dht.randomized),
+    relaying: stats
+      ? { attempts: stats.attempts || 0, successes: stats.successes || 0, aborts: stats.aborts || 0 }
+      : null,
+  }
 }
 
 /**

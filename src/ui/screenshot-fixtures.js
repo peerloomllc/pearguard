@@ -372,8 +372,14 @@ function makeCallBare (scene) {
       })
 
       // preferences / contacts
-      case 'pref:get':             return Promise.resolve(null)
+      // Scene-scoped: a scene that wants to show a screen behind the first-launch
+      // welcome/tour overlays asks for onboardingSeen. Left null everywhere else so
+      // the App Store scenes (1-10) keep whatever they render today.
+      case 'pref:get':             return Promise.resolve(
+        scene.onboardingSeen && String(args.key || '').startsWith('onboarding:') ? true : null
+      )
       case 'pref:set':             return Promise.resolve(true)
+      case 'relay:status':         return Promise.resolve({ enabled: true, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } })
       case 'contacts:pick':        return Promise.resolve(null)
 
       // no-op shims
@@ -406,6 +412,10 @@ export const SCENES = {
   8:  { mode: 'parent', children: [], inviteActive: true },
   9:  { mode: 'child', homeData: CHILD_HOME },
   10: { mode: 'child', parents: PAIRED_PARENTS, childTab: 'profile' },
+  // Not in the App Store screenshot set (ios-screenshots.sh drives 1-10). This one
+  // exists to eyeball the parent Settings screen, including the Connection section,
+  // on a simulator without hand-driving taps through setup and pairing.
+  11: { mode: 'parent', children: [CHILD_ALEX], parentTab: 'settings', onboardingSeen: true, openSection: 'connection' },
 }
 
 export function installFixtures (sceneNum) {
@@ -431,6 +441,12 @@ export function installFixtures (sceneNum) {
   }
   if (scene.childTab) {
     window.__pearScreenshotChildTab = scene.childTab
+  }
+  if (scene.parentTab) {
+    window.__pearScreenshotParentTab = scene.parentTab
+  }
+  if (scene.openSection) {
+    window.__pearScreenshotOpenSection = scene.openSection
   }
   return { scene }
 }

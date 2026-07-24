@@ -243,6 +243,9 @@ function createDispatch (ctx) {
       case 'pref:set': {
         const { key, value } = args
         await ctx.db.put('pref:' + key, value)
+        // Some prefs have a live in-memory counterpart in bare.js (the relay opt-out
+        // is read synchronously per dial and cannot re-read Hyperbee). Tell it.
+        if (ctx.onPrefChange) ctx.onPrefChange(key, value)
         return { ok: true }
       }
 
@@ -1910,6 +1913,13 @@ function createDispatch (ctx) {
           } catch (_e) {}
         }
         return { ok: true }
+      }
+
+      case 'relay:status': {
+        // Read-only diagnostics for Settings -> Connection. Null when the worklet
+        // predates the relay (an older vendored bare.js on desktop), which the UI
+        // renders as "unavailable" rather than as "off".
+        return ctx.relayStatus ? ctx.relayStatus() : null
       }
 
       case 'settings:setTheme': {

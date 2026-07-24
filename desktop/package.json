@@ -39,7 +39,8 @@
     "hypercore-errors": "^1.5.0",
     "hyperdht": "^6.29.0",
     "hyperswarm": "^4.17.0",
-    "sodium-native": "^4.3.3"
+    "sodium-native": "^4.3.3",
+    "z32": "^1.1.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",

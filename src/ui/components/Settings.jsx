@@ -163,6 +163,9 @@ export default function Settings() {
   const [timeOptsOpen, setTimeOptsOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  // Screenshot scenes can pre-open a section; a collapsed section photographs as a
+  // title bar and tells you nothing about what is inside it.
+  const [connectionOpen, setConnectionOpen] = useState(() => (typeof window !== 'undefined' && window.__pearScreenshotOpenSection === 'connection'));
   const [backupOpen, setBackupOpen] = useState(false);
   const [backupMode, setBackupMode] = useState(null); // 'export' | 'import' | null
   const [storageOpen, setStorageOpen] = useState(false);
@@ -197,6 +200,11 @@ export default function Settings() {
   const [settingsStatus, setSettingsStatus] = useState(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
+  // Connection / relay state. `relayStatus` is null until the worklet answers, and
+  // stays null on a worklet that has no relay at all.
+  const [relayEnabled, setRelayEnabled] = useState(true);
+  const [relayStatus, setRelayStatus] = useState(null);
+
   useEffect(() => {
     window.callBare('identity:getName')
       .then(({ displayName, avatar: av }) => {
@@ -218,7 +226,34 @@ export default function Settings() {
     window.callBare('pin:get')
       .then(({ pin }) => { if (pin) setCurrentPin(pin); })
       .catch(() => {});
+
+    window.callBare('relay:status')
+      .then((s) => {
+        if (!s) return;
+        setRelayStatus(s);
+        setRelayEnabled(s.enabled !== false);
+      })
+      .catch(() => {});
   }, []);
+
+  // Refresh the relay counters while the section is open so an escalation happening
+  // right now is visible, rather than frozen at whatever it was when Settings mounted.
+  useEffect(() => {
+    if (!connectionOpen) return undefined;
+    const tick = () => window.callBare('relay:status').then((s) => { if (s) setRelayStatus(s); }).catch(() => {});
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, [connectionOpen]);
+
+  async function handleRelayToggle(checked) {
+    setRelayEnabled(checked);
+    try {
+      await window.callBare('pref:set', { key: 'relay:enabled', value: checked });
+    } catch {
+      setRelayEnabled(!checked); // put the switch back if the write failed
+    }
+  }
 
   // Auto-hide revealed PIN when Override PIN section collapses.
   useEffect(() => {
@@ -511,6 +546,48 @@ export default function Settings() {
             </div>
             <Toggle checked={currentTheme === 'dark'} onChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
           </div>
+        </Collapsible>
+      )}
+
+      {/* Connection */}
+      {settingsLoaded && relayStatus && (
+        <Collapsible title="Connection" icon="ShareNetwork" open={connectionOpen} onToggle={() => setConnectionOpen(o => !o)} maxHeight="620px" {...collapsibleProps}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: `${spacing.md}px` }}>
+            <span style={{ fontSize: '14px', color: colors.text.primary }}>Use the PearGuard relay when a direct connection fails</span>
+            <Toggle checked={relayEnabled} onChange={handleRelayToggle} ariaLabel="Use the relay when a direct connection fails" />
+          </div>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
+            Your devices always try to connect to each other directly first. On some mobile and home networks a
+            direct connection is impossible, and without a helper the parent device simply cannot reach the child.
+            When that happens PearGuard passes the connection through a relay we run.
+          </p>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
+            The relay cannot read anything it carries - everything stays encrypted between your two devices. It does
+            see that two devices are talking and how much data they send. Turn this off to stay strictly device-to-device,
+            knowing some networks will then never connect.
+          </p>
+          {relayStatus.relaying && (
+            <div style={{ marginTop: `${spacing.md}px`, fontSize: '12px', color: colors.text.secondary }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Times a direct connection failed and the relay was tried</span>
+                <span style={{ color: colors.text.primary }}>{relayStatus.relaying.attempts}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span>Of those, connected through the relay</span>
+                <span style={{ color: colors.text.primary }}>{relayStatus.relaying.successes}</span>
+              </div>
+              {relayStatus.relaying.attempts === 0 && (
+                <p style={{ marginTop: `${spacing.sm}px`, marginBottom: 0, color: colors.text.muted }}>
+                  Zero is the good number here - it means your devices have always managed to connect directly.
+                </p>
+              )}
+            </div>
+          )}
+          {relayStatus.randomized && (
+            <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
+              This device is on a network that blocks direct connections entirely, so it uses the relay every time.
+            </p>
+          )}
         </Collapsible>
       )}
 

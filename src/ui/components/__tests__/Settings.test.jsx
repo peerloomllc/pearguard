@@ -106,3 +106,83 @@ test('display name input onBlur calls identity:setName', async () => {
     expect(window.callBare).toHaveBeenCalledWith('identity:setName', { name: 'Mom' });
   });
 });
+
+// ── Connection / blind relay ─────────────────────────────────────────────────
+// The toggle is parent-only by design. There is deliberately no child-side switch:
+// on a child device an "opt out of the relay" control is a bypass - it would let the
+// child make itself unreachable to the parent on exactly the networks where the
+// relay is the only thing keeping enforcement working.
+
+const RELAY_LABEL = 'Use the relay when a direct connection fails';
+
+function mockBare(overrides = {}) {
+  window.callBare = jest.fn((method) => {
+    if (method in overrides) return Promise.resolve(overrides[method]);
+    if (method === 'relay:status') {
+      return Promise.resolve({ enabled: true, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } });
+    }
+    return Promise.resolve({});
+  });
+}
+
+test('Connection section renders with the relay on by default', async () => {
+  mockBare();
+  render(<Settings />);
+  const toggle = await screen.findByLabelText(RELAY_LABEL);
+  expect(toggle).toHaveAttribute('aria-checked', 'true');
+});
+
+test('reflects a stored opt-out rather than always showing on', async () => {
+  mockBare({ 'relay:status': { enabled: false, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } } });
+  render(<Settings />);
+  const toggle = await screen.findByLabelText(RELAY_LABEL);
+  expect(toggle).toHaveAttribute('aria-checked', 'false');
+});
+
+test('turning the relay off persists the pref', async () => {
+  mockBare();
+  render(<Settings />);
+  fireEvent.click(await screen.findByLabelText(RELAY_LABEL));
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith('pref:set', { key: 'relay:enabled', value: false });
+  });
+});
+
+test('turning it back on persists the pref too', async () => {
+  mockBare({ 'relay:status': { enabled: false, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } } });
+  render(<Settings />);
+  fireEvent.click(await screen.findByLabelText(RELAY_LABEL));
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith('pref:set', { key: 'relay:enabled', value: true });
+  });
+});
+
+test('a failed write puts the switch back instead of lying about the state', async () => {
+  window.callBare = jest.fn((method) => {
+    if (method === 'relay:status') {
+      return Promise.resolve({ enabled: true, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } });
+    }
+    if (method === 'pref:set') return Promise.reject(new Error('disk full'));
+    return Promise.resolve({});
+  });
+  render(<Settings />);
+  const toggle = await screen.findByLabelText(RELAY_LABEL);
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+});
+
+test('no Connection section on a worklet that has no relay', async () => {
+  mockBare({ 'relay:status': null });
+  render(<Settings />);
+  // Wait for something that always renders, so we are asserting on a settled tree
+  // rather than on one that simply has not got there yet.
+  await screen.findByLabelText('Parent Name');
+  expect(screen.queryByLabelText(RELAY_LABEL)).not.toBeInTheDocument();
+});
+
+test('surfaces the relay counters so an escalation is observable', async () => {
+  mockBare({ 'relay:status': { enabled: true, configured: true, randomized: false, relaying: { attempts: 4, successes: 3, aborts: 1 } } });
+  render(<Settings />);
+  expect(await screen.findByText('4')).toBeInTheDocument();
+  expect(await screen.findByText('3')).toBeInTheDocument();
+});

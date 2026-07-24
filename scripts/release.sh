@@ -54,6 +54,21 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a; source "$SCRIPT_DIR/.env"; set +a
 fi
 
+# Required app.conf keys, checked once, up front.
+#
+# Each of these used to carry a hard-coded default copied from whichever
+# sibling app the script was forked from. That is how PearGuard came to
+# announce itself as PearCal on Nostr, PearPetal as PearList, and how
+# PearPetal would have named its APK pearlist-*.apk had app.conf ever lost a
+# key. Dormant wrong defaults are still wrong defaults: fail here, where it
+# costs nothing, instead of mid-release or after the announcement is public.
+for _k in APP_NAME ARTIFACT_PREFIX XCODE_PROJECT; do
+  if [ -z "${!_k:-}" ]; then
+    echo "error: $_k is not set — check $SCRIPT_DIR/app.conf" >&2
+    exit 1
+  fi
+done
+
 # Personal release-host defaults (release.sh is gitignored).
 
 # ---------------------------------------------------------------------------
@@ -587,7 +602,7 @@ if ! $CHECK_VERSIONS_ONLY; then
   : "${KEY_PASSWORD:?Set KEY_PASSWORD or add it to scripts/.env}"
   : "${SIGN_WITH:?Set SIGN_WITH (Zapstore NSEC) or add it to scripts/.env}"
   KEYSTORE_FILE="${KEYSTORE_FILE:-$HOME/keystore.jks}"
-  KEY_ALIAS="${KEY_ALIAS:-${KEY_ALIAS_DEFAULT:-pearcal}}"
+  KEY_ALIAS="${KEY_ALIAS:-$KEY_ALIAS_DEFAULT}"
   if [ ! -f "$KEYSTORE_FILE" ]; then
     echo "Error: keystore not found at $KEYSTORE_FILE"
     exit 1
@@ -1014,6 +1029,15 @@ if ! $ZAPSTORE_ONLY && ! $CHECK_VERSIONS_ONLY; then
   fi
 fi
 
+# Artifact names and sizes, declared before the build fences so the post-notes
+# checksum step and the final gate are safe to reference them on a run that
+# skipped the build entirely (a Zapstore-only republish). set -u is on.
+APK_NAME=""; APK_SIZE=""
+AAB_NAME=""; AAB_SIZE=""
+EXE_NAME=""; EXE_SIZE=""
+APPIMAGE_NAME=""; APPIMAGE_SIZE=""
+DEB_NAME=""; DEB_SIZE=""
+
 if $NEEDS_BUILD; then
 
 # ---------------------------------------------------------------------------
@@ -1047,7 +1071,7 @@ _ios_build_number=$(node -p "require('./app.json').expo.ios.buildNumber")
 sed -i \
   "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*/CURRENT_PROJECT_VERSION = ${_ios_build_number}/g; \
    s/MARKETING_VERSION = [0-9][0-9.]*;/MARKETING_VERSION = ${APP_VERSION};/g" \
-  "${XCODE_PROJECT:-ios/PearCal.xcodeproj/project.pbxproj}"
+  "$XCODE_PROJECT"
 
 echo "    Version     : $(node -p "require('./app.json').expo.version")"
 echo "    versionCode : $(node -p "require('./app.json').expo.android.versionCode")"
@@ -1055,22 +1079,33 @@ echo "    iOS build   : $(node -p "require('./app.json').expo.ios.buildNumber")"
 _confirm "app.json version looks correct — proceed with bundle builds?"
 
 # ---------------------------------------------------------------------------
-# 1. Build UI bundle
+# 1. Canonical verify gate (tests + all bundles)
+#
+# Constitution §5 gate. `npm run verify` runs the unit tests, the desktop test
+# suite, and then rebuilds every bundle the release ships: bare-universal
+# (Android worklet), bare-ios and bare-ios-sim (iOS worklet slices) and
+# app-ui.bundle (WebView UI, fonts regenerated first). A red verify aborts the
+# release via set -e.
+#
+# This replaces the previous inline esbuild + bare-pack pair. package.json's
+# build:ui / build:bare / build:bare:ios issue byte-identical commands, and
+# verify additionally builds the fonts and the simulator slice, so the shipped
+# artifacts are unchanged and two more things are now checked.
 # ---------------------------------------------------------------------------
-echo "==> Building UI bundle..."
-npx esbuild src/ui/main.jsx --bundle --format=iife --jsx=automatic --loader:.js=jsx \
-  --define:process.env.NODE_ENV=\"production\" --outfile=assets/app-ui.bundle
+echo "==> Running canonical verify (npm run verify)..."
+npm run verify
 
 # ---------------------------------------------------------------------------
-# 2. Build Bare bundle
+# 2. Native project preparation
+#
+# android/ is checked into this repo, so there is nothing to regenerate here.
+# The step holds the slot: PearList and PearPetal gitignore android/ and run
+# `expo prebuild --clean` at this point to apply the release-signing config
+# plugin. Keeping the number reserved is what lets the pipeline checker tell
+# "this app has no prebuild" apart from "this app runs prebuild in the wrong
+# place". See RELEASE-PIPELINE.md §2.
 # ---------------------------------------------------------------------------
-echo "==> Building Bare bundle..."
-node_modules/.bin/bare-pack --linked src/bare.js -o assets/bare-universal.bundle
-
-if $PUBLISH_APP_STORE; then
-  echo "==> Building iOS Bare bundle..."
-  node_modules/.bin/bare-pack --host ios-arm64 --linked src/bare.js -o assets/bare-ios.bundle
-fi
+echo "==> Native project: android/ is checked in, no prebuild needed."
 
 # ---------------------------------------------------------------------------
 # 3. Build signed release APK (and AAB if publishing to Google Play)
@@ -1102,116 +1137,23 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Copy artifacts with version names
 # ---------------------------------------------------------------------------
-APK_NAME="${ARTIFACT_PREFIX:-pearcal}-${RELEASE_TAG}.apk"
+APK_NAME="${ARTIFACT_PREFIX}-${RELEASE_TAG}.apk"
 cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
 APK_SIZE=$(du -sh "$APK_NAME" | cut -f1)
 echo "==> Built APK: $APK_NAME  ($APK_SIZE)"
 
 AAB_NAME=""
 if $PUBLISH_PLAY; then
-  AAB_NAME="${ARTIFACT_PREFIX:-pearcal}-${RELEASE_TAG}.aab"
+  AAB_NAME="${ARTIFACT_PREFIX}-${RELEASE_TAG}.aab"
   cp android/app/build/outputs/bundle/release/app-release.aab "$AAB_NAME"
   AAB_SIZE=$(du -sh "$AAB_NAME" | cut -f1)
   echo "==> Built AAB: $AAB_NAME  ($AAB_SIZE)"
 fi
 
 # ---------------------------------------------------------------------------
-# 4b. Build Windows NSIS installer locally via electron-builder (no VM).
-#
-# electron-builder cross-builds the win32 NSIS target from Linux: it downloads
-# the win32-x64 Electron dist, packs the app (the holepunch native deps and
-# active-win ship cross-platform prebuilds, so no win32 compile), and runs
-# rcedit/NSIS under wine. desktop/package.json's `files` config ships the
-# win32-x64 prebuilds so the native modules load on Windows. The installer is
-# unsigned (matches the prior VM build). Mirrors the Linux block (4b2) below.
+# 4e. Generate .sha256 sidecars for the mobile artifacts
 # ---------------------------------------------------------------------------
-EXE_NAME=""
-EXE_SIZE=""
-if $PUBLISH_DESKTOP; then
-  echo ""
-  echo "==> Building Windows installer (.exe) locally..."
-
-  # Stamp desktop/package.json's version so electron-builder's artifactName
-  # template ("pearguard-v${version}.${ext}") matches the release tag. The
-  # Linux block below re-stamps the same value; idempotent.
-  APP_VERSION="$APP_VERSION" node -e "
-    const fs = require('fs');
-    const f = '$REPO_ROOT/desktop/package.json';
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-    j.version = process.env.APP_VERSION;
-    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
-    console.log('    stamped desktop/package.json version=' + j.version);
-  "
-
-  # `npm run build` = prepack.js (refreshes vendor + fetches active-win
-  # bindings) then electron-builder --win.
-  ( cd "$REPO_ROOT/desktop" && npm run build > /tmp/windows-build.log 2>&1 ) \
-    || { echo "Windows build failed; see /tmp/windows-build.log"; exit 1; }
-
-  EXE_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.exe"
-  cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.exe" "$REPO_ROOT/$EXE_NAME"
-  EXE_SIZE=$(du -sh "$REPO_ROOT/$EXE_NAME" | cut -f1)
-  echo "==> Built EXE: $EXE_NAME  ($EXE_SIZE)"
-
-  # electron-updater metadata. Lives alongside the .exe in the GitHub release
-  # so installed clients can poll for new versions and verify sha512 before
-  # in-place upgrade. Filename is fixed (electron-updater hardcodes 'latest.yml').
-  cp "$REPO_ROOT/desktop/dist/latest.yml" "$REPO_ROOT/latest.yml"
-  echo "==> Built EXE metadata: latest.yml"
-fi
-
-# ---------------------------------------------------------------------------
-# 4b2. Build Linux artifacts (AppImage + deb) locally via electron-builder.
-# No VM needed — electron-builder cross-compiles cleanly on this host. The
-# build pulls assets/app-ui.bundle, runs prepack.js, then produces the
-# AppImage + deb + latest-linux.yml under desktop/dist/.
-# ---------------------------------------------------------------------------
-APPIMAGE_NAME=""
-APPIMAGE_SIZE=""
-DEB_NAME=""
-DEB_SIZE=""
-if $PUBLISH_LINUX; then
-  echo ""
-  echo "==> Building Linux artifacts (AppImage + deb) locally..."
-
-  # Stamp desktop/package.json's version so electron-builder's artifactName
-  # template ("pearguard-v${version}.${ext}") produces filenames matching
-  # the release tag. Without this, the build emits the stale 0.1.0 filename
-  # and the cp below fails. The Windows block (4b) stamps the same value.
-  APP_VERSION="$APP_VERSION" node -e "
-    const fs = require('fs');
-    const f = '$REPO_ROOT/desktop/package.json';
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-    j.version = process.env.APP_VERSION;
-    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
-    console.log('    stamped desktop/package.json version=' + j.version);
-  "
-
-  ( cd "$REPO_ROOT/desktop" && npm run build:linux > /tmp/linux-build.log 2>&1 ) \
-    || { echo "Linux build failed; see /tmp/linux-build.log"; exit 1; }
-
-  # electron-builder names artifacts after package.json's artifactName template
-  # (pearguard-v${version}.${ext}). Pull them up to the repo root with the same
-  # ARTIFACT_PREFIX naming as the .exe and .apk.
-  APPIMAGE_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.AppImage"
-  DEB_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.deb"
-  cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.AppImage" "$REPO_ROOT/$APPIMAGE_NAME"
-  cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.deb"      "$REPO_ROOT/$DEB_NAME"
-  APPIMAGE_SIZE=$(du -sh "$REPO_ROOT/$APPIMAGE_NAME" | cut -f1)
-  DEB_SIZE=$(du -sh "$REPO_ROOT/$DEB_NAME" | cut -f1)
-  echo "==> Built AppImage: $APPIMAGE_NAME ($APPIMAGE_SIZE)"
-  echo "==> Built deb     : $DEB_NAME ($DEB_SIZE)"
-
-  # electron-updater AppImage clients poll latest-linux.yml the same way
-  # Windows polls latest.yml. Filename is hardcoded by electron-updater.
-  cp "$REPO_ROOT/desktop/dist/latest-linux.yml" "$REPO_ROOT/latest-linux.yml"
-  echo "==> Built Linux update metadata: latest-linux.yml"
-fi
-
-# ---------------------------------------------------------------------------
-# 4c. Generate .sha256 sidecars for every release artifact
-# ---------------------------------------------------------------------------
-for _artifact in "$APK_NAME" "$AAB_NAME" "$EXE_NAME" "$APPIMAGE_NAME" "$DEB_NAME"; do
+for _artifact in "$APK_NAME" "$AAB_NAME"; do
   [ -z "$_artifact" ] && continue
   [ -f "$_artifact" ] || continue
   ( cd "$REPO_ROOT" && sha256sum "$_artifact" > "${_artifact}.sha256" )
@@ -1220,9 +1162,7 @@ done
 
 echo ""
 _BUILD_SUMMARY="APK ($APK_SIZE)"
-if $PUBLISH_PLAY    && [ -n "$AAB_NAME" ];      then _BUILD_SUMMARY="$_BUILD_SUMMARY, AAB ($AAB_SIZE)"; fi
-if $PUBLISH_DESKTOP && [ -n "$EXE_NAME" ];      then _BUILD_SUMMARY="$_BUILD_SUMMARY, EXE ($EXE_SIZE)"; fi
-if $PUBLISH_LINUX   && [ -n "$APPIMAGE_NAME" ]; then _BUILD_SUMMARY="$_BUILD_SUMMARY, AppImage ($APPIMAGE_SIZE), deb ($DEB_SIZE)"; fi
+if $PUBLISH_PLAY && [ -n "$AAB_NAME" ]; then _BUILD_SUMMARY="$_BUILD_SUMMARY, AAB ($AAB_SIZE)"; fi
 _confirm "$_BUILD_SUMMARY look correct — proceed with release notes?"
 
 fi # end NEEDS_BUILD
@@ -1404,9 +1344,172 @@ if [ -d "$REPO_ROOT/metadata/ios/en-US" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Push tag and create GitHub release
+# Phase B (slow) — the desktop builds run here, AFTER the release notes are
+# finalized, so they run unattended instead of making you wait before you can
+# edit the notes. Adopted suite-wide from PearCircle. Still gated on
+# NEEDS_BUILD, and still best-effort: a failure is logged and skipped, never
+# blocking the mobile release. See RELEASE-PIPELINE.md §2.
+# ---------------------------------------------------------------------------
+if $NEEDS_BUILD; then
+
+# ---------------------------------------------------------------------------
+# 5b. Build Windows NSIS installer locally via electron-builder (no VM).
+#
+# electron-builder cross-builds the win32 NSIS target from Linux: it downloads
+# the win32-x64 Electron dist, packs the app (the holepunch native deps and
+# active-win ship cross-platform prebuilds, so no win32 compile), and runs
+# rcedit/NSIS under wine. desktop/package.json's `files` config ships the
+# win32-x64 prebuilds so the native modules load on Windows. The installer is
+# unsigned (matches the prior VM build). Mirrors the Linux block (4b2) below.
+# ---------------------------------------------------------------------------
+EXE_NAME=""
+EXE_SIZE=""
+if $PUBLISH_DESKTOP; then
+  echo ""
+  echo "==> Building Windows installer (.exe) locally..."
+
+  # Stamp desktop/package.json's version so electron-builder's artifactName
+  # template ("pearguard-v${version}.${ext}") matches the release tag. The
+  # Linux block below re-stamps the same value; idempotent.
+  APP_VERSION="$APP_VERSION" node -e "
+    const fs = require('fs');
+    const f = '$REPO_ROOT/desktop/package.json';
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    j.version = process.env.APP_VERSION;
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+    console.log('    stamped desktop/package.json version=' + j.version);
+  "
+
+  # `npm run build` = prepack.js (refreshes vendor + fetches active-win
+  # bindings) then electron-builder --win.
+  ( cd "$REPO_ROOT/desktop" && npm run build > /tmp/windows-build.log 2>&1 ) \
+    || { echo "Windows build failed; see /tmp/windows-build.log"; exit 1; }
+
+  EXE_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.exe"
+  cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.exe" "$REPO_ROOT/$EXE_NAME"
+  EXE_SIZE=$(du -sh "$REPO_ROOT/$EXE_NAME" | cut -f1)
+  echo "==> Built EXE: $EXE_NAME  ($EXE_SIZE)"
+
+  # electron-updater metadata. Lives alongside the .exe in the GitHub release
+  # so installed clients can poll for new versions and verify sha512 before
+  # in-place upgrade. Filename is fixed (electron-updater hardcodes 'latest.yml').
+  cp "$REPO_ROOT/desktop/dist/latest.yml" "$REPO_ROOT/latest.yml"
+  echo "==> Built EXE metadata: latest.yml"
+fi
+
+# ---------------------------------------------------------------------------
+# 5b2. Build Linux artifacts (AppImage + deb) locally via electron-builder.
+# No VM needed — electron-builder cross-compiles cleanly on this host. The
+# build pulls assets/app-ui.bundle, runs prepack.js, then produces the
+# AppImage + deb + latest-linux.yml under desktop/dist/.
+# ---------------------------------------------------------------------------
+APPIMAGE_NAME=""
+APPIMAGE_SIZE=""
+DEB_NAME=""
+DEB_SIZE=""
+if $PUBLISH_LINUX; then
+  echo ""
+  echo "==> Building Linux artifacts (AppImage + deb) locally..."
+
+  # Stamp desktop/package.json's version so electron-builder's artifactName
+  # template ("pearguard-v${version}.${ext}") produces filenames matching
+  # the release tag. Without this, the build emits the stale 0.1.0 filename
+  # and the cp below fails. The Windows block (4b) stamps the same value.
+  APP_VERSION="$APP_VERSION" node -e "
+    const fs = require('fs');
+    const f = '$REPO_ROOT/desktop/package.json';
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    j.version = process.env.APP_VERSION;
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+    console.log('    stamped desktop/package.json version=' + j.version);
+  "
+
+  ( cd "$REPO_ROOT/desktop" && npm run build:linux > /tmp/linux-build.log 2>&1 ) \
+    || { echo "Linux build failed; see /tmp/linux-build.log"; exit 1; }
+
+  # electron-builder names artifacts after package.json's artifactName template
+  # (pearguard-v${version}.${ext}). Pull them up to the repo root with the same
+  # ARTIFACT_PREFIX naming as the .exe and .apk.
+  APPIMAGE_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.AppImage"
+  DEB_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.deb"
+  cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.AppImage" "$REPO_ROOT/$APPIMAGE_NAME"
+  cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.deb"      "$REPO_ROOT/$DEB_NAME"
+  APPIMAGE_SIZE=$(du -sh "$REPO_ROOT/$APPIMAGE_NAME" | cut -f1)
+  DEB_SIZE=$(du -sh "$REPO_ROOT/$DEB_NAME" | cut -f1)
+  echo "==> Built AppImage: $APPIMAGE_NAME ($APPIMAGE_SIZE)"
+  echo "==> Built deb     : $DEB_NAME ($DEB_SIZE)"
+
+  # electron-updater AppImage clients poll latest-linux.yml the same way
+  # Windows polls latest.yml. Filename is hardcoded by electron-updater.
+  cp "$REPO_ROOT/desktop/dist/latest-linux.yml" "$REPO_ROOT/latest-linux.yml"
+  echo "==> Built Linux update metadata: latest-linux.yml"
+fi
+
+fi # end NEEDS_BUILD (desktop artifacts)
+
+# ---------------------------------------------------------------------------
+# 5e. Generate .sha256 sidecars for the desktop artifacts, then the final gate
+#
+# The desktop builds above are slow and best-effort, so their checksums and the
+# last look at the full asset list happen here rather than at step 4e. This is
+# the last confirm before anything irreversible: step 6 commits and step 6b
+# pushes the tag. See RELEASE-PIPELINE.md §2.
+# ---------------------------------------------------------------------------
+for _artifact in "${EXE_NAME:-}" "${APPIMAGE_NAME:-}" "${DEB_NAME:-}"; do
+  [ -z "$_artifact" ] && continue
+  [ -f "$_artifact" ] || continue
+  ( cd "$REPO_ROOT" && sha256sum "$_artifact" > "${_artifact}.sha256" )
+  echo "    sha256  $(cut -d' ' -f1 < "${_artifact}.sha256")  $_artifact"
+done
+
+echo ""
+_RELEASE_SUMMARY="APK (${APK_SIZE:-none})"
+if $PUBLISH_PLAY    && [ -n "${AAB_NAME:-}" ];  then _RELEASE_SUMMARY="$_RELEASE_SUMMARY, AAB ($AAB_SIZE)"; fi
+if $PUBLISH_DESKTOP && [ -n "${EXE_NAME:-}" ];  then _RELEASE_SUMMARY="$_RELEASE_SUMMARY, EXE ($EXE_SIZE)"; fi
+if $PUBLISH_LINUX   && [ -n "${APPIMAGE_NAME:-}" ]; then _RELEASE_SUMMARY="$_RELEASE_SUMMARY, AppImage ($APPIMAGE_SIZE), deb ($DEB_SIZE)"; fi
+_confirm "$_RELEASE_SUMMARY ready to publish?"
+
+# ---------------------------------------------------------------------------
+# 6. Commit the version bumps this run made, BEFORE tagging
+#
+# Step 0 rewrites app.json and the Xcode project, but nothing ever committed
+# them. The tag was cut from a tree still carrying the PREVIOUS version, so
+# every release left the default branch declaring the version before it and the
+# bumps stranded as uncommitted changes in the working tree.
+#
+# Committing here, before the tag, means the tag actually contains the version
+# it claims to be. Ported from PearCal, which hit exactly this and had master
+# sitting on 1.0.31 while 1.0.34 shipped. See RELEASE-PIPELINE.md §2.
+#
+# Explicit allowlist, never `git add -A`: assets/*.bundle are build outputs that
+# can lag the source they were built from, and committing one would bake a stale
+# artifact into the release.
 # ---------------------------------------------------------------------------
 if $PUBLISH_GITHUB; then
+
+_bump_paths=(
+  app.json
+  "$XCODE_PROJECT"
+  desktop/package.json
+  metadata/ios/en-US/release_notes.txt
+  "metadata/ios/version/${APP_VERSION}"
+)
+_bump_existing=()
+for _p in "${_bump_paths[@]}"; do [ -e "$_p" ] && _bump_existing+=("$_p"); done
+if [ ${#_bump_existing[@]} -gt 0 ] \
+   && [ -n "$(git status --porcelain -- "${_bump_existing[@]}")" ]; then
+  echo "==> Committing version bumps for $APP_VERSION..."
+  git add -- "${_bump_existing[@]}"
+  git commit -q -m "chore(release): $APP_VERSION" \
+    && echo "    Committed $(git diff --name-only HEAD~1 HEAD | wc -l) file(s)" \
+    || echo "    WARNING: version-bump commit failed — the tag will not contain them." >&2
+else
+  echo "==> No uncommitted version bumps to record (already committed)."
+fi
+
+# ---------------------------------------------------------------------------
+# 6b. Push branch and tag
+# ---------------------------------------------------------------------------
 
 # Determine the remote to push to
 GIT_REMOTE="${GITHUB_REMOTE:-}"
@@ -1423,7 +1526,14 @@ echo "    Remote : $GIT_REMOTE"
 echo "    Tag    : $RELEASE_TAG"
 echo "    Branch : $(git rev-parse --abbrev-ref HEAD)"
 echo "    Commit : $(git rev-parse --short HEAD)  $(git log -1 --format='%s')"
-_confirm "Push tag $RELEASE_TAG to $GIT_REMOTE? (This cannot be undone without a force-delete)"
+_confirm "Push branch $(git rev-parse --abbrev-ref HEAD) + tag $RELEASE_TAG to $GIT_REMOTE? (This cannot be undone without a force-delete)"
+
+# The bump commit from step 6 has to reach the remote too, or the pushed tag
+# points at a commit nobody else has.
+_branch="$(git rev-parse --abbrev-ref HEAD)"
+git push "$GIT_REMOTE" "$_branch" \
+  && echo "    Pushed $_branch to $GIT_REMOTE" \
+  || echo "    WARNING: branch push failed — push $_branch manually so the tag resolves." >&2
 
 # Create the local tag here — as late as possible, only after all confirmations
 echo "==> Tagging and pushing $RELEASE_TAG..."
@@ -1901,12 +2011,36 @@ else
           echo "    APK uploaded (versionCode: $VERSION_CODE)"
 
           # --- Step 3: Assign AAB to track with release notes ---
-          # Truncate release notes to 500 chars (Play Store limit)
+          # Fit the release notes into Play's 500-char limit on a LINE
+          # boundary. `head -c 500` cut mid-word and could leave a dangling
+          # markdown heading as the last thing a Play user reads.
+          # See RELEASE-PIPELINE.md §3.
           PLAY_NOTES_TEXT=""
+          _play_notes_src=""
           if [ -f "${ZSP_NOTES_FILE:-}" ]; then
-            PLAY_NOTES_TEXT=$(head -c 500 "$ZSP_NOTES_FILE")
+            _play_notes_src="$ZSP_NOTES_FILE"
           elif [ -f release_notes.md ]; then
-            PLAY_NOTES_TEXT=$(head -c 500 release_notes.md)
+            _play_notes_src="release_notes.md"
+          fi
+          if [ -n "$_play_notes_src" ]; then
+            PLAY_NOTES_TEXT=$(NOTES_SRC="$_play_notes_src" python3 -c '
+import os, sys
+
+LIMIT = 500
+out, used = [], 0
+with open(os.environ["NOTES_SRC"], encoding="utf-8", errors="replace") as fh:
+    for raw in fh:
+        line = raw.rstrip("\n")
+        cost = len(line) + 1
+        if used + cost > LIMIT:
+            break
+        out.append(line)
+        used += cost
+# Drop a heading left dangling at the end with nothing under it
+while out and out[-1].lstrip().startswith("#"):
+    out.pop()
+sys.stdout.write("\n".join(out).strip())
+')
           fi
 
           TRACK_BODY=$(python3 -c "
@@ -2440,7 +2574,15 @@ else
     ZAPSTORE_HEX="78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d"
     ZAPSTORE_NPUB="npub10r8xl2njyepcw2zwv3a6dyufj4e4ajx86hz6v4ehu4gnpupxxp7stjt2p8"
 
-    # Extract first 3 PR title bullets from release notes (strips markdown bold markers)
+    # Build the "what's new" body from the release notes, PRESERVING the
+    # section grouping (Improvements / Bug Fixes / Other) and filling up to a
+    # character budget.
+    #
+    # This replaces the old `head -3`, which took the first three bullets in
+    # file order, threw the headings away, and so announced a twelve-PR release
+    # as three uncategorised lines while the GitHub release told the full story.
+    # See RELEASE-PIPELINE.md §4.
+    NOSTR_NOTE_BUDGET="${NOSTR_NOTE_BUDGET:-900}"
     BULLETS=""
     NOTES_SRC=""
     if [ -n "${ZSP_NOTES_FILE:-}" ] && [ -f "${ZSP_NOTES_FILE:-}" ]; then
@@ -2449,16 +2591,67 @@ else
       NOTES_SRC="release_notes.md"
     fi
     if [ -n "$NOTES_SRC" ]; then
-      # Extract first 3 bullet items from release notes (handles both '- **bold**' and plain '- item',
-      # and tolerates leading whitespace from hand-edited nested bullets).
-      while IFS= read -r _bline; do
-        [ -z "$_bline" ] && continue
-        _bline=$(printf '%s' "$_bline" | sed 's/^[[:space:]]*//; s/^- \*\*//; s/\*\*[: ]*.*//; s/^- //')
-        BULLETS="${BULLETS:+${BULLETS}$'\n'}• ${_bline}"
-      done < <(grep -E '^[[:space:]]*- ' "$NOTES_SRC" | head -3)
+      BULLETS=$(NOTES_SRC="$NOTES_SRC" BUDGET="$NOSTR_NOTE_BUDGET" python3 -c '
+import os, re, sys
+
+BULLET = "• "
+ELLIPSIS = "…"
+ITEM_MAX = 120          # a single overlong bullet is trimmed, not dropped
+
+src = os.environ["NOTES_SRC"]
+budget = int(os.environ["BUDGET"])
+
+# Parse the notes into [(heading, [items])] in file order. Headings keep their
+# emoji so the Nostr note reads the same as the GitHub release.
+groups = []
+with open(src, encoding="utf-8", errors="replace") as fh:
+    for raw in fh:
+        line = raw.rstrip("\n")
+        m = re.match(r"^#{2,4}\s+(.*)$", line)
+        if m:
+            title = m.group(1).strip()
+            # The document title line is not a section heading
+            if title.lower().startswith("what"):
+                continue
+            groups.append((title, []))
+            continue
+        m = re.match(r"^\s*[-*]\s+(.+)$", line)
+        if m:
+            item = m.group(1).replace("**", "").strip()
+            if not item:
+                continue
+            if len(item) > ITEM_MAX:
+                cut = item[:ITEM_MAX].rsplit(" ", 1)[0].rstrip(",.;:")
+                item = cut + ELLIPSIS
+            if not groups:
+                groups.append((None, []))
+            groups[-1][1].append(item)
+
+out, used, dropped = [], 0, 0
+for heading, items in groups:
+    kept = []
+    for item in items:
+        cost = len(BULLET) + len(item) + 1
+        if dropped == 0 and used + cost <= budget:
+            kept.append(BULLET + item)
+            used += cost
+        else:
+            dropped += 1
+    if not kept:
+        continue          # never emit a heading with nothing under it
+    if heading:
+        out.append(heading)
+        used += len(heading) + 1
+    out.extend(kept)
+
+if dropped:
+    out.append("%s%sand %d more" % (BULLET, ELLIPSIS, dropped))
+
+sys.stdout.write("\n".join(out))
+')
     fi
 
-    NOTE_CONTENT="${APP_NAME:-PearCal} ${RELEASE_TAG} is out!"$'\n\n'"${APP_TAGLINE:-}"
+    NOTE_CONTENT="${APP_NAME} ${RELEASE_TAG} is out!"$'\n\n'"${APP_TAGLINE:-}"
 
     if [ -n "$BULLETS" ]; then
       NOTE_CONTENT+=$'\n\n'"What's new:"$'\n'"${BULLETS}"
@@ -2497,3 +2690,35 @@ else
     fi
   fi
 fi # end PUBLISH_NOSTR
+
+# ---------------------------------------------------------------------------
+# 13. Close-out summary and deferred-action reminders
+#
+# Every publish step is best-effort past the tag push: a Zapstore outage sets
+# PUBLISH_FAILED rather than aborting, so an already-created GitHub release is
+# never stranded. That makes a final ledger worth printing, because a partial
+# release otherwise scrolls past unnoticed. See RELEASE-PIPELINE.md §2.
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> $APP_NAME $RELEASE_TAG"
+_report() { printf '    %-14s %s\n' "$1" "$2"; }
+$PUBLISH_GITHUB    && _report "GitHub"    "published" || _report "GitHub"    "skipped"
+$PUBLISH_ZAPSTORE  && _report "Zapstore"  "published" || _report "Zapstore"  "skipped"
+$PUBLISH_PLAY      && _report "Google Play" "published" || _report "Google Play" "skipped"
+$PUBLISH_APP_STORE && _report "App Store" "uploaded"  || _report "App Store" "skipped"
+$PUBLISH_NOSTR     && _report "Nostr"     "announced" || _report "Nostr"     "skipped"
+
+if $PUBLISH_FAILED; then
+  echo ""
+  echo "    WARNING: at least one publish step failed. Scroll up for which."
+  echo "    Re-run with --retag to redo the release in place once fixed."
+fi
+
+if ${APP_STORE_DEFERRED:-false}; then
+  echo ""
+  echo "==> Reminder: App Store review submission deferred"
+  echo "    The IPA uploaded but Apple was still processing the build when the"
+  echo "    script checked. Once processing completes (5-15 min after upload),"
+  echo "    submit for review from App Store Connect or with the asc commands"
+  echo "    printed by step 11 above."
+fi

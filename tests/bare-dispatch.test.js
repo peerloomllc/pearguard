@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3002,6 +3002,15 @@ describe('apps:sync reconciliation (child prunes uninstalled apps)', () => {
     return {
       put: jest.fn(async (k, v) => { stored[k] = v }),
       get: jest.fn(async (k) => (stored[k] ? { value: stored[k] } : null)),
+      // apps:sync walks the paired parents to decide who still needs the app
+      // catalogue, so this stub streams like the real Hyperbee does.
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value }
+        }
+      }),
       _stored: stored,
     }
   }
@@ -3010,7 +3019,8 @@ describe('apps:sync reconciliation (child prunes uninstalled apps)', () => {
     const db = makeMockDb(stored)
     const send = jest.fn()
     const sendToAllParents = jest.fn(async () => {})
-    return { ctx: { db, send, sendToAllParents }, db, send, sendToAllParents }
+    const sendToPeer = jest.fn()
+    return { ctx: { db, send, sendToAllParents, sendToPeer }, db, send, sendToAllParents, sendToPeer }
   }
 
   const policyWith = (statuses) => ({
@@ -3944,5 +3954,96 @@ describe('a lock can be given an end time', () => {
     expect(children[0]).toMatchObject({ locked: true, lockUntil: live.lockUntil })
     const childDb = makeDb({ policy: { ...live } })
     expect(await createDispatch({ db: childDb, send: jest.fn(), mode: 'child' })('child:homeData', {})).toMatchObject({ locked: true, lockUntil: live.lockUntil })
+  })
+})
+
+describe('the app catalogue is only sent to a parent that needs it', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const APPS = [{ packageName: 'com.a', appName: 'A' }, { packageName: 'com.b', appName: 'B' }]
+  const ALL = ['com.a', 'com.b']
+  const dad = { publicKey: 'dad', noiseKey: 'noise-dad', displayName: 'Dad' }
+  const mum = { publicKey: 'mum', noiseKey: 'noise-mum', displayName: 'Mum' }
+  const relays = (sendToPeer) => sendToPeer.mock.calls.filter(([, m]) => m.type === 'apps:sync')
+
+  test('appsSignature tracks the installed set and nothing else', () => {
+    expect(appsSignature(APPS)).toBe(appsSignature([{ packageName: 'com.b' }, { packageName: 'com.a' }]))
+    // A renamed or re-iconed app is not a reason to re-send a whole catalogue.
+    expect(appsSignature(APPS)).toBe(appsSignature([{ packageName: 'com.a', appName: 'Different' }, { packageName: 'com.b', iconBase64: 'xx' }]))
+    expect(appsSignature(APPS)).not.toBe(appsSignature([{ packageName: 'com.a' }]))
+    expect(appsSignature(APPS)).not.toBe(appsSignature([...APPS, { packageName: 'com.c' }]))
+    expect(appsSignature([])).toBe(appsSignature([]))
+    expect(appsSignature(null)).toBe('')
+  })
+
+  test('the first scan sends to every parent, and repeat scans send nothing', async () => {
+    const db = makeDb({ 'peers:dad': dad, 'peers:mum': mum })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    const dispatch = createDispatch(ctx)
+    const first = await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+    expect(first.relayedTo).toBe(2)
+    expect(relays(ctx.sendToPeer).map(([to]) => to).sort()).toEqual(['noise-dad', 'noise-mum'])
+    ctx.sendToPeer.mockClear()
+    // A reconnect re-scans the same apps: nothing goes out at all.
+    for (let i = 0; i < 3; i++) {
+      const again = await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+      expect(again.relayedTo).toBe(0)
+    }
+    expect(relays(ctx.sendToPeer)).toHaveLength(0)
+  })
+
+  test('an app appearing or disappearing sends the list again', async () => {
+    const db = makeDb({ 'peers:dad': dad })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    const dispatch = createDispatch(ctx)
+    await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+    ctx.sendToPeer.mockClear()
+    const grown = [...APPS, { packageName: 'com.c', appName: 'C' }]
+    expect((await dispatch('apps:sync', { apps: grown, installedAll: ['com.a', 'com.b', 'com.c'] })).relayedTo).toBe(1)
+    ctx.sendToPeer.mockClear()
+    expect((await dispatch('apps:sync', { apps: APPS, installedAll: ALL })).relayedTo).toBe(1)
+  })
+
+  test('a co-parent that pairs later still gets the catalogue, which is why this is per parent (#109)', async () => {
+    const db = makeDb({ 'peers:dad': dad })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    const dispatch = createDispatch(ctx)
+    await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+    ctx.sendToPeer.mockClear()
+    // Mum pairs now. Nothing about the apps changed, so the old code's
+    // "relay only when something changed" would have left her with nothing.
+    db._stored['peers:mum'] = mum
+    const after = await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+    expect(after.relayedTo).toBe(1)
+    expect(relays(ctx.sendToPeer).map(([to]) => to)).toEqual(['noise-mum'])
+  })
+
+  test('an offline parent is skipped and gets it on their next scan, never from a queue', async () => {
+    const db = makeDb({ 'peers:dad': dad, 'peers:mum': mum })
+    let dadUp = false
+    const sendToPeer = jest.fn((to) => { if (to === 'noise-dad' && !dadUp) throw new Error('peer not connected') })
+    const ctx = { db, send: jest.fn(), sendToPeer, sendToAllParents: jest.fn(), mode: 'child' }
+    const dispatch = createDispatch(ctx)
+    expect((await dispatch('apps:sync', { apps: APPS, installedAll: ALL })).relayedTo).toBe(1)
+    expect(db._stored['appsSig:dad']).toBeUndefined()
+    expect(db._stored['appsSig:mum']).toBeDefined()
+    // Nothing was queued: a catalogue is exactly the bulk worth not storing.
+    expect(ctx.sendToAllParents).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'apps:sync' }))
+    dadUp = true
+    expect((await dispatch('apps:sync', { apps: APPS, installedAll: ALL })).relayedTo).toBe(1)
+    expect(db._stored['appsSig:dad']).toBeDefined()
   })
 })

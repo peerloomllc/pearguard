@@ -717,7 +717,9 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
           })
         }
       } else {
-        await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from)
+        // msg.from is the parent's identity key, and the swarm keyPair is the
+        // identity, so it doubles as the noise key sendToPeer wants.
+        await handlePolicyUpdate(msg.payload, db, send, sendToAllParents, msg.from, sendToPeer)
       }
       break
     case 'time:extend':

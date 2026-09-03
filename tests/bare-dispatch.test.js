@@ -3450,3 +3450,55 @@ describe('parent-side policy writes are serialized per child', () => {
     expect(saved.version).toBe(5)
   })
 })
+
+describe('a stale push gets the child\'s current policy back', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      createReadStream: jest.fn(async function * () {}),
+      _stored: stored,
+    }
+  }
+
+  test('older version: nothing stored, current copy sent to the sender without icons', async () => {
+    const current = { childPublicKey: 'c1', version: 9, apps: { a: { status: 'allowed', iconBase64: 'AAAA' } }, settings: { autoApproveNewApps: true } }
+    const db = makeDb({ policy: current })
+    const send = jest.fn()
+    const reply = jest.fn()
+    await handlePolicyUpdate({ childPublicKey: 'c1', version: 7, apps: { a: { status: 'blocked' } } }, db, send, jest.fn(), 'parent1', reply)
+    expect(db.put).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(reply).toHaveBeenCalledTimes(1)
+    const [to, msg] = reply.mock.calls[0]
+    expect(to).toBe('parent1')
+    expect(msg.type).toBe('policy:update')
+    expect(msg.payload.version).toBe(9)
+    expect(msg.payload.apps.a).toEqual({ status: 'allowed' })
+    expect(msg.payload.settings).toEqual({ autoApproveNewApps: true })
+    // and the parent side takes it, since it is strictly newer than what it pushed
+    expect(shouldAcceptRelayedPolicy({ version: 7 }, msg.payload)).toBe(true)
+  })
+
+  test('a reply failure is swallowed and the stale push still ignored', async () => {
+    const db = makeDb({ policy: { childPublicKey: 'c1', version: 9, apps: {} } })
+    const reply = jest.fn(() => { throw new Error('peer not connected') })
+    await expect(handlePolicyUpdate({ childPublicKey: 'c1', version: 2, apps: {} }, db, jest.fn(), jest.fn(), 'parent1', reply)).resolves.toBeUndefined()
+    expect(db.put).not.toHaveBeenCalled()
+  })
+
+  test('equal or newer versions are stored as before and send nothing back', async () => {
+    const db = makeDb({ policy: { childPublicKey: 'c1', version: 9, apps: {} } })
+    const reply = jest.fn()
+    await handlePolicyUpdate({ childPublicKey: 'c1', version: 9, apps: { b: { status: 'blocked' } } }, db, jest.fn(), jest.fn(), 'parent1', reply)
+    await handlePolicyUpdate({ childPublicKey: 'c1', version: 10, apps: { b: { status: 'allowed' } } }, db, jest.fn(), jest.fn(), 'parent1', reply)
+    expect(reply).not.toHaveBeenCalled()
+    expect(db._stored.policy.version).toBe(10)
+  })
+
+  test('callers without a reply function behave exactly as before', async () => {
+    const db = makeDb({ policy: { childPublicKey: 'c1', version: 9, apps: {} } })
+    await expect(handlePolicyUpdate({ childPublicKey: 'c1', version: 1, apps: {} }, db, jest.fn(), jest.fn(), 'parent1')).resolves.toBeUndefined()
+    expect(db.put).not.toHaveBeenCalled()
+  })
+})

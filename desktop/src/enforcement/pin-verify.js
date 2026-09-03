@@ -3,9 +3,11 @@
 // match against every value in policy.pinHashes (per-parent map, primary
 // schema), with a fallback to the legacy policy.pinHash field.
 //
-// Bare's pin:verify only checks the legacy field, which is stripped from the
-// child's policy by handlePolicyUpdate (line 1621 in bare-dispatch.js). So we
-// can't go through bare for verification — we have to do it here.
+// Bare's pin:verify used to check only the legacy field, which handlePolicyUpdate
+// strips from the child's policy, so it denied every PIN and this had to exist.
+// It checks pinHashes too now, but verification still belongs here: the overlay
+// needs an answer without a round trip through the worklet, and the lockout
+// ladder and audit routing around it live on this side.
 
 function hashPin(sodium, pin) {
   const buf = Buffer.alloc(sodium.crypto_generichash_BYTES)

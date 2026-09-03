@@ -829,10 +829,11 @@ app.whenReady().then(() => {
       }
     })
     overlay.on('verify-pin', async (payload) => {
-      // Bare's pin:verify only checks the legacy policy.pinHash field which is
-      // stripped on the child by handlePolicyUpdate. Verify locally against
-      // the per-parent pinHashes map (mirroring AppBlockerModule on Android),
-      // then route a pin:used audit through bare for parent-side logging.
+      // Verify locally against the per-parent pinHashes map (mirroring
+      // AppBlockerModule on Android), then route a pin:used audit through bare
+      // for parent-side logging. Bare's own pin:verify handles pinHashes now,
+      // but the overlay needs an answer without a worklet round trip and the
+      // lockout ladder lives on this side.
       const { pin, packageName } = payload || {}
       const result = enforcement.verifyPinOnly({ pin })
       if (result.ok) {

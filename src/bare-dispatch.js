@@ -378,9 +378,12 @@ function createDispatch (ctx) {
           let usageFields = {}
           const policyRaw = await ctx.db.get('policy:' + value.publicKey).catch(() => null)
           const policyApps = policyRaw?.value?.apps || {}
+          // A timed lock that has run out reads as unlocked everywhere, without
+          // anyone rewriting the policy to say so.
           const lockedField = {
-            locked: !!(policyRaw?.value?.locked),
+            locked: isLockActive(policyRaw?.value, Date.now()),
             lockMessage: policyRaw?.value?.lockMessage || '',
+            lockUntil: policyRaw?.value?.lockUntil || 0,
             pauseUntil: policyRaw?.value?.pauseUntil || 0,
           }
           // What this child has confirmed it is enforcing, against what we hold.
@@ -1133,8 +1136,9 @@ function createDispatch (ctx) {
         }
 
         // Locked state and names for lock banner / greeting
-        const locked = !!(policy && policy.locked)
+        const locked = isLockActive(policy, Date.now())
         const lockMessage = (policy && policy.lockMessage) || ''
+        const lockUntil = (policy && policy.lockUntil) || 0
         let parentName = null
         let childName = null
         for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
@@ -1161,7 +1165,7 @@ function createDispatch (ctx) {
           .map(pkg => (apps[pkg] && apps[pkg].appName) || pkg)
           .sort((a, b) => a.localeCompare(b))
 
-        return { blockedCount, pendingCount, pendingRequests, blockedApps, pendingApps, pendingRequestsList, activeOverrides, hasPolicy: !!policy, locked, lockMessage, parentName, childName, hasScreenTimeLimit, generalTimeRequestPending, nextSchedule, screenTimeExemptAppNames }
+        return { blockedCount, pendingCount, pendingRequests, blockedApps, pendingApps, pendingRequestsList, activeOverrides, hasPolicy: !!policy, locked, lockMessage, lockUntil, parentName, childName, hasScreenTimeLimit, generalTimeRequestPending, nextSchedule, screenTimeExemptAppNames }
       }
 
       case 'app:installed': {
@@ -1938,7 +1942,7 @@ function createDispatch (ctx) {
       }
 
       case 'policy:setLock': {
-        const { childPublicKey, locked, lockMessage } = args
+        const { childPublicKey, locked, lockMessage, lockUntil } = args
         if (!childPublicKey) throw new Error('invalid policy:setLock args')
         const raw = await ctx.db.get('policy:' + childPublicKey)
         const policy = raw ? raw.value : { apps: {}, childPublicKey, version: 0 }
@@ -1948,8 +1952,14 @@ function createDispatch (ctx) {
           policy.lockMessage = msg ? msg.slice(0, 280) : ''
           // Lock and free-time pause are opposites — locking cancels any pause.
           delete policy.pauseUntil
+          // An end time only counts if it is actually ahead of us; anything else
+          // means "until I unlock", which is the lock we have always had.
+          const until = Number(lockUntil)
+          if (Number.isFinite(until) && until > Date.now()) policy.lockUntil = until
+          else delete policy.lockUntil
         } else {
           policy.lockMessage = ''
+          delete policy.lockUntil
         }
         policy.version = (policy.version || 0) + 1
         await ctx.db.put('policy:' + childPublicKey, policy)
@@ -2830,6 +2840,21 @@ function stripAppIcons (policy) {
   return stripped || policy
 }
 
+/**
+ * Is this policy's device-wide lock in force right now?
+ *
+ * A lock with no lockUntil runs until the parent clears it, which is what the
+ * lock has always been. lockUntil is the "lock until 7 pm" case: past that
+ * moment the lock is simply over, and every reader has to agree about that
+ * without anyone writing a new policy, since the child is often the only device
+ * awake when the moment passes.
+ */
+function isLockActive (policy, now) {
+  if (!policy || !policy.locked) return false
+  if (typeof policy.lockUntil !== 'number') return true
+  return now < policy.lockUntil
+}
+
 // Parent-side: does the parent's own setting say new apps skip the approval step?
 async function parentAutoApprovesNewApps (db) {
   const raw = await db.get('parentSettings').catch(() => null)
@@ -3226,4 +3251,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

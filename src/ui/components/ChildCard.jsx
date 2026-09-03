@@ -20,9 +20,13 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
     displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
-    bypassAlerts, pendingApprovals, pendingTimeRequests, locked, screenTime,
+    bypassAlerts, pendingApprovals, pendingTimeRequests, locked, lockUntil, screenTime,
     policyPending,
   } = child;
+
+  // A timed lock ends by itself, and when it ends is the one thing a parent
+  // cannot work out from the lock icon alone.
+  const lockEndsAt = locked && lockUntil > Date.now() ? lockUntil : null;
 
   // Only meaningful once a cap is set; limitSeconds is 0 otherwise (#179).
   const hasBudget = screenTime && screenTime.limitSeconds > 0;
@@ -33,7 +37,10 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
 
   let statusText = 'All good';
   let statusColor = colors.success;
-  if (pendingApprovals > 0) {
+  if (lockEndsAt) {
+    statusText = `Locked until ${new Date(lockEndsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    statusColor = colors.error;
+  } else if (pendingApprovals > 0) {
     statusText = `${pendingApprovals} pending approval${pendingApprovals > 1 ? 's' : ''}`;
     statusColor = colors.secondary;
   } else if (bypassAlerts > 0) {

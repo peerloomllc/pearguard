@@ -395,6 +395,11 @@ export default function ChildHome({ openDetail }) {
             <div style={{ ...typography.body, fontWeight: '600', color: colors.error }}>
               Device locked{homeData.parentName ? ` by ${homeData.parentName}` : ''}
             </div>
+            {homeData.lockUntil > Date.now() ? (
+              <div style={{ ...typography.caption, color: colors.text.secondary, marginTop: `${spacing.xs}px` }}>
+                Unlocks at {new Date(homeData.lockUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </div>
+            ) : null}
             {homeData.lockMessage ? (
               <div style={{ ...typography.caption, color: colors.text.secondary, marginTop: `${spacing.xs}px` }}>
                 {homeData.lockMessage}

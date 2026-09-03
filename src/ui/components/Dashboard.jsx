@@ -19,6 +19,9 @@ export default forwardRef(function Dashboard(_props, ref) {
   const [inviteActive, setInviteActive] = useState(false);
   const [lockTarget, setLockTarget] = useState(null);
   const [lockMessage, setLockMessage] = useState('');
+  // null means "until I unlock", which is how the lock has always worked and
+  // stays the default. A number is minutes.
+  const [lockMinutes, setLockMinutes] = useState(null);
   const [grantTarget, setGrantTarget] = useState(null);
   const childrenRef = useRef(children);
   childrenRef.current = children;
@@ -192,10 +195,12 @@ export default forwardRef(function Dashboard(_props, ref) {
 
   async function confirmLock() {
     if (!lockTarget) return;
-    await window.callBare('policy:setLock', { childPublicKey: lockTarget.publicKey, locked: true, lockMessage });
-    setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true } : c));
+    const lockUntil = lockMinutes ? Date.now() + lockMinutes * 60000 : 0;
+    await window.callBare('policy:setLock', { childPublicKey: lockTarget.publicKey, locked: true, lockMessage, lockUntil });
+    setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true, lockUntil } : c));
     setLockTarget(null);
     setLockMessage('');
+    setLockMinutes(null);
   }
 
   // Android back gesture: close child detail view
@@ -290,7 +295,7 @@ export default forwardRef(function Dashboard(_props, ref) {
 
       <Modal
         visible={!!lockTarget}
-        onClose={() => { setLockTarget(null); setLockMessage(''); }}
+        onClose={() => { setLockTarget(null); setLockMessage(''); setLockMinutes(null); }}
         title={`Lock ${lockTarget?.displayName}'s device?`}
         footer={<>
           <Button variant="secondary" onClick={() => { window.callBare('haptic:tap'); setLockTarget(null); setLockMessage(''); }} style={{ flex: 1 }}>Cancel</Button>
@@ -298,7 +303,32 @@ export default forwardRef(function Dashboard(_props, ref) {
         </>}
       >
         <div style={{ textAlign: 'center', marginBottom: `${spacing.md}px` }}>
-          This will immediately block all apps on {lockTarget?.displayName}'s device until you unlock it.
+          {lockMinutes
+            ? `This will block all apps on ${lockTarget?.displayName}'s device until ${new Date(Date.now() + lockMinutes * 60000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}, then unlock on its own.`
+            : `This will immediately block all apps on ${lockTarget?.displayName}'s device until you unlock it.`}
+        </div>
+        {/* A lock with no end runs until someone remembers to clear it, which is
+            easy to forget on a school night. */}
+        <div style={{ display: 'flex', gap: `${spacing.xs}px`, flexWrap: 'wrap', marginBottom: `${spacing.md}px`, justifyContent: 'center' }}>
+          {[{ label: 'Until I unlock', value: null }, { label: '30 min', value: 30 }, { label: '1 hour', value: 60 }, { label: '2 hours', value: 120 }].map((opt) => (
+            <button
+              key={opt.label}
+              type="button"
+              aria-pressed={lockMinutes === opt.value}
+              onClick={() => { window.callBare('haptic:tap'); setLockMinutes(opt.value); }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: `${radius.full}px`,
+                cursor: 'pointer',
+                fontSize: '13px',
+                border: `1px solid ${lockMinutes === opt.value ? colors.primary : colors.border}`,
+                backgroundColor: lockMinutes === opt.value ? `${colors.primary}22` : 'transparent',
+                color: lockMinutes === opt.value ? colors.primary : colors.text.secondary,
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
         <Input
           label="Message (optional)"

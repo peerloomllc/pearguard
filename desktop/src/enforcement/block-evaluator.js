@@ -129,7 +129,11 @@ function evaluate({
   // Step 0: Device-wide lock applies to everything non-exempt, including
   // unmapped exes. Otherwise a kid running mystery.exe would walk past the
   // lock just because we lack a packageName mapping.
-  if (policy.locked) {
+  // A lock can carry an end time ("lock until 7 pm"). Past it the lock is over,
+  // and this device decides that for itself: the parent may well be asleep when
+  // the moment passes, and waiting for a fresh policy would leave the child
+  // locked out of their own machine.
+  if (policy.locked && (typeof policy.lockUntil !== 'number' || now < policy.lockUntil)) {
     const msg = (policy.lockMessage && String(policy.lockMessage).trim()) || 'Device is locked by your parent.'
     return { reason: msg, category: 'lock' }
   }

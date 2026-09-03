@@ -14925,16 +14925,21 @@
       pendingApprovals,
       pendingTimeRequests,
       locked,
+      lockUntil,
       screenTime,
       policyPending
     } = child;
+    const lockEndsAt = locked && lockUntil > Date.now() ? lockUntil : null;
     const hasBudget = screenTime && screenTime.limitSeconds > 0;
     const timeLeft = hasBudget ? screenTime.remainingSeconds : null;
     const hasAlerts = bypassAlerts > 0 || pendingApprovals > 0 || pendingTimeRequests > 0;
     const isPaused = child.pauseUntil && Date.now() < child.pauseUntil;
     let statusText = "All good";
     let statusColor = colors.success;
-    if (pendingApprovals > 0) {
+    if (lockEndsAt) {
+      statusText = `Locked until ${new Date(lockEndsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+      statusColor = colors.error;
+    } else if (pendingApprovals > 0) {
       statusText = `${pendingApprovals} pending approval${pendingApprovals > 1 ? "s" : ""}`;
       statusColor = colors.secondary;
     } else if (bypassAlerts > 0) {
@@ -19265,6 +19270,7 @@ ${inv.inviteLink}`
     const [inviteActive, setInviteActive] = (0, import_react18.useState)(false);
     const [lockTarget, setLockTarget] = (0, import_react18.useState)(null);
     const [lockMessage, setLockMessage] = (0, import_react18.useState)("");
+    const [lockMinutes, setLockMinutes] = (0, import_react18.useState)(null);
     const [grantTarget, setGrantTarget] = (0, import_react18.useState)(null);
     const childrenRef = (0, import_react18.useRef)(children);
     childrenRef.current = children;
@@ -19421,10 +19427,12 @@ ${inv.inviteLink}`
     }
     async function confirmLock() {
       if (!lockTarget) return;
-      await window.callBare("policy:setLock", { childPublicKey: lockTarget.publicKey, locked: true, lockMessage });
-      setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true } : c));
+      const lockUntil = lockMinutes ? Date.now() + lockMinutes * 6e4 : 0;
+      await window.callBare("policy:setLock", { childPublicKey: lockTarget.publicKey, locked: true, lockMessage, lockUntil });
+      setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true, lockUntil } : c));
       setLockTarget(null);
       setLockMessage("");
+      setLockMinutes(null);
     }
     const backHandler = (0, import_react18.useCallback)(() => {
       if (selectedChild) {
@@ -19532,6 +19540,7 @@ ${inv.inviteLink}`
           onClose: () => {
             setLockTarget(null);
             setLockMessage("");
+            setLockMinutes(null);
           },
           title: `Lock ${lockTarget?.displayName}'s device?`,
           footer: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(import_jsx_runtime22.Fragment, { children: [
@@ -19546,11 +19555,29 @@ ${inv.inviteLink}`
             }, style: { flex: 1 }, children: "Lock" })
           ] }),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: { textAlign: "center", marginBottom: `${spacing2.md}px` }, children: [
-              "This will immediately block all apps on ",
-              lockTarget?.displayName,
-              "'s device until you unlock it."
-            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { textAlign: "center", marginBottom: `${spacing2.md}px` }, children: lockMinutes ? `This will block all apps on ${lockTarget?.displayName}'s device until ${new Date(Date.now() + lockMinutes * 6e4).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}, then unlock on its own.` : `This will immediately block all apps on ${lockTarget?.displayName}'s device until you unlock it.` }),
+            /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { style: { display: "flex", gap: `${spacing2.xs}px`, flexWrap: "wrap", marginBottom: `${spacing2.md}px`, justifyContent: "center" }, children: [{ label: "Until I unlock", value: null }, { label: "30 min", value: 30 }, { label: "1 hour", value: 60 }, { label: "2 hours", value: 120 }].map((opt) => /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
+              "button",
+              {
+                type: "button",
+                "aria-pressed": lockMinutes === opt.value,
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  setLockMinutes(opt.value);
+                },
+                style: {
+                  padding: "6px 12px",
+                  borderRadius: `${radius2.full}px`,
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  border: `1px solid ${lockMinutes === opt.value ? colors.primary : colors.border}`,
+                  backgroundColor: lockMinutes === opt.value ? `${colors.primary}22` : "transparent",
+                  color: lockMinutes === opt.value ? colors.primary : colors.text.secondary
+                },
+                children: opt.label
+              },
+              opt.label
+            )) }),
             /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
               Input,
               {
@@ -22138,6 +22165,10 @@ ${inv.inviteLink}`
             "Device locked",
             homeData.parentName ? ` by ${homeData.parentName}` : ""
           ] }),
+          homeData.lockUntil > Date.now() ? /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginTop: `${spacing2.xs}px` }, children: [
+            "Unlocks at ",
+            new Date(homeData.lockUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+          ] }) : null,
           homeData.lockMessage ? /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginTop: `${spacing2.xs}px` }, children: homeData.lockMessage }) : null
         ] })
       ] }),

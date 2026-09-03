@@ -392,6 +392,8 @@ function createDispatch (ctx) {
           const ackRaw = await ctx.db.get('policyAck:' + value.publicKey).catch(() => null)
           const policyVersion = typeof policyRaw?.value?.version === 'number' ? policyRaw.value.version : null
           const ackedPolicyVersion = typeof ackRaw?.value?.version === 'number' ? ackRaw.value.version : null
+          const leaveRaw = await ctx.db.get('leavePending:' + value.publicKey).catch(() => null)
+          const leaveField = { leaveEffectiveAt: (leaveRaw && leaveRaw.value && leaveRaw.value.effectiveAt) || 0 }
           const policySyncField = {
             policyVersion,
             ackedPolicyVersion,
@@ -426,7 +428,7 @@ function createDispatch (ctx) {
             }
           }
           seenKeys.add(value.publicKey)
-          children.push({ ...value, isOnline, ...lockedField, ...policySyncField, ...usageFields })
+          children.push({ ...value, isOnline, ...lockedField, ...leaveField, ...policySyncField, ...usageFields })
         }
         // Fallback: Hyperbee createReadStream range queries can miss recently-stored
         // records due to B-tree snapshot timing. Use db.get for any known peer keys
@@ -1057,6 +1059,83 @@ function createDispatch (ctx) {
         return { ok: true }
       }
 
+      case 'leave:request': {
+        // The child device asks to be freed. Only makes sense on a child, and
+        // only with a PIN one of its parents set.
+        if (ctx.getMode && ctx.getMode() !== 'child') throw new Error('leave:request is child-only')
+        const { pin } = args || {}
+        const raw = await ctx.db.get('policy').catch(() => null)
+        const policy = raw && raw.value
+        if (!policy) return { ok: false, reason: 'not-paired' }
+        if (!policy.pinHash && !(policy.pinHashes && Object.keys(policy.pinHashes).length)) {
+          return { ok: false, reason: 'no-pin' }
+        }
+        if (!verifyParentPin(policy, pin, ctx.sodium)) {
+          // Wrong guesses are reported the same way the block overlay reports
+          // them, so they feed the existing brute-force lockout and the parent
+          // hears about someone trying.
+          ctx.send({ type: 'event', event: 'leave:denied', data: { reason: 'wrong-pin' } })
+          return { ok: false, reason: 'wrong-pin' }
+        }
+        const existing = await ctx.db.get('leaveScheduled').catch(() => null)
+        if (existing && existing.value) return { ok: true, ...existing.value }
+        const requestedAt = Date.now()
+        const record = { requestedAt, effectiveAt: requestedAt + LEAVE_DELAY_MS, observedMs: 0, lastTickAt: requestedAt }
+        await ctx.db.put('leaveScheduled', record)
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'leave:scheduled', payload: { effectiveAt: record.effectiveAt, requestedAt } })
+        }
+        ctx.send({ type: 'event', event: 'leave:scheduled', data: record })
+        return { ok: true, ...record }
+      }
+
+      case 'leave:cancel': {
+        // Cancelling from the child needs the PIN too, so a child cannot undo a
+        // parent's cancel and re-arm without knowing it.
+        if (ctx.getMode && ctx.getMode() !== 'child') throw new Error('leave:cancel is child-only')
+        const { pin } = args || {}
+        const raw = await ctx.db.get('policy').catch(() => null)
+        const policy = raw && raw.value
+        if (policy && !verifyParentPin(policy, pin, ctx.sodium)) return { ok: false, reason: 'wrong-pin' }
+        await ctx.db.del('leaveScheduled').catch(() => {})
+        if (ctx.sendToAllParents) {
+          await ctx.sendToAllParents({ type: 'leave:cancelled', payload: { cancelledAt: Date.now(), by: 'child' } })
+        }
+        ctx.send({ type: 'event', event: 'leave:cancelled', data: { by: 'child' } })
+        return { ok: true }
+      }
+
+      case 'leave:status': {
+        const raw = await ctx.db.get('leaveScheduled').catch(() => null)
+        if (!raw || !raw.value) return { scheduled: false }
+        const rec = raw.value
+        return {
+          scheduled: true,
+          requestedAt: rec.requestedAt,
+          effectiveAt: rec.effectiveAt,
+          msRemaining: Math.max(0, rec.effectiveAt - Date.now()),
+          observedMs: rec.observedMs || 0,
+          observedRequiredMs: LEAVE_MIN_OBSERVED_MS,
+        }
+      }
+
+      case 'child:cancelLeave': {
+        // Parent side: call off a leave the child scheduled.
+        const { childPublicKey } = args || {}
+        if (!childPublicKey) throw new Error('child:cancelLeave requires childPublicKey')
+        await ctx.db.del('leavePending:' + childPublicKey).catch(() => {})
+        try {
+          const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+          if (noiseKey) ctx.sendToPeer(noiseKey, { type: 'leave:cancel', payload: {} })
+        } catch (_e) {
+          // child offline: our own record is cleared, and the child is told the
+          // next time it connects (handleHello re-sends the cancel).
+        }
+        ctx.send({ type: 'event', event: 'child:leaveCancelled', data: { childPublicKey } })
+        return { ok: true }
+      }
+
       case 'overrides:list': {
         // Scan Hyperbee for active override grants (PIN or parent-approved).
         // Returns only non-expired entries so the UI shows what's currently active.
@@ -1108,6 +1187,7 @@ function createDispatch (ctx) {
         // Sweep before counting, so a request nobody answered stops disabling the
         // child's ask button the moment its window lapses.
         await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
+        if (await advanceScheduledLeave(ctx.db, Date.now()) === 'commit' && ctx.onLeaveDue) await ctx.onLeaveDue()
         // Collect pending requests with app name resolution
         const pendingRequestsList = []
         for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
@@ -1382,6 +1462,9 @@ function createDispatch (ctx) {
         // timer, and the child hears about an unanswered request within a minute
         // of the window lapsing rather than whenever it next opens a screen.
         await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
+        // The countdown for a scheduled leave is checked, never timed: a live
+        // timer would not survive a force-stop or a reboot, and this has to.
+        if (await advanceScheduledLeave(ctx.db, Date.now()) === 'commit' && ctx.onLeaveDue) await ctx.onLeaveDue()
         const identityRaw = await ctx.db.get('identity')
         const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
 
@@ -2865,6 +2948,58 @@ function stripAppIcons (policy) {
   return stripped || policy
 }
 
+// A child device can free itself when the parent's phone is gone for good, but
+// not on the spot: a correct PIN starts a countdown the parent is told about and
+// can cancel. See proposals/2026-09-03-child-initiated-leave.md.
+const LEAVE_DELAY_MS = 24 * 60 * 60 * 1000
+// ...and the countdown has to be lived through, not just waited out on paper.
+// Winding the device clock forward a day is the obvious attack, so the commit
+// also requires this much time actually observed passing while the app ran.
+// Ticks are the child's existing 60 s heartbeat, so this is an hour of real
+// running, spread over as many sessions as it takes.
+const LEAVE_MIN_OBSERVED_MS = 60 * 60 * 1000
+// No single tick may contribute more than this, so one clock jump cannot fill
+// the observed budget by itself.
+const LEAVE_TICK_CAP_MS = 5 * 60 * 1000
+
+/**
+ * Does this PIN belong to any parent of this device? Co-parents each hold their
+ * own PIN in policy.pinHashes; pinHash is the pre-#122 single-parent field, kept
+ * because a child paired before that upgrade still has one.
+ */
+function verifyParentPin (policy, pin, sodium) {
+  if (!policy || typeof pin !== 'string' || pin.length === 0) return false
+  const hashBuf = Buffer.alloc(sodium.crypto_generichash_BYTES)
+  sodium.crypto_generichash(hashBuf, Buffer.from(pin))
+  const entered = hashBuf.toString('hex')
+  const known = Object.values(policy.pinHashes || {})
+  if (policy.pinHash) known.push(policy.pinHash)
+  return known.some((h) => h === entered)
+}
+
+/**
+ * Move a scheduled leave along by one tick and say what should happen now.
+ *
+ * Returns 'commit' when the device should free itself, 'pending' while the
+ * countdown runs, and null when no leave is scheduled. The caller owns the
+ * actual reset, because wiping the store and rotating the identity belongs to
+ * bare.js where the swarm lives.
+ */
+async function advanceScheduledLeave (db, now) {
+  const raw = await db.get('leaveScheduled').catch(() => null)
+  const rec = raw && raw.value
+  if (!rec || typeof rec.effectiveAt !== 'number') return null
+  const since = now - (rec.lastTickAt || rec.requestedAt || now)
+  // A backward jump contributes nothing rather than subtracting: the clock is
+  // the child's to move, and this budget only ever goes up.
+  const credit = since > 0 ? Math.min(since, LEAVE_TICK_CAP_MS) : 0
+  const observedMs = (rec.observedMs || 0) + credit
+  const updated = { ...rec, observedMs, lastTickAt: now }
+  if (now >= rec.effectiveAt && observedMs >= LEAVE_MIN_OBSERVED_MS) return 'commit'
+  await db.put('leaveScheduled', updated)
+  return 'pending'
+}
+
 /**
  * A stable fingerprint of which apps are installed. Only the package names
  * matter: names, categories and icons for an app the parent already holds are
@@ -3296,4 +3431,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

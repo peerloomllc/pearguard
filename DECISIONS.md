@@ -2,6 +2,36 @@
 
 Per-app decision log for PearGuard. Append-only, newest on top. See `/home/tim/peerloomllc/CONSTITUTION.md` §4 for the entry format.
 
+## 2026-09-03 - child-initiated leave: PIN plus a 24 hour countdown, no block on commit
+
+Tier: T3
+Context: a child device only resets when a parent sends `unpair`. If the only
+parent's phone is lost, stolen or wiped with no backup, the device stays
+enforced forever and the sole exit is uninstalling, which on Android also means
+fighting the accessibility service the app installed. A family that loses a
+phone should not have to factory-reset a child's tablet.
+Choice: `leave:request` takes any parent's PIN (`policy.pinHashes`, plus the
+pre-#122 `pinHash`) and schedules the leave 24 hours out rather than acting on
+it. The parent is told immediately and on every reconnect, sees it on the child
+card and in Activity, and can cancel from the child's screen. The child can
+cancel too, with the PIN. On commit the child tells its parents (`leave:committed`),
+wipes every key, rotates its identity and destroys the swarm.
+Rejected: an immediate leave (a child who learns the PIN frees the device on the
+spot, with no chance for the parent to object); a separate leave PIN (one more
+secret for a parent to lose, and this exists for a parent who has already lost
+something); gating on 7 days of no parent contact (tighter, but a parent on a
+long holiday would trip it).
+Clock: the countdown is checked on the existing heartbeat tick, never timed, so
+it survives force-stop and reboot. Winding the clock forward is the obvious
+attack, so the commit also requires an hour of *observed* running, accumulated
+in capped 5-minute credits per tick; a backward jump credits nothing and cannot
+cancel the leave.
+The parent does NOT write `blocked:` on `leave:committed`, unlike `child:unpair`.
+This was not a removal and the family may well want to pair again; the child has
+rotated its identity anyway, so it returns as a new peer. Proven by the harness
+re-pairing immediately after a commit.
+Proposal: proposals/2026-09-03-child-initiated-leave.md
+
 ## 2026-06-29 - cumulative daily screen-time cap (policy.dailyScreenTimeLimitSeconds)
 Tier: T2 (proposal: proposals/2026-06-29-cumulative-screen-time-limit.md, issue #175)
 Context: parents could blanket-block by schedule or cap per-app/per-category time, but had no way to cap total device use per day. Requested in #175.

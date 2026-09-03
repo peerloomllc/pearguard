@@ -44,6 +44,7 @@ export default function ChildDetail({ child, initialTab, onBack }) {
   // Free-time / holiday pause — suspend all enforcement until pauseUntil.
   const [pauseOpen, setPauseOpen] = useState(false);
   const [pauseUntil, setPauseUntil] = useState(child.pauseUntil || 0);
+  const [leaveAt, setLeaveAt] = useState(child.leaveEffectiveAt || 0);
   const isPaused = pauseUntil && Date.now() < pauseUntil;
 
   function onLockButtonClick() {
@@ -144,6 +145,37 @@ export default function ChildDetail({ child, initialTab, onBack }) {
         </button>
 
       </div>
+
+      {/* The child asked to remove supervision. This is the one place the parent
+          can say no, so it sits above the tabs rather than inside one. */}
+      {leaveAt > Date.now() && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`,
+          padding: `${spacing.md}px ${spacing.base}px`,
+          backgroundColor: `${colors.error}22`,
+          borderBottom: `1px solid ${colors.error}44`,
+        }}>
+          <Icon name="Warning" size={20} color={colors.error} />
+          <div style={{ flex: 1 }}>
+            <div style={{ ...typography.body, fontWeight: '600', color: colors.error }}>
+              {child.displayName} asked to remove supervision
+            </div>
+            <div style={{ ...typography.caption, color: colors.text.secondary }}>
+              Happens {new Date(leaveAt).toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' })} unless you stop it
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              window.callBare('haptic:tap');
+              await window.callBare('child:cancelLeave', { childPublicKey: child.publicKey }).catch(() => {});
+              setLeaveAt(0);
+            }}
+          >
+            Stop it
+          </Button>
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div style={{

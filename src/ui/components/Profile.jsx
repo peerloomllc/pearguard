@@ -18,6 +18,13 @@ export default function Profile({ mode }) {
   const [photoLoading, setPhotoLoading] = useState(false)
   const [status, setStatus] = useState(null) // null | 'success' | 'error'
   const [pairState, setPairState] = useState('idle') // 'idle' | 'connecting' | 'success' | 'error'
+  // Child-side "remove supervision": needs a parent's PIN and then waits a day,
+  // during which the parent is told and can call it off. See
+  // proposals/2026-09-03-child-initiated-leave.md.
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  const [leavePin, setLeavePin] = useState('')
+  const [leaveError, setLeaveError] = useState(null)
+  const [leaveState, setLeaveState] = useState(null) // null | { effectiveAt }
   const [pairError, setPairError] = useState(null)
   const [pairUiMode, setPairUiMode] = useState('initial') // 'initial' | 'methodPicker' | 'paste' | 'showQr'
   const [pasteUrl, setPasteUrl] = useState('')
@@ -27,6 +34,13 @@ export default function Profile({ mode }) {
   const [parentsOpen, setParentsOpen] = useState(true)
   const pairDoneRef = useRef(false) // true once peer:paired fires; prevents acceptInvite overriding state
   const pairTimeoutRef = useRef(null) // fallback timer if peer:paired never fires
+
+  useEffect(() => {
+    if (mode !== 'child') return
+    window.callBare('leave:status')
+      .then((st) => { if (st && st.scheduled) setLeaveState(st) })
+      .catch(() => {})
+  }, [mode])
 
   useEffect(() => {
     window.callBare('identity:getName')
@@ -377,6 +391,89 @@ export default function Profile({ mode }) {
                   </Button>
                 </div>
               </>
+            )}
+          </Collapsible>
+
+          <Collapsible
+            title="Remove supervision"
+            icon="SignOut"
+            open={leaveOpen}
+            onToggle={() => setLeaveOpen((o) => !o)}
+            maxHeight="420px"
+            colors={colors}
+            spacing={spacing}
+            radius={radius}
+          >
+            {leaveState ? (
+              <div>
+                <p style={{ fontSize: '13px', color: colors.text.secondary, marginTop: 0 }}>
+                  This device will stop being supervised on{' '}
+                  {new Date(leaveState.effectiveAt).toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' })}.
+                  Your parent has been told and can stop it.
+                </p>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={leavePin}
+                  onChange={(e) => { setLeavePin(e.target.value); setLeaveError(null) }}
+                  placeholder="Parent PIN"
+                  aria-label="Parent PIN to keep supervision"
+                  style={{
+                    width: '100%', padding: `${spacing.sm}px`, borderRadius: `${radius.md}px`,
+                    border: `1px solid ${colors.border}`, backgroundColor: colors.surface.card,
+                    color: colors.text.primary, marginBottom: `${spacing.sm}px`,
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  style={{ width: '100%' }}
+                  onClick={async () => {
+                    window.callBare('haptic:tap')
+                    const res = await window.callBare('leave:cancel', { pin: leavePin }).catch(() => ({ ok: false }))
+                    if (res && res.ok) { setLeaveState(null); setLeavePin(''); setLeaveError(null) }
+                    else setLeaveError('That PIN is not right.')
+                  }}
+                >
+                  Keep supervision
+                </Button>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: '13px', color: colors.text.secondary, marginTop: 0 }}>
+                  This is for when a parent's phone is lost for good and nobody can unpair this
+                  device. It needs a parent's PIN, your parent is told straight away, and nothing
+                  changes for a day so they can stop it.
+                </p>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={leavePin}
+                  onChange={(e) => { setLeavePin(e.target.value); setLeaveError(null) }}
+                  placeholder="Parent PIN"
+                  aria-label="Parent PIN to remove supervision"
+                  style={{
+                    width: '100%', padding: `${spacing.sm}px`, borderRadius: `${radius.md}px`,
+                    border: `1px solid ${colors.border}`, backgroundColor: colors.surface.card,
+                    color: colors.text.primary, marginBottom: `${spacing.sm}px`,
+                  }}
+                />
+                <Button
+                  variant="danger"
+                  style={{ width: '100%' }}
+                  disabled={!leavePin.trim()}
+                  onClick={async () => {
+                    window.callBare('haptic:tap')
+                    const res = await window.callBare('leave:request', { pin: leavePin }).catch(() => ({ ok: false, reason: 'failed' }))
+                    if (res && res.ok) { setLeaveState(res); setLeavePin(''); setLeaveError(null) }
+                    else setLeaveError(res && res.reason === 'no-pin' ? 'No parent PIN is set on this device.' : 'That PIN is not right.')
+                  }}
+                >
+                  Start removing supervision
+                </Button>
+              </div>
+            )}
+            {leaveError && (
+              <p role="alert" style={{ fontSize: '13px', color: colors.error, marginBottom: 0 }}>{leaveError}</p>
             )}
           </Collapsible>
 

@@ -1298,13 +1298,38 @@ function createDispatch (ctx) {
             ctx.send({ type: 'event', event: 'app:uninstalled', data: { packageName, appName } })
             await ctx.sendToAllParents({ type: 'app:uninstalled', payload: { packageName, appName } })
           }
-          // Always relay the full list too — even when nothing changed locally.
-          // A second parent may have just paired and needs the full app list even
-          // though the child already has all apps in its own policy (#109).
-          await ctx.sendToAllParents({ type: 'apps:sync', payload: { apps } })
         }
 
-        return { count: newCount, removed: removed.length }
+        // The full catalogue used to go to every parent on every scan, and a scan
+        // runs on every reconnect, so a phone on a flaky train re-sent every app
+        // it has (with an icon each) many times a day to a parent that already
+        // had them. It cannot simply be dropped: a co-parent who pairs later
+        // finds the child's own policy already complete, so nothing here counts
+        // as new and they would never learn the app list at all (#109).
+        //
+        // So it is sent per parent, and only when that parent's picture of the
+        // installed set differs from what is on this device. A parent we have
+        // never sent to has no stored signature and gets the list once; after
+        // that they get nothing until an app appears or disappears. Offline
+        // parents are skipped rather than queued, because a scan runs on every
+        // reconnect anyway and a queued catalogue is exactly the bulk worth not
+        // storing.
+        const signature = appsSignature(apps)
+        let relayedTo = 0
+        for await (const { value: parent } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (!parent || !parent.publicKey || !parent.noiseKey) continue
+          const seen = await ctx.db.get('appsSig:' + parent.publicKey).catch(() => null)
+          if (seen && seen.value && seen.value.signature === signature) continue
+          try {
+            ctx.sendToPeer(parent.noiseKey, { type: 'apps:sync', payload: { apps } })
+          } catch (_e) {
+            continue // parent offline; the scan on their next reconnect covers it
+          }
+          await ctx.db.put('appsSig:' + parent.publicKey, { signature, at: Date.now() })
+          relayedTo++
+        }
+
+        return { count: newCount, removed: removed.length, relayedTo }
       }
 
       case 'swarm:reconnect': {
@@ -2841,6 +2866,26 @@ function stripAppIcons (policy) {
 }
 
 /**
+ * A stable fingerprint of which apps are installed. Only the package names
+ * matter: names, categories and icons for an app the parent already holds are
+ * back-filled by the handlers that receive them, and a change in any of those is
+ * not a reason to re-send a whole catalogue.
+ */
+function appsSignature (apps) {
+  if (!Array.isArray(apps)) return ''
+  const names = apps.map((a) => a && a.packageName).filter(Boolean).sort()
+  let h1 = 0x811c9dc5
+  let h2 = 0x01000193
+  const joined = names.join(',')
+  for (let i = 0; i < joined.length; i++) {
+    const c = joined.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 + c + i, 0x85ebca6b) >>> 0
+  }
+  return names.length + ':' + h1.toString(36) + h2.toString(36)
+}
+
+/**
  * Is this policy's device-wide lock in force right now?
  *
  * A lock with no lockUntil runs until the parent clears it, which is what the
@@ -3251,4 +3296,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

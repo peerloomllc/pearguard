@@ -995,6 +995,9 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         await db.del('peers:' + senderIdentityKey).catch(() => {})
         knownPeerKeys.delete(senderIdentityKey)
         await db.del('pendingParent:' + senderIdentityKey).catch(() => {})
+        // Forget which app list this parent had, so a re-pair starts from
+        // nothing and gets the full catalogue again.
+        await db.del('appsSig:' + senderIdentityKey).catch(() => {})
         parentPeers.delete(senderIdentityKey)
 
         // Leave this parent's swarm topic if no other parent uses it

@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3873,5 +3873,76 @@ describe('the parent can tell whether the rules reached the phone', () => {
     const written = []
     await flushMessageQueue(db2, async (m) => { written.push(m.type) })
     expect(written).toEqual(['usage:report'])
+  })
+})
+
+describe('a lock can be given an end time', () => {
+  const now = Date.now()
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+
+  test('isLockActive: no end time means until the parent clears it, an elapsed one means over', () => {
+    expect(isLockActive({ locked: true }, now)).toBe(true)
+    expect(isLockActive({ locked: true, lockUntil: now + 60000 }, now)).toBe(true)
+    expect(isLockActive({ locked: true, lockUntil: now }, now)).toBe(false)
+    expect(isLockActive({ locked: true, lockUntil: now - 1 }, now)).toBe(false)
+    expect(isLockActive({ locked: false, lockUntil: now + 60000 }, now)).toBe(false)
+    expect(isLockActive({}, now)).toBe(false)
+    expect(isLockActive(null, now)).toBe(false)
+  })
+
+  test('policy:setLock stores a future end time and ignores anything else', async () => {
+    const run = async (args) => {
+      const db = makeDb({ 'policy:kid': { apps: {}, childPublicKey: 'kid', version: 1 } })
+      await createDispatch({ db, send: jest.fn(), sendToPeer: jest.fn(), mode: 'parent' })('policy:setLock', { childPublicKey: 'kid', ...args })
+      return db._stored['policy:kid']
+    }
+    expect(await run({ locked: true, lockUntil: now + 3600000 })).toMatchObject({ locked: true, lockUntil: now + 3600000 })
+    // No end time, a past one or a junk one all mean "until I unlock".
+    expect((await run({ locked: true })).lockUntil).toBeUndefined()
+    expect((await run({ locked: true, lockUntil: 0 })).lockUntil).toBeUndefined()
+    expect((await run({ locked: true, lockUntil: now - 1000 })).lockUntil).toBeUndefined()
+    expect((await run({ locked: true, lockUntil: 'soon' })).lockUntil).toBeUndefined()
+    // Unlocking clears it rather than leaving a stale end time behind.
+    const db = makeDb({ 'policy:kid': { apps: {}, childPublicKey: 'kid', version: 1, locked: true, lockUntil: now + 60000 } })
+    await createDispatch({ db, send: jest.fn(), sendToPeer: jest.fn(), mode: 'parent' })('policy:setLock', { childPublicKey: 'kid', locked: false })
+    expect(db._stored['policy:kid'].locked).toBe(false)
+    expect(db._stored['policy:kid'].lockUntil).toBeUndefined()
+  })
+
+  test('a lapsed lock reads as unlocked on both sides without anyone rewriting the policy', async () => {
+    const lapsed = { apps: {}, childPublicKey: 'kid', version: 2, locked: true, lockUntil: now - 1000, lockMessage: 'Dinner' }
+    const parentDb = makeDb({ 'peers:kid': { publicKey: 'kid', displayName: 'Sam', noiseKey: 'n1' }, 'policy:kid': lapsed })
+    const children = await createDispatch({ db: parentDb, send: jest.fn(), peers: new Map(), mode: 'parent' })('children:list', {})
+    expect(children[0]).toMatchObject({ locked: false, lockUntil: lapsed.lockUntil })
+    // The stored policy is untouched: no write, no version bump, nothing to push.
+    expect(parentDb._stored['policy:kid']).toEqual(lapsed)
+
+    const childDb = makeDb({ policy: { ...lapsed } })
+    const home = await createDispatch({ db: childDb, send: jest.fn(), mode: 'child' })('child:homeData', {})
+    expect(home).toMatchObject({ locked: false })
+    expect(childDb._stored.policy).toEqual(lapsed)
+  })
+
+  test('a live timed lock still reads as locked on both sides', async () => {
+    const live = { apps: {}, childPublicKey: 'kid', version: 2, locked: true, lockUntil: now + 3600000 }
+    const parentDb = makeDb({ 'peers:kid': { publicKey: 'kid', displayName: 'Sam', noiseKey: 'n1' }, 'policy:kid': live })
+    const children = await createDispatch({ db: parentDb, send: jest.fn(), peers: new Map(), mode: 'parent' })('children:list', {})
+    expect(children[0]).toMatchObject({ locked: true, lockUntil: live.lockUntil })
+    const childDb = makeDb({ policy: { ...live } })
+    expect(await createDispatch({ db: childDb, send: jest.fn(), mode: 'child' })('child:homeData', {})).toMatchObject({ locked: true, lockUntil: live.lockUntil })
   })
 })

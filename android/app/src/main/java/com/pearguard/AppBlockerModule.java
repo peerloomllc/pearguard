@@ -686,6 +686,12 @@ public class AppBlockerModule extends AccessibilityService {
         try {
             // Step 0: Device-wide lock — parent toggled quick-lock, block everything.
             boolean locked = policy.optBoolean("locked", false);
+            // A lock can carry an end time ("lock until 7 pm"). Past it the lock
+            // is over, and this device decides that for itself: the parent may
+            // well be asleep when the moment passes, and waiting for a fresh
+            // policy would leave the child locked out of their own phone.
+            long lockUntil = policy.optLong("lockUntil", 0L);
+            if (lockUntil > 0L && System.currentTimeMillis() >= lockUntil) locked = false;
             if (locked) {
                 String lockMessage = policy.optString("lockMessage", "");
                 if (lockMessage != null && !lockMessage.isEmpty()) return lockMessage;

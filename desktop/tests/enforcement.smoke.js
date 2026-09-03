@@ -166,6 +166,36 @@ test('device lock with empty message uses default text', () => {
   assert.ok(r.reason.includes('locked'))
 })
 
+test('a timed lock still blocks before its end time', () => {
+  const r = evaluate({
+    policy: policy({ locked: true, lockUntil: Date.now() + 60_000, lockMessage: 'Dinner' }),
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+  })
+  assert.deepStrictEqual(r, { reason: 'Dinner', category: 'lock' })
+})
+
+test('a timed lock stops blocking once its end time passes, with no new policy', () => {
+  // The child device decides this for itself. The parent may be asleep when the
+  // moment arrives, and waiting for a fresh policy would leave the child locked
+  // out of their own machine.
+  const r = evaluate({
+    policy: policy({ locked: true, lockUntil: Date.now() - 1000, lockMessage: 'Dinner' }),
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+  })
+  assert.strictEqual(r, null)
+})
+
+test('a lock with no end time is unaffected by the timed-lock check', () => {
+  const r = evaluate({
+    policy: policy({ locked: true, lockMessage: 'Bedtime' }),
+    packageName: 'com.discord',
+    exeBasename: 'discord.exe',
+  })
+  assert.deepStrictEqual(r, { reason: 'Bedtime', category: 'lock' })
+})
+
 test('active override beats device lock? — no, lock check is Step 0', () => {
   // Mirrors Android: device lock is Step 0, before override check. Verifying
   // we kept that ordering so a kid with a stale PIN override can't bypass a

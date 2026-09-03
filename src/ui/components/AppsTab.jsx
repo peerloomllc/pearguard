@@ -115,7 +115,7 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
       <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
         {appData.iconBase64 ? (
           <img
-            src={`data:image/png;base64,${appData.iconBase64}`}
+            src={`data:image/webp;base64,${appData.iconBase64}`}
             alt={`${appData.appName || packageName} icon`}
             style={{ width: '40px', height: '40px', borderRadius: `${radius.md}px`, objectFit: 'contain', flexShrink: 0 }}
           />

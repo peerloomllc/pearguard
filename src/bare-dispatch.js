@@ -1090,7 +1090,8 @@ function createDispatch (ctx) {
             addedAt: Date.now(),
             ...(category && { category }),
             ...(exeBasename && { exeBasename }),
-            ...(iconBase64 && { iconBase64 }),
+            // No iconBase64 here: the icon goes to the parents below, the child's
+            // own policy never needs it (see stripAppIcons).
           }
           await ctx.db.put('policy', policy)
 
@@ -2262,6 +2263,11 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
   payload.pinHashes = { ...existingPinHashes, ...incomingPinHashes }
   delete payload.pinHash  // ensure legacy field is cleaned up
 
+  // A parent on current code never sends icons, but an older parent does, and
+  // they would otherwise be stored, parsed by native on every check and relayed
+  // to every co-parent.
+  payload = stripAppIcons(payload)
+
   await db.put('policy', payload)
   // Use method format (not event) so the RN shell routes this to
   // NativeModules.UsageStatsModule.setPolicy() via the msg.method === 'native:setPolicy' branch
@@ -2577,6 +2583,25 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
     send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })
     send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, childDisplayName, autoApproved } })
   }
+}
+
+// App icons belong to the parent's Apps tab and nowhere else. They are the bulk of
+// a policy once a child has a few dozen apps (tens of KB each as base64 PNG until
+// they were shrunk), and the child has no use for them: it has the real apps. So
+// no icon ever rides in a policy push, in the child's stored policy or in the JSON
+// handed to native enforcement. Returns the same object when there is nothing to
+// strip, so callers that compare by identity are unaffected.
+function stripAppIcons (policy) {
+  if (!policy || typeof policy !== 'object' || !policy.apps) return policy
+  let stripped = null
+  for (const [pkg, app] of Object.entries(policy.apps)) {
+    if (app && app.iconBase64 !== undefined) {
+      if (!stripped) stripped = { ...policy, apps: { ...policy.apps } }
+      const { iconBase64, ...rest } = app
+      stripped.apps[pkg] = rest
+    }
+  }
+  return stripped || policy
 }
 
 // Parent-side: does the parent's own setting say new apps skip the approval step?
@@ -2917,4 +2942,4 @@ async function isBlockClearedByFreshInvite (db, { peerIdentityKeyHex, incomingTo
   return false
 }
 
-module.exports = { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, stripAppIcons, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3288,7 +3288,7 @@ describe('app icons stay out of policy pushes', () => {
     const native = send.mock.calls.find(([m]) => m.method === 'native:setPolicy')[0]
     expect(native.args.json).not.toContain(ICON)
     expect(JSON.parse(native.args.json).apps.a).toEqual({ status: 'blocked' })
-    const relayed = sendToAllParents.mock.calls[0][0]
+    const relayed = sendToAllParents.mock.calls.map(([m]) => m).find((m) => m.type === 'policy:update')
     expect(relayed.type).toBe('policy:update')
     expect(relayed.payload.apps.a).toEqual({ status: 'blocked' })
     expect(relayed.payload.apps.b).toEqual({ status: 'allowed' })
@@ -3784,5 +3784,94 @@ describe('a request nobody answers stops blocking the child', () => {
     await createDispatch(ctx)('heartbeat:send', {})
     expect(db._stored['req:1']).toEqual(fresh)
     expect(ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')).toHaveLength(0)
+  })
+})
+
+describe('the parent can tell whether the rules reached the phone', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+
+  test('recordPolicyAck keeps the highest confirmed version and ignores anything older', async () => {
+    const db = makeDb({})
+    expect(await recordPolicyAck(db, 'kid', 4, 1000)).toBe(true)
+    expect(db._stored['policyAck:kid']).toEqual({ version: 4, at: 1000 })
+    expect(await recordPolicyAck(db, 'kid', 3, 2000)).toBe(false)
+    expect(await recordPolicyAck(db, 'kid', 4, 2000)).toBe(false)
+    expect(db._stored['policyAck:kid']).toEqual({ version: 4, at: 1000 })
+    expect(await recordPolicyAck(db, 'kid', 5, 3000)).toBe(true)
+    expect(db._stored['policyAck:kid']).toEqual({ version: 5, at: 3000 })
+    // A malformed confirmation changes nothing.
+    expect(await recordPolicyAck(db, 'kid', undefined, 4000)).toBe(false)
+    expect(db._stored['policyAck:kid']).toEqual({ version: 5, at: 3000 })
+  })
+
+  test('the child confirms every policy it stores, to every parent', async () => {
+    const db = makeDb({})
+    const sendToAllParents = jest.fn()
+    await handlePolicyUpdate({ childPublicKey: 'kid', version: 7, apps: {} }, db, jest.fn(), sendToAllParents, 'parent1')
+    const acks = sendToAllParents.mock.calls.filter(([m]) => m.type === 'policy:ack')
+    expect(acks).toHaveLength(1)
+    expect(acks[0][0].payload.version).toBe(7)
+    // The relay to co-parents excludes the sender, which is why it cannot double
+    // as the confirmation: the parent waiting is the one it skips.
+    const relay = sendToAllParents.mock.calls.find(([m]) => m.type === 'policy:update')
+    expect(relay[1]).toBe('parent1')
+    expect(acks[0][1]).toBeUndefined()
+  })
+
+  test('a stale push is not confirmed, so the parent stays marked as waiting', async () => {
+    const db = makeDb({ policy: { childPublicKey: 'kid', version: 9, apps: {} } })
+    const sendToAllParents = jest.fn()
+    await handlePolicyUpdate({ childPublicKey: 'kid', version: 4, apps: {} }, db, jest.fn(), sendToAllParents, 'parent1')
+    expect(sendToAllParents.mock.calls.filter(([m]) => m.type === 'policy:ack')).toHaveLength(0)
+  })
+
+  test('children:list reports the child as waiting only when it is genuinely behind', async () => {
+    const base = { publicKey: 'kid', displayName: 'Sam', noiseKey: 'n1' }
+    const list = async (stored) => {
+      const db = makeDb(stored)
+      const children = await createDispatch({ db, send: jest.fn(), peers: new Map(), mode: 'parent' })('children:list', {})
+      return children[0]
+    }
+    // Behind: we hold v5, the phone confirmed v4.
+    expect(await list({ 'peers:kid': base, 'policy:kid': { version: 5, apps: {} }, 'policyAck:kid': { version: 4, at: 1 } }))
+      .toMatchObject({ policyVersion: 5, ackedPolicyVersion: 4, policyPending: true })
+    // Current.
+    expect(await list({ 'peers:kid': base, 'policy:kid': { version: 5, apps: {} }, 'policyAck:kid': { version: 5, at: 1 } }))
+      .toMatchObject({ policyPending: false })
+    // Never confirmed anything (an older child, or one that has not connected
+    // since pairing): unknown, not behind. A red flag on every existing pairing
+    // would be worse than saying nothing.
+    expect(await list({ 'peers:kid': base, 'policy:kid': { version: 5, apps: {} } }))
+      .toMatchObject({ ackedPolicyVersion: null, policyPending: false })
+    // Nothing pushed yet: nothing to be behind on.
+    expect(await list({ 'peers:kid': base }))
+      .toMatchObject({ policyVersion: null, policyPending: false })
+  })
+
+  test('confirmations are never queued for a parent that is offline', async () => {
+    const db = makeDb({})
+    await queueMessage({ type: 'policy:ack', payload: { version: 3 } }, db)
+    expect(db.put).not.toHaveBeenCalled()
+    const db2 = makeDb({ pendingMessages: [
+      { message: { type: 'policy:ack', payload: { version: 3 } } },
+      { message: { type: 'usage:report', payload: {} } },
+    ] })
+    const written = []
+    await flushMessageQueue(db2, async (m) => { written.push(m.type) })
+    expect(written).toEqual(['usage:report'])
   })
 })

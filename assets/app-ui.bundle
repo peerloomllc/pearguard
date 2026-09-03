@@ -14925,7 +14925,8 @@
       pendingApprovals,
       pendingTimeRequests,
       locked,
-      screenTime
+      screenTime,
+      policyPending
     } = child;
     const hasBudget = screenTime && screenTime.limitSeconds > 0;
     const timeLeft = hasBudget ? screenTime.remainingSeconds : null;
@@ -14942,6 +14943,9 @@
     } else if (isPaused) {
       statusText = "Free time (protection paused)";
       statusColor = colors.secondary;
+    } else if (policyPending) {
+      statusText = `Waiting for ${displayName}'s phone`;
+      statusColor = colors.text.secondary;
     }
     return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
       "button",

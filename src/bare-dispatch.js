@@ -383,6 +383,20 @@ function createDispatch (ctx) {
             lockMessage: policyRaw?.value?.lockMessage || '',
             pauseUntil: policyRaw?.value?.pauseUntil || 0,
           }
+          // What this child has confirmed it is enforcing, against what we hold.
+          // policyVersion null means we have never pushed anything, so there is
+          // nothing to be behind on.
+          const ackRaw = await ctx.db.get('policyAck:' + value.publicKey).catch(() => null)
+          const policyVersion = typeof policyRaw?.value?.version === 'number' ? policyRaw.value.version : null
+          const ackedPolicyVersion = typeof ackRaw?.value?.version === 'number' ? ackRaw.value.version : null
+          const policySyncField = {
+            policyVersion,
+            ackedPolicyVersion,
+            // Older children never ack, so treat "no ack at all" as unknown
+            // rather than as behind: a red flag on every existing pairing would
+            // be worse than saying nothing.
+            policyPending: policyVersion !== null && ackedPolicyVersion !== null && ackedPolicyVersion < policyVersion,
+          }
           const exclusions = await getExclusions(ctx.db, value.publicKey)
           for await (const { value: report } of ctx.db.createReadStream({
             gt: 'usageReport:' + value.publicKey + ':',
@@ -409,7 +423,7 @@ function createDispatch (ctx) {
             }
           }
           seenKeys.add(value.publicKey)
-          children.push({ ...value, isOnline, ...lockedField, ...usageFields })
+          children.push({ ...value, isOnline, ...lockedField, ...policySyncField, ...usageFields })
         }
         // Fallback: Hyperbee createReadStream range queries can miss recently-stored
         // records due to B-tree snapshot timing. Use db.get for any known peer keys
@@ -2402,6 +2416,16 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
     sendToAllParents({ type: 'policy:update', payload }, senderKey)
   }
 
+  // Then tell every parent which version this device is actually enforcing.
+  // Until now a parent stored its edit, skipped the send when the child was
+  // offline and showed nothing either way, so "did that rule reach the phone?"
+  // had no answer anywhere in the app. The relay above cannot serve as the
+  // answer: it excludes the parent that sent the policy, which is exactly the
+  // one waiting to hear.
+  if (sendToAllParents) {
+    sendToAllParents({ type: 'policy:ack', payload: { version: payload.version, at: Date.now() } })
+  }
+
   // Sync pending req:* entries with the new policy so ChildRequests shows the correct status.
   // This handles the case where app:decision was not delivered directly (e.g., child was offline
   // and the parent's decision arrives via the policy:update pushed on reconnect).
@@ -2453,6 +2477,21 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
  * @param {string} remoteKeyHex — the child connection's noise key
  * @param {number} now — current epoch ms
  */
+/**
+ * Parent-side: remember the highest policy version a child has confirmed it is
+ * enforcing. Kept out of policy:{child} on purpose - that record is what gets
+ * pushed to the child, and an ack field riding along in the push would be both
+ * noise and a source of false differences.
+ */
+async function recordPolicyAck (db, childPublicKey, version, now) {
+  if (typeof version !== 'number') return false
+  const raw = await db.get('policyAck:' + childPublicKey).catch(() => null)
+  const known = raw && raw.value && typeof raw.value.version === 'number' ? raw.value.version : -1
+  if (version <= known) return false
+  await db.put('policyAck:' + childPublicKey, { version, at: now })
+  return true
+}
+
 /**
  * Mark the parent-side record for one extra-time grant as delivered, once the
  * child has confirmed it. Returns true when a record was settled.
@@ -2653,7 +2692,7 @@ async function queueMessage (message, db) {
   // parent regressed, re-announced apps as newly installed and had its next
   // pushes rejected as stale). The hello push in handleHello already brings a
   // reconnecting parent current, so there is nothing to queue.
-  if (message && message.type === 'policy:update') return
+  if (message && (message.type === 'policy:update' || message.type === 'policy:ack')) return
   const raw = await db.get('pendingMessages')
   let queue = raw ? raw.value : []
   // Some message types fully supersede any older queued copy of themselves:
@@ -2680,7 +2719,7 @@ async function flushMessageQueue (db, writeMessage) {
   if (!raw || !raw.value || raw.value.length === 0) return 0
   // Devices in the field still hold policy:update relays queued by older code;
   // drop them here for the same reason queueMessage refuses them.
-  const queue = raw.value.filter(({ message }) => !(message && message.type === 'policy:update'))
+  const queue = raw.value.filter(({ message }) => !(message && (message.type === 'policy:update' || message.type === 'policy:ack')))
   for (const { message } of queue) {
     await writeMessage(message)
   }
@@ -3187,4 +3226,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

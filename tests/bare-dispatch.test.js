@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, pruneRuleArchives, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -4401,5 +4401,106 @@ describe("pin:verify accepts any parent's PIN, not just the pre-co-parent field"
     expect((await run({ apps: {} }, '1234')).res).toEqual({ granted: false, reason: 'no-pin' })
     expect((await run({ apps: {}, pinHashes: {} }, '1234')).res).toEqual({ granted: false, reason: 'no-pin' })
     expect((await run(null, '1234')).res).toEqual({ granted: false, reason: 'no-policy' })
+  })
+})
+
+describe('unpairing keeps the rules instead of throwing them away', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const key of Object.keys(stored).sort()) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(stored[key])) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const richPolicy = {
+    childPublicKey: 'kid', version: 7,
+    apps: { 'com.game': { status: 'blocked', appName: 'Game', iconBase64: 'AAAA' }, 'com.chat': { status: 'allowed', appName: 'Chat', dailyLimitSeconds: 1800 } },
+    schedules: [{ name: 'Bedtime', days: ['Monday'], start: '21:00', end: '07:00', exemptApps: ['com.chat'] }],
+    dailyScreenTimeLimitSeconds: 7200,
+  }
+  const archives = (db) => Object.keys(db._stored).filter((k) => k.startsWith('policyArchive:'))
+  const parentCtx = (stored) => ({ db: makeDb(stored), send: jest.fn(), sendToPeer: jest.fn(), peers: new Map(), knownPeerKeys: new Set(), b4a: require('b4a'), mode: 'parent', getMode: () => 'parent' })
+
+  test('unpairing archives the rules, without the icons', async () => {
+    const ctx = parentCtx({ 'peers:kid': { publicKey: 'kid', displayName: 'Sam', noiseKey: 'n1' }, 'policy:kid': richPolicy })
+    await createDispatch(ctx)('child:unpair', { childPublicKey: 'kid' })
+    expect(ctx.db._stored['policy:kid']).toBeUndefined()
+    const keys = archives(ctx.db)
+    expect(keys).toHaveLength(1)
+    const kept = ctx.db._stored[keys[0]]
+    expect(kept).toMatchObject({ childPublicKey: 'kid', displayName: 'Sam' })
+    expect(kept.policy.apps['com.game'].status).toBe('blocked')
+    expect(kept.policy.apps['com.game'].iconBase64).toBeUndefined()
+    expect(kept.policy.schedules).toHaveLength(1)
+    expect(kept.policy.dailyScreenTimeLimitSeconds).toBe(7200)
+  })
+
+  test('a child with no apps yet is not worth archiving', async () => {
+    const ctx = parentCtx({ 'peers:kid': { publicKey: 'kid', displayName: 'Sam' }, 'policy:kid': { childPublicKey: 'kid', apps: {}, version: 1 } })
+    await createDispatch(ctx)('child:unpair', { childPublicKey: 'kid' })
+    expect(archives(ctx.db)).toHaveLength(0)
+  })
+
+  test('rules:archives lists what is kept, newest first', async () => {
+    const ctx = parentCtx({
+      'policyArchive:1000:a': { childPublicKey: 'a', displayName: 'Older', archivedAt: 1000, policy: { apps: { x: {} }, schedules: [] } },
+      'policyArchive:2000:b': { childPublicKey: 'b', displayName: 'Newer', archivedAt: 2000, policy: { apps: { x: {}, y: {} }, schedules: [{}], dailyScreenTimeLimitSeconds: 3600 } },
+    })
+    const { archives: list } = await createDispatch(ctx)('rules:archives', {})
+    expect(list.map((a) => a.displayName)).toEqual(['Newer', 'Older'])
+    expect(list[0]).toMatchObject({ appCount: 2, scheduleCount: 1, hasScreenTimeLimit: true })
+  })
+
+  test('restoring applies the kept rules to the apps the new device actually has', async () => {
+    // The re-paired device is a different peer with a different key, and it has
+    // one app the old one never had and is missing one the old one blocked.
+    const ctx = parentCtx({
+      'policyArchive:1000:old': { childPublicKey: 'old', displayName: 'Sam', archivedAt: 1000, policy: richPolicy },
+      'peers:newkid': { publicKey: 'newkid', displayName: 'Sam', noiseKey: 'n2' },
+      'policy:newkid': { childPublicKey: 'newkid', version: 2, apps: { 'com.chat': { status: 'allowed', appName: 'Chat' }, 'com.new': { status: 'allowed', appName: 'New' } } },
+    })
+    const res = await createDispatch(ctx)('rules:restoreArchive', { archiveKey: 'policyArchive:1000:old', targetChildPubKey: 'newkid' })
+    expect(res.ok).toBe(true)
+    const merged = ctx.db._stored['policy:newkid']
+    // The archived limit came across for the app this device has...
+    expect(merged.apps['com.chat'].dailyLimitSeconds).toBe(1800)
+    // ...the app it does not have was not invented...
+    expect(merged.apps['com.game']).toBeUndefined()
+    // ...and its own app kept what it had.
+    expect(merged.apps['com.new'].status).toBe('allowed')
+    expect(merged.dailyScreenTimeLimitSeconds).toBe(7200)
+    expect(merged.version).toBe(3)
+    // The child is told, and never with icons.
+    const pushed = ctx.sendToPeer.mock.calls.find(([, m]) => m.type === 'policy:update')
+    expect(pushed[0]).toBe('n2')
+    expect(JSON.stringify(pushed[1])).not.toContain('iconBase64')
+  })
+
+  test('restoring a set that is gone says so instead of throwing', async () => {
+    const ctx = parentCtx({ 'policy:kid': { apps: {} } })
+    expect(await createDispatch(ctx)('rules:restoreArchive', { archiveKey: 'policyArchive:1:gone', targetChildPubKey: 'kid' })).toEqual({ ok: false, reason: 'not-found' })
+  })
+
+  test('only the newest few sets are kept, and one can be forgotten outright', async () => {
+    const stored = {}
+    for (let i = 1; i <= 8; i++) stored['policyArchive:' + String(1000 + i).padStart(6, '0') + ':k' + i] = { displayName: 'C' + i, archivedAt: 1000 + i, policy: { apps: { x: {} } } }
+    const db = makeDb(stored)
+    await pruneRuleArchives(db)
+    const left = Object.keys(db._stored).sort()
+    expect(left).toHaveLength(5)
+    expect(left[0]).toContain('k4')
+    expect(left[4]).toContain('k8')
+    const ctx = { db, send: jest.fn(), mode: 'parent', getMode: () => 'parent' }
+    await createDispatch(ctx)('rules:forgetArchive', { archiveKey: left[0] })
+    expect(Object.keys(db._stored)).toHaveLength(4)
+    await expect(createDispatch(ctx)('rules:forgetArchive', { archiveKey: 'policy:kid' })).rejects.toThrow('invalid')
   })
 })

@@ -210,3 +210,35 @@ describe('mergeRulesIntoPolicy', () => {
     expect(merged.version).toBe(1)
   })
 })
+
+describe('mergeRulesIntoPolicy carries the device-wide daily cap', () => {
+  const KEY = 'cc'.repeat(32)
+
+  test('a cap in the source is applied to the target', () => {
+    const merged = mergeRulesIntoPolicy(
+      { apps: { 'com.a': { status: 'allowed' } }, version: 2 },
+      { apps: { 'com.a': { status: 'blocked' } }, dailyScreenTimeLimitSeconds: 7200 },
+      KEY,
+    )
+    expect(merged.dailyScreenTimeLimitSeconds).toBe(7200)
+  })
+
+  test('no cap in the source leaves the target\'s own cap alone', () => {
+    const merged = mergeRulesIntoPolicy(
+      { apps: {}, dailyScreenTimeLimitSeconds: 3600, version: 1 },
+      { apps: {} },
+      KEY,
+    )
+    expect(merged.dailyScreenTimeLimitSeconds).toBe(3600)
+  })
+
+  test('neither side having one leaves the field off entirely', () => {
+    const merged = mergeRulesIntoPolicy({ apps: {}, version: 1 }, { apps: {} }, KEY)
+    expect('dailyScreenTimeLimitSeconds' in merged).toBe(false)
+  })
+
+  test('a source cap of zero clears the target cap rather than being ignored', () => {
+    const merged = mergeRulesIntoPolicy({ apps: {}, dailyScreenTimeLimitSeconds: 3600 }, { apps: {}, dailyScreenTimeLimitSeconds: 0 }, KEY)
+    expect(merged.dailyScreenTimeLimitSeconds).toBe(0)
+  })
+})

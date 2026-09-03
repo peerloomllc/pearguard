@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../theme.js';
 import Icon from '../icons.js';
 import Button from './primitives/Button.jsx';
@@ -22,6 +22,34 @@ export default function AdvancedTab({ child, onUnpair }) {
     onUnpair?.();
   }
 
+  // Rule sets kept from children that were unpaired. A child rotates its
+  // identity when it is unpaired, so it comes back as a new device and its old
+  // rules cannot be matched to it automatically: the parent picks.
+  const [archives, setArchives] = useState([]);
+  const [restoring, setRestoring] = useState(null);
+  const [restoreNote, setRestoreNote] = useState(null);
+
+  useEffect(() => {
+    window.callBare('rules:archives')
+      .then((r) => setArchives((r && r.archives) || []))
+      .catch(() => {});
+  }, [child.publicKey]);
+
+  async function restoreArchive(a) {
+    setRestoring(a.key);
+    setRestoreNote(null);
+    try {
+      const res = await window.callBare('rules:restoreArchive', { archiveKey: a.key, targetChildPubKey: child.publicKey });
+      setRestoreNote(res && res.ok
+        ? `Restored ${a.displayName}'s rules to the ${res.appCount} app${res.appCount === 1 ? '' : 's'} on this device.`
+        : 'Those rules are no longer available.');
+    } catch {
+      setRestoreNote('Could not restore those rules.');
+    } finally {
+      setRestoring(null);
+    }
+  }
+
   return (
     <div style={{ padding: `${spacing.base}px`, display: 'flex', flexDirection: 'column', gap: `${spacing.lg}px` }}>
       <Section title="Rules Transfer" colors={colors} spacing={spacing} typography={typography} radius={radius}>
@@ -34,9 +62,46 @@ export default function AdvancedTab({ child, onUnpair }) {
         </div>
       </Section>
 
+      {archives.length > 0 && (
+        <Section title="Restore Kept Rules" colors={colors} spacing={spacing} typography={typography} radius={radius}>
+          <p style={{ ...typography.body, color: colors.text.muted, margin: 0, marginBottom: `${spacing.md}px`, textAlign: 'center' }}>
+            Rules kept from a device you unpaired. Applying a set only affects apps installed on {child.displayName}'s device.
+          </p>
+          {archives.map((a) => (
+            <div key={a.key} style={{
+              display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`,
+              padding: `${spacing.sm}px 0`, borderTop: `1px solid ${colors.divider}`,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...typography.body, color: colors.text.primary }}>{a.displayName}</div>
+                <div style={{ ...typography.caption, color: colors.text.muted }}>
+                  {a.appCount} app{a.appCount === 1 ? '' : 's'}
+                  {a.scheduleCount > 0 ? `, ${a.scheduleCount} schedule${a.scheduleCount === 1 ? '' : 's'}` : ''}
+                  {a.hasScreenTimeLimit ? ', screen time limit' : ''}
+                  {a.archivedAt ? ` \u00b7 unpaired ${new Date(a.archivedAt).toLocaleDateString()}` : ''}
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                disabled={restoring === a.key}
+                onClick={() => { window.callBare('haptic:tap'); restoreArchive(a); }}
+              >
+                {restoring === a.key ? 'Restoring...' : 'Restore'}
+              </Button>
+            </div>
+          ))}
+          {restoreNote && (
+            <p role="status" style={{ ...typography.caption, color: colors.text.secondary, marginBottom: 0, textAlign: 'center' }}>
+              {restoreNote}
+            </p>
+          )}
+        </Section>
+      )}
+
       <Section title="Danger Zone" colors={colors} spacing={spacing} typography={typography} radius={radius}>
         <p style={{ ...typography.body, color: colors.text.muted, margin: 0, marginBottom: `${spacing.md}px`, textAlign: 'center' }}>
           Removing {child.displayName} unpairs this device. You'll need to re-pair to monitor it again.
+          Their rules are kept, so you can put them back if you do.
         </p>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <Button variant="danger" icon="Trash" onClick={() => { window.callBare('haptic:tap'); setConfirmRemove(true); }}>

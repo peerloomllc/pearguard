@@ -505,6 +505,25 @@ function createDispatch (ctx) {
         // before we destroy the connection (Hyperswarm reconnects in <1s).
         await ctx.db.put('blocked:' + childPublicKey, { childPublicKey, blockedAt: Date.now() })
 
+        // Keep the rules before dropping them. Unpairing to clear up a glitch
+        // used to throw away every schedule, limit and block with no warning and
+        // no way back, and the re-paired device then looks like a first pairing,
+        // so everything is auto-allowed. The child rotates its identity on
+        // reset, so it returns under a NEW public key and this cannot be
+        // restored automatically: the archive carries the name and date for the
+        // parent to choose from (rules:archives / rules:restoreArchive).
+        const outgoingPolicy = await ctx.db.get('policy:' + childPublicKey).catch(() => null)
+        if (outgoingPolicy && outgoingPolicy.value && Object.keys(outgoingPolicy.value.apps || {}).length > 0) {
+          const peerForName = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
+          await ctx.db.put('policyArchive:' + Date.now() + ':' + childPublicKey, {
+            childPublicKey,
+            displayName: (peerForName && peerForName.value && peerForName.value.displayName) || 'Child',
+            archivedAt: Date.now(),
+            policy: stripAppIcons(outgoingPolicy.value),
+          })
+          await pruneRuleArchives(ctx.db)
+        }
+
         // Remove parent-side records.
         // Collect keys first, then delete — avoids deadlocking Hyperbee's internal lock
         // (createReadStream + del cannot interleave).
@@ -2355,6 +2374,59 @@ function createDispatch (ctx) {
         }
       }
 
+      case 'rules:archives': {
+        // Rule sets kept from children that were unpaired, newest first.
+        const archives = []
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'policyArchive:', lt: 'policyArchive:~' })) {
+          if (!value || !value.policy) continue
+          archives.push({
+            key,
+            displayName: value.displayName || 'Child',
+            archivedAt: value.archivedAt || 0,
+            appCount: Object.keys(value.policy.apps || {}).length,
+            scheduleCount: Array.isArray(value.policy.schedules) ? value.policy.schedules.length : 0,
+            hasScreenTimeLimit: !!(value.policy.dailyScreenTimeLimitSeconds > 0),
+          })
+        }
+        archives.sort((a, b) => b.archivedAt - a.archivedAt)
+        return { archives }
+      }
+
+      case 'rules:restoreArchive': {
+        // Apply a kept rule set to a child paired now. Same merge the rules
+        // import uses, in intersect mode: only rules for apps this device
+        // actually has, and anything it has that the archive never mentioned
+        // keeps whatever it has now.
+        const { archiveKey, targetChildPubKey } = args || {}
+        if (!archiveKey || !targetChildPubKey) throw new Error('invalid rules:restoreArchive args')
+        const archiveRaw = await ctx.db.get(archiveKey).catch(() => null)
+        if (!archiveRaw || !archiveRaw.value || !archiveRaw.value.policy) return { ok: false, reason: 'not-found' }
+        const { mergeRulesIntoPolicy } = require('./backup')
+        return await withPolicyLock(targetChildPubKey, async () => {
+          const targetRaw = await ctx.db.get('policy:' + targetChildPubKey).catch(() => null)
+          const installedSet = new Set(Object.keys((targetRaw && targetRaw.value && targetRaw.value.apps) || {}))
+          const merged = mergeRulesIntoPolicy(targetRaw?.value, archiveRaw.value.policy, targetChildPubKey, installedSet)
+          merged.version = ((targetRaw && targetRaw.value && targetRaw.value.version) || 0) + 1
+          await ctx.db.put('policy:' + targetChildPubKey, merged)
+          try {
+            const peerRecord = await ctx.db.get('peers:' + targetChildPubKey).catch(() => null)
+            const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+            if (noiseKey) ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: stripAppIcons(merged) })
+          } catch (_e) {
+            // child offline; the stored policy goes out on its next hello
+          }
+          ctx.send({ type: 'event', event: 'policy:updated', data: merged })
+          return { ok: true, appCount: Object.keys(merged.apps || {}).length }
+        })
+      }
+
+      case 'rules:forgetArchive': {
+        const { archiveKey } = args || {}
+        if (!archiveKey || !archiveKey.startsWith('policyArchive:')) throw new Error('invalid rules:forgetArchive args')
+        await ctx.db.del(archiveKey).catch(() => {})
+        return { ok: true }
+      }
+
       case 'rules:import:apply': {
         const { jsonString, targetChildPubKey } = args
         if (!jsonString || !targetChildPubKey) throw new Error('invalid rules:import:apply args')
@@ -2638,6 +2710,19 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
  * @param {string} remoteKeyHex — the child connection's noise key
  * @param {number} now — current epoch ms
  */
+// Kept rule sets are small and rarely wanted, but they must not grow without
+// bound on a parent who re-pairs often. Newest few only.
+const MAX_RULE_ARCHIVES = 5
+async function pruneRuleArchives (db) {
+  const keys = []
+  for await (const { key } of db.createReadStream({ gt: 'policyArchive:', lt: 'policyArchive:~' })) keys.push(key)
+  // The key carries the archive timestamp, so lexical order is chronological.
+  keys.sort()
+  for (const key of keys.slice(0, Math.max(0, keys.length - MAX_RULE_ARCHIVES))) {
+    await db.del(key).catch(() => {})
+  }
+}
+
 /**
  * Parent-side: remember the highest policy version a child has confirmed it is
  * enforcing. Kept out of policy:{child} on purpose - that record is what gets
@@ -3505,4 +3590,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, pruneRuleArchives, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

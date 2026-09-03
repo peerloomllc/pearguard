@@ -17820,6 +17820,25 @@
       await window.callBare("child:unpair", { childPublicKey: child.publicKey });
       onUnpair?.();
     }
+    const [archives, setArchives] = (0, import_react12.useState)([]);
+    const [restoring, setRestoring] = (0, import_react12.useState)(null);
+    const [restoreNote, setRestoreNote] = (0, import_react12.useState)(null);
+    (0, import_react12.useEffect)(() => {
+      window.callBare("rules:archives").then((r) => setArchives(r && r.archives || [])).catch(() => {
+      });
+    }, [child.publicKey]);
+    async function restoreArchive(a) {
+      setRestoring(a.key);
+      setRestoreNote(null);
+      try {
+        const res = await window.callBare("rules:restoreArchive", { archiveKey: a.key, targetChildPubKey: child.publicKey });
+        setRestoreNote(res && res.ok ? `Restored ${a.displayName}'s rules to the ${res.appCount} app${res.appCount === 1 ? "" : "s"} on this device.` : "Those rules are no longer available.");
+      } catch {
+        setRestoreNote("Could not restore those rules.");
+      } finally {
+        setRestoring(null);
+      }
+    }
     return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { padding: `${spacing2.base}px`, display: "flex", flexDirection: "column", gap: `${spacing2.lg}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Section, { title: "Rules Transfer", colors, spacing: spacing2, typography: typography2, radius: radius2, children: [
         /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { style: { ...typography2.body, color: colors.text.muted, margin: 0, marginBottom: `${spacing2.md}px`, textAlign: "center" }, children: [
@@ -17832,11 +17851,50 @@
           /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Button, { variant: "secondary", icon: "DownloadSimple", onClick: () => openTransfer("import"), style: { flex: 1 }, children: "Import" })
         ] })
       ] }),
+      archives.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Section, { title: "Restore Kept Rules", colors, spacing: spacing2, typography: typography2, radius: radius2, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { style: { ...typography2.body, color: colors.text.muted, margin: 0, marginBottom: `${spacing2.md}px`, textAlign: "center" }, children: [
+          "Rules kept from a device you unpaired. Applying a set only affects apps installed on ",
+          child.displayName,
+          "'s device."
+        ] }),
+        archives.map((a) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: {
+          display: "flex",
+          alignItems: "center",
+          gap: `${spacing2.sm}px`,
+          padding: `${spacing2.sm}px 0`,
+          borderTop: `1px solid ${colors.divider}`
+        }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { flex: 1 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { ...typography2.body, color: colors.text.primary }, children: a.displayName }),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { style: { ...typography2.caption, color: colors.text.muted }, children: [
+              a.appCount,
+              " app",
+              a.appCount === 1 ? "" : "s",
+              a.scheduleCount > 0 ? `, ${a.scheduleCount} schedule${a.scheduleCount === 1 ? "" : "s"}` : "",
+              a.hasScreenTimeLimit ? ", screen time limit" : "",
+              a.archivedAt ? ` \xB7 unpaired ${new Date(a.archivedAt).toLocaleDateString()}` : ""
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+            Button,
+            {
+              variant: "secondary",
+              disabled: restoring === a.key,
+              onClick: () => {
+                window.callBare("haptic:tap");
+                restoreArchive(a);
+              },
+              children: restoring === a.key ? "Restoring..." : "Restore"
+            }
+          )
+        ] }, a.key)),
+        restoreNote && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { role: "status", style: { ...typography2.caption, color: colors.text.secondary, marginBottom: 0, textAlign: "center" }, children: restoreNote })
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Section, { title: "Danger Zone", colors, spacing: spacing2, typography: typography2, radius: radius2, children: [
         /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { style: { ...typography2.body, color: colors.text.muted, margin: 0, marginBottom: `${spacing2.md}px`, textAlign: "center" }, children: [
           "Removing ",
           child.displayName,
-          " unpairs this device. You'll need to re-pair to monitor it again."
+          " unpairs this device. You'll need to re-pair to monitor it again. Their rules are kept, so you can put them back if you do."
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Button, { variant: "danger", icon: "Trash", onClick: () => {
           window.callBare("haptic:tap");

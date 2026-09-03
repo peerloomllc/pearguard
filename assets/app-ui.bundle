@@ -16553,7 +16553,8 @@
     const appLabel = req.appDisplayName || req.packageName || "Unknown app";
     const title = isGeneralTime ? "More screen time" : appLabel;
     const triggeredBy = isGeneralTime && req.packageName !== "general" ? appLabel : null;
-    const askedBecause = req.origin === "install" ? "just installed, not yet approved" : null;
+    const lapsed = req.status === "expired";
+    const askedBecause = req.origin === "install" ? "just installed, not yet approved" : lapsed ? "no answer yet, they can ask again" : null;
     const badgeColor = typeColor(req.type, colors);
     const meta = metaFor(req);
     return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Card, { style: { marginBottom: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: `${spacing2.sm}px` }, children: [
@@ -16696,12 +16697,9 @@
         reload();
       });
     }
-    const pendingRequests = allAlerts.filter(
-      (a) => a.type === "time_request" && !a.resolved
-    );
-    const history = allAlerts.filter(
-      (a) => !(a.type === "time_request" && !a.resolved)
-    );
+    const isAnswerable = (a) => a.type === "time_request" && (!a.resolved || a.status === "expired");
+    const pendingRequests = allAlerts.filter(isAnswerable);
+    const history = allAlerts.filter((a) => !isAnswerable(a));
     const clearableCount = history.filter(isDismissible).length;
     if (loading) {
       return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { padding: `${spacing2.base}px`, ...typography2.body, color: colors.text.muted }, children: "Loading activity..." });

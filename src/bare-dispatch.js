@@ -282,6 +282,13 @@ const heartbeatCache = {
  * @returns {(method: string, args: any[]) => Promise<any>}
  */
 function createDispatch (ctx) {
+  // Tell the child a request of theirs ran out of time: refresh whatever screen
+  // they are on, and post the notification saying they can ask again.
+  function announceExpired (request) {
+    ctx.send({ type: 'event', event: 'request:updated', data: { requestId: request.id, packageName: request.packageName, appName: request.appName, status: 'expired' } })
+    ctx.send({ method: 'native:showDecisionNotification', args: { appName: request.appName || request.packageName || 'the app', decision: 'expired' } })
+  }
+
   async function dispatchInner (method, args) {
     switch (method) {
       case 'ping':
@@ -1007,7 +1014,7 @@ function createDispatch (ctx) {
       case 'requests:list': {
         // Sweep first so the list says "No answer" even if the heartbeat tick has
         // not run since the window lapsed.
-        await expireUnansweredRequests(ctx.db, 'req:', Date.now())
+        await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
         // Scan Hyperbee for all keys matching 'req:*'; auto-expire entries older than 7 days
         const requests = []
         const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
@@ -1083,7 +1090,7 @@ function createDispatch (ctx) {
 
         // Sweep before counting, so a request nobody answered stops disabling the
         // child's ask button the moment its window lapses.
-        await expireUnansweredRequests(ctx.db, 'req:', Date.now())
+        await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
         // Collect pending requests with app name resolution
         const pendingRequestsList = []
         for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
@@ -1331,10 +1338,7 @@ function createDispatch (ctx) {
         // The child already ticks once a minute, so this is the sweep: no new
         // timer, and the child hears about an unanswered request within a minute
         // of the window lapsing rather than whenever it next opens a screen.
-        for (const req of await expireUnansweredRequests(ctx.db, 'req:', Date.now())) {
-          ctx.send({ type: 'event', event: 'request:updated', data: { requestId: req.id, packageName: req.packageName, appName: req.appName, status: 'expired' } })
-          ctx.send({ method: 'native:showDecisionNotification', args: { appName: req.appName || req.packageName || 'the app', decision: 'expired' } })
-        }
+        await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
         const identityRaw = await ctx.db.get('identity')
         const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
 
@@ -2824,13 +2828,19 @@ function isRequestUnanswered (request, now) {
  * `prefix` is 'req:' on a child and 'request:' on a parent. Returns the records
  * that changed, so callers can tell the child and refresh their own lists.
  */
-async function expireUnansweredRequests (db, prefix, now) {
+async function expireUnansweredRequests (db, prefix, now, onExpired) {
   const expired = []
   for await (const { key, value } of db.createReadStream({ gt: prefix, lt: prefix + '~' })) {
     if (!isRequestUnanswered(value, now)) continue
     const updated = { ...value, status: 'expired', expiredAt: now }
     await db.put(key, updated)
     expired.push(updated)
+    // Announce from inside the sweep, so whichever call site gets there first is
+    // the one that tells the child. Hanging the notification off one particular
+    // caller looked fine until the TCL ran it: the home screen's 30 s refresh
+    // swept before the 60 s heartbeat did, the record was already 'expired' by
+    // the time the heartbeat looked, and the child was never told at all.
+    if (onExpired) onExpired(updated)
   }
   return expired
 }

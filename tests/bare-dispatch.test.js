@@ -3705,6 +3705,28 @@ describe('a request nobody answers stops blocking the child', () => {
     expect(await expireUnansweredRequests(db, 'req:', now)).toEqual([])
   })
 
+  test('the sweep announces from wherever it runs, so the child is told exactly once', async () => {
+    // The home screen refresh, the list and the heartbeat all sweep. Whichever
+    // gets there first must be the one that notifies (found on the TCL, where
+    // the 30 s home refresh beat the 60 s heartbeat and nothing was announced).
+    for (const method of ['child:homeData', 'requests:list', 'heartbeat:send']) {
+      const db = makeDb({ identity: { publicKey: 'kid' }, policy: { apps: {}, dailyScreenTimeLimitSeconds: 3600 }, 'req:old': req({ id: 'req:old' }) })
+      const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+      const dispatch = createDispatch(ctx)
+      await dispatch(method, {})
+      const notes = ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')
+      expect(notes).toHaveLength(1)
+      expect(notes[0][0].args).toEqual({ appName: 'Game', decision: 'expired' })
+      const updates = ctx.send.mock.calls.filter(([m]) => m.event === 'request:updated')
+      expect(updates[0][0].data).toMatchObject({ requestId: 'req:old', status: 'expired' })
+      // Whatever runs next finds it already expired and stays quiet.
+      ctx.send.mockClear()
+      await dispatch('heartbeat:send', {})
+      await dispatch('child:homeData', {})
+      expect(ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')).toHaveLength(0)
+    }
+  })
+
   test("the child's heartbeat tick expires the request, tells the UI and notifies once", async () => {
     const db = makeDb({ identity: { publicKey: 'kid' }, 'req:old': req({ id: 'req:old' }) })
     const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }

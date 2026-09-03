@@ -125,7 +125,13 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
   // Say WHY we're asking. An install is not the child pleading for an app — it
   // appeared on their device and now needs a decision. Wording that implied they
   // asked for it would misrepresent them to their own parent.
-  const askedBecause = req.origin === 'install' ? 'just installed, not yet approved' : null;
+  // The child stopped waiting on this one and can ask again, but the parent can
+  // still answer it, so say which it is rather than showing a bare card.
+  const lapsed = req.status === 'expired';
+
+  const askedBecause = req.origin === 'install' ? 'just installed, not yet approved'
+    : lapsed ? 'no answer yet, they can ask again'
+    : null;
 
   const badgeColor = typeColor(req.type, colors);
   const meta = metaFor(req);
@@ -296,12 +302,13 @@ export default function ActivityTab({ childPublicKey }) {
       .catch((e) => { console.error('[ActivityTab] clear failed:', e); reload(); });
   }
 
-  const pendingRequests = allAlerts.filter(
-    (a) => a.type === 'time_request' && !a.resolved,
-  );
-  const history = allAlerts.filter(
-    (a) => !(a.type === 'time_request' && !a.resolved),
-  );
+  // An expired request is still answerable. Expiry frees the CHILD to ask again;
+  // it must not take away the parent's ability to say yes. Dropping these into
+  // history left a parent who opened the notification late looking at a row with
+  // nothing to press, which is what happened on the Pixel during testing.
+  const isAnswerable = (a) => a.type === 'time_request' && (!a.resolved || a.status === 'expired');
+  const pendingRequests = allAlerts.filter(isAnswerable);
+  const history = allAlerts.filter((a) => !isAnswerable(a));
   // Clearing only removes alert rows, so only offer it when there are some.
   const clearableCount = history.filter(isDismissible).length;
 

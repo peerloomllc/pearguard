@@ -158,7 +158,10 @@ async function init (dataDir, attempt = 0) {
   _relayEnabled = relayEnabledFromPref(storedRelayPref ? storedRelayPref.value : undefined)
 
   // Build dispatch with live context
-  _dispatchCtx = { db, identity, swarm, peers, send, sign, verify, b4a, mode,
+  // `swarm` is built lazily by the first joinTopic, which runs after this object
+  // is created, so a plain `swarm` property would capture null forever and
+  // swarm:reconnect (#147) and the swarm.leave calls on unpair would be no-ops.
+  _dispatchCtx = { db, identity, get swarm () { return swarm }, peers, send, sign, verify, b4a, mode,
     joinTopic, sendToPeer, sendToAllParents, sodium, knownPeerKeys,
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
@@ -552,6 +555,7 @@ async function onPeerConnection (conn, info) {
           if (survivingPeer && survivingPeer.conn !== conn) {
             parentPeers.set(ik, { ...pp, conn: survivingPeer.conn })
           } else {
+            console.warn('[bare] parent', ik.slice(0, 8), 'dropped from parentPeers: connection error with no replacement:', e.message)
             parentPeers.delete(ik)
           }
           break
@@ -571,6 +575,10 @@ async function onPeerConnection (conn, info) {
           if (survivingPeer && survivingPeer.conn !== conn) {
             parentPeers.set(ik, { ...pp, conn: survivingPeer.conn })
           } else {
+            // Warn level on purpose: this is the state in which every
+            // child-to-parent message queues, and it must be visible in logcat
+            // on a release build when it happens in the field.
+            console.warn('[bare] parent', ik.slice(0, 8), 'dropped from parentPeers: connection closed with no replacement')
             parentPeers.delete(ik)
           }
           break
@@ -610,7 +618,13 @@ async function onPeerConnection (conn, info) {
       type: 'hello',
       payload: { publicKey: myIdentityHex, displayName, avatarThumb, mode: 'child' },
     }, identity)
-    peers.get(remoteKeyHex).sentHello = true
+    // Mark the conn too: handleHello's reply block keys on conn._sentHello, and
+    // without this the child answered the parent's hello with a second hello,
+    // which the parent treated as a fresh reconnect (a second "paired with",
+    // a second stored-policy push and a second relay).
+    conn._sentHello = true
+    const peerEntry = peers.get(remoteKeyHex)
+    if (peerEntry) peerEntry.sentHello = true
     conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
   }
 }
@@ -1069,7 +1083,7 @@ async function sendToAllParents (message, excludeKey) {
       log('[bare] sendToAllParents:', message.type, 'sent to parent', ik.slice(0, 8))
       sentToAny = true
     } catch (e) {
-      console.warn('[bare] sendToAllParents: write failed for parent', ik.slice(0, 8), e.message)
+      console.warn('[bare] parent', ik.slice(0, 8), 'dropped from parentPeers: write failed:', e.message)
       parentPeers.delete(ik)
     }
   }
@@ -1272,6 +1286,31 @@ async function handleHello (msg, conn, remoteKeyHex) {
   log('[bare] paired with:', peerIdentityKeyHex.slice(0, 12), displayName, isFirstPairing ? '(new)' : '(reconnect)')
   send({ type: 'event', event: 'peer:paired', data: peerRecord })
 
+  // Reply with our own hello BEFORE anything else goes down this connection. The
+  // child registers a parent in parentPeers only when it processes the parent's
+  // hello; the stored-policy push below used to go first, so the child received
+  // and relayed it while it still believed no parent was connected (harness
+  // scenario 09, and the phones on 2026-09-03).
+  if (!conn._sentHello) {
+    conn._sentHello = true
+    if (peer) peer.sentHello = true
+    const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
+    const profileRaw = await db.get('profile').catch(() => null)
+    const myProfile = profileRaw ? profileRaw.value : {}
+    const myDisplayName = myProfile.displayName || 'PearGuard Device'
+    const myAvatarThumb = myProfile.avatar
+      ? (myProfile.avatar.type === 'preset' ? 'preset:' + myProfile.avatar.id
+        : myProfile.avatar.mime ? 'mime:' + myProfile.avatar.mime + ';' + (myProfile.avatar.base64 || myProfile.avatar.thumb64 || '')
+        : myProfile.avatar.thumb64 || null)
+      : null
+    const hello = signMessage({
+      type: 'hello',
+      payload: { publicKey: myIdentityHex, displayName: myDisplayName, avatarThumb: myAvatarThumb, mode },
+    }, identity)
+    conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
+  }
+
+  // If we're the child, check if this is our pending parent
   // Notify the parent UI that a child has connected
   if (mode === 'parent') {
     // Both parents share the child's swarm topic. Skip pairing if the incoming
@@ -1342,26 +1381,6 @@ async function handleHello (msg, conn, remoteKeyHex) {
   // multiple connections with the same remoteKeyHex. The peer entry in the
   // peers map gets overwritten, so sentHello on the peer entry is unreliable.
   // Using conn._sentHello ensures each connection gets exactly one reply (#122).
-  if (!conn._sentHello) {
-    conn._sentHello = true
-    if (peer) peer.sentHello = true
-    const myIdentityHex = b4a.toString(identity.publicKey, 'hex')
-    const profileRaw = await db.get('profile').catch(() => null)
-    const myProfile = profileRaw ? profileRaw.value : {}
-    const myDisplayName = myProfile.displayName || 'PearGuard Device'
-    const myAvatarThumb = myProfile.avatar
-      ? (myProfile.avatar.type === 'preset' ? 'preset:' + myProfile.avatar.id
-        : myProfile.avatar.mime ? 'mime:' + myProfile.avatar.mime + ';' + (myProfile.avatar.base64 || myProfile.avatar.thumb64 || '')
-        : myProfile.avatar.thumb64 || null)
-      : null
-    const hello = signMessage({
-      type: 'hello',
-      payload: { publicKey: myIdentityHex, displayName: myDisplayName, avatarThumb: myAvatarThumb, mode },
-    }, identity)
-    conn.write(Buffer.from(JSON.stringify(hello) + '\n'))
-  }
-
-  // If we're the child, check if this is our pending parent
   if (mode === 'child') {
     const pendingParent = await db.get('pendingParent:' + peerIdentityKeyHex).catch(() => null)
     if (pendingParent) {

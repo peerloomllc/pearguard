@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -4045,5 +4045,146 @@ describe('the app catalogue is only sent to a parent that needs it', () => {
     dadUp = true
     expect((await dispatch('apps:sync', { apps: APPS, installedAll: ALL })).relayedTo).toBe(1)
     expect(db._stored['appsSig:dad']).toBeDefined()
+  })
+})
+
+describe('a child device can free itself, but only slowly and with the PIN', () => {
+  const HOUR = 60 * 60 * 1000
+  const DAY = 24 * HOUR
+  const sodium = require('sodium-native')
+  const hashOf = (pin) => {
+    const b = Buffer.alloc(sodium.crypto_generichash_BYTES)
+    sodium.crypto_generichash(b, Buffer.from(pin))
+    return b.toString('hex')
+  }
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const policy = { apps: {}, pinHashes: { dad: hashOf('1234'), mum: hashOf('9876') } }
+  const childCtx = (stored) => {
+    const db = makeDb(stored)
+    return { db, send: jest.fn(), sendToAllParents: jest.fn(), sodium, mode: 'child', getMode: () => 'child', onLeaveDue: jest.fn() }
+  }
+
+  test('verifyParentPin accepts any parent PIN, including the pre-co-parent field', () => {
+    expect(verifyParentPin(policy, '1234', sodium)).toBe(true)
+    expect(verifyParentPin(policy, '9876', sodium)).toBe(true)
+    expect(verifyParentPin(policy, '0000', sodium)).toBe(false)
+    expect(verifyParentPin(policy, '', sodium)).toBe(false)
+    expect(verifyParentPin({ pinHash: hashOf('4321') }, '4321', sodium)).toBe(true)
+    expect(verifyParentPin({ apps: {} }, '1234', sodium)).toBe(false)
+    expect(verifyParentPin(null, '1234', sodium)).toBe(false)
+  })
+
+  test('a wrong PIN schedules nothing', async () => {
+    const ctx = childCtx({ policy })
+    const res = await createDispatch(ctx)('leave:request', { pin: '0000' })
+    expect(res).toEqual({ ok: false, reason: 'wrong-pin' })
+    expect(ctx.db._stored.leaveScheduled).toBeUndefined()
+    expect(ctx.sendToAllParents).not.toHaveBeenCalled()
+  })
+
+  test('the right PIN schedules a leave a day out and tells the parents', async () => {
+    const ctx = childCtx({ policy })
+    const res = await createDispatch(ctx)('leave:request', { pin: '1234' })
+    expect(res.ok).toBe(true)
+    expect(res.effectiveAt - res.requestedAt).toBe(DAY)
+    expect(ctx.db._stored.leaveScheduled).toMatchObject({ observedMs: 0 })
+    expect(ctx.sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({ type: 'leave:scheduled' }))
+    // Asking twice does not restart or stack the countdown.
+    const again = await createDispatch(ctx)('leave:request', { pin: '1234' })
+    expect(again.effectiveAt).toBe(res.effectiveAt)
+  })
+
+  test('the countdown does not fire early, and a jumped clock alone will not do it', async () => {
+    const requestedAt = Date.now() - 2 * DAY
+    // Wall clock says the day has passed, but the device barely ran.
+    const db = makeDb({ leaveScheduled: { requestedAt, effectiveAt: requestedAt + DAY, observedMs: 5 * 60000, lastTickAt: Date.now() - 1000 } })
+    expect(await advanceScheduledLeave(db, Date.now())).toBe('pending')
+    // One tick can only ever add the cap, so no single jump fills the budget.
+    const before = db._stored.leaveScheduled.observedMs
+    await advanceScheduledLeave(db, Date.now() + DAY)
+    expect(db._stored.leaveScheduled.observedMs - before).toBeLessThanOrEqual(5 * 60000)
+  })
+
+  test('once the day has passed AND the device has really run, it commits', async () => {
+    const requestedAt = Date.now() - 2 * DAY
+    const db = makeDb({ leaveScheduled: { requestedAt, effectiveAt: requestedAt + DAY, observedMs: HOUR, lastTickAt: Date.now() - 1000 } })
+    expect(await advanceScheduledLeave(db, Date.now())).toBe('commit')
+  })
+
+  test('a clock wound backwards neither credits time nor cancels the leave', async () => {
+    const requestedAt = Date.now()
+    const db = makeDb({ leaveScheduled: { requestedAt, effectiveAt: requestedAt + DAY, observedMs: 1000, lastTickAt: requestedAt } })
+    expect(await advanceScheduledLeave(db, requestedAt - DAY)).toBe('pending')
+    expect(db._stored.leaveScheduled.observedMs).toBe(1000)
+    expect(db._stored.leaveScheduled.effectiveAt).toBe(requestedAt + DAY)
+  })
+
+  test('no leave scheduled means the tick does nothing at all', async () => {
+    const db = makeDb({})
+    expect(await advanceScheduledLeave(db, Date.now())).toBe(null)
+    expect(db.put).not.toHaveBeenCalled()
+  })
+
+  test('the heartbeat commits a due leave through the host, and only once it is due', async () => {
+    const requestedAt = Date.now() - 2 * DAY
+    const due = childCtx({ policy, identity: { publicKey: 'kid' }, leaveScheduled: { requestedAt, effectiveAt: requestedAt + DAY, observedMs: HOUR, lastTickAt: Date.now() - 1000 } })
+    await createDispatch(due)('heartbeat:send', {})
+    expect(due.onLeaveDue).toHaveBeenCalledTimes(1)
+    const notDue = childCtx({ policy, identity: { publicKey: 'kid' }, leaveScheduled: { requestedAt: Date.now(), effectiveAt: Date.now() + DAY, observedMs: 0, lastTickAt: Date.now() } })
+    await createDispatch(notDue)('heartbeat:send', {})
+    expect(notDue.onLeaveDue).not.toHaveBeenCalled()
+  })
+
+  test('cancelling needs the PIN too, so a child cannot undo a parent cancel blind', async () => {
+    const ctx = childCtx({ policy, leaveScheduled: { requestedAt: 1, effectiveAt: 2 } })
+    expect(await createDispatch(ctx)('leave:cancel', { pin: '0000' })).toEqual({ ok: false, reason: 'wrong-pin' })
+    expect(ctx.db._stored.leaveScheduled).toBeDefined()
+    expect(await createDispatch(ctx)('leave:cancel', { pin: '9876' })).toEqual({ ok: true })
+    expect(ctx.db._stored.leaveScheduled).toBeUndefined()
+    expect(ctx.sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({ type: 'leave:cancelled' }))
+  })
+
+  test('leave:status reports the countdown for the child screen', async () => {
+    const ctx = childCtx({ policy })
+    expect(await createDispatch(ctx)('leave:status', {})).toEqual({ scheduled: false })
+    await createDispatch(ctx)('leave:request', { pin: '1234' })
+    const st = await createDispatch(ctx)('leave:status', {})
+    expect(st.scheduled).toBe(true)
+    expect(st.msRemaining).toBeGreaterThan(DAY - 60000)
+    expect(st.observedRequiredMs).toBe(HOUR)
+  })
+
+  test('a parent device refuses to schedule its own leave', async () => {
+    const ctx = { db: makeDb({ policy }), send: jest.fn(), sodium, mode: 'parent', getMode: () => 'parent' }
+    await expect(createDispatch(ctx)('leave:request', { pin: '1234' })).rejects.toThrow('child-only')
+  })
+
+  test('the parent can call it off, and sees it on the child card until then', async () => {
+    const db = makeDb({
+      'peers:kid': { publicKey: 'kid', displayName: 'Sam', noiseKey: 'n1' },
+      'leavePending:kid': { effectiveAt: Date.now() + DAY },
+    })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), peers: new Map(), mode: 'parent', getMode: () => 'parent' }
+    const dispatch = createDispatch(ctx)
+    const listed = await dispatch('children:list', {})
+    expect(listed[0].leaveEffectiveAt).toBeGreaterThan(Date.now())
+    await dispatch('child:cancelLeave', { childPublicKey: 'kid' })
+    expect(ctx.sendToPeer).toHaveBeenCalledWith('n1', { type: 'leave:cancel', payload: {} })
+    expect(db._stored['leavePending:kid']).toBeUndefined()
+    expect((await dispatch('children:list', {}))[0].leaveEffectiveAt).toBe(0)
   })
 })

@@ -21,8 +21,12 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
   const {
     displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
     bypassAlerts, pendingApprovals, pendingTimeRequests, locked, lockUntil, screenTime,
-    policyPending,
+    policyPending, leaveEffectiveAt,
   } = child;
+
+  // The child asked to remove supervision. Nothing else on this card matters
+  // more, and the parent has until this moment to say no.
+  const leavingAt = leaveEffectiveAt > Date.now() ? leaveEffectiveAt : null;
 
   // A timed lock ends by itself, and when it ends is the one thing a parent
   // cannot work out from the lock icon alone.
@@ -37,7 +41,11 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
 
   let statusText = 'All good';
   let statusColor = colors.success;
-  if (lockEndsAt) {
+  if (leavingAt) {
+    const hours = Math.max(1, Math.round((leavingAt - Date.now()) / 3600000));
+    statusText = `Asked to remove supervision, in ${hours}h`;
+    statusColor = colors.error;
+  } else if (lockEndsAt) {
     statusText = `Locked until ${new Date(lockEndsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     statusColor = colors.error;
   } else if (pendingApprovals > 0) {

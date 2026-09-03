@@ -165,6 +165,7 @@ async function init (dataDir, attempt = 0) {
     joinTopic, sendToPeer, sendToAllParents, sodium, knownPeerKeys,
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
+    onLeaveDue: () => commitScheduledLeave(),
     resetParentConnection: (identityKey) => {
       if (identityKey) parentPeers.delete(identityKey)
       else parentPeers.clear()
@@ -691,6 +692,72 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
 
   // Dispatch verified peer message by type
   switch (msg.type) {
+    case 'leave:scheduled':
+      // The child started its own countdown. Only a child says this, and only
+      // about itself.
+      if (mode === 'parent') {
+        const effectiveAt = msg.payload && msg.payload.effectiveAt
+        if (typeof effectiveAt === 'number') {
+          await db.put('leavePending:' + msg.from, { effectiveAt, requestedAt: msg.payload.requestedAt || Date.now(), at: Date.now() })
+          const peerRec = await db.get('peers:' + msg.from).catch(() => null)
+          const childDisplayName = peerRec?.value?.displayName || 'Your child'
+          const nowMs = Date.now()
+          await db.put('alert:' + msg.from + ':' + nowMs, {
+            id: 'leave_scheduled:' + nowMs,
+            type: 'leave_scheduled',
+            timestamp: nowMs,
+            appDisplayName: childDisplayName + ' asked to remove supervision',
+            childPublicKey: msg.from,
+            childDisplayName,
+            effectiveAt,
+          })
+          send({ type: 'event', event: 'child:leaveScheduled', data: { childPublicKey: msg.from, childDisplayName, effectiveAt } })
+        }
+      }
+      break
+
+    case 'leave:cancelled':
+      if (mode === 'parent') {
+        await db.del('leavePending:' + msg.from).catch(() => {})
+        send({ type: 'event', event: 'child:leaveCancelled', data: { childPublicKey: msg.from } })
+      }
+      break
+
+    case 'leave:cancel':
+      // A parent called off the leave this device scheduled.
+      if (mode === 'child') {
+        await db.del('leaveScheduled').catch(() => {})
+        log('[bare] a parent cancelled the scheduled leave')
+        send({ type: 'event', event: 'leave:cancelled', data: { by: 'parent' } })
+      }
+      break
+
+    case 'leave:committed':
+      // The child freed itself. Drop our records for it, but do NOT write a
+      // blocked: entry the way child:unpair does: this was not a removal, and
+      // the family may well want to pair again. The child rotates its identity
+      // anyway, so it comes back as a new peer.
+      if (mode === 'parent') {
+        const peerRec = await db.get('peers:' + msg.from).catch(() => null)
+        const childDisplayName = peerRec?.value?.displayName || 'Your child'
+        const nowMs = Date.now()
+        await db.del('peers:' + msg.from).catch(() => {})
+        await db.del('policy:' + msg.from).catch(() => {})
+        await db.del('policyAck:' + msg.from).catch(() => {})
+        await db.del('leavePending:' + msg.from).catch(() => {})
+        knownPeerKeys.delete(msg.from)
+        await db.put('alert:' + msg.from + ':' + nowMs, {
+          id: 'leave_committed:' + nowMs,
+          type: 'leave_committed',
+          timestamp: nowMs,
+          appDisplayName: childDisplayName + ' removed supervision',
+          childPublicKey: msg.from,
+          childDisplayName,
+        })
+        send({ type: 'event', event: 'child:left', data: { childPublicKey: msg.from, childDisplayName } })
+      }
+      break
+
     case 'policy:ack':
       if (mode === 'parent') {
         const acked = msg.payload && msg.payload.version
@@ -1026,31 +1093,7 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       }
 
       if (remainingParents.length === 0) {
-        // Last parent removed - full reset
-        const allKeys = []
-        for await (const { key } of db.createReadStream()) {
-          allKeys.push(key)
-        }
-        for (const key of allKeys) await db.del(key).catch(() => {})
-
-        // Rotate identity keypair so re-pairing with a fresh invite works.
-        // Mutate in place so ctx.identity stays in sync (see original comments).
-        const newKeypair = generateKeypair()
-        identity.publicKey = newKeypair.publicKey
-        identity.secretKey = newKeypair.secretKey
-        await db.put('identity', {
-          publicKey:  b4a.toString(identity.publicKey, 'hex'),
-          secretKey:  b4a.toString(identity.secretKey, 'hex'),
-        })
-
-        // Destroy swarm - no parents to reconnect to
-        if (swarm) {
-          try { await swarm.destroy() } catch (_e) {}
-          swarm = null
-        }
-        parentPeers.clear()
-
-        send({ type: 'event', event: 'child:reset', data: {} })
+        await resetChildDevice()
       } else {
         // Still have other parent(s) - just notify UI about the removed parent
         send({ type: 'event', event: 'parent:removed', data: { parentKey: senderIdentityKey } })
@@ -1128,6 +1171,51 @@ async function flushPendingMessages (conn) {
   if (count > 0) {
     log('[bare] flushed', count, 'queued messages to parent')
   }
+}
+
+/**
+ * Wipe this child device back to unpaired: every key gone, a fresh identity so a
+ * re-pair is a genuinely new peer, and no swarm to reconnect on. Shared by the
+ * last-parent unpair and by a leave the child scheduled for itself.
+ */
+async function resetChildDevice () {
+  const allKeys = []
+  for await (const { key } of db.createReadStream()) {
+    allKeys.push(key)
+  }
+  for (const key of allKeys) await db.del(key).catch(() => {})
+  // Rotate identity keypair so re-pairing with a fresh invite works.
+  // Mutate in place so ctx.identity stays in sync.
+  const newKeypair = generateKeypair()
+  identity.publicKey = newKeypair.publicKey
+  identity.secretKey = newKeypair.secretKey
+  await db.put('identity', {
+    publicKey:  b4a.toString(identity.publicKey, 'hex'),
+    secretKey:  b4a.toString(identity.secretKey, 'hex'),
+  })
+  // Destroy swarm - no parents to reconnect to
+  if (swarm) {
+    try { await swarm.destroy() } catch (_e) {}
+    swarm = null
+  }
+  parentPeers.clear()
+  knownPeerKeys.clear()
+  send({ type: 'event', event: 'child:reset', data: {} })
+}
+
+/**
+ * The countdown on a child-scheduled leave has run out. Tell whichever parents
+ * are listening BEFORE wiping, since afterwards there is nothing left to tell
+ * them with, then free the device.
+ */
+async function commitScheduledLeave () {
+  log('[bare] scheduled leave is due; freeing this device')
+  try {
+    await sendToAllParents({ type: 'leave:committed', payload: { at: Date.now() } })
+  } catch (e) {
+    console.warn('[bare] could not tell parents about the leave:', e.message)
+  }
+  await resetChildDevice()
 }
 
 async function handleHello (msg, conn, remoteKeyHex) {

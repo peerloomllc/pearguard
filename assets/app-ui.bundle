@@ -14927,8 +14927,10 @@
       locked,
       lockUntil,
       screenTime,
-      policyPending
+      policyPending,
+      leaveEffectiveAt
     } = child;
+    const leavingAt = leaveEffectiveAt > Date.now() ? leaveEffectiveAt : null;
     const lockEndsAt = locked && lockUntil > Date.now() ? lockUntil : null;
     const hasBudget = screenTime && screenTime.limitSeconds > 0;
     const timeLeft = hasBudget ? screenTime.remainingSeconds : null;
@@ -14936,7 +14938,11 @@
     const isPaused = child.pauseUntil && Date.now() < child.pauseUntil;
     let statusText = "All good";
     let statusColor = colors.success;
-    if (lockEndsAt) {
+    if (leavingAt) {
+      const hours = Math.max(1, Math.round((leavingAt - Date.now()) / 36e5));
+      statusText = `Asked to remove supervision, in ${hours}h`;
+      statusColor = colors.error;
+    } else if (lockEndsAt) {
       statusText = `Locked until ${new Date(lockEndsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
       statusColor = colors.error;
     } else if (pendingApprovals > 0) {
@@ -18788,6 +18794,7 @@
     const [grantOpen, setGrantOpen] = (0, import_react16.useState)(false);
     const [pauseOpen, setPauseOpen] = (0, import_react16.useState)(false);
     const [pauseUntil, setPauseUntil] = (0, import_react16.useState)(child.pauseUntil || 0);
+    const [leaveAt, setLeaveAt] = (0, import_react16.useState)(child.leaveEffectiveAt || 0);
     const isPaused = pauseUntil && Date.now() < pauseUntil;
     function onLockButtonClick() {
       window.callBare("haptic:tap");
@@ -18874,6 +18881,40 @@
             style: { background: "none", border: "none", cursor: "pointer", padding: `${spacing2.xs}px` },
             "aria-label": locked ? "Unlock device" : "Lock device",
             children: /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Icon, { name: locked ? "LockSimple" : "LockSimpleOpen", size: 20, color: locked ? colors.error : colors.text.muted })
+          }
+        )
+      ] }),
+      leaveAt > Date.now() && /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { style: {
+        display: "flex",
+        alignItems: "center",
+        gap: `${spacing2.sm}px`,
+        padding: `${spacing2.md}px ${spacing2.base}px`,
+        backgroundColor: `${colors.error}22`,
+        borderBottom: `1px solid ${colors.error}44`
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Icon, { name: "Warning", size: 20, color: colors.error }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { style: { ...typography2.body, fontWeight: "600", color: colors.error }, children: [
+            child.displayName,
+            " asked to remove supervision"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { style: { ...typography2.caption, color: colors.text.secondary }, children: [
+            "Happens ",
+            new Date(leaveAt).toLocaleString([], { weekday: "long", hour: "numeric", minute: "2-digit" }),
+            " unless you stop it"
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
+          Button,
+          {
+            variant: "secondary",
+            onClick: async () => {
+              window.callBare("haptic:tap");
+              await window.callBare("child:cancelLeave", { childPublicKey: child.publicKey }).catch(() => {
+              });
+              setLeaveAt(0);
+            },
+            children: "Stop it"
           }
         )
       ] }),
@@ -22379,6 +22420,10 @@ ${invite.inviteLink}`
     const [photoLoading, setPhotoLoading] = (0, import_react30.useState)(false);
     const [status, setStatus] = (0, import_react30.useState)(null);
     const [pairState, setPairState] = (0, import_react30.useState)("idle");
+    const [leaveOpen, setLeaveOpen] = (0, import_react30.useState)(false);
+    const [leavePin, setLeavePin] = (0, import_react30.useState)("");
+    const [leaveError, setLeaveError] = (0, import_react30.useState)(null);
+    const [leaveState, setLeaveState] = (0, import_react30.useState)(null);
     const [pairError, setPairError] = (0, import_react30.useState)(null);
     const [pairUiMode, setPairUiMode] = (0, import_react30.useState)("initial");
     const [pasteUrl, setPasteUrl] = (0, import_react30.useState)("");
@@ -22388,6 +22433,13 @@ ${invite.inviteLink}`
     const [parentsOpen, setParentsOpen] = (0, import_react30.useState)(true);
     const pairDoneRef = (0, import_react30.useRef)(false);
     const pairTimeoutRef = (0, import_react30.useRef)(null);
+    (0, import_react30.useEffect)(() => {
+      if (mode !== "child") return;
+      window.callBare("leave:status").then((st) => {
+        if (st && st.scheduled) setLeaveState(st);
+      }).catch(() => {
+      });
+    }, [mode]);
     (0, import_react30.useEffect)(() => {
       window.callBare("identity:getName").then(({ displayName, avatar: av }) => {
         const n = displayName || "";
@@ -22736,6 +22788,113 @@ ${invite.inviteLink}`
                   setPairState("idle");
                 }, children: "Try Again" }) })
               ] })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)(
+          Collapsible,
+          {
+            title: "Remove supervision",
+            icon: "SignOut",
+            open: leaveOpen,
+            onToggle: () => setLeaveOpen((o) => !o),
+            maxHeight: "420px",
+            colors,
+            spacing: spacing2,
+            radius: radius2,
+            children: [
+              leaveState ? /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)("p", { style: { fontSize: "13px", color: colors.text.secondary, marginTop: 0 }, children: [
+                  "This device will stop being supervised on",
+                  " ",
+                  new Date(leaveState.effectiveAt).toLocaleString([], { weekday: "long", hour: "numeric", minute: "2-digit" }),
+                  ". Your parent has been told and can stop it."
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(
+                  "input",
+                  {
+                    type: "password",
+                    inputMode: "numeric",
+                    value: leavePin,
+                    onChange: (e) => {
+                      setLeavePin(e.target.value);
+                      setLeaveError(null);
+                    },
+                    placeholder: "Parent PIN",
+                    "aria-label": "Parent PIN to keep supervision",
+                    style: {
+                      width: "100%",
+                      padding: `${spacing2.sm}px`,
+                      borderRadius: `${radius2.md}px`,
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface.card,
+                      color: colors.text.primary,
+                      marginBottom: `${spacing2.sm}px`
+                    }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(
+                  Button,
+                  {
+                    variant: "secondary",
+                    style: { width: "100%" },
+                    onClick: async () => {
+                      window.callBare("haptic:tap");
+                      const res = await window.callBare("leave:cancel", { pin: leavePin }).catch(() => ({ ok: false }));
+                      if (res && res.ok) {
+                        setLeaveState(null);
+                        setLeavePin("");
+                        setLeaveError(null);
+                      } else setLeaveError("That PIN is not right.");
+                    },
+                    children: "Keep supervision"
+                  }
+                )
+              ] }) : /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime36.jsx)("p", { style: { fontSize: "13px", color: colors.text.secondary, marginTop: 0 }, children: "This is for when a parent's phone is lost for good and nobody can unpair this device. It needs a parent's PIN, your parent is told straight away, and nothing changes for a day so they can stop it." }),
+                /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(
+                  "input",
+                  {
+                    type: "password",
+                    inputMode: "numeric",
+                    value: leavePin,
+                    onChange: (e) => {
+                      setLeavePin(e.target.value);
+                      setLeaveError(null);
+                    },
+                    placeholder: "Parent PIN",
+                    "aria-label": "Parent PIN to remove supervision",
+                    style: {
+                      width: "100%",
+                      padding: `${spacing2.sm}px`,
+                      borderRadius: `${radius2.md}px`,
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface.card,
+                      color: colors.text.primary,
+                      marginBottom: `${spacing2.sm}px`
+                    }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(
+                  Button,
+                  {
+                    variant: "danger",
+                    style: { width: "100%" },
+                    disabled: !leavePin.trim(),
+                    onClick: async () => {
+                      window.callBare("haptic:tap");
+                      const res = await window.callBare("leave:request", { pin: leavePin }).catch(() => ({ ok: false, reason: "failed" }));
+                      if (res && res.ok) {
+                        setLeaveState(res);
+                        setLeavePin("");
+                        setLeaveError(null);
+                      } else setLeaveError(res && res.reason === "no-pin" ? "No parent PIN is set on this device." : "That PIN is not right.");
+                    },
+                    children: "Start removing supervision"
+                  }
+                )
+              ] }),
+              leaveError && /* @__PURE__ */ (0, import_jsx_runtime36.jsx)("p", { role: "alert", style: { fontSize: "13px", color: colors.error, marginBottom: 0 }, children: leaveError })
             ]
           }
         ),

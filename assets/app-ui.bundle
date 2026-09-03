@@ -16620,6 +16620,7 @@
             "requested ",
             formatSeconds3(item.requestedSeconds)
           ] }) : null,
+          item.type === "app_installed" && item.autoApproved ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: "allowed automatically" }) : null,
           item.type === "pin_failure" && item.failCount ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: [
             item.failCount,
             " wrong attempts",
@@ -20072,6 +20073,7 @@ ${inv.inviteLink}`
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, theme: currentTheme, setTheme: setTheme2 } = useTheme();
     const [pinOpen, setPinOpen] = (0, import_react22.useState)(false);
     const [timeOptsOpen, setTimeOptsOpen] = (0, import_react22.useState)(false);
+    const [newAppsOpen, setNewAppsOpen] = (0, import_react22.useState)(false);
     const [warningOpen, setWarningOpen] = (0, import_react22.useState)(false);
     const [appearanceOpen, setAppearanceOpen] = (0, import_react22.useState)(false);
     const [connectionOpen, setConnectionOpen] = (0, import_react22.useState)(() => typeof window !== "undefined" && window.__pearScreenshotOpenSection === "connection");
@@ -20100,6 +20102,8 @@ ${inv.inviteLink}`
     const confirmPinRef = (0, import_react22.useRef)(null);
     const [timeRequestMinutes, setTimeRequestMinutes] = (0, import_react22.useState)(DEFAULT_TIME_OPTIONS);
     const [warningMinutes, setWarningMinutes] = (0, import_react22.useState)(DEFAULT_WARNING_THRESHOLDS);
+    const [autoApproveNewApps, setAutoApproveNewApps] = (0, import_react22.useState)(false);
+    const [autoApproveStatus, setAutoApproveStatus] = (0, import_react22.useState)(null);
     const [settingsStatus, setSettingsStatus] = (0, import_react22.useState)(null);
     const [settingsLoaded, setSettingsLoaded] = (0, import_react22.useState)(false);
     const [relayEnabled, setRelayEnabled] = (0, import_react22.useState)(true);
@@ -20115,6 +20119,7 @@ ${inv.inviteLink}`
       window.callBare("settings:get").then((s) => {
         if (s.timeRequestMinutes) setTimeRequestMinutes(s.timeRequestMinutes);
         if (s.warningMinutes) setWarningMinutes(s.warningMinutes);
+        setAutoApproveNewApps(!!s.autoApproveNewApps);
         setSettingsLoaded(true);
       }).catch(() => setSettingsLoaded(true));
       window.callBare("pin:get").then(({ pin }) => {
@@ -20223,11 +20228,24 @@ ${inv.inviteLink}`
       setSettingsStatus(null);
       try {
         await window.callBare("settings:save", {
-          settings: { timeRequestMinutes, warningMinutes }
+          settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps }
         });
         setSettingsStatus("success");
       } catch {
         setSettingsStatus("Failed to save settings.");
+      }
+    }
+    async function handleAutoApproveToggle(checked) {
+      const previous = autoApproveNewApps;
+      setAutoApproveNewApps(checked);
+      setAutoApproveStatus(null);
+      try {
+        await window.callBare("settings:save", {
+          settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps: checked }
+        });
+      } catch {
+        setAutoApproveNewApps(previous);
+        setAutoApproveStatus("Failed to save. Try again.");
       }
     }
     function formatBytes(n) {
@@ -20462,6 +20480,14 @@ ${inv.inviteLink}`
           relayStatus.relaying.attempts === 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { marginTop: `${spacing2.sm}px`, marginBottom: 0, color: colors.text.muted }, children: "Zero is the good number here - it means your devices have always managed to connect directly." })
         ] }),
         relayStatus.randomized && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "This device is on a network that blocks direct connections entirely, so it uses the relay every time." })
+      ] }),
+      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "New App Installs", icon: "DownloadSimple", open: newAppsOpen, onToggle: () => setNewAppsOpen((o) => !o), maxHeight: "220px", ...collapsibleProps, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.md}px` }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { ...typography2.body, color: colors.text.primary }, children: "Allow new apps automatically" }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: autoApproveNewApps, onChange: handleAutoApproveToggle, ariaLabel: "Allow new apps automatically" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: autoApproveNewApps ? "Apps your child installs are allowed right away. You still get a notification and can block them from the Apps tab." : "Apps your child installs are blocked until you approve them from the Activity tab." }),
+        autoApproveStatus && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { role: "alert", style: { fontSize: "13px", color: colors.error, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: autoApproveStatus })
       ] }),
       settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Time Request Options", icon: "Clock", open: timeOptsOpen, onToggle: () => setTimeOptsOpen((o) => !o), maxHeight: "200px", ...collapsibleProps, children: [
         /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Choose which duration options the child sees when requesting more time from the block overlay." }),

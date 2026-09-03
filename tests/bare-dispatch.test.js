@@ -2226,6 +2226,39 @@ describe('bare dispatch', () => {
       expect(events[0][0].data).toMatchObject({ packageName: 'com.example.app', childPublicKey: 'childpk1' })
     })
 
+    test('auto-approve on: new app is allowed, gets an alert but no approval card', async () => {
+      const mockDb = makeMockDb({ parentSettings: { autoApproveNewApps: true }, 'peers:childpk1': { noiseKey: 'noise-abc', displayName: 'Kid' } })
+      const mockSend = jest.fn()
+      const mockSendToPeer = jest.fn()
+
+      await handleIncomingAppInstalled(
+        { packageName: 'com.example.app', appName: 'Example App', detectedAt: 1000 },
+        'childpk1', mockDb, mockSend, mockSendToPeer
+      )
+
+      expect(mockDb._stored['policy:childpk1'].apps['com.example.app']).toMatchObject({ status: 'allowed' })
+      // The child still gets the policy so the app shows up as allowed there too.
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({ type: 'policy:update' }))
+
+      const alerts = Object.entries(mockDb._stored).filter(([k]) => k.startsWith('alert:')).map(([, v]) => v)
+      expect(alerts).toHaveLength(1)
+      expect(alerts[0]).toMatchObject({ type: 'app_installed', autoApproved: true })
+      const requests = Object.keys(mockDb._stored).filter((k) => k.startsWith('request:'))
+      expect(requests).toHaveLength(0)
+
+      const events = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
+      expect(events).toHaveLength(1)
+      expect(events[0][0].data).toMatchObject({ packageName: 'com.example.app', autoApproved: true })
+    })
+
+    test('auto-approve off (default) still leaves the new app pending', async () => {
+      const mockDb = makeMockDb({ parentSettings: { timeRequestMinutes: [5] } })
+      await handleIncomingAppInstalled({ packageName: 'com.example.app', appName: 'Example App' }, 'childpk1', mockDb, jest.fn())
+      expect(mockDb._stored['policy:childpk1'].apps['com.example.app']).toMatchObject({ status: 'pending' })
+      const events = []
+      expect(Object.keys(mockDb._stored).filter((k) => k.startsWith('request:'))).toHaveLength(1)
+    })
+
     test('new app: sends policy:update to child via sendToPeer using stored noiseKey', async () => {
       const mockDb = makeMockDb({ 'peers:childpk1': { noiseKey: 'noise-abc', displayName: 'Kid' } })
       const mockSend = jest.fn()
@@ -2355,6 +2388,41 @@ describe('bare dispatch', () => {
       expect(appInstalledEvents[0][0].data).toMatchObject({ packageName: 'com.example.new', childPublicKey: 'childpk1' })
 
       expect(mockSendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({ type: 'policy:update' }))
+    })
+
+    test('incremental sync with auto-approve on: new apps are allowed and raise no approval card', async () => {
+      const existing = { apps: { 'com.example.old': { status: 'allowed' } }, childPublicKey: 'childpk1', version: 0 }
+      const mockDb = makeMockDb({ 'policy:childpk1': existing, parentSettings: { autoApproveNewApps: true }, 'peers:childpk1': { noiseKey: 'noise-abc' } })
+      const mockSend = jest.fn()
+      const mockSendToPeer = jest.fn()
+
+      await handleIncomingAppsSync(
+        { apps: [{ packageName: 'com.example.new', appName: 'New App' }, { packageName: 'com.example.two', appName: 'Two' }] },
+        'childpk1', mockDb, mockSend, mockSendToPeer
+      )
+
+      const saved = mockDb._stored['policy:childpk1']
+      expect(saved.apps['com.example.new']).toMatchObject({ status: 'allowed' })
+      expect(saved.apps['com.example.two']).toMatchObject({ status: 'allowed' })
+      expect(mockSendToPeer).toHaveBeenCalledWith('noise-abc', expect.objectContaining({ type: 'policy:update' }))
+
+      const alerts = Object.entries(mockDb._stored).filter(([k]) => k.startsWith('alert:')).map(([, v]) => v)
+      expect(alerts).toHaveLength(2)
+      expect(alerts.every((a) => a.autoApproved === true)).toBe(true)
+      expect(Object.keys(mockDb._stored).filter((k) => k.startsWith('request:'))).toHaveLength(0)
+
+      const events = mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')
+      expect(events).toHaveLength(2)
+      expect(events.every(([m]) => m.data.autoApproved === true)).toBe(true)
+    })
+
+    test('first sync ignores auto-approve: everything is allowed and nothing is announced', async () => {
+      const mockDb = makeMockDb({ parentSettings: { autoApproveNewApps: true } })
+      const mockSend = jest.fn()
+      await handleIncomingAppsSync({ apps: [{ packageName: 'com.example.a', appName: 'A' }] }, 'childpk1', mockDb, mockSend)
+      expect(mockDb._stored['policy:childpk1'].apps['com.example.a']).toMatchObject({ status: 'allowed' })
+      expect(Object.keys(mockDb._stored).filter((k) => k.startsWith('alert:'))).toHaveLength(0)
+      expect(mockSend.mock.calls.filter(([m]) => m.type === 'event' && m.event === 'app:installed')).toHaveLength(0)
     })
 
     test('incremental sync: already-known apps are not re-emitted', async () => {
@@ -3133,5 +3201,48 @@ describe('policy:setPause (free-time / holiday mode)', () => {
     const { ctx } = makeCtx()
     const dispatch = createDispatch(ctx)
     await expect(dispatch('policy:setPause', { pauseUntil: Date.now() + 1000 })).rejects.toThrow()
+  })
+
+})
+
+describe('child side honours policy.settings.autoApproveNewApps', () => {
+  function makeCtx (stored) {
+    const db = {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      createReadStream: jest.fn(async function * () {}),
+    }
+    return { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+  }
+
+  test('app:installed marks the app allowed when the pushed policy says so', async () => {
+    const stored = { policy: { apps: { 'com.example.old': { status: 'allowed' } }, settings: { autoApproveNewApps: true } } }
+    const ctx = makeCtx(stored)
+    const dispatch = createDispatch(ctx)
+    const result = await dispatch('app:installed', { packageName: 'com.example.new', appName: 'New' })
+    expect(result).toEqual({ status: 'allowed' })
+    expect(stored.policy.apps['com.example.new']).toMatchObject({ status: 'allowed' })
+    // The parent still hears about it so its own list stays complete.
+    expect(ctx.sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({ type: 'app:installed' }))
+  })
+
+  test('app:installed stays pending when the setting is off or absent', async () => {
+    const stored = { policy: { apps: { 'com.example.old': { status: 'allowed' } }, settings: { autoApproveNewApps: false } } }
+    const dispatch = createDispatch(makeCtx(stored))
+    expect(await dispatch('app:installed', { packageName: 'com.example.new', appName: 'New' })).toEqual({ status: 'pending' })
+  })
+
+  test('apps:sync after pairing allows new apps when the setting is on', async () => {
+    const stored = { policy: { apps: { 'com.example.old': { status: 'allowed' } }, settings: { autoApproveNewApps: true } } }
+    const dispatch = createDispatch(makeCtx(stored))
+    await dispatch('apps:sync', { apps: [{ packageName: 'com.example.new', appName: 'New' }], installedAll: ['com.example.old', 'com.example.new'] })
+    expect(stored.policy.apps['com.example.new']).toMatchObject({ status: 'allowed' })
+  })
+
+  test('apps:sync after pairing leaves new apps pending when the setting is off', async () => {
+    const stored = { policy: { apps: { 'com.example.old': { status: 'allowed' } } } }
+    const dispatch = createDispatch(makeCtx(stored))
+    await dispatch('apps:sync', { apps: [{ packageName: 'com.example.new', appName: 'New' }], installedAll: ['com.example.old', 'com.example.new'] })
+    expect(stored.policy.apps['com.example.new']).toMatchObject({ status: 'pending' })
   })
 })

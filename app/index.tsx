@@ -1060,12 +1060,21 @@ export default function Root () {
               // Parent: show "X installed a new app" notification (childDisplayName present = came via P2P)
               // Child: show "You installed a new app" notification (no childDisplayName = local event)
               if (msg.event === 'app:installed') {
-                const { childPublicKey, childDisplayName, appName, packageName } = msg.data ?? {}
+                const { childPublicKey, childDisplayName, appName, packageName, autoApproved } = msg.data ?? {}
                 const appLabel = appName || packageName || 'an app'
                 if (childDisplayName) {
                   // Parent device — message arrived from child over P2P
                   if (isAndroid) {
-                    NativeModules.UsageStatsModule?.showAppInstalledNotification?.(childDisplayName, appLabel, childPublicKey || '')
+                    NativeModules.UsageStatsModule?.showAppInstalledNotification?.(childDisplayName, appLabel, childPublicKey || '', !!autoApproved)
+                  } else if (autoApproved) {
+                    // Nothing to decide: the parent's auto-approve setting already
+                    // allowed it. Land on the Apps tab so they can still block it.
+                    showNotification(
+                      'New App Installed',
+                      childDisplayName + ' installed ' + appLabel + ' - allowed automatically',
+                      childPublicKey,
+                      'apps',
+                    )
                   } else {
                     // Route the tap to Activity, where the Approve/Deny card for this
                     // install now is. Without the tab the parent lands on the dashboard
@@ -1079,7 +1088,7 @@ export default function Root () {
                   }
                 } else if (_mode === 'child' && isAndroid) {
                   // Child device — local install event, notify the child themselves
-                  NativeModules.UsageStatsModule?.showAppInstalledNotification?.('You', appLabel, '')
+                  NativeModules.UsageStatsModule?.showAppInstalledNotification?.('You', appLabel, '', false)
                 }
               }
               // Notify about app uninstalls — same mode-split pattern

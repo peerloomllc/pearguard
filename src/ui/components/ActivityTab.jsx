@@ -215,6 +215,11 @@ function ActivityRow({ item, onDismiss }) {
                 requested {formatSeconds(item.requestedSeconds)}
               </span>
             : null}
+          {item.type === 'app_installed' && item.autoApproved
+            ? <span style={{ ...typography.caption, color: colors.text.secondary }}>
+                allowed automatically
+              </span>
+            : null}
           {item.type === 'pin_failure' && item.failCount
             ? <span style={{ ...typography.caption, color: colors.text.secondary }}>
                 {item.failCount} wrong attempts

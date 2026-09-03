@@ -1617,6 +1617,9 @@ const MUST_KEEP_PREFIXES = [
   // Which zone each child's clock is in. Cheap, and losing it silently reverts
   // that child's history to being filed on the parent's calendar.
   'childZone:', 'policyAck:', 'appsSig:',
+  // Messages waiting for a parent to come back. Dropping these on a rebuild
+  // would silently lose a child's time requests and alerts.
+  'pendingMsg:',
 ]
 const WIPEABLE_PREFIXES = [
   'alert:', 'override:', 'usage:', 'usageReport:', 'bypass:', 'sessions:', 'dailyTotals:',

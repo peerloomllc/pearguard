@@ -1671,87 +1671,69 @@ describe('bare dispatch', () => {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
         del: jest.fn(async (k) => { delete stored[k] }),
-        // A new pending app now scans for an existing approval before creating a
-        // duplicate card, so the mock has to be able to stream its own rows.
         createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
-          for (const [key, value] of Object.entries(stored)) {
+          for (const key of Object.keys(stored).sort()) {
             if (gt !== undefined && !(key > gt)) continue
             if (lt !== undefined && !(key < lt)) continue
-            yield { key, value }
+            yield { key, value: stored[key] }
           }
         }),
         _stored: stored,
       }
     }
+    const keys = (db) => Object.keys(db._stored).filter((k) => k.startsWith('pendingMsg:')).sort()
+    const drain = async (db) => {
+      const sent = []
+      const count = await flushMessageQueue(db, async (m) => { sent.push(m) })
+      return { sent, count }
+    }
 
-    test('first message creates a single-element array in pendingMessages', async () => {
-      const mockDb = makeMockDb({})
-
-      await queueMessage({ type: 'heartbeat', payload: {} }, mockDb)
-
-      const puts = mockDb.put.mock.calls.filter(([k]) => k === 'pendingMessages')
-      expect(puts).toHaveLength(1)
-      const [, queue] = puts[0]
-      expect(queue).toHaveLength(1)
-      expect(queue[0].message).toEqual({ type: 'heartbeat', payload: {} })
-      expect(typeof queue[0].queuedAt).toBe('number')
+    test('first message is stored under its own key', async () => {
+      const db = makeMockDb({})
+      await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+      expect(keys(db)).toHaveLength(1)
+      expect(db._stored[keys(db)[0]].message).toEqual({ type: 'time:request', payload: { id: 'a' } })
+      expect(typeof db._stored[keys(db)[0]].queuedAt).toBe('number')
     })
 
-    test('second message appends in order', async () => {
-      const stored = {}
-      const mockDb = makeMockDb(stored)
-
-      await queueMessage({ type: 'msg1' }, mockDb)
-      await queueMessage({ type: 'msg2' }, mockDb)
-
-      const puts = mockDb.put.mock.calls.filter(([k]) => k === 'pendingMessages')
-      // Second call will have both items
-      const [, finalQueue] = puts[puts.length - 1]
-      expect(finalQueue).toHaveLength(2)
-      expect(finalQueue[0].message).toEqual({ type: 'msg1' })
-      expect(finalQueue[1].message).toEqual({ type: 'msg2' })
+    test('a second message is kept alongside the first, in order', async () => {
+      const db = makeMockDb({})
+      await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+      await queueMessage({ type: 'app:installed', payload: { packageName: 'com.b' } }, db)
+      expect(keys(db)).toHaveLength(2)
+      const { sent } = await drain(db)
+      expect(sent.map((m) => m.type)).toEqual(['time:request', 'app:installed'])
     })
 
-    test('repeated heartbeats collapse to the latest only', async () => {
-      const stored = {}
-      const mockDb = makeMockDb(stored)
-
-      await queueMessage({ type: 'heartbeat', payload: { seq: 1 } }, mockDb)
-      await queueMessage({ type: 'heartbeat', payload: { seq: 2 } }, mockDb)
-      await queueMessage({ type: 'heartbeat', payload: { seq: 3 } }, mockDb)
-
-      expect(stored.pendingMessages).toHaveLength(1)
-      expect(stored.pendingMessages[0].message).toEqual({ type: 'heartbeat', payload: { seq: 3 } })
+    test('heartbeats are never queued at all', async () => {
+      // They used to be queued and collapsed to the latest. Presence delivered
+      // an hour late is worse than none: the parent knows the child is online
+      // from the connection, and a replayed heartbeat reports a stale app.
+      const db = makeMockDb({})
+      await queueMessage({ type: 'heartbeat', payload: { seq: 1 } }, db)
+      await queueMessage({ type: 'heartbeat', payload: { seq: 2 } }, db)
+      expect(keys(db)).toHaveLength(0)
     })
 
     test('repeated usage:report collapse to the latest only', async () => {
-      const stored = {}
-      const mockDb = makeMockDb(stored)
-
-      await queueMessage({ type: 'usage:report', payload: { ts: 1000 } }, mockDb)
-      await queueMessage({ type: 'usage:report', payload: { ts: 2000 } }, mockDb)
-
-      expect(stored.pendingMessages).toHaveLength(1)
-      expect(stored.pendingMessages[0].message).toEqual({ type: 'usage:report', payload: { ts: 2000 } })
+      const db = makeMockDb({})
+      await queueMessage({ type: 'usage:report', payload: { seq: 1 } }, db)
+      await queueMessage({ type: 'usage:report', payload: { seq: 2 } }, db)
+      await queueMessage({ type: 'usage:report', payload: { seq: 3 } }, db)
+      expect(keys(db)).toHaveLength(1)
+      const { sent } = await drain(db)
+      expect(sent).toEqual([{ type: 'usage:report', payload: { seq: 3 } }])
     })
 
     test('collapsing a snapshot type preserves other queued messages and ordering', async () => {
-      const stored = {}
-      const mockDb = makeMockDb(stored)
-
-      await queueMessage({ type: 'usage:report', payload: { ts: 1000 } }, mockDb)
-      await queueMessage({ type: 'time:request', payload: { id: 'r1' } }, mockDb)
-      await queueMessage({ type: 'heartbeat', payload: { seq: 1 } }, mockDb)
-      await queueMessage({ type: 'usage:report', payload: { ts: 2000 } }, mockDb)
-      await queueMessage({ type: 'time:request', payload: { id: 'r2' } }, mockDb)
-
-      const types = stored.pendingMessages.map((e) => e.message.type)
-      // both distinct time:requests survive; only the latest usage:report + heartbeat remain
-      expect(types).toEqual(['time:request', 'heartbeat', 'usage:report', 'time:request'])
-      const report = stored.pendingMessages.find((e) => e.message.type === 'usage:report')
-      expect(report.message.payload).toEqual({ ts: 2000 })
-      expect(stored.pendingMessages.filter((e) => e.message.type === 'time:request').map((e) => e.message.payload.id))
-        .toEqual(['r1', 'r2'])
+      const db = makeMockDb({})
+      await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+      await queueMessage({ type: 'usage:report', payload: { seq: 1 } }, db)
+      await queueMessage({ type: 'app:installed', payload: { packageName: 'com.b' } }, db)
+      await queueMessage({ type: 'usage:report', payload: { seq: 2 } }, db)
+      const { sent } = await drain(db)
+      expect(sent.map((m) => m.type)).toEqual(['time:request', 'app:installed', 'usage:report'])
+      expect(sent.find((m) => m.type === 'usage:report').payload.seq).toBe(2)
     })
   })
 
@@ -1761,66 +1743,34 @@ describe('bare dispatch', () => {
         put: jest.fn(async (k, v) => { stored[k] = v }),
         get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
         del: jest.fn(async (k) => { delete stored[k] }),
-        // A new pending app now scans for an existing approval before creating a
-        // duplicate card, so the mock has to be able to stream its own rows.
         createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
-          for (const [key, value] of Object.entries(stored)) {
+          for (const key of Object.keys(stored).sort()) {
             if (gt !== undefined && !(key > gt)) continue
             if (lt !== undefined && !(key < lt)) continue
-            yield { key, value }
+            yield { key, value: stored[key] }
           }
         }),
         _stored: stored,
       }
     }
 
-    test('calls writeMessage for each queued item, clears queue, returns count', async () => {
-      const queue = [
-        { message: { type: 'msg1' }, queuedAt: 1000 },
-        { message: { type: 'msg2' }, queuedAt: 2000 },
-        { message: { type: 'msg3' }, queuedAt: 3000 },
-      ]
-      const mockDb = makeMockDb({ pendingMessages: queue })
-      const writeMessage = jest.fn()
-
-      const count = await flushMessageQueue(mockDb, writeMessage)
-
-      expect(count).toBe(3)
-      expect(writeMessage).toHaveBeenCalledTimes(3)
-      expect(writeMessage.mock.calls[0][0]).toEqual({ type: 'msg1' })
-      expect(writeMessage.mock.calls[1][0]).toEqual({ type: 'msg2' })
-      expect(writeMessage.mock.calls[2][0]).toEqual({ type: 'msg3' })
-
-      // Queue cleared
-      const clearPuts = mockDb.put.mock.calls.filter(([k]) => k === 'pendingMessages')
-      expect(clearPuts).toHaveLength(1)
-      expect(clearPuts[0][1]).toEqual([])
+    test('calls writeMessage for each queued item, clears the queue, returns the count', async () => {
+      const db = makeMockDb({})
+      await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+      await queueMessage({ type: 'app:installed', payload: { packageName: 'com.b' } }, db)
+      const sent = []
+      const count = await flushMessageQueue(db, async (m) => { sent.push(m) })
+      expect(count).toBe(2)
+      expect(sent.map((m) => m.type)).toEqual(['time:request', 'app:installed'])
+      expect(Object.keys(db._stored).filter((k) => k.startsWith('pendingMsg:'))).toHaveLength(0)
     })
 
-    test('empty queue: does nothing and returns 0', async () => {
-      const mockDb = makeMockDb({ pendingMessages: [] })
-      const writeMessage = jest.fn()
-
-      const count = await flushMessageQueue(mockDb, writeMessage)
-
+    test('an empty queue returns 0 and writes nothing', async () => {
+      const db = makeMockDb({})
+      const count = await flushMessageQueue(db, async () => { throw new Error('should not be called') })
       expect(count).toBe(0)
-      expect(writeMessage).not.toHaveBeenCalled()
-      expect(mockDb.put).not.toHaveBeenCalled()
-    })
-
-    test('no pendingMessages key: does nothing and returns 0', async () => {
-      const mockDb = makeMockDb({})
-      const writeMessage = jest.fn()
-
-      const count = await flushMessageQueue(mockDb, writeMessage)
-
-      expect(count).toBe(0)
-      expect(writeMessage).not.toHaveBeenCalled()
-      expect(mockDb.put).not.toHaveBeenCalled()
     })
   })
-
-  // ── Task 9: pin:used ──────────────────────────────────────────────────────
 
   describe('pin:used', () => {
     function makeMockDb (stored = {}) {
@@ -3329,6 +3279,15 @@ describe('relayed policies cannot roll a parent back', () => {
     return {
       put: jest.fn(async (k, v) => { stored[k] = v }),
       get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      // The queue is one key per message now, so the stub has to stream.
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const key of Object.keys(stored).sort()) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: stored[key] }
+        }
+      }),
       _stored: stored,
     }
   }
@@ -3338,7 +3297,10 @@ describe('relayed policies cannot roll a parent back', () => {
     await queueMessage({ type: 'policy:update', payload: { version: 4, apps: {} } }, db)
     expect(db.put).not.toHaveBeenCalled()
     await queueMessage({ type: 'app:installed', payload: { packageName: 'a' } }, db)
-    expect(db._stored.pendingMessages.map((e) => e.message.type)).toEqual(['app:installed'])
+    const queuedTypes = Object.entries(db._stored)
+      .filter(([k]) => k.startsWith('pendingMsg:'))
+      .map(([, v]) => v.message.type)
+    expect(queuedTypes).toEqual(['app:installed'])
   })
 
   test('flushMessageQueue drops policy:update relays queued by older code and keeps the rest', async () => {
@@ -3352,7 +3314,8 @@ describe('relayed policies cannot roll a parent back', () => {
     const count = await flushMessageQueue(db, async (m) => { written.push(m.type) })
     expect(written).toEqual(['app:installed', 'usage:report'])
     expect(count).toBe(2)
-    expect(db._stored.pendingMessages).toEqual([])
+    // The array an older build left behind is removed once drained.
+    expect(db._stored.pendingMessages).toBeUndefined()
   })
 
   test('shouldAcceptRelayedPolicy takes only a strictly newer version', () => {
@@ -4288,6 +4251,104 @@ describe("a day of usage belongs to the child's calendar", () => {
     expect([...grouped.keys()]).toEqual(['2026-09-04'])
     const ownZone = groupSessionsByLocalDate([{ packageName: 'com.game', startedAt: evening, durationSeconds: 60 }], evening)
     expect([...ownZone.keys()]).toEqual([dateStrInZone(evening, undefined)])
+  })
+})
+
+describe('the offline queue writes one key per message', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const key of Object.keys(stored).sort()) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(stored[key])) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const queued = (db) => Object.keys(db._stored).filter((k) => k.startsWith('pendingMsg:'))
+  const drain = async (db) => {
+    const sent = []
+    const count = await flushMessageQueue(db, async (m) => { sent.push(m) })
+    return { sent, count }
+  }
+
+  test('a heartbeat is never queued: an hour-old presence is worse than none', async () => {
+    const db = makeDb({})
+    await queueMessage({ type: 'heartbeat', payload: { currentApp: 'Game' } }, db)
+    expect(queued(db)).toHaveLength(0)
+    expect(db.put).not.toHaveBeenCalled()
+  })
+
+  test('queuing one message writes one key and leaves the others alone', async () => {
+    const db = makeDb({})
+    await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+    await queueMessage({ type: 'app:installed', payload: { packageName: 'com.b' } }, db)
+    await queueMessage({ type: 'bypass:alert', payload: { reason: 'c' } }, db)
+    expect(queued(db)).toHaveLength(3)
+    // Each queue call wrote exactly its own key: no rewriting of what is
+    // already waiting, which is the whole point.
+    expect(db.put.mock.calls).toHaveLength(3)
+    const { sent } = await drain(db)
+    expect(sent.map((m) => m.type)).toEqual(['time:request', 'app:installed', 'bypass:alert'])
+    expect(queued(db)).toHaveLength(0)
+  })
+
+  test('a newer usage report replaces the queued older one', async () => {
+    const db = makeDb({})
+    await queueMessage({ type: 'usage:report', payload: { n: 1 } }, db)
+    await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+    await queueMessage({ type: 'usage:report', payload: { n: 2 } }, db)
+    expect(queued(db)).toHaveLength(2)
+    const { sent } = await drain(db)
+    expect(sent.map((m) => m.type).sort()).toEqual(['time:request', 'usage:report'])
+    expect(sent.find((m) => m.type === 'usage:report').payload.n).toBe(2)
+  })
+
+  test('policy relays and acks are still refused', async () => {
+    const db = makeDb({})
+    await queueMessage({ type: 'policy:update', payload: { version: 3 } }, db)
+    await queueMessage({ type: 'policy:ack', payload: { version: 3 } }, db)
+    expect(queued(db)).toHaveLength(0)
+  })
+
+  test('a queue left by an older build is drained first, then removed', async () => {
+    const db = makeDb({
+      pendingMessages: [
+        { message: { type: 'time:request', payload: { id: 'old' } } },
+        { message: { type: 'heartbeat', payload: {} } },
+        { message: { type: 'policy:update', payload: { version: 2 } } },
+      ],
+    })
+    await queueMessage({ type: 'app:installed', payload: { packageName: 'com.new' } }, db)
+    const { sent, count } = await drain(db)
+    // The old array's real messages go out in order, ahead of the new key.
+    // Its heartbeat and policy relay are dropped rather than replayed.
+    expect(sent.map((m) => m.type)).toEqual(['time:request', 'app:installed'])
+    expect(count).toBe(2)
+    expect(db._stored.pendingMessages).toBeUndefined()
+    expect(queued(db)).toHaveLength(0)
+  })
+
+  test('an empty queue flushes nothing and writes nothing', async () => {
+    const db = makeDb({})
+    const { count } = await drain(db)
+    expect(count).toBe(0)
+    expect(db.put).not.toHaveBeenCalled()
+  })
+
+  test('the queue prefix does not collide with the other pending keys', async () => {
+    const db = makeDb({ 'pendingParent:abc': { publicKey: 'abc' }, 'pendingInviteTopic:xyz': { topicHex: 'xyz' } })
+    await queueMessage({ type: 'time:request', payload: { id: 'a' } }, db)
+    const { sent } = await drain(db)
+    expect(sent.map((m) => m.type)).toEqual(['time:request'])
+    // The pairing records are untouched by a queue drain.
+    expect(db._stored['pendingParent:abc']).toBeDefined()
+    expect(db._stored['pendingInviteTopic:xyz']).toBeDefined()
   })
 })
 

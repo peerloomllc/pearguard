@@ -2835,7 +2835,34 @@ async function getPinUseLog (db) {
 // so the offline queue keeps only the most recent one instead of growing
 // unbounded (one heartbeat per minute, one usage:report per flush) while a
 // child is disconnected.
-const COLLAPSIBLE_MESSAGE_TYPES = new Set(['heartbeat', 'usage:report'])
+// A usage report is a complete snapshot of the day, so an older queued copy is
+// pure noise on reconnect: keep only the newest.
+const COLLAPSIBLE_MESSAGE_TYPES = new Set(['usage:report'])
+
+// Queued messages live one per key rather than in a single array. The array had
+// to be read, rewritten and appended to Hypercore in full for every message,
+// and an offline child queues one a minute, so a night offline rewrote a
+// payload containing the whole day's usage report several hundred times.
+// Deliberately not 'pending:', which would sort together with pendingParent:
+// and pendingInviteTopic:.
+const PENDING_MSG_PREFIX = 'pendingMsg:'
+// Never queued, and dropped on flush if an older build queued them:
+//  - heartbeat is presence, and presence an hour stale is worse than none: the
+//    parent already knows the child is online from the connection itself, and a
+//    replayed heartbeat would hand it the app the child had open an hour ago.
+//  - policy:update / policy:ack are for co-parents connected right now. Queued,
+//    a relay went back to the parent that authored it and rolled that parent's
+//    own copy back (2026-09-03: five old versions replayed at reconnect, the
+//    parent regressed, re-announced apps as newly installed and had its next
+//    pushes rejected as stale). The hello push already brings a reconnecting
+//    parent current.
+const NEVER_QUEUED_MESSAGE_TYPES = new Set(['heartbeat', 'policy:update', 'policy:ack'])
+// Monotonic within a process; the timestamp orders across restarts.
+let _pendingMsgSeq = 0
+function pendingMessageKey (now) {
+  _pendingMsgSeq = (_pendingMsgSeq + 1) % 10000
+  return PENDING_MSG_PREFIX + String(now).padStart(13, '0') + ':' + String(_pendingMsgSeq).padStart(4, '0')
+}
 
 /**
  * Queue a message for later delivery when no parent connection is available.
@@ -2846,26 +2873,18 @@ const COLLAPSIBLE_MESSAGE_TYPES = new Set(['heartbeat', 'usage:report'])
  * @param {object} db — Hyperbee instance
  */
 async function queueMessage (message, db) {
-  // A relayed policy is for co-parents that are connected right now. Queued, it
-  // is stale by the time it flushes, and the flush cannot tell who authored it,
-  // so it went back to the parent that pushed it and rolled that parent's own
-  // copy back (seen 2026-09-03: five old versions replayed at reconnect, the
-  // parent regressed, re-announced apps as newly installed and had its next
-  // pushes rejected as stale). The hello push in handleHello already brings a
-  // reconnecting parent current, so there is nothing to queue.
-  if (message && (message.type === 'policy:update' || message.type === 'policy:ack')) return
-  const raw = await db.get('pendingMessages')
-  let queue = raw ? raw.value : []
-  // Some message types fully supersede any older queued copy of themselves:
-  // a heartbeat is ephemeral presence and a usage:report is a complete day
-  // snapshot, so replaying stale copies on reconnect is pure noise. Drop any
-  // existing entry of the same type and keep only this latest one. Other types
-  // (time:request, pin:override etc.) are distinct events and are never collapsed.
-  if (message && COLLAPSIBLE_MESSAGE_TYPES.has(message.type)) {
-    queue = queue.filter((entry) => !entry.message || entry.message.type !== message.type)
+  if (!message || NEVER_QUEUED_MESSAGE_TYPES.has(message.type)) return
+  const now = Date.now()
+  // A newer snapshot supersedes any queued older one. Other types (time:request,
+  // pin:override and so on) are distinct events and are never collapsed.
+  if (COLLAPSIBLE_MESSAGE_TYPES.has(message.type)) {
+    const stale = []
+    for await (const { key, value } of db.createReadStream({ gt: PENDING_MSG_PREFIX, lt: PENDING_MSG_PREFIX + '~' })) {
+      if (value && value.message && value.message.type === message.type) stale.push(key)
+    }
+    for (const key of stale) await db.del(key).catch(() => {})
   }
-  queue.push({ message, queuedAt: Date.now() })
-  await db.put('pendingMessages', queue)
+  await db.put(pendingMessageKey(now), { message, queuedAt: now })
 }
 
 /**
@@ -2876,16 +2895,28 @@ async function queueMessage (message, db) {
  * @returns {Promise<number>} — number of messages flushed
  */
 async function flushMessageQueue (db, writeMessage) {
-  const raw = await db.get('pendingMessages')
-  if (!raw || !raw.value || raw.value.length === 0) return 0
-  // Devices in the field still hold policy:update relays queued by older code;
-  // drop them here for the same reason queueMessage refuses them.
-  const queue = raw.value.filter(({ message }) => !(message && (message.type === 'policy:update' || message.type === 'policy:ack')))
-  for (const { message } of queue) {
-    await writeMessage(message)
+  const entries = []
+  // Anything an older build left in the single-array queue goes first, in the
+  // order it was queued, and the key is dropped once it has been drained.
+  const legacyRaw = await db.get('pendingMessages').catch(() => null)
+  const legacy = legacyRaw && Array.isArray(legacyRaw.value) ? legacyRaw.value : []
+  for (const entry of legacy) entries.push({ key: null, message: entry && entry.message })
+  // Keys sort by queued timestamp, so this stream is already in order.
+  for await (const { key, value } of db.createReadStream({ gt: PENDING_MSG_PREFIX, lt: PENDING_MSG_PREFIX + '~' })) {
+    entries.push({ key, message: value && value.message })
   }
-  await db.put('pendingMessages', [])
-  return queue.length
+  let sent = 0
+  for (const { key, message } of entries) {
+    // An older build queued heartbeats and policy relays; drop rather than
+    // replay them, for the reasons on NEVER_QUEUED_MESSAGE_TYPES.
+    if (message && !NEVER_QUEUED_MESSAGE_TYPES.has(message.type)) {
+      await writeMessage(message)
+      sent++
+    }
+    if (key) await db.del(key).catch(() => {})
+  }
+  if (legacy.length > 0) await db.del('pendingMessages').catch(() => {})
+  return sent
 }
 
 /**

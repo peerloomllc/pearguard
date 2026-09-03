@@ -11,6 +11,36 @@ const { validatePin } = require('./pin-rules')
 const { describeBypassReason } = require('./bypass-reasons')
 const { pendingUninstalls } = require('./package-reconcile')
 
+// One write at a time per child's policy record on the parent.
+//
+// Every parent-side handler that touches policy:{child} is a read-modify-write
+// with awaits in between, and several of them fire together: the child's
+// apps:sync relay and its app:installed relay for the same install, a settings
+// save while a child reports an app, an approve tap while a sync lands. Without
+// this, the later writer's stale read discarded the earlier writer's apps and
+// pushed that regressed copy to the child (2026-09-03: two handlers each wrote an
+// alert and an approval card for the same package at the same second, and one
+// of them dropped the app the other had added). Callers wrap the whole
+// read-modify-write, and re-read inside the lock rather than reuse a value
+// fetched before it.
+const policyLocks = new Map()
+function withPolicyLock (childPublicKey, fn) {
+  const key = String(childPublicKey)
+  const prev = policyLocks.get(key) || Promise.resolve()
+  const run = prev.then(fn, fn)
+  const settled = run.then(() => {}, () => {})
+  policyLocks.set(key, settled)
+  settled.then(() => { if (policyLocks.get(key) === settled) policyLocks.delete(key) })
+  return run
+}
+
+// Dispatch methods whose whole body is a read-modify-write of one child's policy.
+// createDispatch runs these under withPolicyLock keyed on the child in args.
+const POLICY_WRITE_METHODS = new Set([
+  'app:decide', 'apps:decideBatch', 'policy:update', 'policy:setLock', 'policy:setPause',
+  'rules:import:apply', 'child:unpair',
+])
+
 // Return YYYY-MM-DD in local time (not UTC) so session date keys
 // match the user's calendar day regardless of timezone.
 function localDateStr(ts) {
@@ -235,7 +265,7 @@ const heartbeatCache = {
  * @returns {(method: string, args: any[]) => Promise<any>}
  */
 function createDispatch (ctx) {
-  return async function dispatch (method, args) {
+  async function dispatchInner (method, args) {
     switch (method) {
       case 'ping':
         return 'pong'
@@ -709,24 +739,26 @@ function createDispatch (ctx) {
         const myPublicKey = Buffer.from(ctx.identity.publicKey).toString('hex')
         for await (const { value: peerRecord } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
           const childPK = peerRecord.publicKey
-          const childPolicyRaw = await ctx.db.get('policy:' + childPK).catch(() => null)
-          const childPolicy = childPolicyRaw
-            ? childPolicyRaw.value
-            : { apps: {}, childPublicKey: childPK, version: 0 }
-          // Write per-parent pinHash into pinHashes map; remove legacy field
-          if (!childPolicy.pinHashes) childPolicy.pinHashes = {}
-          childPolicy.pinHashes[myPublicKey] = hashStr
-          delete childPolicy.pinHash
-          childPolicy.version = (childPolicy.version || 0) + 1
-          await ctx.db.put('policy:' + childPK, childPolicy)
-          try {
-            const noiseKey = peerRecord.noiseKey
-            if (noiseKey) {
-              ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: childPolicy })
+          await withPolicyLock(childPK, async () => {
+            const childPolicyRaw = await ctx.db.get('policy:' + childPK).catch(() => null)
+            const childPolicy = childPolicyRaw
+              ? childPolicyRaw.value
+              : { apps: {}, childPublicKey: childPK, version: 0 }
+            // Write per-parent pinHash into pinHashes map; remove legacy field
+            if (!childPolicy.pinHashes) childPolicy.pinHashes = {}
+            childPolicy.pinHashes[myPublicKey] = hashStr
+            delete childPolicy.pinHash
+            childPolicy.version = (childPolicy.version || 0) + 1
+            await ctx.db.put('policy:' + childPK, childPolicy)
+            try {
+              const noiseKey = peerRecord.noiseKey
+              if (noiseKey) {
+                ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: childPolicy })
+              }
+            } catch (_e) {
+              // child offline — pinHashes stored; will be pushed on next hello
             }
-          } catch (_e) {
-            // child offline — pinHashes stored; will be pushed on next hello
-          }
+          })
         }
 
         return { ok: true }
@@ -1906,16 +1938,25 @@ function createDispatch (ctx) {
         if (!settings || typeof settings !== 'object') throw new Error('invalid settings:save args')
         await ctx.db.put('parentSettings', settings)
 
-        // Push updated settings into all child policies
-        for await (const { key, value } of ctx.db.createReadStream({ gt: 'policy:', lt: 'policy:~' })) {
-          const childKey = key.replace(/^policy:/, '')
-          const updated = { ...value, settings, version: (value.version || 0) + 1 }
-          await ctx.db.put(key, updated)
-          try {
-            const peerRecord = await ctx.db.get('peers:' + childKey).catch(() => null)
-            const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
-            if (noiseKey) ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: updated })
-          } catch (_e) {}
+        // Push updated settings into all child policies. Collect the keys first,
+        // then re-read each record under its lock: the streamed value may be
+        // stale by the time this loop reaches it.
+        const childKeys = []
+        for await (const { key } of ctx.db.createReadStream({ gt: 'policy:', lt: 'policy:~' })) {
+          childKeys.push(key.replace(/^policy:/, ''))
+        }
+        for (const childKey of childKeys) {
+          await withPolicyLock(childKey, async () => {
+            const raw = await ctx.db.get('policy:' + childKey).catch(() => null)
+            if (!raw || !raw.value) return
+            const updated = { ...raw.value, settings, version: (raw.value.version || 0) + 1 }
+            await ctx.db.put('policy:' + childKey, updated)
+            try {
+              const peerRecord = await ctx.db.get('peers:' + childKey).catch(() => null)
+              const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
+              if (noiseKey) ctx.sendToPeer(noiseKey, { type: 'policy:update', payload: updated })
+            } catch (_e) {}
+          })
         }
         return { ok: true }
       }
@@ -2173,6 +2214,14 @@ function createDispatch (ctx) {
       default:
         throw new Error('unknown method: ' + method)
     }
+  }
+
+  return async function dispatch (method, args) {
+    const childKey = POLICY_WRITE_METHODS.has(method) && args && typeof args === 'object'
+      ? (args.childPublicKey || args.targetChildPubKey)
+      : null
+    if (childKey) return withPolicyLock(childKey, () => dispatchInner(method, args))
+    return dispatchInner(method, args)
   }
 }
 
@@ -2545,7 +2594,7 @@ function shouldAcceptRelayedPolicy (local, incoming) {
  * Handle an incoming `app:installed` P2P message from a child peer.
  * Runs on the PARENT device.
  */
-async function handleIncomingAppInstalled (payload, childPublicKey, db, send, sendToPeer) {
+async function handleIncomingAppInstalledUnlocked (payload, childPublicKey, db, send, sendToPeer) {
   const { packageName, appName, iconBase64, category, exeBasename } = payload
   if (!packageName) {
     console.warn('[bare] app:installed from child: missing packageName')
@@ -2697,7 +2746,7 @@ async function createInstallApprovalRequest (db, send, { childPublicKey, childDi
  * Receives all installed apps in one batch — avoids read-modify-write races.
  * Runs on the PARENT device.
  */
-async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendToPeer) {
+async function handleIncomingAppsSyncUnlocked (payload, childPublicKey, db, send, sendToPeer) {
   const { apps } = payload
   if (!Array.isArray(apps) || apps.length === 0) return
 
@@ -2845,7 +2894,7 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
  * Apps list no longer shows stale entries for apps that no longer exist.
  * Runs on the PARENT device.
  */
-async function handleIncomingAppUninstalled (payload, childPublicKey, db, send) {
+async function handleIncomingAppUninstalledUnlocked (payload, childPublicKey, db, send) {
   const { packageName, appName: payloadAppName } = payload
   if (!packageName) {
     console.warn('[bare] app:uninstalled from child: missing packageName')
@@ -2967,4 +3016,17 @@ async function isBlockClearedByFreshInvite (db, { peerIdentityKeyHex, incomingTo
   return false
 }
 
-module.exports = { createDispatch, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+// The incoming-relay handlers run under the same per-child lock as the
+// dispatch methods, so a sync and an install relay for the same child cannot
+// interleave with each other or with a parent edit.
+function handleIncomingAppInstalled (payload, childPublicKey, ...rest) {
+  return withPolicyLock(childPublicKey, () => handleIncomingAppInstalledUnlocked(payload, childPublicKey, ...rest))
+}
+function handleIncomingAppsSync (payload, childPublicKey, ...rest) {
+  return withPolicyLock(childPublicKey, () => handleIncomingAppsSyncUnlocked(payload, childPublicKey, ...rest))
+}
+function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
+  return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
+}
+
+module.exports = { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

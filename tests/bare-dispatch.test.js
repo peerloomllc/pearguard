@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3356,5 +3356,97 @@ describe('relayed policies cannot roll a parent back', () => {
     // Unversioned payloads never replace a copy.
     expect(shouldAcceptRelayedPolicy({ version: 2 }, { apps: {} })).toBe(false)
     expect(shouldAcceptRelayedPolicy({ version: 2 }, null)).toBe(false)
+  })
+})
+
+describe('parent-side policy writes are serialized per child', () => {
+  // A db whose reads yield to the event loop, so two handlers that both read
+  // before either writes really do interleave the way Hyperbee lets them.
+  function makeSlowDb (stored = {}) {
+    const tick = () => new Promise((r) => setTimeout(r, 1))
+    return {
+      put: jest.fn(async (k, v) => { await tick(); stored[k] = v }),
+      // Decoded copies, as Hyperbee returns: two readers must not share one object.
+      get: jest.fn(async (k) => { await tick(); return stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null }),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const alerts = (db) => Object.keys(db._stored).filter((k) => k.startsWith('alert:'))
+  const requests = (db) => Object.keys(db._stored).filter((k) => k.startsWith('request:'))
+
+  test('withPolicyLock runs callers for one child in order and different children in parallel', async () => {
+    const order = []
+    const slow = (tag, ms) => async () => { order.push(tag + ':start'); await new Promise((r) => setTimeout(r, ms)); order.push(tag + ':end'); return tag }
+    const results = await Promise.all([
+      withPolicyLock('kid', slow('a', 15)),
+      withPolicyLock('kid', slow('b', 1)),
+      withPolicyLock('other', slow('c', 1)),
+    ])
+    expect(results).toEqual(['a', 'b', 'c'])
+    expect(order.indexOf('b:start')).toBeGreaterThan(order.indexOf('a:end'))
+    expect(order.indexOf('c:end')).toBeLessThan(order.indexOf('a:end'))
+  })
+
+  test('withPolicyLock keeps serving after a caller throws', async () => {
+    await expect(withPolicyLock('kid', async () => { throw new Error('boom') })).rejects.toThrow('boom')
+    await expect(withPolicyLock('kid', async () => 'ok')).resolves.toBe('ok')
+  })
+
+  test('two install relays for different packages both survive', async () => {
+    const db = makeSlowDb({ 'policy:kid': { apps: { 'com.old': { status: 'allowed' } }, childPublicKey: 'kid', version: 3 } })
+    await Promise.all([
+      handleIncomingAppInstalled({ packageName: 'com.a', appName: 'A' }, 'kid', db, jest.fn()),
+      handleIncomingAppInstalled({ packageName: 'com.b', appName: 'B' }, 'kid', db, jest.fn()),
+    ])
+    const apps = db._stored['policy:kid'].apps
+    expect(Object.keys(apps).sort()).toEqual(['com.a', 'com.b', 'com.old'])
+    expect(db._stored['policy:kid'].version).toBe(5)
+  })
+
+  test('an install relay and a batch sync for the same package yield one alert and one approval card', async () => {
+    const db = makeSlowDb({ 'policy:kid': { apps: { 'com.old': { status: 'allowed' } }, childPublicKey: 'kid', version: 3 } })
+    await Promise.all([
+      handleIncomingAppInstalled({ packageName: 'com.new', appName: 'New' }, 'kid', db, jest.fn()),
+      handleIncomingAppsSync({ apps: [{ packageName: 'com.new', appName: 'New' }, { packageName: 'com.old', appName: 'Old' }] }, 'kid', db, jest.fn()),
+    ])
+    expect(Object.keys(db._stored['policy:kid'].apps).sort()).toEqual(['com.new', 'com.old'])
+    expect(alerts(db)).toHaveLength(1)
+    expect(requests(db)).toHaveLength(1)
+  })
+
+  test('settings:save racing an install relay keeps both the settings and the app', async () => {
+    const db = makeSlowDb({ 'policy:kid': { apps: { 'com.old': { status: 'allowed' } }, childPublicKey: 'kid', version: 3 } })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), mode: 'parent' }
+    const dispatch = createDispatch(ctx)
+    await Promise.all([
+      dispatch('settings:save', { settings: { timeRequestMinutes: [5], warningMinutes: [1], autoApproveNewApps: true } }),
+      handleIncomingAppInstalled({ packageName: 'com.new', appName: 'New' }, 'kid', db, jest.fn()),
+    ])
+    const saved = db._stored['policy:kid']
+    expect(saved.apps['com.new']).toBeDefined()
+    expect(saved.settings).toEqual({ timeRequestMinutes: [5], warningMinutes: [1], autoApproveNewApps: true })
+    expect(saved.version).toBe(5)
+  })
+
+  test('a lock decision racing a policy edit from the UI loses neither', async () => {
+    const db = makeSlowDb({ 'policy:kid': { apps: { 'com.old': { status: 'allowed' } }, childPublicKey: 'kid', version: 3 }, 'peers:kid': { noiseKey: 'n' } })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), mode: 'parent' }
+    const dispatch = createDispatch(ctx)
+    await Promise.all([
+      dispatch('policy:setLock', { childPublicKey: 'kid', locked: true, lockMessage: 'Dinner' }),
+      dispatch('app:decide', { childPublicKey: 'kid', packageName: 'com.old', decision: 'deny' }),
+    ])
+    const saved = db._stored['policy:kid']
+    expect(saved.locked).toBe(true)
+    expect(saved.apps['com.old'].status).toBe('blocked')
+    expect(saved.version).toBe(5)
   })
 })

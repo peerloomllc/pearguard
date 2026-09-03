@@ -2283,7 +2283,7 @@ async function handleAppDecision (payload, db, send, sendToAllParents) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
-async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKey) {
+async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKey, replyToSender) {
   if (typeof payload.version !== 'number' || !payload.childPublicKey) {
     console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
     return
@@ -2305,6 +2305,20 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
   // every other parent.
   if (payload.version < existingVersion) {
     console.warn('[bare] policy:update ignored: stale version', payload.version, '<', existingVersion, 'from', senderKey?.slice(0, 8))
+    // Dropping the push silently left the parent behind: its copy is older than
+    // ours, so every further edit it makes is also rejected until its counter
+    // happens to overtake, and it never finds out (2026-09-03, "7 < 9"). Hand it
+    // our current copy instead. It is strictly newer, so the parent's
+    // shouldAcceptRelayedPolicy takes it and the parent is current in one round
+    // trip; its rejected edit shows up as reverted in its own UI rather than as
+    // silently lost.
+    if (replyToSender && senderKey && existing && existing.value) {
+      try {
+        replyToSender(senderKey, { type: 'policy:update', payload: stripAppIcons(existing.value) })
+      } catch (e) {
+        console.warn('[bare] could not send current policy back to parent', senderKey.slice(0, 8), e.message)
+      }
+    }
     return
   }
   const existingPinHashes = (existing && existing.value && existing.value.pinHashes) || {}

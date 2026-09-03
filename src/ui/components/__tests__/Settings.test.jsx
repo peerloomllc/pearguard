@@ -230,14 +230,124 @@ test('a failed save puts the toggle back and says so', async () => {
   expect(screen.getByLabelText(AUTO_APPROVE_LABEL)).toHaveAttribute('aria-checked', 'false');
 });
 
-test('Save Settings keeps the auto-approve setting instead of wiping it', async () => {
-  mockBare({ 'settings:get': { timeRequestMinutes: [5], warningMinutes: [5], autoApproveNewApps: true } });
+// ── Auto-saving settings ─────────────────────────────────────────────────────
+// These two settings used to sit behind a "Save Settings" button that looked global
+// but persisted only them. A parent who changed a chip and never scrolled to the
+// bottom lost the change. They now save on change, debounced, so a burst of taps is
+// one sync rather than one per tap.
+//
+// Chip labels are picked to be unambiguous: the time-request chips run through
+// formatMinutes (60 renders as "1 hour"), and both selectors share the "N min" shape
+// for 5/10/15/20/30, so those labels match two elements at once.
+
+function mockLoadedSettings(settings = { timeRequestMinutes: [15, 30], warningMinutes: [5, 10] }) {
+  window.callBare = jest.fn((method) => {
+    if (method === 'settings:get') return Promise.resolve(settings);
+    if (method === 'relay:status') {
+      return Promise.resolve({ enabled: true, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } });
+    }
+    return Promise.resolve({});
+  });
+}
+
+const savesOf = () => window.callBare.mock.calls.filter(([m]) => m === 'settings:save');
+
+test('there is no global Save Settings button any more', async () => {
+  mockLoadedSettings();
   render(<Settings />);
-  await screen.findByLabelText(AUTO_APPROVE_LABEL);
-  fireEvent.click(screen.getByText('Save Settings'));
+  await screen.findByLabelText('Parent Name');
+  expect(screen.queryByText('Save Settings')).not.toBeInTheDocument();
+});
+
+test('changing a time-request option saves without any button press', async () => {
+  mockLoadedSettings();
+  render(<Settings />);
+  fireEvent.click(await screen.findByText('1 hour'));
   await waitFor(() => {
     expect(window.callBare).toHaveBeenCalledWith('settings:save', {
-      settings: { timeRequestMinutes: [5], warningMinutes: [5], autoApproveNewApps: true },
+      settings: { timeRequestMinutes: [15, 30, 60], warningMinutes: [5, 10], autoApproveNewApps: false },
     });
   });
 });
+
+test('changing a warning threshold saves on its own too', async () => {
+  mockLoadedSettings();
+  render(<Settings />);
+  fireEvent.click(await screen.findByText('2 min'));
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith('settings:save', {
+      settings: { timeRequestMinutes: [15, 30], warningMinutes: [2, 5, 10], autoApproveNewApps: false },
+    });
+  });
+});
+
+test('a burst of taps collapses into a single sync', async () => {
+  mockLoadedSettings();
+  render(<Settings />);
+  fireEvent.click(await screen.findByText('1 hour'));
+  fireEvent.click(screen.getByText('1h 30m'));
+  fireEvent.click(screen.getByText('4 hours'));
+  await waitFor(() => expect(savesOf()).toHaveLength(1));
+  // settings:save rewrites and re-pushes every child's policy, so the debounce is
+  // protecting the worklet, not just tidying up the call log.
+  expect(savesOf()[0][1].settings.timeRequestMinutes).toEqual([15, 30, 60, 90, 240]);
+});
+
+test('confirms the save reached the children', async () => {
+  mockLoadedSettings();
+  render(<Settings />);
+  fireEvent.click(await screen.findByText('1 hour'));
+  expect(await screen.findByText(/saved and synced to your children/i)).toBeInTheDocument();
+});
+
+test('deselecting the last option is refused rather than silently stored', async () => {
+  mockLoadedSettings({ timeRequestMinutes: [45], warningMinutes: [5, 10] });
+  render(<Settings />);
+  fireEvent.click(await screen.findByText('45 min'));
+  expect(await screen.findByText(/keep at least one option selected/i)).toBeInTheDocument();
+  // The chip must stay selected: showing an empty selector while storage still holds
+  // the old value would put the screen and the truth out of step.
+  await waitFor(() => expect(savesOf()).toHaveLength(0));
+});
+
+test('a pending save is flushed on unmount instead of being dropped', async () => {
+  mockLoadedSettings();
+  const { unmount } = render(<Settings />);
+  fireEvent.click(await screen.findByText('1 hour'));
+  // Leave the tab before the debounce fires. The old button had exactly this
+  // failure, and re-creating it in a new shape would be no improvement.
+  unmount();
+  expect(savesOf()).toHaveLength(1);
+  expect(savesOf()[0][1].settings.timeRequestMinutes).toEqual([15, 30, 60]);
+});
+
+test('a failed save says the children still have the old setting', async () => {
+  window.callBare = jest.fn((method) => {
+    if (method === 'settings:get') return Promise.resolve({ timeRequestMinutes: [15], warningMinutes: [5] });
+    if (method === 'relay:status') return Promise.resolve(null);
+    if (method === 'settings:save') return Promise.reject(new Error('offline'));
+    return Promise.resolve({});
+  });
+  render(<Settings />);
+  fireEvent.click(await screen.findByText('1 hour'));
+  expect(await screen.findByText(/still have the previous setting/i)).toBeInTheDocument();
+});
+
+test('a chip save keeps the auto-approve setting instead of wiping it', async () => {
+  mockLoadedSettings({ timeRequestMinutes: [15, 30], warningMinutes: [5, 10], autoApproveNewApps: true })
+  render(<Settings />)
+  fireEvent.click(await screen.findByText('1 hour'))
+  await waitFor(() => expect(savesOf()).toHaveLength(1))
+  expect(savesOf()[0][1].settings.autoApproveNewApps).toBe(true)
+})
+
+test('flipping the toggle while a chip save is pending is not undone by it', async () => {
+  mockLoadedSettings()
+  render(<Settings />)
+  fireEvent.click(await screen.findByText('1 hour'))
+  // The chip save is still waiting out its debounce when the toggle saves.
+  fireEvent.click(screen.getByLabelText('Allow new apps automatically'))
+  await waitFor(() => expect(savesOf()).toHaveLength(2))
+  const last = savesOf()[1][1].settings
+  expect(last).toEqual({ timeRequestMinutes: [15, 30, 60], warningMinutes: [5, 10], autoApproveNewApps: true })
+})

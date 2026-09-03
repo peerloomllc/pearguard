@@ -876,12 +876,23 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       // post-restart backfill) doesn't wipe earlier sessions.
       const incomingSessions = msg.payload.sessions || []
       const reportTs = msg.payload.timestamp || Date.now()
+      // Remember the child's own clock offset, so every later read of this
+      // child's days walks their calendar rather than ours. Older children send
+      // neither field; those keep the previous behaviour of using our clock.
+      const childOffset = typeof msg.payload.tzOffsetMinutes === 'number' ? msg.payload.tzOffsetMinutes : null
+      if (childOffset !== null) {
+        const knownZone = await db.get('childZone:' + childPublicKey).catch(() => null)
+        if (!knownZone || knownZone.value?.offsetMinutes !== childOffset) {
+          await db.put('childZone:' + childPublicKey, { offsetMinutes: childOffset, localDate: msg.payload.localDate || null, at: reportTs })
+          log('[bare] child', childPublicKey.slice(0, 8), 'is at UTC' + (childOffset >= 0 ? '+' : '') + (childOffset / 60))
+        }
+      }
       // Bucket each session by its OWN startedAt local day rather than the single
       // flush timestamp, so a session begun before local midnight (or a flush that
       // arrives on the next day) is filed on the day it actually happened instead of
       // being lumped onto the flush day.
       if (incomingSessions.length > 0) {
-        for (const [dateStr, daySessions] of groupSessionsByLocalDate(incomingSessions, reportTs)) {
+        for (const [dateStr, daySessions] of groupSessionsByLocalDate(incomingSessions, reportTs, childOffset)) {
           const sessionKey = 'sessions:' + childPublicKey + ':' + dateStr + ':full'
           const existingRaw = await db.get(sessionKey).catch(() => null)
           const merged = mergeSessions(existingRaw?.value, daySessions)
@@ -1603,6 +1614,9 @@ const MUST_KEEP_EXACT = new Set([
 const MUST_KEEP_PREFIXES = [
   'peers:', 'topics:', 'policy:', 'blocked:', 'pendingParent:',
   'pendingInviteTopic:', 'pref:', '_migration:',
+  // Which zone each child's clock is in. Cheap, and losing it silently reverts
+  // that child's history to being filed on the parent's calendar.
+  'childZone:', 'policyAck:', 'appsSig:',
 ]
 const WIPEABLE_PREFIXES = [
   'alert:', 'override:', 'usage:', 'usageReport:', 'bypass:', 'sessions:', 'dailyTotals:',

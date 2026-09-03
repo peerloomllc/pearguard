@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -4186,5 +4186,107 @@ describe('a child device can free itself, but only slowly and with the PIN', () 
     expect(ctx.sendToPeer).toHaveBeenCalledWith('n1', { type: 'leave:cancel', payload: {} })
     expect(db._stored['leavePending:kid']).toBeUndefined()
     expect((await dispatch('children:list', {}))[0].leaveEffectiveAt).toBe(0)
+  })
+})
+
+describe("a day of usage belongs to the child's calendar", () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  // 2026-09-03 22:30 UTC. In Kiritimati (+14) that is already the 4th; in
+  // Los Angeles (-7) it is still the afternoon of the 3rd.
+  const T = Date.UTC(2026, 8, 3, 22, 30)
+
+  test('dateStrInZone reads the date in the zone it is given', () => {
+    expect(dateStrInZone(T, 14 * 60)).toBe('2026-09-04')
+    expect(dateStrInZone(T, -7 * 60)).toBe('2026-09-03')
+    expect(dateStrInZone(T, 0)).toBe('2026-09-03')
+    // Half-hour and three-quarter-hour zones are real places.
+    expect(dateStrInZone(Date.UTC(2026, 8, 3, 18, 45), 5 * 60 + 45)).toBe('2026-09-04')
+    // No offset means "use our own clock", exactly as before this existed.
+    expect(dateStrInZone(T, undefined)).toBe(new Date(T).getFullYear() + '-' + String(new Date(T).getMonth() + 1).padStart(2, '0') + '-' + String(new Date(T).getDate()).padStart(2, '0'))
+    expect(dateStrInZone(T, NaN)).toBe(dateStrInZone(T, undefined))
+  })
+
+  test('childZoneOffset returns null until the child has told us', async () => {
+    const db = makeDb({})
+    expect(await childZoneOffset(db, 'kid')).toBe(null)
+    db._stored['childZone:kid'] = { offsetMinutes: 840 }
+    expect(await childZoneOffset(db, 'kid')).toBe(840)
+    db._stored['childZone:kid'] = { offsetMinutes: 'noon' }
+    expect(await childZoneOffset(db, 'kid')).toBe(null)
+    // Zero is a real offset, not a missing one.
+    db._stored['childZone:kid'] = { offsetMinutes: 0 }
+    expect(await childZoneOffset(db, 'kid')).toBe(0)
+  })
+
+  test("the child stamps its own day and offset into every report", async () => {
+    const db = makeDb({ identity: { publicKey: 'kid' }, policy: { apps: {} } })
+    const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    // An empty flush is a no-op, so give it something to report.
+    await createDispatch(ctx)('usage:flush', { usage: [{ packageName: 'com.game', appName: 'Game', todaySeconds: 60 }], sessions: [], dailyTotals: [] })
+    const sent = ctx.sendToAllParents.mock.calls.map(([m]) => m).find((m) => m.type === 'usage:report')
+    expect(typeof sent.payload.localDate).toBe('string')
+    expect(sent.payload.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(sent.payload.tzOffsetMinutes).toBe(-new Date().getTimezoneOffset())
+  })
+
+  test("the parent walks the child's days, not its own", async () => {
+    const childDay = dateStrInZone(T, 14 * 60)
+    const parentDay = dateStrInZone(T, -7 * 60)
+    expect(childDay).not.toBe(parentDay)
+    // Use the child's PREVIOUS day: the current day deliberately reads from
+    // sessions rather than dailyTotals, because Android's daily bucket is not
+    // midnight-aligned.
+    const childYesterday = dateStrInZone(T - 86400000, 14 * 60)
+    const db = makeDb({
+      ['dailyTotals:kid:' + childYesterday]: { date: childYesterday, apps: [{ packageName: 'com.game', displayName: 'Game', secondsToday: 1800 }] },
+      'childZone:kid': { offsetMinutes: 14 * 60 },
+    })
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(T)
+    try {
+      const out = await createDispatch({ db, send: jest.fn(), mode: 'parent', getMode: () => 'parent' })('usage:getDailySummaries', { childPublicKey: 'kid', days: 3 })
+      const rows = out.summaries || out
+      // The window is the child's three days, which a parent on the other side
+      // of the date line would never have asked for.
+      expect(rows.map((r) => r.date)).toContain(childDay)
+      expect(rows.map((r) => r.date)).toContain(childYesterday)
+      expect(rows.map((r) => r.date)).not.toContain(dateStrInZone(T - 3 * 86400000, -7 * 60))
+      expect(rows.find((r) => r.date === childYesterday).totalSeconds).toBe(1800)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test('with no offset recorded the parent behaves exactly as it used to', async () => {
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(T)
+    try {
+      const ownDay = dateStrInZone(T, undefined)
+      const db = makeDb({ ['dailyTotals:kid:' + ownDay]: { date: ownDay, apps: [{ packageName: 'com.game', secondsToday: 600 }] } })
+      const out = await createDispatch({ db, send: jest.fn(), mode: 'parent', getMode: () => 'parent' })('usage:getDailySummaries', { childPublicKey: 'kid', days: 2 })
+      expect((out.summaries || out).map((r) => r.date)).toContain(ownDay)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("sessions are filed on the child's day, not the day the flush arrived", () => {
+    const evening = Date.UTC(2026, 8, 3, 22, 0) // 12:00 on the 4th in Kiritimati
+    const grouped = groupSessionsByLocalDate([{ packageName: 'com.game', startedAt: evening, durationSeconds: 60 }], evening, 14 * 60)
+    expect([...grouped.keys()]).toEqual(['2026-09-04'])
+    const ownZone = groupSessionsByLocalDate([{ packageName: 'com.game', startedAt: evening, durationSeconds: 60 }], evening)
+    expect([...ownZone.keys()]).toEqual([dateStrInZone(evening, undefined)])
   })
 })

@@ -2,6 +2,38 @@
 
 Per-app decision log for PearGuard. Append-only, newest on top. See `/home/tim/peerloomllc/CONSTITUTION.md` §4 for the entry format.
 
+## 2026-09-03 - a day of usage belongs to the child's calendar
+
+Tier: T2
+Context: `dailyTotals` rows were keyed by the CHILD's calendar (the Android
+aggregate builds its date from a `Calendar` in the child's zone) but read by the
+PARENT's (`usage:getDailySummaries` and `usage:getCategorySummary` built their
+windows from the parent's `localDateStr()`), while sessions from the same report
+were re-keyed into parent-local dates by `groupSessionsByLocalDate`. One store,
+two calendars, read with a third assumption. Proved with the harness running the
+child in Pacific/Kiritimati against a parent on this machine: on main the parent
+asked for 2026-09-03/02/01, never asked for the child's own day 2026-09-04, and
+filed the child's 1800 s onto 09-03.
+Choice: the child's calendar owns the day. It is their screen time and their
+midnight that resets the daily budget, so `usage:report` now carries `localDate`
+and `tzOffsetMinutes`; the parent stores the offset as `childZone:{child}` and
+uses `dateStrInZone` for session keys, for both summary windows, and for the
+"is this the current day" test that decides whether to prefer sessions over the
+native daily bucket.
+Rejected: the parent's calendar. It makes the parent's dates always match their
+own phone, but a child's evening would land on the parent's next day and it
+disagrees with the budget reset the child actually lives through.
+Compat and migration: an older child sends neither field, `childZoneOffset`
+returns null, and `dateStrInZone` with no offset is exactly `localDateStr`, so
+that pairing behaves as it always did. No migration is run over existing rows:
+sessions already written under parent-local dates stay where they are, which for
+a same-zone family (every pairing today) is the same string anyway. A family
+already split across zones will see its old rows settle onto the child's
+calendar as new reports arrive.
+Tim approved building this without a separate proposal on 2026-09-03, having
+seen the evidence that the originally reported bug (a distant parent seeing
+today's usage zeroed by `dateGateReport`) does not exist.
+
 ## 2026-09-03 - child-initiated leave: PIN plus a 24 hour countdown, no block on commit
 
 Tier: T3

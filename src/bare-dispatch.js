@@ -65,6 +65,35 @@ function localDateStr(ts) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
+/**
+ * The same date, but in a zone that is `offsetMinutes` from UTC.
+ *
+ * A day of screen time belongs to the CHILD's calendar: it is their evening, and
+ * it is their midnight that resets the daily budget. The parent may be in a
+ * different zone, so it cannot use its own clock to decide which day a child's
+ * usage lands on. `offsetMinutes` is what `new Date().getTimezoneOffset()`
+ * returns on the child, negated, i.e. UTC+2 is +120.
+ *
+ * With no offset this is exactly localDateStr, so every caller that has not been
+ * told the child's zone behaves as it always did.
+ */
+function dateStrInZone(ts, offsetMinutes) {
+  if (typeof offsetMinutes !== 'number' || !Number.isFinite(offsetMinutes)) return localDateStr(ts)
+  const d = new Date((ts || Date.now()) + offsetMinutes * 60000)
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0')
+}
+
+/**
+ * The child's own UTC offset in minutes, as last reported. Parent-side.
+ * Returns null when we have never been told, which every caller reads as
+ * "use our own clock", the behaviour before this existed.
+ */
+async function childZoneOffset(db, childPublicKey) {
+  const raw = await db.get('childZone:' + childPublicKey).catch(() => null)
+  const off = raw && raw.value && raw.value.offsetMinutes
+  return typeof off === 'number' && Number.isFinite(off) ? off : null
+}
+
 // General-time grants (#179) are stamped with the local date they were issued
 // on, so they lapse at midnight and a rolled-back clock discards them rather
 // than extending the budget. Mirrors bonusSecondsForToday in src/policy.js.
@@ -237,11 +266,11 @@ async function pruneStaleKeys(db, prefix, tsField, cutoffMs) {
 // landed on the wrong day, and a flush spanning midnight lumped both days together.
 // Keying by startedAt matches the one-time migrateSessionDatesToLocal re-keying.
 // Returns Map<'YYYY-MM-DD', session[]>.
-function groupSessionsByLocalDate(sessions, fallbackTs) {
+function groupSessionsByLocalDate(sessions, fallbackTs, offsetMinutes) {
   const byDate = new Map()
   for (const s of sessions || []) {
     const ts = (s && typeof s.startedAt === 'number') ? s.startedAt : fallbackTs
-    const date = localDateStr(ts)
+    const date = dateStrInZone(ts, offsetMinutes)
     if (!byDate.has(date)) byDate.set(date, [])
     byDate.get(date).push(s)
   }
@@ -1639,6 +1668,13 @@ function createDispatch (ctx) {
         const report = {
           type: 'usage:report',
           timestamp: now,
+          // Which day this device thinks it is on, and by how much its clock is
+          // offset from UTC. Without these the parent files a child's evening
+          // under whatever date the PARENT's clock says, so a family split
+          // across zones loses the child's newest day entirely and misfiles the
+          // rest by one.
+          localDate: dateStr,
+          tzOffsetMinutes: -new Date().getTimezoneOffset(),
           lastSynced: now,
           apps,
           sessions: mergedSessions,
@@ -1758,12 +1794,13 @@ function createDispatch (ctx) {
         if (!childPublicKey || !days) throw new Error('invalid usage:getDailySummaries args')
         const exclusions = await getExclusions(ctx.db, childPublicKey)
         const summaries = []
-        const now = new Date()
-        const todayStr = localDateStr()
+        // Walk the CHILD's days, not ours. A parent nine hours behind used to ask
+        // for three dates that did not include the child's newest one at all.
+        const zoneOffset = await childZoneOffset(ctx.db, childPublicKey)
+        const now = Date.now()
+        const todayStr = dateStrInZone(now, zoneOffset)
         for (let i = 0; i < days; i++) {
-          const d = new Date(now)
-          d.setDate(d.getDate() - i)
-          const dateStr = localDateStr(d)
+          const dateStr = dateStrInZone(now - i * 86400000, zoneOffset)
 
           // For the current calendar day, always read from sessions: -
           // Android's INTERVAL_DAILY active bucket is not midnight-aligned
@@ -1862,15 +1899,14 @@ function createDispatch (ctx) {
 
         // Build the list of dates we'll aggregate over.
         const dates = []
+        const zoneOffset = await childZoneOffset(ctx.db, childPublicKey)
+        const nowMs = Date.now()
         if (days && days > 1) {
-          const now = new Date()
           for (let i = 0; i < days; i++) {
-            const d = new Date(now)
-            d.setDate(d.getDate() - i)
-            dates.push(localDateStr(d))
+            dates.push(dateStrInZone(nowMs - i * 86400000, zoneOffset))
           }
         } else {
-          dates.push(date || localDateStr())
+          dates.push(date || dateStrInZone(nowMs, zoneOffset))
         }
 
         // For each date, prefer dailyTotals (native aggregates) for past
@@ -1880,7 +1916,9 @@ function createDispatch (ctx) {
         // sessions: tracks midnight boundaries correctly.
         const perAppSeconds = new Map()
         const perAppDisplayName = new Map()
-        const todayStr = localDateStr()
+        // "Is this the current day" is the child's question too: their midnight
+        // is the one the native daily bucket is misaligned against.
+        const todayStr = dateStrInZone(nowMs, zoneOffset)
         for (const dateStr of dates) {
           const totalsRaw = dateStr === todayStr
             ? null
@@ -3431,4 +3469,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

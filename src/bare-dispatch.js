@@ -1082,7 +1082,10 @@ function createDispatch (ctx) {
         // when seen-exes.json has already deduped away the first-sighting.
         if (!policy.apps[packageName]) {
           policy.apps[packageName] = {
-            status: 'pending',
+            // The parent's auto-approve setting rides along in policy.settings, so
+            // the child can allow the app straight away instead of blocking it for
+            // the round trip until the parent's policy:update arrives.
+            status: autoApprovesNewApps(policy) ? 'allowed' : 'pending',
             appName: appName || packageName,
             addedAt: Date.now(),
             ...(category && { category }),
@@ -1153,11 +1156,12 @@ function createDispatch (ctx) {
         // auto-approve everything so enforcement doesn't immediately block all apps on a
         // freshly paired device. Apps installed after pairing start as 'pending'.
         const isInitialSync = Object.keys(policy.apps).length === 0
+        const autoApprove = autoApprovesNewApps(policy)
 
         let newCount = 0
         for (const { packageName, appName, isLauncher, category } of apps) {
           if (!policy.apps[packageName]) {
-            const status = (isInitialSync || isLauncher) ? 'allowed' : 'pending'
+            const status = (isInitialSync || isLauncher || autoApprove) ? 'allowed' : 'pending'
             policy.apps[packageName] = { status, appName: appName || packageName, addedAt: Date.now(), ...(category && { category }) }
             newCount++
           } else if (category && !policy.apps[packageName].category) {
@@ -2529,7 +2533,8 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
 
   if (!policy.apps[packageName]) {
     const now = Date.now()
-    policy.apps[packageName] = { status: 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }), ...(category && { category }), ...(exeBasename && { exeBasename }) }
+    const autoApproved = await parentAutoApprovesNewApps(db)
+    policy.apps[packageName] = { status: autoApproved ? 'allowed' : 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }), ...(category && { category }), ...(exeBasename && { exeBasename }) }
     policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
 
@@ -2555,19 +2560,35 @@ async function handleIncomingAppInstalled (payload, childPublicKey, db, send, se
       appDisplayName: appName || packageName,
       childPublicKey,
       childDisplayName,
+      ...(autoApproved && { autoApproved: true }),
     }
     await db.put('alert:' + childPublicKey + ':' + now, alertEntry)
 
     // ...and an actionable one, so the parent can decide from the Activity inbox
-    // instead of hunting for the app in the Apps tab.
-    await createInstallApprovalRequest(db, send, {
-      childPublicKey, childDisplayName, packageName, appName, now,
-    })
+    // instead of hunting for the app in the Apps tab. An auto-approved app has
+    // nothing to decide, so it gets the informational alert only.
+    if (!autoApproved) {
+      await createInstallApprovalRequest(db, send, {
+        childPublicKey, childDisplayName, packageName, appName, now,
+      })
+    }
 
     // apps:synced refreshes the Apps tab; app:installed carries data for the notification
     send({ type: 'event', event: 'apps:synced', data: { childPublicKey, totalApps: Object.keys(policy.apps).length } })
-    send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, childDisplayName } })
+    send({ type: 'event', event: 'app:installed', data: { packageName, appName: appName || packageName, childPublicKey, childDisplayName, autoApproved } })
   }
+}
+
+// Parent-side: does the parent's own setting say new apps skip the approval step?
+async function parentAutoApprovesNewApps (db) {
+  const raw = await db.get('parentSettings').catch(() => null)
+  return !!(raw && raw.value && raw.value.autoApproveNewApps)
+}
+
+// Child-side: the same setting as it reaches the child, embedded in the policy the
+// parent pushes (settings:save and policy:update both copy parentSettings in).
+function autoApprovesNewApps (policy) {
+  return !!(policy && policy.settings && policy.settings.autoApproveNewApps)
 }
 
 // One pending approval per app, no matter how many times we hear about it.
@@ -2650,10 +2671,11 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
   // Use a single timestamp for the whole batch so apps from the same sync
   // sort together by date rather than getting subtly different millisecond values.
   const batchAddedAt = Date.now()
+  const autoApproved = !isFirstSync && await parentAutoApprovesNewApps(db)
   const newApps = []
   for (const { packageName, appName, iconBase64, category } of apps) {
     if (!policy.apps[packageName]) {
-      policy.apps[packageName] = { status: isFirstSync ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(iconBase64 && { iconBase64 }), ...(category && { category }) }
+      policy.apps[packageName] = { status: (isFirstSync || autoApproved) ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(iconBase64 && { iconBase64 }), ...(category && { category }) }
       newApps.push({ packageName, appName: appName || packageName })
       newCount++
     } else {
@@ -2696,16 +2718,20 @@ async function handleIncomingAppsSync (payload, childPublicKey, db, send, sendTo
           appDisplayName: appName,
           childPublicKey,
           childDisplayName,
+          ...(autoApproved && { autoApproved: true }),
         }
         await db.put('alert:' + childPublicKey + ':' + now + ':' + packageName, alertEntry)
-        // These apps were added as 'pending' above, so each one is a decision the
-        // parent still owes. A sync that ran while the child was offline can carry
-        // several; every one gets its own inbox item, and findPendingApproval keeps
-        // it from double-listing an app the child has already asked about.
-        await createInstallApprovalRequest(db, send, {
-          childPublicKey, childDisplayName, packageName, appName, now,
-        })
-        send({ type: 'event', event: 'app:installed', data: { packageName, appName, childPublicKey, childDisplayName } })
+        // Unless auto-approved, these apps were added as 'pending' above, so each
+        // one is a decision the parent still owes. A sync that ran while the child
+        // was offline can carry several; every one gets its own inbox item, and
+        // findPendingApproval keeps it from double-listing an app the child has
+        // already asked about.
+        if (!autoApproved) {
+          await createInstallApprovalRequest(db, send, {
+            childPublicKey, childDisplayName, packageName, appName, now,
+          })
+        }
+        send({ type: 'event', event: 'app:installed', data: { packageName, appName, childPublicKey, childDisplayName, autoApproved } })
       }
     }
 

@@ -161,6 +161,7 @@ export default function Settings() {
   // Collapsible state
   const [pinOpen, setPinOpen] = useState(false);
   const [timeOptsOpen, setTimeOptsOpen] = useState(false);
+  const [newAppsOpen, setNewAppsOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   // Screenshot scenes can pre-open a section; a collapsed section photographs as a
@@ -197,6 +198,10 @@ export default function Settings() {
   // Settings state
   const [timeRequestMinutes, setTimeRequestMinutes] = useState(DEFAULT_TIME_OPTIONS);
   const [warningMinutes, setWarningMinutes] = useState(DEFAULT_WARNING_THRESHOLDS);
+  // Off means a newly installed app on a child device waits for approval. On means
+  // it is allowed straight away and the parent just gets told about it.
+  const [autoApproveNewApps, setAutoApproveNewApps] = useState(false);
+  const [autoApproveStatus, setAutoApproveStatus] = useState(null);
   const [settingsStatus, setSettingsStatus] = useState(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
@@ -219,6 +224,7 @@ export default function Settings() {
       .then((s) => {
         if (s.timeRequestMinutes) setTimeRequestMinutes(s.timeRequestMinutes);
         if (s.warningMinutes) setWarningMinutes(s.warningMinutes);
+        setAutoApproveNewApps(!!s.autoApproveNewApps);
         setSettingsLoaded(true);
       })
       .catch(() => setSettingsLoaded(true));
@@ -340,11 +346,28 @@ export default function Settings() {
     setSettingsStatus(null);
     try {
       await window.callBare('settings:save', {
-        settings: { timeRequestMinutes, warningMinutes },
+        settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps },
       });
       setSettingsStatus('success');
     } catch {
       setSettingsStatus('Failed to save settings.');
+    }
+  }
+
+  // settings:save replaces the whole parentSettings object, so the toggle has to
+  // send the chip selections along with itself. It saves on tap, since a switch
+  // that waits for a Save button further down the page reads as already applied.
+  async function handleAutoApproveToggle(checked) {
+    const previous = autoApproveNewApps;
+    setAutoApproveNewApps(checked);
+    setAutoApproveStatus(null);
+    try {
+      await window.callBare('settings:save', {
+        settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps: checked },
+      });
+    } catch {
+      setAutoApproveNewApps(previous);
+      setAutoApproveStatus('Failed to save. Try again.');
     }
   }
 
@@ -587,6 +610,24 @@ export default function Settings() {
             <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
               This device is on a network that blocks direct connections entirely, so it uses the relay every time.
             </p>
+          )}
+        </Collapsible>
+      )}
+
+      {/* New App Installs */}
+      {settingsLoaded && (
+        <Collapsible title="New App Installs" icon="DownloadSimple" open={newAppsOpen} onToggle={() => setNewAppsOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: `${spacing.md}px` }}>
+            <span style={{ ...typography.body, color: colors.text.primary }}>Allow new apps automatically</span>
+            <Toggle checked={autoApproveNewApps} onChange={handleAutoApproveToggle} ariaLabel="Allow new apps automatically" />
+          </div>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
+            {autoApproveNewApps
+              ? 'Apps your child installs are allowed right away. You still get a notification and can block them from the Apps tab.'
+              : 'Apps your child installs are blocked until you approve them from the Activity tab.'}
+          </p>
+          {autoApproveStatus && (
+            <p role="alert" style={{ fontSize: '13px', color: colors.error, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>{autoApproveStatus}</p>
           )}
         </Collapsible>
       )}

@@ -186,3 +186,58 @@ test('surfaces the relay counters so an escalation is observable', async () => {
   expect(await screen.findByText('4')).toBeInTheDocument();
   expect(await screen.findByText('3')).toBeInTheDocument();
 });
+
+const AUTO_APPROVE_LABEL = 'Allow new apps automatically';
+
+test('New App Installs toggle is off by default and describes the approval behaviour', async () => {
+  mockBare({ 'settings:get': { timeRequestMinutes: [5, 10], warningMinutes: [5] } });
+  render(<Settings />);
+  const toggle = await screen.findByLabelText(AUTO_APPROVE_LABEL);
+  expect(toggle).toHaveAttribute('aria-checked', 'false');
+  expect(screen.getByText(/blocked until you approve them/i)).toBeInTheDocument();
+});
+
+test('New App Installs toggle reflects a stored on setting', async () => {
+  mockBare({ 'settings:get': { timeRequestMinutes: [5], warningMinutes: [5], autoApproveNewApps: true } });
+  render(<Settings />);
+  const toggle = await screen.findByLabelText(AUTO_APPROVE_LABEL);
+  expect(toggle).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByText(/allowed right away/i)).toBeInTheDocument();
+});
+
+test('flipping the toggle saves immediately and keeps the other settings', async () => {
+  mockBare({ 'settings:get': { timeRequestMinutes: [5, 10], warningMinutes: [1, 5] } });
+  render(<Settings />);
+  fireEvent.click(await screen.findByLabelText(AUTO_APPROVE_LABEL));
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith('settings:save', {
+      settings: { timeRequestMinutes: [5, 10], warningMinutes: [1, 5], autoApproveNewApps: true },
+    });
+  });
+  expect(screen.getByLabelText(AUTO_APPROVE_LABEL)).toHaveAttribute('aria-checked', 'true');
+});
+
+test('a failed save puts the toggle back and says so', async () => {
+  window.callBare = jest.fn((method) => {
+    if (method === 'settings:get') return Promise.resolve({ timeRequestMinutes: [5], warningMinutes: [5] });
+    if (method === 'settings:save') return Promise.reject(new Error('nope'));
+    if (method === 'relay:status') return Promise.resolve({ enabled: true, configured: true, randomized: false, relaying: { attempts: 0, successes: 0, aborts: 0 } });
+    return Promise.resolve({});
+  });
+  render(<Settings />);
+  fireEvent.click(await screen.findByLabelText(AUTO_APPROVE_LABEL));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/failed to save/i);
+  expect(screen.getByLabelText(AUTO_APPROVE_LABEL)).toHaveAttribute('aria-checked', 'false');
+});
+
+test('Save Settings keeps the auto-approve setting instead of wiping it', async () => {
+  mockBare({ 'settings:get': { timeRequestMinutes: [5], warningMinutes: [5], autoApproveNewApps: true } });
+  render(<Settings />);
+  await screen.findByLabelText(AUTO_APPROVE_LABEL);
+  fireEvent.click(screen.getByText('Save Settings'));
+  await waitFor(() => {
+    expect(window.callBare).toHaveBeenCalledWith('settings:save', {
+      settings: { timeRequestMinutes: [5], warningMinutes: [5], autoApproveNewApps: true },
+    });
+  });
+});

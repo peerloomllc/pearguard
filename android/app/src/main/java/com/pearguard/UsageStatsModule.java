@@ -1494,7 +1494,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
      * Called from app/index.tsx when bare emits the app:installed event.
      */
     @ReactMethod
-    public void showAppInstalledNotification(String childName, String appName, String childPublicKey) {
+    public void showAppInstalledNotification(String childName, String appName, String childPublicKey, boolean autoApproved) {
         NotificationManager nm =
                 (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
@@ -1511,14 +1511,18 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 : childName + " installed " + appName;
         String body = isSelf
                 ? appName + " has been installed on your device"
-                : appName + " is pending your approval";
+                : autoApproved
+                    ? appName + " was allowed automatically"
+                    : appName + " is pending your approval";
 
         // The parent's copy of this notification says the app "is pending your
         // approval", so it must land ON the approval — the Activity inbox, where
         // the Approve/Deny card now lives. It used to open the Apps tab, leaving
         // the parent to hunt for the app they had just been told about.
-        // The child's own copy ("You installed X") has nothing to approve.
-        PendingIntent pi = isSelf
+        // The child's own copy ("You installed X") has nothing to approve, and
+        // neither does an auto-approved install: both open the Apps tab, where the
+        // parent can still block the app by hand.
+        PendingIntent pi = (isSelf || autoApproved)
                 ? buildAppsTabPendingIntent(childPublicKey, notificationId)
                 : buildRequestsPendingIntent(childPublicKey, notificationId);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(reactContext, REQUEST_CHANNEL_ID)

@@ -23,6 +23,12 @@ const { pendingUninstalls } = require('./package-reconcile')
 // of them dropped the app the other had added). Callers wrap the whole
 // read-modify-write, and re-read inside the lock rather than reuse a value
 // fetched before it.
+// How long an undelivered extra-time grant stays worth delivering. The child
+// only starts its window when the grant arrives, so an offline child must still
+// get the full grant on reconnect; past this the grant is stale (yesterday's
+// 15-minute ask) and handing it over would surprise everyone.
+const UNDELIVERED_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 const policyLocks = new Map()
 function withPolicyLock (childPublicKey, fn) {
   const key = String(childPublicKey)
@@ -871,25 +877,39 @@ function createDispatch (ctx) {
           await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
         }
 
-        // Store override grant on parent side so parent UI can display active overrides (#61)
         const grantedAt = Date.now()
-        const expiresAt = grantedAt + extraSeconds * 1000
-        await ctx.db.put('override:' + childPublicKey + ':' + grantedAt, {
-          packageName, appName, childPublicKey, grantedAt, expiresAt, source: 'parent-approved',
-          // requestId + extraSeconds let handleHello re-send this grant to a child
-          // that was offline when it was approved (grants were otherwise lost).
-          requestId, extraSeconds,
-        })
-
+        let sent = false
         try {
           const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
           const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
           if (noiseKey) {
             ctx.sendToPeer(noiseKey, { type: 'time:extend', payload: { requestId, packageName, extraSeconds } })
+            sent = true
           }
         } catch (_e) {
-          // child offline — grant stored; child will receive on reconnect via handleHello
+          // child offline — stored below as awaiting delivery, re-sent from handleHello
         }
+
+        // Store the grant parent-side so the parent UI can show active overrides
+        // (#61). The child starts the clock when the grant ARRIVES (handleTimeExtend
+        // stamps its own expiresAt), so until the child confirms, this grant has no
+        // expiry. Stamping grantedAt + extraSeconds regardless made the parent count
+        // down a window the child was never in, and replayActiveGrants then refused
+        // to re-send the grant once that phantom window had passed: 15 minutes
+        // approved while the child was on the bus were silently lost while both
+        // devices still called the request approved.
+        //
+        // `sent` deliberately does NOT count as delivery. Writing to a peer that has
+        // just gone away succeeds silently (proved by harness scenario 12: the child
+        // process was killed and the write still did not throw), so only the child's
+        // own request:resolved settles this record.
+        await ctx.db.put('override:' + childPublicKey + ':' + grantedAt, {
+          packageName, appName, childPublicKey, grantedAt, source: 'parent-approved',
+          expiresAt: null, awaitingDelivery: true, ...(sent && { sentAt: grantedAt }),
+          // requestId + extraSeconds let handleHello re-send this grant to a child
+          // that was offline when it was approved (grants were otherwise lost).
+          requestId, extraSeconds,
+        })
         ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
         return { ok: true }
       }
@@ -1007,7 +1027,10 @@ function createDispatch (ctx) {
         const overrides = []
         const now = Date.now()
         for await (const { key, value } of ctx.db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
-          if (value.expiresAt <= now) continue
+          // A grant the child has not received yet has no expiry, because the child
+          // starts the clock on arrival. Keep it listed so the parent sees it is
+          // still waiting on the phone instead of seeing nothing at all.
+          if (value.awaitingDelivery !== true && !(value.expiresAt > now)) continue
           if (filterChild && value.childPublicKey !== filterChild) continue
           // Resolve appName from policy if not already on the record
           if (!value.appName) {
@@ -1018,7 +1041,9 @@ function createDispatch (ctx) {
           }
           overrides.push(value)
         }
-        overrides.sort((a, b) => a.expiresAt - b.expiresAt)
+        // Undelivered grants first (they have no expiry to sort by), then by
+        // whichever runs out soonest.
+        overrides.sort((a, b) => (a.expiresAt || 0) - (b.expiresAt || 0))
         return { overrides }
       }
 
@@ -2397,14 +2422,49 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
  * @param {string} remoteKeyHex — the child connection's noise key
  * @param {number} now — current epoch ms
  */
+/**
+ * Mark the parent-side record for one extra-time grant as delivered, once the
+ * child has confirmed it. Returns true when a record was settled.
+ */
+async function settleDeliveredGrant (db, childPublicKey, requestId, now) {
+  for await (const { key, value } of db.createReadStream({ gt: 'override:' + childPublicKey + ':', lt: 'override:' + childPublicKey + ':~' })) {
+    if (!value || value.requestId !== requestId || value.awaitingDelivery !== true) continue
+    const extraSeconds = typeof value.extraSeconds === 'number' ? value.extraSeconds : 0
+    await db.put(key, { ...value, awaitingDelivery: false, deliveredAt: now, expiresAt: now + extraSeconds * 1000 })
+    return true
+  }
+  return false
+}
+
 async function replayActiveGrants (db, childPublicKey, sendToPeer, remoteKeyHex, now) {
   let replayed = 0
-  for await (const { value } of db.createReadStream({ gt: 'override:' + childPublicKey + ':', lt: 'override:' + childPublicKey + ':~' })) {
-    if (value && value.requestId && value.packageName && typeof value.extraSeconds === 'number' &&
-        (value.expiresAt || 0) > now) {
-      sendToPeer(remoteKeyHex, { type: 'time:extend', payload: { requestId: value.requestId, packageName: value.packageName, extraSeconds: value.extraSeconds } })
-      replayed++
+  for await (const { key, value } of db.createReadStream({ gt: 'override:' + childPublicKey + ':', lt: 'override:' + childPublicKey + ':~' })) {
+    if (!value || !value.requestId || !value.packageName || typeof value.extraSeconds !== 'number') continue
+    // Records written before delivery tracking existed carry neither field; they
+    // keep the old expiry rule rather than being resurrected retroactively.
+    const undelivered = value.awaitingDelivery === true && !value.deliveredAt
+    if (undelivered) {
+      if (now - (value.grantedAt || 0) > UNDELIVERED_GRANT_MAX_AGE_MS) {
+        // Too old to spring on the child now. Clear the flag so the parent's Apps
+        // tab stops promising time that is never coming.
+        await db.put(key, { ...value, awaitingDelivery: false, expiresAt: value.grantedAt || 0 })
+        continue
+      }
+    } else if ((value.expiresAt || 0) <= now) {
+      continue
     }
+    try {
+      sendToPeer(remoteKeyHex, { type: 'time:extend', payload: { requestId: value.requestId, packageName: value.packageName, extraSeconds: value.extraSeconds } })
+    } catch (e) {
+      console.warn('[bare] could not replay grant to child', childPublicKey.slice(0, 8) + ':', e.message)
+      continue
+    }
+    // The record stays awaiting delivery until the child's request:resolved
+    // settles it (see settleDeliveredGrant), so a grant written into a socket
+    // that was already dead is re-sent on the next reconnect rather than
+    // counted as delivered. The child dedupes a re-send it has already applied
+    // and re-confirms it, so this settles on the following reconnect at worst.
+    replayed++
   }
   const todayStr = localDateStr(now)
   for await (const { value } of db.createReadStream({ gt: 'screentime:grant:' + childPublicKey + ':', lt: 'screentime:grant:' + childPublicKey + ':~' })) {
@@ -2464,7 +2524,15 @@ async function handleTimeExtend (payload, db, send, sendToAllParents) {
   // create a second override and re-grant native time with a fresh expiry, so
   // skip a request we already marked 'approved'.
   const existing = await db.get(requestId).catch(() => null)
-  if (existing && existing.value && existing.value.status === 'approved') return
+  if (existing && existing.value && existing.value.status === 'approved') {
+    // Already applied. Re-confirm it anyway: the parent keeps its copy marked
+    // awaiting delivery until it hears this, and the first confirmation can be
+    // lost with the connection that carried the grant.
+    if (sendToAllParents) {
+      sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'approved', packageName, appName: existing.value.appName || packageName, resolvedAt: existing.value.expiresAt ? existing.value.expiresAt - extraSeconds * 1000 : Date.now() } })
+    }
+    return
+  }
 
   const expiresAt = Date.now() + extraSeconds * 1000
   const grant = { packageName, grantedAt: Date.now(), expiresAt, source: 'parent-approved' }
@@ -2960,6 +3028,16 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   const { requestId, status, packageName, appName, resolvedAt } = payload
   if (!requestId || !status) return
 
+  // The child broadcasts this when it APPLIES an extra-time grant, which makes it
+  // the only trustworthy confirmation the grant landed. Settle our copy on it:
+  // clear the awaiting-delivery flag and start the countdown now, so the parent
+  // watches roughly the same window the child is enforcing. The parent's own
+  // clock is used on purpose - the child's resolvedAt comes from a device whose
+  // clock this app already treats as untrusted.
+  if (status === 'approved' && childPublicKey) {
+    await settleDeliveredGrant(db, childPublicKey, requestId, Date.now())
+  }
+
   const existing = await db.get('request:' + requestId).catch(() => null)
 
   // If the request already has a non-pending status, nothing to update.
@@ -3043,4 +3121,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

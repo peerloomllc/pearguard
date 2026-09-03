@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3500,5 +3500,158 @@ describe('a stale push gets the child\'s current policy back', () => {
     const db = makeDb({ policy: { childPublicKey: 'c1', version: 9, apps: {} } })
     await expect(handlePolicyUpdate({ childPublicKey: 'c1', version: 1, apps: {} }, db, jest.fn(), jest.fn(), 'parent1')).resolves.toBeUndefined()
     expect(db.put).not.toHaveBeenCalled()
+  })
+})
+
+describe('a grant approved while the child is offline survives until delivery', () => {
+  const HOUR = 60 * 60 * 1000
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const overrideRow = (db) => Object.entries(db._stored).find(([k]) => k.startsWith('override:'))[1]
+  const pendingGrant = (extra = {}) => ({
+    packageName: 'com.game', appName: 'Game', childPublicKey: 'kid', source: 'parent-approved',
+    expiresAt: null, awaitingDelivery: true, requestId: 'r1', extraSeconds: 900, ...extra,
+  })
+
+  test('offline approval stores the grant with no expiry and marks it awaiting delivery', async () => {
+    const db = makeDb({ 'request:r1': { id: 'r1', appName: 'Game', status: 'pending' }, 'peers:kid': { noiseKey: 'noise1' } })
+    const sendToPeer = jest.fn(() => { throw new Error('peer not connected: kid') })
+    const ctx = { db, send: jest.fn(), sendToPeer, mode: 'parent' }
+    await createDispatch(ctx)('time:grant', { childPublicKey: 'kid', requestId: 'r1', packageName: 'com.game', extraSeconds: 900 })
+    const row = overrideRow(db)
+    expect(row).toMatchObject({ awaitingDelivery: true, expiresAt: null, extraSeconds: 900, requestId: 'r1', packageName: 'com.game' })
+    expect(row.deliveredAt).toBeUndefined()
+    expect(row.sentAt).toBeUndefined()
+  })
+
+  test('a write that appears to succeed is still not treated as delivery', async () => {
+    // Writing to a peer that has just gone away does not throw (harness 12), so
+    // the record waits for the child\'s own confirmation either way.
+    const db = makeDb({ 'request:r1': { id: 'r1', appName: 'Game', status: 'pending' }, 'peers:kid': { noiseKey: 'noise1' } })
+    const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), mode: 'parent' }
+    await createDispatch(ctx)('time:grant', { childPublicKey: 'kid', requestId: 'r1', packageName: 'com.game', extraSeconds: 900 })
+    const row = overrideRow(db)
+    expect(row).toMatchObject({ awaitingDelivery: true, expiresAt: null, sentAt: row.grantedAt })
+    expect(row.deliveredAt).toBeUndefined()
+    expect(ctx.sendToPeer).toHaveBeenCalledWith('noise1', { type: 'time:extend', payload: { requestId: 'r1', packageName: 'com.game', extraSeconds: 900 } })
+  })
+
+  test('the child reconnecting hours later still gets the full grant', async () => {
+    const grantedAt = Date.now() - 5 * HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: pendingGrant({ grantedAt }) })
+    const sendToPeer = jest.fn()
+    expect(await replayActiveGrants(db, 'kid', sendToPeer, 'noise1', Date.now())).toBe(1)
+    expect(sendToPeer).toHaveBeenCalledWith('noise1', { type: 'time:extend', payload: { requestId: 'r1', packageName: 'com.game', extraSeconds: 900 } })
+    // Still unsettled: only the child\'s confirmation clears it.
+    expect(overrideRow(db)).toMatchObject({ awaitingDelivery: true, expiresAt: null })
+  })
+
+  test("the child's confirmation starts the parent's countdown", async () => {
+    const grantedAt = Date.now() - 5 * HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: pendingGrant({ grantedAt }), 'request:r1': { id: 'r1', status: 'approved', appName: 'Game' } })
+    const now = Date.now()
+    expect(await settleDeliveredGrant(db, 'kid', 'r1', now)).toBe(true)
+    expect(overrideRow(db)).toMatchObject({ awaitingDelivery: false, deliveredAt: now, expiresAt: now + 900000 })
+    // Settling twice is a no-op, so a re-confirmation cannot extend the window.
+    expect(await settleDeliveredGrant(db, 'kid', 'r1', now + 60000)).toBe(false)
+    expect(overrideRow(db).expiresAt).toBe(now + 900000)
+  })
+
+  test('request:resolved from the child settles the grant even though the request is already approved', async () => {
+    const grantedAt = Date.now() - HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: pendingGrant({ grantedAt }), 'request:r1': { id: 'r1', status: 'approved', appName: 'Game' } })
+    await handleRequestResolved({ requestId: 'r1', status: 'approved', packageName: 'com.game', appName: 'Game', resolvedAt: Date.now() }, db, jest.fn(), 'kid')
+    const row = overrideRow(db)
+    expect(row.awaitingDelivery).toBe(false)
+    expect(row.expiresAt).toBeGreaterThan(Date.now())
+  })
+
+  test('a denial does not settle anything', async () => {
+    const grantedAt = Date.now() - HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: pendingGrant({ grantedAt }) })
+    await handleRequestResolved({ requestId: 'r1', status: 'denied', packageName: 'com.game', resolvedAt: Date.now() }, db, jest.fn(), 'kid')
+    expect(overrideRow(db)).toMatchObject({ awaitingDelivery: true, expiresAt: null })
+  })
+
+  test('an undelivered grant older than a day is dropped, not sprung on the child', async () => {
+    const grantedAt = Date.now() - 30 * HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: pendingGrant({ grantedAt }) })
+    const sendToPeer = jest.fn()
+    expect(await replayActiveGrants(db, 'kid', sendToPeer, 'noise1', Date.now())).toBe(0)
+    expect(sendToPeer).not.toHaveBeenCalled()
+    // Flag cleared so the Apps tab stops promising time that is never coming.
+    expect(overrideRow(db)).toMatchObject({ awaitingDelivery: false, expiresAt: grantedAt })
+  })
+
+  test('a delivered grant keeps the old rules: re-sent while live, dropped once expired', async () => {
+    const now = Date.now()
+    const live = now - 60000
+    const dead = now - 2 * HOUR
+    const db = makeDb({
+      ['override:kid:' + live]: { packageName: 'com.live', childPublicKey: 'kid', grantedAt: live, deliveredAt: live, expiresAt: now + 300000, requestId: 'r-live', extraSeconds: 900 },
+      ['override:kid:' + dead]: { packageName: 'com.dead', childPublicKey: 'kid', grantedAt: dead, deliveredAt: dead, expiresAt: dead + 900000, requestId: 'r-dead', extraSeconds: 900 },
+    })
+    const sendToPeer = jest.fn()
+    expect(await replayActiveGrants(db, 'kid', sendToPeer, 'noise1', now)).toBe(1)
+    expect(sendToPeer.mock.calls[0][1].payload.packageName).toBe('com.live')
+    expect(db._stored['override:kid:' + live].expiresAt).toBe(now + 300000)
+  })
+
+  test('a legacy record with neither field keeps the old expiry rule', async () => {
+    const grantedAt = Date.now() - 5 * HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: { packageName: 'com.game', childPublicKey: 'kid', grantedAt, expiresAt: grantedAt + 900000, requestId: 'r1', extraSeconds: 900 } })
+    const sendToPeer = jest.fn()
+    expect(await replayActiveGrants(db, 'kid', sendToPeer, 'noise1', Date.now())).toBe(0)
+    expect(sendToPeer).not.toHaveBeenCalled()
+  })
+
+  test('a failed replay leaves the grant awaiting delivery for the next reconnect', async () => {
+    const grantedAt = Date.now() - HOUR
+    const db = makeDb({ ['override:kid:' + grantedAt]: pendingGrant({ grantedAt }) })
+    const sendToPeer = jest.fn(() => { throw new Error('peer not connected') })
+    expect(await replayActiveGrants(db, 'kid', sendToPeer, 'noise1', Date.now())).toBe(0)
+    expect(overrideRow(db)).toMatchObject({ awaitingDelivery: true, expiresAt: null })
+  })
+
+  test('a child re-confirms a grant it has already applied, so a lost confirmation settles later', async () => {
+    const expiresAt = Date.now() + 500000
+    const stored = { 'req:r1': { id: 'r1', packageName: 'com.game', appName: 'Game', status: 'approved', expiresAt } }
+    const db = makeDb(stored)
+    const send = jest.fn()
+    const sendToAllParents = jest.fn()
+    await handleTimeExtend({ requestId: 'req:r1', packageName: 'com.game', extraSeconds: 900 }, db, send, sendToAllParents)
+    // Not applied a second time...
+    expect(send).not.toHaveBeenCalled()
+    expect(db.put).not.toHaveBeenCalled()
+    // ...but confirmed again so the parent can settle its record.
+    expect(sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'request:resolved',
+      payload: expect.objectContaining({ requestId: 'req:r1', status: 'approved', packageName: 'com.game' }),
+    }))
+  })
+
+  test('overrides:list shows a pending grant instead of hiding it, and still hides expired ones', async () => {
+    const now = Date.now()
+    const db = makeDb({
+      'override:kid:1': pendingGrant({ grantedAt: now - HOUR, packageName: 'com.pending', appName: 'Pending' }),
+      'override:kid:2': { packageName: 'com.live', childPublicKey: 'kid', grantedAt: now, expiresAt: now + 300000, deliveredAt: now, appName: 'Live' },
+      'override:kid:3': { packageName: 'com.gone', childPublicKey: 'kid', grantedAt: now - 2 * HOUR, expiresAt: now - HOUR, deliveredAt: now - 2 * HOUR, appName: 'Gone' },
+    })
+    const { overrides } = await createDispatch({ db, send: jest.fn(), mode: 'parent' })('overrides:list', { childPublicKey: 'kid' })
+    expect(overrides.map((o) => o.packageName)).toEqual(['com.pending', 'com.live'])
+    expect(overrides[0].awaitingDelivery).toBe(true)
   })
 })

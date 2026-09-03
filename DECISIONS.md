@@ -53,6 +53,16 @@ spot, with no chance for the parent to object); a separate leave PIN (one more
 secret for a parent to lose, and this exists for a parent who has already lost
 something); gating on 7 days of no parent contact (tighter, but a parent on a
 long holiday would trip it).
+Correction (same day): the entry below claimed wrong PINs at the leave screen
+feed the overlay's brute-force ladder. They did not: that ladder is native, in
+AppBlockerModule, and a WebView screen cannot reach it, so the leave screen
+shipped with no throttle on either platform. Found while auditing whether the
+desktop client had kept up with the day's child-side changes. Fixed by keeping
+the counter and the same ladder in the worklet (5 free attempts, then 30 s /
+2 min / 10 min / 1 h, persisted as `leaveAttempts`, a backward clock serving the
+full remaining wait), which has the side benefit of behaving identically on
+desktop, where there is no native lockout at all. A fresh lockout relays the
+existing `pin:failure` alert to the parent, so guessing is visible.
 Clock: the countdown is checked on the existing heartbeat tick, never timed, so
 it survives force-stop and reboot. Winding the clock forward is the obvious
 attack, so the commit also requires an hour of *observed* running, accumulated

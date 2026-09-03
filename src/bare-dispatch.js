@@ -1123,13 +1123,35 @@ function createDispatch (ctx) {
         if (!policy.pinHash && !(policy.pinHashes && Object.keys(policy.pinHashes).length)) {
           return { ok: false, reason: 'no-pin' }
         }
-        if (!verifyParentPin(policy, pin, ctx.sodium)) {
-          // Wrong guesses are reported the same way the block overlay reports
-          // them, so they feed the existing brute-force lockout and the parent
-          // hears about someone trying.
-          ctx.send({ type: 'event', event: 'leave:denied', data: { reason: 'wrong-pin' } })
-          return { ok: false, reason: 'wrong-pin' }
+        // Throttle before checking, so a locked-out screen costs nothing to
+        // guess at and the wait cannot be reset by trying again.
+        const attemptsRaw = await ctx.db.get('leaveAttempts').catch(() => null)
+        const attempts = (attemptsRaw && attemptsRaw.value) || { failCount: 0 }
+        const lockedFor = leaveLockRemainingMs(attempts, Date.now())
+        if (lockedFor > 0) {
+          ctx.send({ type: 'event', event: 'leave:denied', data: { reason: 'locked', lockedForMs: lockedFor } })
+          return { ok: false, reason: 'locked', lockedForMs: lockedFor }
         }
+        if (!verifyParentPin(policy, pin, ctx.sodium)) {
+          const failCount = (attempts.failCount || 0) + 1
+          const delay = leaveLockoutForFailCount(failCount)
+          const now = Date.now()
+          const updated = { failCount, ...(delay > 0 ? { lockedAt: now, lockedUntil: now + delay } : {}) }
+          await ctx.db.put('leaveAttempts', updated)
+          // Tell the parent someone is trying, through the same alert the block
+          // overlay raises. Only on a fresh lockout, mirroring the native side,
+          // so a burst of guesses is one alert rather than one per attempt.
+          if (delay > 0 && ctx.sendToAllParents) {
+            await ctx.sendToAllParents({
+              type: 'pin:failure',
+              payload: { packageName: null, appName: 'Remove supervision', failedAt: now, failCount, lockoutMs: delay },
+            })
+          }
+          ctx.send({ type: 'event', event: 'leave:denied', data: { reason: 'wrong-pin', failCount, lockedForMs: delay } })
+          return { ok: false, reason: 'wrong-pin', lockedForMs: delay }
+        }
+        // A correct PIN clears the record, exactly as the keypad does on success.
+        if (attempts.failCount) await ctx.db.del('leaveAttempts').catch(() => {})
         const existing = await ctx.db.get('leaveScheduled').catch(() => null)
         if (existing && existing.value) return { ok: true, ...existing.value }
         const requestedAt = Date.now()
@@ -1159,11 +1181,14 @@ function createDispatch (ctx) {
       }
 
       case 'leave:status': {
+        const attemptsRaw = await ctx.db.get('leaveAttempts').catch(() => null)
+        const lockedForMs = leaveLockRemainingMs(attemptsRaw && attemptsRaw.value, Date.now())
         const raw = await ctx.db.get('leaveScheduled').catch(() => null)
-        if (!raw || !raw.value) return { scheduled: false }
+        if (!raw || !raw.value) return { scheduled: false, lockedForMs }
         const rec = raw.value
         return {
           scheduled: true,
+          lockedForMs,
           requestedAt: rec.requestedAt,
           effectiveAt: rec.effectiveAt,
           msRemaining: Math.max(0, rec.effectiveAt - Date.now()),
@@ -3110,6 +3135,39 @@ function stripAppIcons (policy) {
 // A child device can free itself when the parent's phone is gone for good, but
 // not on the spot: a correct PIN starts a countdown the parent is told about and
 // can cancel. See proposals/2026-09-03-child-initiated-leave.md.
+// Guessing at the leave screen costs the same as guessing at the block overlay.
+//
+// The overlay's ladder lives in AppBlockerModule and is driven by native code,
+// so a WebView screen cannot feed it: the leave screen shipped with no throttle
+// at all, on Android and desktop alike, while its own comment and the proposal
+// both claimed otherwise. This is that ladder, kept in the worklet so both
+// platforms behave identically. Values mirror PIN_FREE_ATTEMPTS and
+// PIN_LOCKOUT_LADDER_MS exactly.
+const LEAVE_FREE_ATTEMPTS = 5
+const LEAVE_LOCKOUT_LADDER_MS = [30 * 1000, 2 * 60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000]
+
+/** Milliseconds owed after `fails` consecutive wrong PINs; 0 while attempts remain. */
+function leaveLockoutForFailCount (fails) {
+  if (fails <= LEAVE_FREE_ATTEMPTS) return 0
+  const idx = Math.min(fails - LEAVE_FREE_ATTEMPTS - 1, LEAVE_LOCKOUT_LADDER_MS.length - 1)
+  return LEAVE_LOCKOUT_LADDER_MS[idx]
+}
+
+/**
+ * Remaining lockout in ms, or 0 if the leave screen is usable.
+ *
+ * A clock rolled back to before the lock was applied serves the FULL remaining
+ * duration rather than reading as expired, the same rule the native keypad uses:
+ * the device's clock belongs to the child, so it must not be a way out.
+ */
+function leaveLockRemainingMs (rec, now) {
+  if (!rec || !rec.lockedUntil) return 0
+  const lockedAt = rec.lockedAt || 0
+  if (now < lockedAt) return rec.lockedUntil - lockedAt
+  if (now >= rec.lockedUntil) return 0
+  return rec.lockedUntil - now
+}
+
 const LEAVE_DELAY_MS = 24 * 60 * 60 * 1000
 // ...and the countdown has to be lived through, not just waited out on paper.
 // Winding the device clock forward a day is the obvious attack, so the commit
@@ -3590,4 +3648,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, pruneRuleArchives, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

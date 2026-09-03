@@ -52,7 +52,7 @@ test('AppRow renders an <img> when iconBase64 is present', async () => {
   render(<AppsTab childPublicKey="abc123" />);
   await expandAllSections();
   const img = await screen.findByRole('img', { name: /google chrome icon/i });
-  expect(img).toHaveAttribute('src', expect.stringContaining('data:image/png;base64,'));
+  expect(img).toHaveAttribute('src', expect.stringContaining('data:image/webp;base64,'));
 });
 
 test('AppRow renders initials circle when iconBase64 is absent', async () => {

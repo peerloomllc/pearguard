@@ -1201,12 +1201,32 @@ public class AppBlockerModule extends AccessibilityService {
         return loadPolicy(this);
     }
 
+    // The last policy string we parsed and what it parsed to. loadPolicy runs on
+    // the 5 s poll, on every accessibility window event and inside the 250 ms
+    // recheck burst, and used to build a fresh JSONObject each time. The prefs
+    // string itself is cheap to fetch (SharedPreferences keeps it in memory), so
+    // comparing it against the last one is the whole invalidation: a setPolicy
+    // from any process changes the string and the next call re-parses. Callers
+    // only read the returned object.
+    private static volatile String cachedPolicyJson = null;
+    private static volatile JSONObject cachedPolicy = null;
+
     static JSONObject loadPolicy(Context ctx) {
         SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = prefs.getString(POLICY_KEY, null);
-        if (json == null) return null;
+        if (json == null) {
+            cachedPolicyJson = null;
+            cachedPolicy = null;
+            return null;
+        }
+        String lastJson = cachedPolicyJson;
+        JSONObject last = cachedPolicy;
+        if (last != null && lastJson != null && (lastJson == json || lastJson.equals(json))) return last;
         try {
-            return new JSONObject(json);
+            JSONObject parsed = new JSONObject(json);
+            cachedPolicyJson = json;
+            cachedPolicy = parsed;
+            return parsed;
         } catch (Exception e) {
             return null;
         }

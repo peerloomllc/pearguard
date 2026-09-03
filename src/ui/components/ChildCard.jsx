@@ -134,7 +134,7 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', ...typography.caption, color: colors.text.secondary }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
-          {currentAppIcon && <img src={`data:image/png;base64,${currentAppIcon}`} style={{ width: '16px', height: '16px', borderRadius: '3px' }} />}
+          {currentAppIcon && <img src={`data:image/webp;base64,${currentAppIcon}`} style={{ width: '16px', height: '16px', borderRadius: '3px' }} />}
           {currentApp || 'No active app'}
         </span>
         <span>{formatSeconds(todayScreenTimeSeconds || 0)} today</span>

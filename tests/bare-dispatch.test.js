@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, stripAppIcons, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3244,5 +3244,72 @@ describe('child side honours policy.settings.autoApproveNewApps', () => {
     const dispatch = createDispatch(makeCtx(stored))
     await dispatch('apps:sync', { apps: [{ packageName: 'com.example.new', appName: 'New' }], installedAll: ['com.example.old', 'com.example.new'] })
     expect(stored.policy.apps['com.example.new']).toMatchObject({ status: 'pending' })
+  })
+})
+
+describe('app icons stay out of policy pushes', () => {
+  const ICON = 'iVBORw0KGgo='
+
+  test('stripAppIcons drops iconBase64 from every app and nothing else', () => {
+    const policy = {
+      childPublicKey: 'c1', version: 3, locked: true,
+      apps: { a: { status: 'allowed', iconBase64: ICON, category: 'Games' }, b: { status: 'pending' } },
+    }
+    const out = stripAppIcons(policy)
+    expect(out).not.toBe(policy)
+    expect(out.apps.a).toEqual({ status: 'allowed', category: 'Games' })
+    expect(out.apps.b).toEqual({ status: 'pending' })
+    expect(out).toMatchObject({ childPublicKey: 'c1', version: 3, locked: true })
+    // The original is untouched: the parent keeps its icons for the Apps tab.
+    expect(policy.apps.a.iconBase64).toBe(ICON)
+  })
+
+  test('stripAppIcons returns the same object when there is nothing to strip', () => {
+    const policy = { version: 1, apps: { a: { status: 'allowed' } } }
+    expect(stripAppIcons(policy)).toBe(policy)
+    expect(stripAppIcons(null)).toBe(null)
+    expect(stripAppIcons({ version: 1 })).toEqual({ version: 1 })
+  })
+
+  test('handlePolicyUpdate stores, hands native and relays the policy without icons', async () => {
+    const stored = {}
+    const db = {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      createReadStream: jest.fn(async function * () {}),
+    }
+    const send = jest.fn()
+    const sendToAllParents = jest.fn()
+    const payload = { childPublicKey: 'c1', version: 5, apps: { a: { status: 'blocked', iconBase64: ICON }, b: { status: 'allowed' } } }
+
+    await handlePolicyUpdate(payload, db, send, sendToAllParents, 'parent1')
+
+    expect(stored.policy.apps.a).toEqual({ status: 'blocked' })
+    const native = send.mock.calls.find(([m]) => m.method === 'native:setPolicy')[0]
+    expect(native.args.json).not.toContain(ICON)
+    expect(JSON.parse(native.args.json).apps.a).toEqual({ status: 'blocked' })
+    const relayed = sendToAllParents.mock.calls[0][0]
+    expect(relayed.type).toBe('policy:update')
+    expect(relayed.payload.apps.a).toEqual({ status: 'blocked' })
+    expect(relayed.payload.apps.b).toEqual({ status: 'allowed' })
+  })
+
+  test('child app:installed relays the icon to parents but keeps it out of its own policy', async () => {
+    const stored = { policy: { apps: { old: { status: 'allowed' } } } }
+    const db = {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      createReadStream: jest.fn(async function * () {}),
+    }
+    const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    await createDispatch(ctx)('app:installed', { packageName: 'com.new', appName: 'New', iconBase64: ICON, category: 'Games' })
+
+    expect(stored.policy.apps['com.new']).toEqual(expect.objectContaining({ status: 'pending', appName: 'New', category: 'Games' }))
+    expect(stored.policy.apps['com.new'].iconBase64).toBeUndefined()
+    const native = ctx.send.mock.calls.find(([m]) => m.method === 'native:setPolicy')[0]
+    expect(native.args.json).not.toContain(ICON)
+    expect(ctx.sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'app:installed', payload: expect.objectContaining({ packageName: 'com.new', iconBase64: ICON }),
+    }))
   })
 })

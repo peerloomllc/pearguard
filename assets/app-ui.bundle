@@ -15047,7 +15047,7 @@
           }, children: statusText }),
           /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", ...typography2.caption, color: colors.text.secondary }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { style: { display: "flex", alignItems: "center", gap: `${spacing2.xs}px` }, children: [
-              currentAppIcon && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("img", { src: `data:image/png;base64,${currentAppIcon}`, style: { width: "16px", height: "16px", borderRadius: "3px" } }),
+              currentAppIcon && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("img", { src: `data:image/webp;base64,${currentAppIcon}`, style: { width: "16px", height: "16px", borderRadius: "3px" } }),
               currentApp || "No active app"
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
@@ -15556,7 +15556,7 @@
         appData.iconBase64 ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
           "img",
           {
-            src: `data:image/png;base64,${appData.iconBase64}`,
+            src: `data:image/webp;base64,${appData.iconBase64}`,
             alt: `${appData.appName || packageName} icon`,
             style: { width: "40px", height: "40px", borderRadius: `${radius2.md}px`, objectFit: "contain", flexShrink: 0 }
           }

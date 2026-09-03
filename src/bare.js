@@ -1592,6 +1592,49 @@ async function handleHello (msg, conn, remoteKeyHex) {
       console.warn('[bare] resolved request backfill failed:', e.message)
     }
 
+    // Re-send the security events this parent may never have received.
+    //
+    // Everything else a child sends recovers on its own: requests are re-sent
+    // just above, the app list and usage are re-gathered below. These two do
+    // not, and they are the ones a parent most needs: a child writes them
+    // locally and fires them at whatever parents it believes are connected. A
+    // send into a socket whose peer has already gone does not throw (the same
+    // property #247 stopped trusting), and the child takes around fifteen
+    // seconds to notice a parent has vanished, so anything raised in that
+    // window was simply gone.
+    //
+    // The parent files both under a key derived from the event's own timestamp,
+    // so re-sending one it already has overwrites rather than duplicates. That
+    // is what makes this safe to do unconditionally on every reconnect.
+    try {
+      const securityCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+      let resentAlerts = 0
+      for await (const { value } of db.createReadStream({ gt: 'bypass:', lt: 'bypass:~' })) {
+        if (!value || !value.detectedAt || value.detectedAt < securityCutoff) continue
+        const signed = signMessage({ type: 'bypass:alert', payload: { reason: value.reason, detectedAt: value.detectedAt } }, identity)
+        conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+        resentAlerts++
+      }
+      let resentPinUses = 0
+      for await (const { value } of db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
+        // Only the child's own PIN uses. A parent-approved grant is the parent's
+        // own action and it already knows.
+        if (!value || value.source !== 'pin-verified') continue
+        if (!value.grantedAt || value.grantedAt < securityCutoff) continue
+        const signed = signMessage({
+          type: 'pin:override',
+          payload: { packageName: value.packageName, appName: value.appName, grantedAt: value.grantedAt, expiresAt: value.expiresAt },
+        }, identity)
+        conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+        resentPinUses++
+      }
+      if (resentAlerts + resentPinUses > 0) {
+        log('[bare] re-sent', resentAlerts, 'enforcement alert(s) and', resentPinUses, 'PIN use(s) to parent on reconnect')
+      }
+    } catch (e) {
+      console.warn('[bare] security event backfill failed:', e.message)
+    }
+
     // Ask RN shell to scan installed apps and relay each as app:installed
     send({ type: 'event', event: 'apps:syncRequested', data: {} })
     // Ask RN shell to gather usage stats and send a fresh report to the parent

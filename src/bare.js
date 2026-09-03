@@ -1659,7 +1659,7 @@ const MUST_KEEP_PREFIXES = [
   'pendingInviteTopic:', 'pref:', '_migration:',
   // Which zone each child's clock is in. Cheap, and losing it silently reverts
   // that child's history to being filed on the parent's calendar.
-  'childZone:', 'policyAck:', 'appsSig:',
+  'childZone:', 'policyAck:', 'appsSig:', 'policyArchive:',
   // Messages waiting for a parent to come back. Dropping these on a rebuild
   // would silently lose a child's time requests and alerts.
   'pendingMsg:',

@@ -176,12 +176,21 @@ function mergeRulesIntoPolicy (targetPolicy, importedPolicy, targetChildPubKey, 
   const screenTimeExemptApps = Array.isArray(importedPolicy.screenTimeExemptApps)
     ? importedPolicy.screenTimeExemptApps.filter(p => allowed.has(p))
     : []
+  // The device-wide daily cap is a rule like any other, and it was simply never
+  // carried: importing a sibling's rules, or restoring a kept set, silently
+  // dropped it. Absent in the source means "no cap in these rules", which must
+  // not wipe a cap the target already has, so it only overwrites when set.
+  const dailyScreenTimeLimitSeconds = typeof importedPolicy.dailyScreenTimeLimitSeconds === 'number'
+    ? importedPolicy.dailyScreenTimeLimitSeconds
+    : base.dailyScreenTimeLimitSeconds
+
   return {
     ...base,
     childPublicKey: targetChildPubKey,
     apps: mergedApps,
     schedules,
     screenTimeExemptApps,
+    ...(typeof dailyScreenTimeLimitSeconds === 'number' ? { dailyScreenTimeLimitSeconds } : {}),
     version: (base.version || 0) + 1
   }
 }

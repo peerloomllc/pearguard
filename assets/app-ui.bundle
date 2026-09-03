@@ -15588,19 +15588,19 @@
             addedDate
           ] })
         ] }),
-        override && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { style: {
+        override && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: {
           fontSize: "11px",
           fontWeight: "600",
-          color: colors.primary,
-          backgroundColor: `${colors.primary}22`,
+          // An approved grant the phone has not picked up yet is not running
+          // time, so it must not look like one. The child starts the clock when
+          // the grant arrives, which is also when this flips to a countdown.
+          color: override.awaitingDelivery ? colors.text.muted : colors.primary,
+          backgroundColor: override.awaitingDelivery ? `${colors.text.muted}22` : `${colors.primary}22`,
           padding: "2px 8px",
           borderRadius: `${radius2.full}px`,
           whiteSpace: "nowrap",
           flexShrink: 0
-        }, children: [
-          timeRemaining(override.expiresAt),
-          " left"
-        ] })
+        }, children: override.awaitingDelivery ? "waiting for the phone" : timeRemaining(override.expiresAt) + " left" })
       ] }),
       isPending ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px` }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(

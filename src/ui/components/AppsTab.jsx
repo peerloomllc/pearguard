@@ -148,14 +148,17 @@ function AppRow({ childPublicKey, packageName, appData, onUpdate, onDecide, over
           <span style={{
             fontSize: '11px',
             fontWeight: '600',
-            color: colors.primary,
-            backgroundColor: `${colors.primary}22`,
+            // An approved grant the phone has not picked up yet is not running
+            // time, so it must not look like one. The child starts the clock when
+            // the grant arrives, which is also when this flips to a countdown.
+            color: override.awaitingDelivery ? colors.text.muted : colors.primary,
+            backgroundColor: override.awaitingDelivery ? `${colors.text.muted}22` : `${colors.primary}22`,
             padding: '2px 8px',
             borderRadius: `${radius.full}px`,
             whiteSpace: 'nowrap',
             flexShrink: 0,
           }}>
-            {timeRemaining(override.expiresAt)} left
+            {override.awaitingDelivery ? 'waiting for the phone' : timeRemaining(override.expiresAt) + ' left'}
           </span>
         )}
       </div>

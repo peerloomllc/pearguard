@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, stripAppIcons, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3311,5 +3311,50 @@ describe('app icons stay out of policy pushes', () => {
     expect(ctx.sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({
       type: 'app:installed', payload: expect.objectContaining({ packageName: 'com.new', iconBase64: ICON }),
     }))
+  })
+})
+
+describe('relayed policies cannot roll a parent back', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: stored[k] } : null),
+      _stored: stored,
+    }
+  }
+
+  test('queueMessage refuses to queue a policy:update relay', async () => {
+    const db = makeDb({})
+    await queueMessage({ type: 'policy:update', payload: { version: 4, apps: {} } }, db)
+    expect(db.put).not.toHaveBeenCalled()
+    await queueMessage({ type: 'app:installed', payload: { packageName: 'a' } }, db)
+    expect(db._stored.pendingMessages.map((e) => e.message.type)).toEqual(['app:installed'])
+  })
+
+  test('flushMessageQueue drops policy:update relays queued by older code and keeps the rest', async () => {
+    const db = makeDb({ pendingMessages: [
+      { message: { type: 'policy:update', payload: { version: 5 } } },
+      { message: { type: 'app:installed', payload: { packageName: 'a' } } },
+      { message: { type: 'policy:update', payload: { version: 6 } } },
+      { message: { type: 'usage:report', payload: {} } },
+    ] })
+    const written = []
+    const count = await flushMessageQueue(db, async (m) => { written.push(m.type) })
+    expect(written).toEqual(['app:installed', 'usage:report'])
+    expect(count).toBe(2)
+    expect(db._stored.pendingMessages).toEqual([])
+  })
+
+  test('shouldAcceptRelayedPolicy takes only a strictly newer version', () => {
+    expect(shouldAcceptRelayedPolicy({ version: 9 }, { version: 10 })).toBe(true)
+    // The parent hearing its own push back, or a child that is behind at reconnect.
+    expect(shouldAcceptRelayedPolicy({ version: 9 }, { version: 9 })).toBe(false)
+    expect(shouldAcceptRelayedPolicy({ version: 9 }, { version: 5 })).toBe(false)
+    // Nothing stored yet: a re-paired parent takes whatever the child holds.
+    expect(shouldAcceptRelayedPolicy(null, { version: 3 })).toBe(true)
+    expect(shouldAcceptRelayedPolicy({ apps: {} }, { version: 1 })).toBe(true)
+    // Unversioned payloads never replace a copy.
+    expect(shouldAcceptRelayedPolicy({ version: 2 }, { apps: {} })).toBe(false)
+    expect(shouldAcceptRelayedPolicy({ version: 2 }, null)).toBe(false)
   })
 })

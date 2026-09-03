@@ -8,6 +8,16 @@ import Button from './primitives/Button.jsx'
 import Collapsible from './primitives/Collapsible.jsx'
 import ChildInviteCard from './ChildInviteCard.jsx'
 
+// Wrong guesses at the leave screen cost the same wait as wrong guesses at the
+// block screen, so the child needs to be told how long rather than just refused.
+function waitMessage (ms) {
+  const mins = Math.ceil(ms / 60000)
+  if (ms < 60000) return `Too many tries. Wait ${Math.ceil(ms / 1000)} seconds and try again.`
+  if (mins < 60) return `Too many tries. Wait ${mins} minute${mins === 1 ? '' : 's'} and try again.`
+  const hours = Math.round(mins / 60)
+  return `Too many tries. Wait ${hours} hour${hours === 1 ? '' : 's'} and try again.`
+}
+
 export default function Profile({ mode }) {
   const { colors, typography, spacing, radius } = useTheme()
   const [name, setName] = useState('')
@@ -25,6 +35,7 @@ export default function Profile({ mode }) {
   const [leavePin, setLeavePin] = useState('')
   const [leaveError, setLeaveError] = useState(null)
   const [leaveState, setLeaveState] = useState(null) // null | { effectiveAt }
+  const [leaveLockedFor, setLeaveLockedFor] = useState(0)
   const [pairError, setPairError] = useState(null)
   const [pairUiMode, setPairUiMode] = useState('initial') // 'initial' | 'methodPicker' | 'paste' | 'showQr'
   const [pasteUrl, setPasteUrl] = useState('')
@@ -38,7 +49,10 @@ export default function Profile({ mode }) {
   useEffect(() => {
     if (mode !== 'child') return
     window.callBare('leave:status')
-      .then((st) => { if (st && st.scheduled) setLeaveState(st) })
+      .then((st) => {
+        if (st && st.scheduled) setLeaveState(st)
+        if (st && st.lockedForMs > 0) setLeaveLockedFor(st.lockedForMs)
+      })
       .catch(() => {})
   }, [mode])
 
@@ -460,17 +474,22 @@ export default function Profile({ mode }) {
                 <Button
                   variant="danger"
                   style={{ width: '100%' }}
-                  disabled={!leavePin.trim()}
+                  disabled={!leavePin.trim() || leaveLockedFor > 0}
                   onClick={async () => {
                     window.callBare('haptic:tap')
                     const res = await window.callBare('leave:request', { pin: leavePin }).catch(() => ({ ok: false, reason: 'failed' }))
                     if (res && res.ok) { setLeaveState(res); setLeavePin(''); setLeaveError(null) }
-                    else setLeaveError(res && res.reason === 'no-pin' ? 'No parent PIN is set on this device.' : 'That PIN is not right.')
+                    else if (res && res.reason === 'no-pin') setLeaveError('No parent PIN is set on this device.')
+                    else if (res && res.lockedForMs > 0) setLeaveError(waitMessage(res.lockedForMs))
+                    else setLeaveError('That PIN is not right.')
                   }}
                 >
                   Start removing supervision
                 </Button>
               </div>
+            )}
+            {leaveLockedFor > 0 && !leaveError && (
+              <p role="status" style={{ fontSize: '13px', color: colors.text.secondary, marginBottom: 0 }}>{waitMessage(leaveLockedFor)}</p>
             )}
             {leaveError && (
               <p role="alert" style={{ fontSize: '13px', color: colors.error, marginBottom: 0 }}>{leaveError}</p>

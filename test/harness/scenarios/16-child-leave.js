@@ -66,6 +66,22 @@ module.exports = {
       const ownCancel = await call(child, 'leave:cancel', { pin: '4321' })
       if (!ownCancel.ok) throw new Error('the child could not cancel with the right PIN')
       log('child cancelled its own with the PIN')
+
+      // Last, because it deliberately locks the screen: guessing costs the same
+      // ladder the block screen uses. Five free tries, then a wait that neither
+      // the correct PIN nor further guesses can shorten.
+      let locked = null
+      for (let i = 0; i < 6; i++) locked = await call(child, 'leave:request', { pin: '0000' })
+      log('after six wrong tries:', JSON.stringify(locked))
+      if (!(locked.lockedForMs > 0)) throw new Error('six wrong PINs did not lock the leave screen')
+      const rightWhileLocked = await call(child, 'leave:request', { pin: '4321' })
+      if (rightWhileLocked.ok !== false || rightWhileLocked.reason !== 'locked') {
+        throw new Error('the correct PIN was accepted while locked out: ' + JSON.stringify(rightWhileLocked))
+      }
+      if ((await call(child, 'leave:status')).scheduled) throw new Error('a locked-out guess still scheduled a leave')
+      const stillLocked = await call(child, 'leave:status')
+      log('the correct PIN is refused while locked;', Math.round(stillLocked.lockedForMs / 1000) + 's left to wait')
+      if (!(stillLocked.lockedForMs > 0)) throw new Error('leave:status does not report the wait')
     } finally {
       teardown([parent, child])
     }

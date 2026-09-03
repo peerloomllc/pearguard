@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, pruneRuleArchives, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -4054,7 +4054,8 @@ describe('a child device can free itself, but only slowly and with the PIN', () 
   test('a wrong PIN schedules nothing', async () => {
     const ctx = childCtx({ policy })
     const res = await createDispatch(ctx)('leave:request', { pin: '0000' })
-    expect(res).toEqual({ ok: false, reason: 'wrong-pin' })
+    // lockedForMs is 0 while free attempts remain; the ladder has its own tests.
+    expect(res).toEqual({ ok: false, reason: 'wrong-pin', lockedForMs: 0 })
     expect(ctx.db._stored.leaveScheduled).toBeUndefined()
     expect(ctx.sendToAllParents).not.toHaveBeenCalled()
   })
@@ -4123,7 +4124,7 @@ describe('a child device can free itself, but only slowly and with the PIN', () 
 
   test('leave:status reports the countdown for the child screen', async () => {
     const ctx = childCtx({ policy })
-    expect(await createDispatch(ctx)('leave:status', {})).toEqual({ scheduled: false })
+    expect(await createDispatch(ctx)('leave:status', {})).toEqual({ scheduled: false, lockedForMs: 0 })
     await createDispatch(ctx)('leave:request', { pin: '1234' })
     const st = await createDispatch(ctx)('leave:status', {})
     expect(st.scheduled).toBe(true)
@@ -4502,5 +4503,90 @@ describe('unpairing keeps the rules instead of throwing them away', () => {
     await createDispatch(ctx)('rules:forgetArchive', { archiveKey: left[0] })
     expect(Object.keys(db._stored)).toHaveLength(4)
     await expect(createDispatch(ctx)('rules:forgetArchive', { archiveKey: 'policy:kid' })).rejects.toThrow('invalid')
+  })
+})
+
+describe('guessing at the leave screen costs the same as guessing at the block screen', () => {
+  const sodium = require('sodium-native')
+  const hashOf = (pin) => {
+    const b = Buffer.alloc(sodium.crypto_generichash_BYTES)
+    sodium.crypto_generichash(b, Buffer.from(pin))
+    return b.toString('hex')
+  }
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * () {}),
+      _stored: stored,
+    }
+  }
+  const policy = { apps: {}, pinHashes: { dad: hashOf('1234') } }
+  const ctxFor = (stored) => ({ db: makeDb(stored), send: jest.fn(), sendToAllParents: jest.fn(), sodium, mode: 'child', getMode: () => 'child' })
+
+  test('the ladder matches the native keypad: five free tries, then 30s / 2m / 10m / 1h', () => {
+    for (let n = 0; n <= 5; n++) expect(leaveLockoutForFailCount(n)).toBe(0)
+    expect(leaveLockoutForFailCount(6)).toBe(30000)
+    expect(leaveLockoutForFailCount(7)).toBe(120000)
+    expect(leaveLockoutForFailCount(8)).toBe(600000)
+    expect(leaveLockoutForFailCount(9)).toBe(3600000)
+    // It stops climbing rather than running off the end of the ladder.
+    expect(leaveLockoutForFailCount(40)).toBe(3600000)
+  })
+
+  test('a clock wound back to before the lock serves the full wait, not an expiry', () => {
+    const now = 1000000
+    const rec = { failCount: 6, lockedAt: now, lockedUntil: now + 30000 }
+    expect(leaveLockRemainingMs(rec, now + 10000)).toBe(20000)
+    expect(leaveLockRemainingMs(rec, now + 30000)).toBe(0)
+    expect(leaveLockRemainingMs(rec, now - 86400000)).toBe(30000)
+    expect(leaveLockRemainingMs({ failCount: 2 }, now)).toBe(0)
+    expect(leaveLockRemainingMs(null, now)).toBe(0)
+  })
+
+  test('five wrong guesses are free, the sixth locks the screen and tells the parent', async () => {
+    const ctx = ctxFor({ policy })
+    const dispatch = createDispatch(ctx)
+    for (let i = 1; i <= 5; i++) {
+      const res = await dispatch('leave:request', { pin: '0000' })
+      expect(res).toMatchObject({ ok: false, reason: 'wrong-pin', lockedForMs: 0 })
+    }
+    expect(ctx.sendToAllParents).not.toHaveBeenCalled()
+    const sixth = await dispatch('leave:request', { pin: '0000' })
+    expect(sixth).toMatchObject({ ok: false, reason: 'wrong-pin', lockedForMs: 30000 })
+    expect(ctx.sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'pin:failure',
+      payload: expect.objectContaining({ failCount: 6, lockoutMs: 30000, appName: 'Remove supervision' }),
+    }))
+  })
+
+  test('while locked, even the RIGHT PIN is refused and the wait does not restart', async () => {
+    const now = Date.now()
+    const ctx = ctxFor({ policy, leaveAttempts: { failCount: 6, lockedAt: now, lockedUntil: now + 30000 } })
+    const res = await createDispatch(ctx)('leave:request', { pin: '1234' })
+    expect(res.ok).toBe(false)
+    expect(res.reason).toBe('locked')
+    expect(res.lockedForMs).toBeGreaterThan(0)
+    expect(ctx.db._stored.leaveScheduled).toBeUndefined()
+    // Guessing again while locked must not extend the wait or count as a failure.
+    expect(ctx.db._stored.leaveAttempts).toMatchObject({ failCount: 6, lockedUntil: now + 30000 })
+  })
+
+  test('the right PIN once the wait has passed works and clears the record', async () => {
+    const past = Date.now() - 60000
+    const ctx = ctxFor({ policy, leaveAttempts: { failCount: 6, lockedAt: past, lockedUntil: past + 30000 } })
+    const res = await createDispatch(ctx)('leave:request', { pin: '1234' })
+    expect(res.ok).toBe(true)
+    expect(ctx.db._stored.leaveAttempts).toBeUndefined()
+    expect(ctx.db._stored.leaveScheduled).toBeDefined()
+  })
+
+  test('leave:status reports the remaining wait so the screen can say how long', async () => {
+    const now = Date.now()
+    const ctx = ctxFor({ policy, leaveAttempts: { failCount: 7, lockedAt: now, lockedUntil: now + 120000 } })
+    const st = await createDispatch(ctx)('leave:status', {})
+    expect(st.scheduled).toBe(false)
+    expect(st.lockedForMs).toBeGreaterThan(110000)
   })
 })

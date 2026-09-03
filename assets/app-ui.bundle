@@ -22468,6 +22468,13 @@ ${invite.inviteLink}`
 
   // src/ui/components/Profile.jsx
   var import_jsx_runtime36 = __toESM(require_jsx_runtime());
+  function waitMessage(ms) {
+    const mins = Math.ceil(ms / 6e4);
+    if (ms < 6e4) return `Too many tries. Wait ${Math.ceil(ms / 1e3)} seconds and try again.`;
+    if (mins < 60) return `Too many tries. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`;
+    const hours = Math.round(mins / 60);
+    return `Too many tries. Wait ${hours} hour${hours === 1 ? "" : "s"} and try again.`;
+  }
   function Profile({ mode }) {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2 } = useTheme();
     const [name, setName] = (0, import_react30.useState)("");
@@ -22482,6 +22489,7 @@ ${invite.inviteLink}`
     const [leavePin, setLeavePin] = (0, import_react30.useState)("");
     const [leaveError, setLeaveError] = (0, import_react30.useState)(null);
     const [leaveState, setLeaveState] = (0, import_react30.useState)(null);
+    const [leaveLockedFor, setLeaveLockedFor] = (0, import_react30.useState)(0);
     const [pairError, setPairError] = (0, import_react30.useState)(null);
     const [pairUiMode, setPairUiMode] = (0, import_react30.useState)("initial");
     const [pasteUrl, setPasteUrl] = (0, import_react30.useState)("");
@@ -22495,6 +22503,7 @@ ${invite.inviteLink}`
       if (mode !== "child") return;
       window.callBare("leave:status").then((st) => {
         if (st && st.scheduled) setLeaveState(st);
+        if (st && st.lockedForMs > 0) setLeaveLockedFor(st.lockedForMs);
       }).catch(() => {
       });
     }, [mode]);
@@ -22938,7 +22947,7 @@ ${invite.inviteLink}`
                   {
                     variant: "danger",
                     style: { width: "100%" },
-                    disabled: !leavePin.trim(),
+                    disabled: !leavePin.trim() || leaveLockedFor > 0,
                     onClick: async () => {
                       window.callBare("haptic:tap");
                       const res = await window.callBare("leave:request", { pin: leavePin }).catch(() => ({ ok: false, reason: "failed" }));
@@ -22946,12 +22955,15 @@ ${invite.inviteLink}`
                         setLeaveState(res);
                         setLeavePin("");
                         setLeaveError(null);
-                      } else setLeaveError(res && res.reason === "no-pin" ? "No parent PIN is set on this device." : "That PIN is not right.");
+                      } else if (res && res.reason === "no-pin") setLeaveError("No parent PIN is set on this device.");
+                      else if (res && res.lockedForMs > 0) setLeaveError(waitMessage(res.lockedForMs));
+                      else setLeaveError("That PIN is not right.");
                     },
                     children: "Start removing supervision"
                   }
                 )
               ] }),
+              leaveLockedFor > 0 && !leaveError && /* @__PURE__ */ (0, import_jsx_runtime36.jsx)("p", { role: "status", style: { fontSize: "13px", color: colors.text.secondary, marginBottom: 0 }, children: waitMessage(leaveLockedFor) }),
               leaveError && /* @__PURE__ */ (0, import_jsx_runtime36.jsx)("p", { role: "alert", style: { fontSize: "13px", color: colors.error, marginBottom: 0 }, children: leaveError })
             ]
           }

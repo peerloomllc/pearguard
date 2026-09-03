@@ -29,6 +29,17 @@ const { pendingUninstalls } = require('./package-reconcile')
 // 15-minute ask) and handing it over would surprise everyone.
 const UNDELIVERED_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
+// How long a request the child raised waits for an answer before it stops
+// counting as outstanding. A pending request is not free: it disables the child's
+// "ask for more time" button (child:homeData -> generalTimeRequestPending) and
+// dedupes further asks about the same app, and both prunes then DELETED it at 7
+// days regardless of status. So a parent who simply never looked left the child
+// unable to ask again for a week, after which the question disappeared with no
+// answer either way. A day is long enough for a parent to get to their phone and
+// short enough that the child is not stuck waiting on a question nobody will
+// answer.
+const REQUEST_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000
+
 const policyLocks = new Map()
 function withPolicyLock (childPublicKey, fn) {
   const key = String(childPublicKey)
@@ -271,6 +282,13 @@ const heartbeatCache = {
  * @returns {(method: string, args: any[]) => Promise<any>}
  */
 function createDispatch (ctx) {
+  // Tell the child a request of theirs ran out of time: refresh whatever screen
+  // they are on, and post the notification saying they can ask again.
+  function announceExpired (request) {
+    ctx.send({ type: 'event', event: 'request:updated', data: { requestId: request.id, packageName: request.packageName, appName: request.appName, status: 'expired' } })
+    ctx.send({ method: 'native:showDecisionNotification', args: { appName: request.appName || request.packageName || 'the app', decision: 'expired' } })
+  }
+
   async function dispatchInner (method, args) {
     switch (method) {
       case 'ping':
@@ -994,6 +1012,9 @@ function createDispatch (ctx) {
       }
 
       case 'requests:list': {
+        // Sweep first so the list says "No answer" even if the heartbeat tick has
+        // not run since the window lapsed.
+        await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
         // Scan Hyperbee for all keys matching 'req:*'; auto-expire entries older than 7 days
         const requests = []
         const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
@@ -1012,7 +1033,7 @@ function createDispatch (ctx) {
       case 'requests:clear': {
         // Delete all resolved (approved or denied) req:* entries
         for await (const { key, value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
-          if (value.status === 'approved' || value.status === 'denied') {
+          if (value.status === 'approved' || value.status === 'denied' || value.status === 'expired') {
             await ctx.db.del(key)
           }
         }
@@ -1067,6 +1088,9 @@ function createDispatch (ctx) {
         const blockedCount = blockedApps.length
         const pendingCount = pendingApps.length
 
+        // Sweep before counting, so a request nobody answered stops disabling the
+        // child's ask button the moment its window lapses.
+        await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
         // Collect pending requests with app name resolution
         const pendingRequestsList = []
         for await (const { value } of ctx.db.createReadStream({ gt: 'req:', lt: 'req:~' })) {
@@ -1311,6 +1335,10 @@ function createDispatch (ctx) {
       }
 
       case 'heartbeat:send': {
+        // The child already ticks once a minute, so this is the sweep: no new
+        // timer, and the child hears about an unanswered request within a minute
+        // of the window lapsing rather than whenever it next opens a screen.
+        await expireUnansweredRequests(ctx.db, 'req:', Date.now(), announceExpired)
         const identityRaw = await ctx.db.get('identity')
         const childPublicKey = identityRaw ? identityRaw.value.publicKey : null
 
@@ -2052,6 +2080,9 @@ function createDispatch (ctx) {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid alerts:list args')
         const results = []
+        // Same sweep on the parent's own copies, so the Activity row reads "No
+        // answer" instead of the bare "Resolved" an expired request would get.
+        await expireUnansweredRequests(ctx.db, 'request:', Date.now())
         const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days
 
         // Bypass alerts stored when a bypass:alert P2P message was received from this child
@@ -2779,6 +2810,41 @@ function autoApprovesNewApps (policy) {
 // was offline, and the child tapping "Request access" on the block overlay. Three
 // messages, ONE decision to make. Without this the parent gets a stack of
 // identical Approve/Deny cards for a single app.
+/**
+ * Has this request been waiting for an answer longer than anyone should?
+ * Pure, so the window is testable without a db.
+ */
+function isRequestUnanswered (request, now) {
+  if (!request || request.status !== 'pending') return false
+  // A parent-raised install card is not the child waiting on an answer. The app
+  // stays blocked until the parent decides, and expiring the card would remove
+  // the only thing prompting that decision while leaving the app blocked.
+  if (request.origin === 'install') return false
+  return now - (request.requestedAt || 0) > REQUEST_ANSWER_WINDOW_MS
+}
+
+/**
+ * Flip every request under `prefix` that has gone unanswered to 'expired'.
+ * `prefix` is 'req:' on a child and 'request:' on a parent. Returns the records
+ * that changed, so callers can tell the child and refresh their own lists.
+ */
+async function expireUnansweredRequests (db, prefix, now, onExpired) {
+  const expired = []
+  for await (const { key, value } of db.createReadStream({ gt: prefix, lt: prefix + '~' })) {
+    if (!isRequestUnanswered(value, now)) continue
+    const updated = { ...value, status: 'expired', expiredAt: now }
+    await db.put(key, updated)
+    expired.push(updated)
+    // Announce from inside the sweep, so whichever call site gets there first is
+    // the one that tells the child. Hanging the notification off one particular
+    // caller looked fine until the TCL ran it: the home screen's 30 s refresh
+    // swept before the 60 s heartbeat did, the record was already 'expired' by
+    // the time the heartbeat looked, and the child was never told at all.
+    if (onExpired) onExpired(updated)
+  }
+  return expired
+}
+
 async function findPendingApproval (db, childPublicKey, packageName) {
   for await (const { value } of db.createReadStream({ gt: 'request:', lt: 'request:~' })) {
     if (value
@@ -3121,4 +3187,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, withPolicyLock, settleDeliveredGrant, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

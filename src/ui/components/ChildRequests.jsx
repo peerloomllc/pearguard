@@ -5,6 +5,9 @@ function statusBadge(status, colors) {
   switch (status) {
     case 'approved': return { label: 'Approved!', color: colors.success }
     case 'denied':   return { label: 'Denied',    color: colors.error }
+    // Nobody answered inside the window. Saying so beats a "Pending..." that
+    // would sit there forever, and the child can ask again now.
+    case 'expired':  return { label: 'No answer',  color: colors.text.muted }
     default:         return { label: 'Pending...', color: colors.text.muted }
   }
 }
@@ -49,7 +52,7 @@ export default function ChildRequests() {
     )
   }
 
-  const hasResolved = requests.some((r) => r.status === 'approved' || r.status === 'denied')
+  const hasResolved = requests.some((r) => r.status === 'approved' || r.status === 'denied' || r.status === 'expired')
 
   return (
     <div style={{ padding: `${spacing.xl}px`, ...typography.body, color: colors.text.primary }}>

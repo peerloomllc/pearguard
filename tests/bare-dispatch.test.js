@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3653,5 +3653,136 @@ describe('a grant approved while the child is offline survives until delivery', 
     const { overrides } = await createDispatch({ db, send: jest.fn(), mode: 'parent' })('overrides:list', { childPublicKey: 'kid' })
     expect(overrides.map((o) => o.packageName)).toEqual(['com.pending', 'com.live'])
     expect(overrides[0].awaitingDelivery).toBe(true)
+  })
+})
+
+describe('a request nobody answers stops blocking the child', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const now = Date.now()
+  const req = (extra = {}) => ({ id: 'req:1', packageName: 'com.game', appName: 'Game', requestedAt: now - 2 * DAY, status: 'pending', requestType: 'general_time', ...extra })
+
+  test('isRequestUnanswered only fires on a stale pending request the child raised', () => {
+    expect(isRequestUnanswered(req(), now)).toBe(true)
+    expect(isRequestUnanswered(req({ requestedAt: now - 60000 }), now)).toBe(false)
+    expect(isRequestUnanswered(req({ status: 'approved' }), now)).toBe(false)
+    expect(isRequestUnanswered(req({ status: 'denied' }), now)).toBe(false)
+    expect(isRequestUnanswered(req({ status: 'expired' }), now)).toBe(false)
+    // A parent-raised install card keeps prompting: the app is still blocked.
+    expect(isRequestUnanswered(req({ origin: 'install' }), now)).toBe(false)
+    expect(isRequestUnanswered(null, now)).toBe(false)
+    // Exactly on the boundary is not yet over it.
+    expect(isRequestUnanswered(req({ requestedAt: now - DAY }), now)).toBe(false)
+    expect(isRequestUnanswered(req({ requestedAt: now - DAY - 1 }), now)).toBe(true)
+  })
+
+  test('expireUnansweredRequests stamps the ones it flips and leaves the rest alone', async () => {
+    const db = makeDb({
+      'req:old': req({ id: 'req:old' }),
+      'req:fresh': req({ id: 'req:fresh', requestedAt: now - 60000 }),
+      'req:done': req({ id: 'req:done', status: 'approved' }),
+    })
+    const expired = await expireUnansweredRequests(db, 'req:', now)
+    expect(expired.map((r) => r.id)).toEqual(['req:old'])
+    expect(db._stored['req:old']).toMatchObject({ status: 'expired', expiredAt: now })
+    expect(db._stored['req:fresh'].status).toBe('pending')
+    expect(db._stored['req:done'].status).toBe('approved')
+    // Idempotent: a second sweep finds nothing to do.
+    expect(await expireUnansweredRequests(db, 'req:', now)).toEqual([])
+  })
+
+  test('the sweep announces from wherever it runs, so the child is told exactly once', async () => {
+    // The home screen refresh, the list and the heartbeat all sweep. Whichever
+    // gets there first must be the one that notifies (found on the TCL, where
+    // the 30 s home refresh beat the 60 s heartbeat and nothing was announced).
+    for (const method of ['child:homeData', 'requests:list', 'heartbeat:send']) {
+      const db = makeDb({ identity: { publicKey: 'kid' }, policy: { apps: {}, dailyScreenTimeLimitSeconds: 3600 }, 'req:old': req({ id: 'req:old' }) })
+      const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+      const dispatch = createDispatch(ctx)
+      await dispatch(method, {})
+      const notes = ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')
+      expect(notes).toHaveLength(1)
+      expect(notes[0][0].args).toEqual({ appName: 'Game', decision: 'expired' })
+      const updates = ctx.send.mock.calls.filter(([m]) => m.event === 'request:updated')
+      expect(updates[0][0].data).toMatchObject({ requestId: 'req:old', status: 'expired' })
+      // Whatever runs next finds it already expired and stays quiet.
+      ctx.send.mockClear()
+      await dispatch('heartbeat:send', {})
+      await dispatch('child:homeData', {})
+      expect(ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')).toHaveLength(0)
+    }
+  })
+
+  test("the child's heartbeat tick expires the request, tells the UI and notifies once", async () => {
+    const db = makeDb({ identity: { publicKey: 'kid' }, 'req:old': req({ id: 'req:old' }) })
+    const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    const dispatch = createDispatch(ctx)
+    await dispatch('heartbeat:send', {})
+    const updates = ctx.send.mock.calls.filter(([m]) => m.event === 'request:updated')
+    expect(updates).toHaveLength(1)
+    expect(updates[0][0].data).toMatchObject({ requestId: 'req:old', status: 'expired', appName: 'Game' })
+    const notes = ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')
+    expect(notes).toHaveLength(1)
+    expect(notes[0][0].args).toEqual({ appName: 'Game', decision: 'expired' })
+    // A second tick must not re-notify.
+    ctx.send.mockClear()
+    await dispatch('heartbeat:send', {})
+    expect(ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')).toHaveLength(0)
+  })
+
+  test("the child's ask button is freed once the window lapses", async () => {
+    const db = makeDb({ policy: { apps: {}, dailyScreenTimeLimitSeconds: 3600 }, 'req:old': req({ id: 'req:old' }) })
+    const before = await createDispatch({ db, send: jest.fn(), mode: 'child' })('child:homeData', {})
+    expect(before.generalTimeRequestPending).toBe(false)
+    expect(before.pendingRequests).toBe(0)
+    // ...while a fresh ask still blocks a second one.
+    const db2 = makeDb({ policy: { apps: {}, dailyScreenTimeLimitSeconds: 3600 }, 'req:new': req({ id: 'req:new', requestedAt: now - 60000 }) })
+    const after = await createDispatch({ db: db2, send: jest.fn(), mode: 'child' })('child:homeData', {})
+    expect(after.generalTimeRequestPending).toBe(true)
+  })
+
+  test('requests:list shows the expired row rather than a permanent Pending, and clear removes it', async () => {
+    const db = makeDb({ 'req:old': req({ id: 'req:old' }) })
+    const dispatch = createDispatch({ db, send: jest.fn(), mode: 'child' })
+    const { requests } = await dispatch('requests:list', {})
+    expect(requests).toHaveLength(1)
+    expect(requests[0].status).toBe('expired')
+    await dispatch('requests:clear', {})
+    expect(Object.keys(db._stored)).toHaveLength(0)
+  })
+
+  test("the parent's activity list labels it expired instead of dropping it", async () => {
+    const db = makeDb({
+      'request:r1': { id: 'request:r1', childPublicKey: 'kid', packageName: 'com.game', appName: 'Game', requestedAt: now - 2 * DAY, status: 'pending', requestType: 'general_time' },
+      'request:install:com.other:1': { id: 'request:install:com.other:1', childPublicKey: 'kid', packageName: 'com.other', appName: 'Other', requestedAt: now - 2 * DAY, status: 'pending', requestType: 'approval', origin: 'install' },
+    })
+    const res = await createDispatch({ db, send: jest.fn(), mode: 'parent', getMode: () => 'parent', sendToPeer: jest.fn() })('alerts:list', { childPublicKey: 'kid' })
+    const rows = res.filter((a) => a.type === 'time_request')
+    expect(rows.find((r) => r.packageName === 'com.game')).toMatchObject({ status: 'expired', resolved: true })
+    // The install card is still waiting on a decision, so it stays pending.
+    expect(rows.find((r) => r.packageName === 'com.other')).toMatchObject({ status: 'pending', resolved: false })
+  })
+
+  test('a request still pending inside the window is untouched by either side', async () => {
+    const fresh = { id: 'req:1', packageName: 'com.game', appName: 'Game', requestedAt: now - 60000, status: 'pending', requestType: 'extra_time' }
+    const db = makeDb({ 'req:1': { ...fresh } })
+    const ctx = { db, send: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+    await createDispatch(ctx)('heartbeat:send', {})
+    expect(db._stored['req:1']).toEqual(fresh)
+    expect(ctx.send.mock.calls.filter(([m]) => m.method === 'native:showDecisionNotification')).toHaveLength(0)
   })
 })

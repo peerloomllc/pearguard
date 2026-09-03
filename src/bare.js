@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, stripAppIcons, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
+const { createDispatch, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { RELAY_PUBLIC_KEY, RELAY_PREF_KEY, relayEnabledFromPref, relayThroughFor } = require('./relay')
 const { signMessage, verifyMessage } = require('./message')
@@ -682,11 +682,15 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         // Parent receiving a relayed policy from the child — store under parent-mode key
         const cpk = msg.payload?.childPublicKey
         if (cpk) {
+          const localRaw = await db.get('policy:' + cpk).catch(() => null)
+          if (!shouldAcceptRelayedPolicy(localRaw && localRaw.value, msg.payload)) {
+            log('[bare] parent ignored relayed policy for child', cpk.slice(0, 8), 'v' + msg.payload.version, 'not newer than local v' + (localRaw && localRaw.value ? localRaw.value.version : 'none'))
+            break
+          }
           // The relayed policy carries no icons (the child strips them), so keep
           // the ones this parent already has from apps:sync, or the Apps tab
           // would lose them on every co-parent edit.
           const incomingApps = msg.payload.apps || {}
-          const localRaw = await db.get('policy:' + cpk).catch(() => null)
           const localApps = (localRaw && localRaw.value && localRaw.value.apps) || {}
           for (const [pkg, app] of Object.entries(incomingApps)) {
             const icon = localApps[pkg] && localApps[pkg].iconBase64

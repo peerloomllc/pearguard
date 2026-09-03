@@ -2484,6 +2484,14 @@ const COLLAPSIBLE_MESSAGE_TYPES = new Set(['heartbeat', 'usage:report'])
  * @param {object} db — Hyperbee instance
  */
 async function queueMessage (message, db) {
+  // A relayed policy is for co-parents that are connected right now. Queued, it
+  // is stale by the time it flushes, and the flush cannot tell who authored it,
+  // so it went back to the parent that pushed it and rolled that parent's own
+  // copy back (seen 2026-09-03: five old versions replayed at reconnect, the
+  // parent regressed, re-announced apps as newly installed and had its next
+  // pushes rejected as stale). The hello push in handleHello already brings a
+  // reconnecting parent current, so there is nothing to queue.
+  if (message && message.type === 'policy:update') return
   const raw = await db.get('pendingMessages')
   let queue = raw ? raw.value : []
   // Some message types fully supersede any older queued copy of themselves:
@@ -2508,12 +2516,29 @@ async function queueMessage (message, db) {
 async function flushMessageQueue (db, writeMessage) {
   const raw = await db.get('pendingMessages')
   if (!raw || !raw.value || raw.value.length === 0) return 0
-  const queue = raw.value
+  // Devices in the field still hold policy:update relays queued by older code;
+  // drop them here for the same reason queueMessage refuses them.
+  const queue = raw.value.filter(({ message }) => !(message && message.type === 'policy:update'))
   for (const { message } of queue) {
     await writeMessage(message)
   }
   await db.put('pendingMessages', [])
   return queue.length
+}
+
+/**
+ * Parent-side: should a policy relayed by the child replace the parent's own
+ * copy? Only when it is strictly newer. The child relays every push it accepts
+ * (for co-parents) and pushes its current copy at every hello, so a parent
+ * routinely hears its own edits back, and a child that is behind (the parent
+ * edited while it was offline) pushes an older copy at reconnect. Storing
+ * either wholesale rolled the parent back, dropped apps it already knew and
+ * left its next pushes rejected by the child as stale.
+ */
+function shouldAcceptRelayedPolicy (local, incoming) {
+  if (!incoming || typeof incoming.version !== 'number') return false
+  if (!local || typeof local.version !== 'number') return true
+  return incoming.version > local.version
 }
 
 /**
@@ -2942,4 +2967,4 @@ async function isBlockClearedByFreshInvite (db, { peerIdentityKeyHex, incomingTo
   return false
 }
 
-module.exports = { createDispatch, stripAppIcons, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

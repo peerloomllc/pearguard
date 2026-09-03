@@ -28,6 +28,7 @@
     "rebuild": "electron-rebuild",
     "build": "node scripts/prepack.js && electron-builder --win",
     "build:linux": "node scripts/prepack.js && electron-builder --linux",
+    "build:all": "node scripts/prepack.js && electron-builder --win --linux",
     "dist": "npm run build"
   },
   "dependencies": {

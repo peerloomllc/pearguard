@@ -1115,24 +1115,80 @@ echo "==> Native project: android/ is checked in, no prebuild needed."
 # forwards its JVM to bundletool, which silently fails the signReleaseBundle
 # task with "A failure occurred while executing BundleToolRunnable". Killing
 # the daemon forces a fresh JVM on the pinned JDK we just exported above.
+# The desktop artifacts share nothing with the Android build: different
+# toolchain, different directories, and nothing between here and Phase B writes
+# anything electron-builder packages. So start them now and let them run while
+# Gradle works and while you edit the release notes, instead of waiting until
+# both of those are done. Phase B below waits for this and keeps the same
+# best-effort behaviour: a desktop failure is reported and skipped, never
+# blocking the mobile release.
+# Collect the background desktop build. Idempotent: the Windows and Linux
+# blocks both call it and only the first one waits. Returns non-zero if the
+# build failed, so each caller keeps its own best-effort message.
+DESKTOP_BUILD_STATUS=""
+_await_desktop_build() {
+  [ -n "$DESKTOP_BUILD_STATUS" ] && return "$DESKTOP_BUILD_STATUS"
+  if [ -z "$DESKTOP_BUILD_PID" ]; then DESKTOP_BUILD_STATUS=0; return 0; fi
+  echo "    Waiting for the desktop build started earlier..."
+  if wait "$DESKTOP_BUILD_PID"; then DESKTOP_BUILD_STATUS=0; else DESKTOP_BUILD_STATUS=$?; fi
+  local _elapsed=$(( $(date +%s) - DESKTOP_BUILD_STARTED_AT ))
+  echo "    Desktop build finished in ${_elapsed}s (exit $DESKTOP_BUILD_STATUS)."
+  return "$DESKTOP_BUILD_STATUS"
+}
+
+DESKTOP_BUILD_LOG=/tmp/${APP_NAME:-app}-desktop-build.log
+DESKTOP_BUILD_PID=""
+DESKTOP_BUILD_TARGETS=""
+if $NEEDS_BUILD; then
+  if $PUBLISH_DESKTOP && $PUBLISH_LINUX; then
+    DESKTOP_BUILD_TARGETS="build:all"     # one electron-builder run for --win --linux
+  elif $PUBLISH_DESKTOP; then
+    DESKTOP_BUILD_TARGETS="build"
+  elif $PUBLISH_LINUX; then
+    DESKTOP_BUILD_TARGETS="build:linux"
+  fi
+fi
+if [ -n "$DESKTOP_BUILD_TARGETS" ]; then
+  # electron-builder reads desktop/package.json's version at startup for its
+  # artifactName template ("pearguard-v${version}.${ext}"). Phase B used to
+  # stamp it immediately before each build; now the build starts here, so the
+  # stamp has to happen here too, or the artifacts come out named 0.1.0 and the
+  # copies in Phase B fail.
+  APP_VERSION="$APP_VERSION" node -e "
+    const fs = require('fs');
+    const f = '$REPO_ROOT/desktop/package.json';
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    j.version = process.env.APP_VERSION;
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+    console.log('    stamped desktop/package.json version=' + j.version);
+  "
+  echo "==> Starting desktop build in the background (npm run $DESKTOP_BUILD_TARGETS)..."
+  echo "    Log: $DESKTOP_BUILD_LOG"
+  DESKTOP_BUILD_STARTED_AT=$(date +%s)
+  ( cd "$REPO_ROOT/desktop" && npm run "$DESKTOP_BUILD_TARGETS" ) > "$DESKTOP_BUILD_LOG" 2>&1 &
+  DESKTOP_BUILD_PID=$!
+fi
+
 echo "==> Stopping any warm Gradle daemons (so the next build picks up JAVA_HOME)..."
 (
   cd android && ./gradlew --stop > /dev/null 2>&1 || true
 )
 
-echo "==> Building signed release APK (this takes a few minutes)..."
+# Both artifacts in ONE Gradle invocation. As two invocations, the whole
+# configuration phase, the JS bundle and the resource processing were done
+# twice; as two tasks in a single build Gradle shares all of it and only the
+# packaging differs.
+GRADLE_TASKS=(assembleRelease)
+if $PUBLISH_PLAY; then
+  GRADLE_TASKS+=(bundleRelease)
+  echo "==> Building signed release APK and AAB (this takes a few minutes)..."
+else
+  echo "==> Building signed release APK (this takes a few minutes)..."
+fi
 (
   export KEYSTORE_FILE KEY_ALIAS KEYSTORE_PASSWORD KEY_PASSWORD APP_VERSION APP_VERSION_CODE
-  cd android && ./gradlew assembleRelease -q
+  cd android && ./gradlew "${GRADLE_TASKS[@]}" -q
 )
-
-if $PUBLISH_PLAY; then
-  echo "==> Building signed release AAB for Google Play..."
-  (
-    export KEYSTORE_FILE KEY_ALIAS KEYSTORE_PASSWORD KEY_PASSWORD APP_VERSION APP_VERSION_CODE
-    cd android && ./gradlew bundleRelease -q
-  )
-fi
 
 # ---------------------------------------------------------------------------
 # 4. Copy artifacts with version names
@@ -1368,22 +1424,10 @@ if $PUBLISH_DESKTOP; then
   echo ""
   echo "==> Building Windows installer (.exe) locally..."
 
-  # Stamp desktop/package.json's version so electron-builder's artifactName
-  # template ("pearguard-v${version}.${ext}") matches the release tag. The
-  # Linux block below re-stamps the same value; idempotent.
-  APP_VERSION="$APP_VERSION" node -e "
-    const fs = require('fs');
-    const f = '$REPO_ROOT/desktop/package.json';
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-    j.version = process.env.APP_VERSION;
-    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
-    console.log('    stamped desktop/package.json version=' + j.version);
-  "
-
-  # `npm run build` = prepack.js (refreshes vendor + fetches active-win
-  # bindings) then electron-builder --win.
-  ( cd "$REPO_ROOT/desktop" && npm run build > /tmp/windows-build.log 2>&1 ) \
-    || { echo "Windows build failed; see /tmp/windows-build.log"; exit 1; }
+  # The build itself started back in step 3 and has been running while Gradle
+  # worked and while you edited the notes. Collect it here. _await_desktop_build
+  # is idempotent, so the Linux block below just returns.
+  _await_desktop_build || { echo "Windows build failed; see $DESKTOP_BUILD_LOG"; exit 1; }
 
   EXE_NAME="${ARTIFACT_PREFIX:-pearguard}-${RELEASE_TAG}.exe"
   cp "$REPO_ROOT/desktop/dist/pearguard-${RELEASE_TAG}.exe" "$REPO_ROOT/$EXE_NAME"
@@ -1411,21 +1455,8 @@ if $PUBLISH_LINUX; then
   echo ""
   echo "==> Building Linux artifacts (AppImage + deb) locally..."
 
-  # Stamp desktop/package.json's version so electron-builder's artifactName
-  # template ("pearguard-v${version}.${ext}") produces filenames matching
-  # the release tag. Without this, the build emits the stale 0.1.0 filename
-  # and the cp below fails. The Windows block (4b) stamps the same value.
-  APP_VERSION="$APP_VERSION" node -e "
-    const fs = require('fs');
-    const f = '$REPO_ROOT/desktop/package.json';
-    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-    j.version = process.env.APP_VERSION;
-    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
-    console.log('    stamped desktop/package.json version=' + j.version);
-  "
-
-  ( cd "$REPO_ROOT/desktop" && npm run build:linux > /tmp/linux-build.log 2>&1 ) \
-    || { echo "Linux build failed; see /tmp/linux-build.log"; exit 1; }
+  # Same background build as the Windows block; already collected if that ran.
+  _await_desktop_build || { echo "Linux build failed; see $DESKTOP_BUILD_LOG"; exit 1; }
 
   # electron-builder names artifacts after package.json's artifactName template
   # (pearguard-v${version}.${ext}). Pull them up to the repo root with the same
@@ -1664,12 +1695,24 @@ except Exception:
     pass
 " 2>/dev/null || echo "")
 
-  # --- Upload each asset in order ---
-  for _asset in "${RELEASE_ASSETS[@]}"; do
-    _ctype=$(_asset_content_type "$_asset")
-    _basename=$(basename "$_asset")
+  # --- Upload the assets, several at a time ---
+  #
+  # These went out strictly one after another. A release carries the APK, the
+  # AAB, the .exe, the AppImage, the .deb, their .sha256 sidecars and the two
+  # update manifests, so the run spent minutes feeding GitHub one file at a
+  # time over a link nowhere near saturated. Uploads are network-bound and
+  # independent of each other, so they now overlap.
+  #
+  # Bounded rather than all at once: too many parallel streams to one host stop
+  # adding throughput and start competing. The per-file progress bars are gone
+  # because interleaved bars are unreadable; every response is still captured
+  # and checked below, so a failure in any upload is caught exactly as before.
+  RELEASE_UPLOAD_JOBS="${RELEASE_UPLOAD_JOBS:-4}"
 
-    # Overwrite support: drop any pre-existing asset with the same name first.
+  # Deletions first and sequentially: they are small, and doing them up front
+  # means no upload can race the removal of the name it is about to claim.
+  for _asset in "${RELEASE_ASSETS[@]}"; do
+    _basename=$(basename "$_asset")
     _existing_id=$(printf '%s\n' "$EXISTING_ASSETS" \
       | awk -F'\t' -v n="$_basename" '$2 == n {print $1; exit}')
     if [ -n "$_existing_id" ]; then
@@ -1679,19 +1722,34 @@ except Exception:
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${REPO_SLUG}/releases/assets/${_existing_id}" >/dev/null
     fi
+  done
 
-    echo "==> Uploading $_basename ($_ctype)..."
-    UPLOAD_RESP_FILE=$(mktemp)
-    curl \
+  echo "==> Uploading ${#RELEASE_ASSETS[@]} asset(s), up to ${RELEASE_UPLOAD_JOBS} at a time..."
+  _upload_started_at=$(date +%s)
+  _upload_resps=(); _upload_names=()
+  for _asset in "${RELEASE_ASSETS[@]}"; do
+    _ctype=$(_asset_content_type "$_asset")
+    _basename=$(basename "$_asset")
+    _respfile=$(mktemp)
+    _upload_resps+=("$_respfile"); _upload_names+=("$_basename")
+    echo "    uploading $_basename ($_ctype, $(du -h "$_asset" | cut -f1))"
+    curl -s \
       -X POST \
       -H "Authorization: Bearer $GH_TOKEN" \
       -H "Accept: application/vnd.github+json" \
       -H "Content-Type: $_ctype" \
       "${UPLOAD_URL}?name=${_basename}" \
       --data-binary "@${_asset}" \
-      --progress-bar \
-      -o "$UPLOAD_RESP_FILE" 2>&1
-    UPLOAD_RESP=$(cat "$UPLOAD_RESP_FILE"); rm -f "$UPLOAD_RESP_FILE"
+      -o "$_respfile" 2>/dev/null &
+    while [ "$(jobs -rp | wc -l)" -ge "$RELEASE_UPLOAD_JOBS" ]; do wait -n 2>/dev/null || true; done
+  done
+  wait
+  echo "    Uploads finished in $(( $(date +%s) - _upload_started_at ))s. Checking each response..."
+
+  # --- Check every upload ---
+  for _upload_idx in "${!_upload_resps[@]}"; do
+    _basename="${_upload_names[$_upload_idx]}"
+    UPLOAD_RESP=$(cat "${_upload_resps[$_upload_idx]}"); rm -f "${_upload_resps[$_upload_idx]}"
 
     UPLOAD_ERROR=$(printf '%s' "$UPLOAD_RESP" \
       | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" \
@@ -1705,7 +1763,7 @@ except Exception:
       echo "You can upload it manually at: https://github.com/${REPO_SLUG}/releases/tag/${RELEASE_TAG}"
       exit 1
     fi
-    echo "    Uploaded successfully."
+    echo "    ok  $_basename"
   done
 
 else

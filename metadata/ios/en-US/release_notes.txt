@@ -1,6 +1,40 @@
 ## What's Changed
 
-### 🔧 Other
+    ### ✨ New Features
 
-- restyle settings buttons
+    - Allow new apps automatically: a new switch in Settings lets apps your child installs be
+    allowed straight away instead of waiting for your approval. Off by default, and you are
+    still told about every new app and can block it.
+    - Lock for a set time: locking a device now offers 30 minutes, 1 hour or 2 hours as well as
+    "until I unlock". The device frees itself when the time is up, and both of you can see when
+    that will be.
+    - Unpairing no longer throws your rules away. Schedules, limits and blocked apps are kept, so
+    if you pair the device again you can put them all back from the child's Advanced tab.
+    - If your phone is lost for good, your child's device is no longer stuck. With your PIN they
+    can start removing supervision, but it takes a full day, you are told straight away and you
+    can stop it with one tap.
+
+    ### ✨ Improvements
+
+    - You can now see when a rule change has not reached your child's phone yet. Their card says
+    it is waiting for the phone instead of looking like everything is up to date.
+    - A request you have not answered within a day no longer blocks your child from asking again.
+    They are told nobody answered, and you can still say yes afterwards.
+    - Uses far less data. Your child's phone no longer sends app icons every time you change a
+    rule, and no longer resends its entire app list each time it reconnects to you.
+    - Easier on the battery when your child is offline, and their phone no longer holds on to
+    stale status updates to deliver later.
+
+    ### 🐛 Bug Fixes
+
+    - Extra time you approve while your child's phone is offline now reaches them. It used to run                                                      
+    out before it arrived, while both screens said it was approved.
+    - Rule changes stick. Reconnecting could quietly put your rules back to an older version,
+    re-announce apps as newly installed and leave later changes silently ignored.
+    - Two changes made at the same moment no longer overwrite each other.
+    - Alerts survive you being offline. If enforcement was switched off on your child's device,
+    or they used the PIN while you were unreachable, you hear about it when you reconnect.
+    - Usage lands on the right day when you and your child are in different time zones. Their most
+    recent day could be missing from your reports entirely.
+    - A second parent's PIN is accepted everywhere in the app, not only on the block screen.
 

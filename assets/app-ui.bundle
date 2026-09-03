@@ -16629,7 +16629,7 @@
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.micro, color: colors.text.muted }, children: formatTime(item.timestamp) }),
-          item.type === "time_request" && item.resolved ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.micro, color: colors.text.muted, fontStyle: "italic" }, children: item.status === "approved" ? "Approved" : item.status === "denied" ? "Denied" : "Resolved" }) : null
+          item.type === "time_request" && item.resolved ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.micro, color: colors.text.muted, fontStyle: "italic" }, children: item.status === "approved" ? "Approved" : item.status === "denied" ? "Denied" : item.status === "expired" ? "No answer" : "Resolved" }) : null
         ] })
       ] }),
       isDismissible(item) && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(

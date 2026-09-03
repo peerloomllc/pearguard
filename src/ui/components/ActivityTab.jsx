@@ -231,7 +231,10 @@ function ActivityRow({ item, onDismiss }) {
           <span style={{ ...typography.micro, color: colors.text.muted }}>{formatTime(item.timestamp)}</span>
           {item.type === 'time_request' && item.resolved
             ? <span style={{ ...typography.micro, color: colors.text.muted, fontStyle: 'italic' }}>
-                {item.status === 'approved' ? 'Approved' : item.status === 'denied' ? 'Denied' : 'Resolved'}
+                {item.status === 'approved' ? 'Approved'
+                  : item.status === 'denied' ? 'Denied'
+                  : item.status === 'expired' ? 'No answer'
+                  : 'Resolved'}
               </span>
             : null}
         </div>

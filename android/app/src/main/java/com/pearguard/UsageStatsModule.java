@@ -1456,8 +1456,13 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         }
 
         boolean approved = "approved".equals(decision);
-        String title = approved ? "Request approved" : "Request denied";
-        String text = approved
+        // "expired" is nobody answering rather than a decision, so it must not
+        // read as a refusal: the child did nothing wrong and can ask again.
+        boolean expired = "expired".equals(decision);
+        String title = expired ? "No answer yet" : approved ? "Request approved" : "Request denied";
+        String text = expired
+                ? "Your parent has not answered about " + appName + ". You can ask again."
+                : approved
                 ? "Your parent allowed more time on " + appName
                 : "Your parent denied the request for " + appName;
 

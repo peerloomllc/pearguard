@@ -21,6 +21,7 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
   const {
     displayName, isOnline, currentApp, currentAppIcon, todayScreenTimeSeconds,
     bypassAlerts, pendingApprovals, pendingTimeRequests, locked, screenTime,
+    policyPending,
   } = child;
 
   // Only meaningful once a cap is set; limitSeconds is 0 otherwise (#179).
@@ -42,6 +43,12 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
     // Free-time / holiday pause — surface it so a parent sees enforcement is off.
     statusText = 'Free time (protection paused)';
     statusColor = colors.secondary;
+  } else if (policyPending) {
+    // The child has not confirmed the rules we hold. A parent who changes a rule
+    // while the phone is off used to get no signal at all, and "All good" over a
+    // change that has not landed is the worst of the options.
+    statusText = `Waiting for ${displayName}'s phone`;
+    statusColor = colors.text.secondary;
   }
 
   return (

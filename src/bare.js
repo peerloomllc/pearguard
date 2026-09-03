@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
+const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, recordPolicyAck, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { RELAY_PUBLIC_KEY, RELAY_PREF_KEY, relayEnabledFromPref, relayThroughFor } = require('./relay')
 const { signMessage, verifyMessage } = require('./message')
@@ -691,11 +691,27 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
 
   // Dispatch verified peer message by type
   switch (msg.type) {
+    case 'policy:ack':
+      if (mode === 'parent') {
+        const acked = msg.payload && msg.payload.version
+        if (await recordPolicyAck(db, msg.from, acked, Date.now())) {
+          log('[bare] child', msg.from.slice(0, 8), 'confirmed policy v' + acked)
+          send({ type: 'event', event: 'policy:acked', data: { childPublicKey: msg.from, version: acked } })
+        }
+      }
+      break
+
     case 'policy:update':
       if (mode === 'parent') {
         // Parent receiving a relayed policy from the child — store under parent-mode key
         const cpk = msg.payload?.childPublicKey
         if (cpk) {
+          // A child pushing its current policy at hello is also telling us what
+          // it is enforcing, which is the only confirmation an older child ever
+          // sends. Record it whether or not we take the policy itself.
+          if (await recordPolicyAck(db, cpk, msg.payload.version, Date.now())) {
+            send({ type: 'event', event: 'policy:acked', data: { childPublicKey: cpk, version: msg.payload.version } })
+          }
           await withPolicyLock(cpk, async () => {
             const localRaw = await db.get('policy:' + cpk).catch(() => null)
             if (!shouldAcceptRelayedPolicy(localRaw && localRaw.value, msg.payload)) {

@@ -4290,3 +4290,55 @@ describe("a day of usage belongs to the child's calendar", () => {
     expect([...ownZone.keys()]).toEqual([dateStrInZone(evening, undefined)])
   })
 })
+
+describe("pin:verify accepts any parent's PIN, not just the pre-co-parent field", () => {
+  const sodium = require('sodium-native')
+  const hashOf = (pin) => {
+    const b = Buffer.alloc(sodium.crypto_generichash_BYTES)
+    sodium.crypto_generichash(b, Buffer.from(pin))
+    return b.toString('hex')
+  }
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * () {}),
+      _stored: stored,
+    }
+  }
+  const run = async (policy, pin) => {
+    const db = makeDb(policy ? { policy } : {})
+    const ctx = { db, send: jest.fn(), sodium, mode: 'child', getMode: () => 'child' }
+    return { res: await createDispatch(ctx)('pin:verify', { pin, packageName: 'com.game' }), db, ctx }
+  }
+
+  test("a modern child's policy carries only pinHashes, and every parent's PIN works", async () => {
+    const policy = { apps: { 'com.game': { status: 'blocked', appName: 'Game' } }, pinHashes: { dad: hashOf('1234'), mum: hashOf('9876') }, overrideDurationSeconds: 600 }
+    for (const pin of ['1234', '9876']) {
+      const { res, db } = await run(policy, pin)
+      expect(res.granted).toBe(true)
+      // ...and it really does grant the override, not just say yes.
+      expect(Object.keys(db._stored).some((k) => k.startsWith('override:com.game:'))).toBe(true)
+    }
+  })
+
+  test('a wrong PIN is still refused and still tells the UI', async () => {
+    const policy = { apps: {}, pinHashes: { dad: hashOf('1234') } }
+    const { res, ctx, db } = await run(policy, '0000')
+    expect(res).toEqual({ granted: false, reason: 'wrong-pin' })
+    expect(ctx.send).toHaveBeenCalledWith(expect.objectContaining({ event: 'override:denied' }))
+    expect(Object.keys(db._stored).some((k) => k.startsWith('override:'))).toBe(false)
+  })
+
+  test('a child paired before co-parents, holding only the legacy field, still works', async () => {
+    const { res } = await run({ apps: {}, pinHash: hashOf('4321') }, '4321')
+    expect(res.granted).toBe(true)
+  })
+
+  test('no PIN set anywhere is reported as no-pin rather than wrong-pin', async () => {
+    expect((await run({ apps: {} }, '1234')).res).toEqual({ granted: false, reason: 'no-pin' })
+    expect((await run({ apps: {}, pinHashes: {} }, '1234')).res).toEqual({ granted: false, reason: 'no-pin' })
+    expect((await run(null, '1234')).res).toEqual({ granted: false, reason: 'no-policy' })
+  })
+})

@@ -850,13 +850,18 @@ function createDispatch (ctx) {
         const raw = await ctx.db.get('policy')
         if (!raw) { return { granted: false, reason: 'no-policy' } }
         const policy = raw.value  // Hyperbee uses valueEncoding:'json' so raw.value is already parsed
-        if (!policy.pinHash) { return { granted: false, reason: 'no-pin' } }
+        // Co-parents each hold their own PIN in policy.pinHashes, and
+        // handlePolicyUpdate strips the pre-co-parent policy.pinHash from the
+        // child's copy. This used to compare against that stripped field alone,
+        // so on any child paired since then it denied every PIN, including the
+        // right one. Both real enforcement paths had already routed around it
+        // (AppBlockerModule, and desktop/src/enforcement/pin-verify.js, each
+        // reimplementing the check), which is why nothing looked broken.
+        const hasAnyPin = !!(policy.pinHash || (policy.pinHashes && Object.keys(policy.pinHashes).length))
+        if (!hasAnyPin) { return { granted: false, reason: 'no-pin' } }
 
-        // Verify using the same BLAKE2b hash used in pin:set
-        const enteredHashBuf = Buffer.alloc(ctx.sodium.crypto_generichash_BYTES)
-        ctx.sodium.crypto_generichash(enteredHashBuf, Buffer.from(pin))
-        const enteredHash = enteredHashBuf.toString('hex')
-        const verified = enteredHash === policy.pinHash
+        // Same BLAKE2b hash pin:set uses, matched against every parent's PIN.
+        const verified = verifyParentPin(policy, pin, ctx.sodium)
 
         if (!verified) {
           ctx.send({ type: 'event', event: 'override:denied', data: { packageName, reason: 'wrong-pin' } })

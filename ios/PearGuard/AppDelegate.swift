@@ -23,13 +23,7 @@ public class AppDelegate: ExpoAppDelegate {
     reactNativeFactory = factory
     bindReactNativeFactory(factory)
 
-#if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions)
-#endif
+    // The window is made by SceneDelegate, below.
 
     BGTaskScheduler.shared.register(
       forTaskWithIdentifier: BackgroundSyncModule.taskIdentifier,
@@ -101,5 +95,48 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
+  }
+}
+
+// with-ios-scene-lifecycle
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    guard let windowScene = scene as? UIWindowScene,
+          let appDelegate = UIApplication.shared.delegate as? AppDelegate,
+          let factory = appDelegate.reactNativeFactory else { return }
+    let window = UIWindow(windowScene: windowScene)
+    self.window = window
+    appDelegate.window = window
+
+    var launchOptions: [UIApplication.LaunchOptionsKey: Any] = [:]
+    if let url = connectionOptions.urlContexts.first?.url {
+      launchOptions[.url] = url
+    }
+    factory.startReactNative(withModuleName: "main", in: window, launchOptions: launchOptions)
+
+    for context in connectionOptions.urlContexts {
+      _ = appDelegate.application(UIApplication.shared, open: context.url, options: [:])
+    }
+    for activity in connectionOptions.userActivities {
+      _ = appDelegate.application(UIApplication.shared, continue: activity, restorationHandler: { _ in })
+    }
+  }
+
+  func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
+    for context in URLContexts {
+      _ = appDelegate.application(UIApplication.shared, open: context.url, options: [:])
+    }
+  }
+
+  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
+    _ = appDelegate.application(UIApplication.shared, continue: userActivity, restorationHandler: { _ in })
   }
 }

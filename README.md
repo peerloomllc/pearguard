@@ -57,11 +57,11 @@ All data is encrypted in transit and every policy update is cryptographically si
 ### Enforcement
 On Android child devices, PearGuard uses Android's Accessibility Service and Device Admin APIs to enforce app blocks, time limits and bedtime windows. These are standard Android parental-control surfaces - the child cannot disable them without the parent's approval.
 
-On Windows child devices, enforcement runs in user space: a foreground-window monitor closes blocked apps and an overlay covers them when a time limit or schedule kicks in. A watchdog service and scheduled task relaunch the client if it stops. See the [Windows Client](#windows-client) section for details.
+On Windows child devices, enforcement runs in user space: a foreground-window monitor watches which app is in front and an overlay covers a blocked app when a time limit or schedule kicks in. The blocked app keeps running behind the overlay. A watchdog Windows Service and a scheduled task relaunch the client if it stops. See the [Windows Client](#windows-client) section for details.
 
 Linux child builds ship as `.deb` and `.AppImage` alongside the Windows installer and use the same desktop client. Enforcement is more limited there: there is no process watchdog on Linux yet, so nothing relaunches the client if it is killed.
 
-**Desktop enforcement is deterrence, not containment.** On both Windows and Linux the overlay runs at the child's own privilege level and covers the primary display only, and the watchdog runs as a user-level service the child can remove. A technically capable child with admin rights can defeat it. Android enforcement is the strong path; desktop is suited to younger children and to households where the rules are agreed rather than contested.
+**Desktop enforcement is deterrence, not containment.** On both Windows and Linux the overlay runs at the child's own privilege level and covers the primary display only. On Windows the watchdog service runs as SYSTEM, so removing it needs admin rights; Linux has no watchdog. A technically capable child with admin rights can defeat it. Android enforcement is the strong path; desktop is suited to younger children and to households where the rules are agreed rather than contested.
 
 ### Pairing
 Parent and child pair via an invite link or QR code. The link encodes the cryptographic address of the pairing - there's no server involved. After pairing, both devices remember each other.
@@ -85,9 +85,7 @@ Parent and child pair via an invite link or QR code. The link encodes the crypto
 In addition to the Android child app, PearGuard ships a Windows desktop child client. It runs the same P2P backend and UI as the mobile app, with user-space enforcement suited to younger kids.
 
 ### Install
-Download the `pearguard-v<version>.exe` installer from the [GitHub release page](../../releases) and run it with administrator privileges.
-
-> **Note:** the v1.0.20 release does not include the Windows `.exe`. Until that is fixed, install from [v1.0.19](../../releases/tag/v1.0.19), which does. The installer places PearGuard under `Program Files`, creates a Start Menu shortcut and registers a watchdog Windows Service plus a scheduled task so the client relaunches if it stops.
+Download the `pearguard-v<version>.exe` installer from the [GitHub release page](../../releases) and run it with administrator privileges. The installer places PearGuard under `Program Files`, creates a Start Menu shortcut and registers a watchdog Windows Service plus a scheduled task so the client relaunches if it stops.
 
 ### Supported Versions
 Windows 10 (version 1809 or later) and Windows 11, 64-bit.

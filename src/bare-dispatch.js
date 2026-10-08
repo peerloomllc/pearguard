@@ -461,7 +461,7 @@ function createDispatch (ctx) {
             const currentApp = currentAppPackage ? filtered.currentApp : null
             let currentAppIcon = null
             if (currentAppPackage) {
-              currentAppIcon = policyApps[currentAppPackage]?.iconBase64 || null
+              currentAppIcon = await getAppIcon(ctx.db, value.publicKey, currentAppPackage)
             }
             usageFields = {
               currentApp,
@@ -544,6 +544,7 @@ function createDispatch (ctx) {
         await ctx.db.del('peers:' + childPublicKey).catch(() => {})
         if (ctx.knownPeerKeys) ctx.knownPeerKeys.delete(childPublicKey)
         await ctx.db.del('policy:' + childPublicKey).catch(() => {})
+        await deleteAppIcons(ctx.db, childPublicKey)
         const alertKeys = []
         for await (const { key } of ctx.db.createReadStream({ gt: 'alert:' + childPublicKey + ':', lt: 'alert:' + childPublicKey + ':~' })) {
           alertKeys.push(key)
@@ -2007,6 +2008,7 @@ function createDispatch (ctx) {
         if (!childPublicKey || (!date && !days)) throw new Error('invalid usage:getCategorySummary args')
         const policyRaw = await ctx.db.get('policy:' + childPublicKey)
         const policyApps = policyRaw?.value?.apps || {}
+        const appIcons = await getAppIcons(ctx.db, childPublicKey)
         const exclusions = await getExclusions(ctx.db, childPublicKey)
 
         // Build the list of dates we'll aggregate over.
@@ -2083,7 +2085,7 @@ function createDispatch (ctx) {
             // their displayName (see resolveAppName).
             displayName: resolveAppName(pkg, appInfo.appName, perAppDisplayName.get(pkg)),
             totalSeconds: seconds,
-            iconBase64: appInfo?.iconBase64 || null,
+            iconBase64: appIcons[pkg] || null,
           }
         }
         const result = Object.values(categories).map((cat) => ({
@@ -2098,7 +2100,16 @@ function createDispatch (ctx) {
         const { childPublicKey } = args
         if (!childPublicKey) throw new Error('invalid policy:get args')
         const raw = await ctx.db.get('policy:' + childPublicKey)
-        return raw ? raw.value : { apps: {} }
+        if (!raw) return { apps: {} }
+        // The Apps tab shows icons, which live outside the policy (icon: keys).
+        const policy = raw.value
+        const icons = await getAppIcons(ctx.db, childPublicKey)
+        if (!policy.apps || Object.keys(icons).length === 0) return policy
+        const apps = {}
+        for (const [pkg, app] of Object.entries(policy.apps)) {
+          apps[pkg] = icons[pkg] && app ? { ...app, iconBase64: icons[pkg] } : app
+        }
+        return { ...policy, apps }
       }
 
       case 'app:decide': {
@@ -2184,7 +2195,10 @@ function createDispatch (ctx) {
         // Merge parent settings into policy so they reach the child device
         const settingsRaw = await ctx.db.get('parentSettings')
         const parentSettings = settingsRaw ? settingsRaw.value : {}
-        const newPolicy = { ...policy, childPublicKey, settings: parentSettings, version: (policy.version || 0) + 1 }
+        // The Apps tab sends back what policy:get gave it, icons included. Keep
+        // them in icon: keys, not in the stored policy.
+        const withoutIcons = await moveIconsOut(ctx.db, childPublicKey, policy)
+        const newPolicy = { ...withoutIcons, childPublicKey, settings: parentSettings, version: (policy.version || 0) + 1 }
         await ctx.db.put('policy:' + childPublicKey, newPolicy)
         try {
           // sendToPeer requires the Hyperswarm noise key, not the identity key.
@@ -2589,7 +2603,8 @@ function createDispatch (ctx) {
           paired.push(peer.publicKey)
         }
         for (const [childKey, policy] of Object.entries(payload.policies || {})) {
-          await ctx.db.put('policy:' + childKey, policy)
+          // Backups made before icon: keys carry icons inside each policy.
+          await ctx.db.put('policy:' + childKey, await moveIconsOut(ctx.db, childKey, policy))
         }
         return { ok: true, paired, restartRequired: true }
       }
@@ -3239,9 +3254,10 @@ async function handleIncomingAppInstalledUnlocked (payload, childPublicKey, db, 
   if (!policy.apps[packageName]) {
     const now = Date.now()
     const autoApproved = await parentAutoApprovesNewApps(db)
-    policy.apps[packageName] = { status: autoApproved ? 'allowed' : 'pending', appName: appName || packageName, addedAt: now, ...(iconBase64 && { iconBase64 }), ...(category && { category }), ...(exeBasename && { exeBasename }) }
+    policy.apps[packageName] = { status: autoApproved ? 'allowed' : 'pending', appName: appName || packageName, addedAt: now, ...(category && { category }), ...(exeBasename && { exeBasename }) }
     policy.version = (policy.version || 0) + 1
     await db.put('policy:' + childPublicKey, policy)
+    await putAppIcon(db, childPublicKey, packageName, iconBase64)
 
     const peerRecord = await db.get('peers:' + childPublicKey).catch(() => null)
     const childDisplayName = peerRecord?.value?.displayName || 'Your child'
@@ -3301,6 +3317,70 @@ function stripAppIcons (policy) {
     }
   }
   return stripped || policy
+}
+
+// Parent side: each child's app icons live under icon:{child}:{pkg}, outside
+// policy:{child}, so the readers that run every minute (heartbeat,
+// children:list) do not parse every icon (proposal 2026-10-08).
+function iconKey (childPublicKey, packageName) {
+  return 'icon:' + childPublicKey + ':' + packageName
+}
+
+async function putAppIcon (db, childPublicKey, packageName, iconBase64) {
+  if (!iconBase64) return
+  await db.put(iconKey(childPublicKey, packageName), iconBase64)
+}
+
+async function getAppIcon (db, childPublicKey, packageName) {
+  if (!packageName) return null
+  const raw = await db.get(iconKey(childPublicKey, packageName)).catch(() => null)
+  return (raw && raw.value) || null
+}
+
+// Every icon for one child as { packageName: base64 }, in one range read.
+async function getAppIcons (db, childPublicKey) {
+  const prefix = 'icon:' + childPublicKey + ':'
+  const icons = {}
+  for await (const { key, value } of db.createReadStream({ gt: prefix, lt: prefix + '~' })) {
+    if (value) icons[key.slice(prefix.length)] = value
+  }
+  return icons
+}
+
+async function deleteAppIcons (db, childPublicKey) {
+  const prefix = 'icon:' + childPublicKey + ':'
+  // Collect first: createReadStream and del cannot interleave.
+  const keys = []
+  for await (const { key } of db.createReadStream({ gt: prefix, lt: prefix + '~' })) keys.push(key)
+  for (const key of keys) await db.del(key)
+}
+
+// Write any icons a policy still carries to icon: keys and return the policy
+// without them.
+async function moveIconsOut (db, childPublicKey, policy) {
+  if (!policy || !policy.apps) return policy
+  for (const [pkg, app] of Object.entries(policy.apps)) {
+    if (app && app.iconBase64) await putAppIcon(db, childPublicKey, pkg, app.iconBase64)
+  }
+  return stripAppIcons(policy)
+}
+
+// One-off migration for parents upgraded from a version that kept icons inside
+// policy:{child}. Does nothing once no policy holds an icon.
+async function migrateIconsOut (db) {
+  const children = []
+  for await (const { key, value } of db.createReadStream({ gt: 'policy:', lt: 'policy:~' })) {
+    if (value && stripAppIcons(value) !== value) children.push(key.slice('policy:'.length))
+  }
+  for (const childPublicKey of children) {
+    await withPolicyLock(childPublicKey, async () => {
+      const raw = await db.get('policy:' + childPublicKey).catch(() => null)
+      if (!raw || !raw.value) return
+      const stripped = await moveIconsOut(db, childPublicKey, raw.value)
+      if (stripped !== raw.value) await db.put('policy:' + childPublicKey, stripped)
+    })
+  }
+  return children.length
 }
 
 // A child device can free itself when the parent's phone is gone for good, but
@@ -3552,20 +3632,23 @@ async function handleIncomingAppsSyncUnlocked (payload, childPublicKey, db, send
   const batchAddedAt = Date.now()
   const autoApproved = !isFirstSync && await parentAutoApprovesNewApps(db)
   const newApps = []
+  // Icons are stored under icon: keys, not in the policy. Only missing ones are
+  // written, so a routine sync rewrites nothing.
+  const knownIcons = await getAppIcons(db, childPublicKey)
   for (const { packageName, appName, iconBase64, category } of apps) {
+    if (iconBase64 && !knownIcons[packageName]) {
+      await putAppIcon(db, childPublicKey, packageName, iconBase64)
+      knownIcons[packageName] = iconBase64
+    }
     if (!policy.apps[packageName]) {
-      policy.apps[packageName] = { status: (isFirstSync || autoApproved) ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(iconBase64 && { iconBase64 }), ...(category && { category }) }
+      policy.apps[packageName] = { status: (isFirstSync || autoApproved) ? 'allowed' : 'pending', appName: appName || packageName, addedAt: batchAddedAt, ...(category && { category }) }
       newApps.push({ packageName, appName: appName || packageName })
       newCount++
     } else {
-      // Back-fill icon and category for apps already in the policy
-      if (iconBase64 && !policy.apps[packageName].iconBase64) {
-        policy.apps[packageName].iconBase64 = iconBase64
-        iconUpdateCount++
-      }
+      // Back-fill category for apps already in the policy
       if (category && !policy.apps[packageName].category) {
         policy.apps[packageName].category = category
-        iconUpdateCount++ // reuse counter — any metadata backfill triggers a save
+        iconUpdateCount++ // any metadata backfill triggers a save
       }
     }
   }
@@ -3823,4 +3906,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, lapseUndeliveredGrants, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { getAppIcon, getAppIcons, deleteAppIcons, migrateIconsOut, createDispatch, lapseUndeliveredGrants, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

@@ -89,6 +89,13 @@ class TamperDetector {
     }
   }
 
+  // The OS is ending the session. Record a clean quit but keep the heartbeat
+  // running: if the shutdown is cancelled, the next tick (within 30s) flips the
+  // marker back to unclean, so a cancelled logout can't hide a later kill.
+  markSessionEnding() {
+    this._write({ cleanQuit: true, lastHeartbeat: this._now() })
+  }
+
   markCleanQuit() {
     this.stopHeartbeat()
     this._write({ cleanQuit: true, lastHeartbeat: this._now() })

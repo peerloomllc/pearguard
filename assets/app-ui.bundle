@@ -20050,6 +20050,7 @@ ${inv.inviteLink}`
   var DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
   var AVAILABLE_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
   var AVAILABLE_WARNING_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 30];
+  var SAVE_DEBOUNCE_MS = 600;
   function formatMinutes(min) {
     if (min < 60) return min + " min";
     const h = Math.floor(min / 60);
@@ -20200,6 +20201,36 @@ ${inv.inviteLink}`
       );
     }) });
   }
+  function SettingsGroup({ title, children, colors, spacing: spacing2 }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("section", { style: { marginBottom: `${spacing2.xl}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h3", { style: {
+        fontSize: "11px",
+        fontWeight: 700,
+        letterSpacing: "0.09em",
+        textTransform: "uppercase",
+        color: colors.text.muted,
+        margin: `0 0 ${spacing2.sm}px`,
+        paddingLeft: `${spacing2.sm}px`
+      }, children: title }),
+      children
+    ] });
+  }
+  function SaveStatus({ status, section, colors, spacing: spacing2 }) {
+    if (!status || status.section !== section) return null;
+    const isError = status.kind === "error";
+    return /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+      "p",
+      {
+        role: isError ? "alert" : "status",
+        style: {
+          fontSize: "13px",
+          margin: `${spacing2.sm}px 0 0`,
+          color: isError ? colors.error : colors.success
+        },
+        children: status.message
+      }
+    );
+  }
   function Settings() {
     const { colors, typography: typography2, spacing: spacing2, radius: radius2, theme: currentTheme, setTheme: setTheme2 } = useTheme();
     const [pinOpen, setPinOpen] = (0, import_react22.useState)(false);
@@ -20237,6 +20268,9 @@ ${inv.inviteLink}`
     const [autoApproveStatus, setAutoApproveStatus] = (0, import_react22.useState)(null);
     const [settingsStatus, setSettingsStatus] = (0, import_react22.useState)(null);
     const [settingsLoaded, setSettingsLoaded] = (0, import_react22.useState)(false);
+    const saveTimer = (0, import_react22.useRef)(null);
+    const statusTimer = (0, import_react22.useRef)(null);
+    const currentSettings = (0, import_react22.useRef)({ timeRequestMinutes: DEFAULT_TIME_OPTIONS, warningMinutes: DEFAULT_WARNING_THRESHOLDS, autoApproveNewApps: false });
     const [relayEnabled, setRelayEnabled] = (0, import_react22.useState)(true);
     const [relayStatus, setRelayStatus] = (0, import_react22.useState)(null);
     (0, import_react22.useEffect)(() => {
@@ -20251,6 +20285,11 @@ ${inv.inviteLink}`
         if (s.timeRequestMinutes) setTimeRequestMinutes(s.timeRequestMinutes);
         if (s.warningMinutes) setWarningMinutes(s.warningMinutes);
         setAutoApproveNewApps(!!s.autoApproveNewApps);
+        currentSettings.current = {
+          timeRequestMinutes: s.timeRequestMinutes || DEFAULT_TIME_OPTIONS,
+          warningMinutes: s.warningMinutes || DEFAULT_WARNING_THRESHOLDS,
+          autoApproveNewApps: !!s.autoApproveNewApps
+        };
         setSettingsLoaded(true);
       }).catch(() => setSettingsLoaded(true));
       window.callBare("pin:get").then(({ pin }) => {
@@ -20285,6 +20324,14 @@ ${inv.inviteLink}`
     (0, import_react22.useEffect)(() => {
       if (!pinOpen) setPinRevealed(false);
     }, [pinOpen]);
+    (0, import_react22.useEffect)(() => () => {
+      if (statusTimer.current) clearTimeout(statusTimer.current);
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        window.callBare("settings:save", { settings: currentSettings.current }).catch(() => {
+        });
+      }
+    }, []);
     async function handleNameSave() {
       const trimmed = name.trim();
       if (!trimmed || trimmed === savedName) return;
@@ -20351,30 +20398,50 @@ ${inv.inviteLink}`
         setPinStatus(err.message || "Failed to set PIN. Please try again.");
       });
     }
-    async function handleSettingsSave() {
-      if (timeRequestMinutes.length === 0 || warningMinutes.length === 0) {
-        setSettingsStatus("Select at least one option for each setting.");
+    function persistSettings(patch, section) {
+      setSettingsStatus(null);
+      currentSettings.current = { ...currentSettings.current, ...patch };
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        saveTimer.current = null;
+        try {
+          await window.callBare("settings:save", { settings: currentSettings.current });
+          setSettingsStatus({ section, kind: "saved", message: "Saved and synced to your children." });
+          if (statusTimer.current) clearTimeout(statusTimer.current);
+          statusTimer.current = setTimeout(
+            () => setSettingsStatus((s) => s && s.kind === "saved" ? null : s),
+            2500
+          );
+        } catch {
+          setSettingsStatus({ section, kind: "error", message: "Could not save. Your children still have the previous setting." });
+        }
+      }, SAVE_DEBOUNCE_MS);
+    }
+    function handleTimeOptionsChange(v) {
+      if (v.length === 0) {
+        setSettingsStatus({ section: "time", kind: "error", message: "Keep at least one option selected." });
         return;
       }
-      setSettingsStatus(null);
-      try {
-        await window.callBare("settings:save", {
-          settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps }
-        });
-        setSettingsStatus("success");
-      } catch {
-        setSettingsStatus("Failed to save settings.");
+      setTimeRequestMinutes(v);
+      persistSettings({ timeRequestMinutes: v }, "time");
+    }
+    function handleWarningChange(v) {
+      if (v.length === 0) {
+        setSettingsStatus({ section: "warning", kind: "error", message: "Keep at least one option selected." });
+        return;
       }
+      setWarningMinutes(v);
+      persistSettings({ warningMinutes: v }, "warning");
     }
     async function handleAutoApproveToggle(checked) {
-      const previous = autoApproveNewApps;
+      const previous = currentSettings.current.autoApproveNewApps;
       setAutoApproveNewApps(checked);
       setAutoApproveStatus(null);
+      currentSettings.current = { ...currentSettings.current, autoApproveNewApps: checked };
       try {
-        await window.callBare("settings:save", {
-          settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps: checked }
-        });
+        await window.callBare("settings:save", { settings: currentSettings.current });
       } catch {
+        currentSettings.current = { ...currentSettings.current, autoApproveNewApps: previous };
         setAutoApproveNewApps(previous);
         setAutoApproveStatus("Failed to save. Try again.");
       }
@@ -20449,7 +20516,7 @@ ${inv.inviteLink}`
     const collapsibleProps = { colors, spacing: spacing2, radius: radius2 };
     return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { padding: `${spacing2.base}px`, overflowY: "auto", flex: 1 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { style: { ...typography2.heading, color: colors.text.primary, marginBottom: `${spacing2.lg}px`, textAlign: "center" }, children: "Settings" }),
-      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("section", { style: { marginBottom: `${spacing2.xxl}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(SettingsGroup, { title: "Your profile", colors, spacing: spacing2, children: [
         /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: `${spacing2.lg}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Avatar, { avatar, name: savedName, size: 80, onClick: () => setShowPicker(true) }),
           /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: `${spacing2.sm}px` }, children: [
@@ -20514,154 +20581,175 @@ ${inv.inviteLink}`
           nameStatus === "error" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, children: "Failed to save name." })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { "data-tour-id": "settings-override-pin", children: /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Override PIN", icon: "LockSimple", open: pinOpen, onToggle: () => setPinOpen((o) => !o), maxHeight: "350px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
-        currentPin && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px ${spacing2.md}px`, backgroundColor: colors.surface.base, borderRadius: `${radius2.md}px`, marginBottom: `${spacing2.md}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { style: { fontSize: "14px", color: colors.text.secondary }, children: [
-            "Current PIN: ",
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { fontFamily: "monospace", fontSize: "16px", color: colors.text.primary, letterSpacing: "2px" }, children: pinRevealed ? currentPin : "\u2022\u2022\u2022\u2022" })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
-            "button",
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(SettingsGroup, { title: "What your children see", colors, spacing: spacing2, children: [
+        settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Time Request Options", icon: "Clock", open: timeOptsOpen, onToggle: () => setTimeOptsOpen((o) => !o), maxHeight: "260px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Choose which duration options the child sees when requesting more time from the block overlay." }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+            ChipSelect,
             {
-              type: "button",
-              onClick: () => {
-                window.callBare("haptic:tap");
-                setPinRevealed((v) => !v);
-              },
-              style: { display: "flex", alignItems: "center", gap: `${spacing2.xs}px`, background: "none", border: "none", padding: `${spacing2.xs}px`, cursor: "pointer", color: colors.text.muted, fontSize: "13px" },
-              "aria-label": pinRevealed ? "Hide current PIN" : "Show current PIN",
-              children: [
-                /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Icon, { name: pinRevealed ? "EyeSlash" : "Eye", size: 18, color: colors.text.muted }),
-                pinRevealed ? "Hide" : "Show"
-              ]
+              options: AVAILABLE_TIME_OPTIONS,
+              selected: timeRequestMinutes,
+              onChange: handleTimeOptionsChange,
+              formatter: formatMinutes,
+              colors,
+              spacing: spacing2,
+              radius: radius2
             }
-          )
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(SaveStatus, { status: settingsStatus, section: "time", colors, spacing: spacing2 })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("form", { onSubmit: handlePinSubmit, style: { display: "flex", flexDirection: "column", gap: `${spacing2.md}px` }, "aria-label": "Change PIN form", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
-            "New PIN (4 to ",
-            import_pin_rules.MAX_PIN_LENGTH,
-            " digits)",
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
-              "input",
+        settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Warning Notifications", icon: "Bell", open: warningOpen, onToggle: () => setWarningOpen((o) => !o), maxHeight: "260px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "The child will be notified this many minutes before a schedule block starts or a daily time limit runs out." }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+            ChipSelect,
+            {
+              options: AVAILABLE_WARNING_OPTIONS,
+              selected: warningMinutes,
+              onChange: handleWarningChange,
+              formatter: (v) => v + " min",
+              colors,
+              spacing: spacing2,
+              radius: radius2
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(SaveStatus, { status: settingsStatus, section: "warning", colors, spacing: spacing2 })
+        ] }),
+        settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "New App Installs", icon: "DownloadSimple", open: newAppsOpen, onToggle: () => setNewAppsOpen((o) => !o), maxHeight: "220px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.md}px` }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { ...typography2.body, color: colors.text.primary }, children: "Allow new apps automatically" }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: autoApproveNewApps, onChange: handleAutoApproveToggle, ariaLabel: "Allow new apps automatically" })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: autoApproveNewApps ? "Apps your child installs are allowed right away. You still get a notification and can block them from the Apps tab." : "Apps your child installs are blocked until you approve them from the Activity tab." }),
+          autoApproveStatus && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { role: "alert", style: { fontSize: "13px", color: colors.error, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: autoApproveStatus })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { "data-tour-id": "settings-override-pin", children: /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Override PIN", icon: "LockSimple", open: pinOpen, onToggle: () => setPinOpen((o) => !o), maxHeight: "350px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Children enter this PIN on the block overlay to get temporary access. The PIN is hashed before leaving this device." }),
+          currentPin && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.sm}px`, padding: `${spacing2.sm}px ${spacing2.md}px`, backgroundColor: colors.surface.base, borderRadius: `${radius2.md}px`, marginBottom: `${spacing2.md}px` }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { style: { fontSize: "14px", color: colors.text.secondary }, children: [
+              "Current PIN: ",
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { fontFamily: "monospace", fontSize: "16px", color: colors.text.primary, letterSpacing: "2px" }, children: pinRevealed ? currentPin : "\u2022\u2022\u2022\u2022" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+              "button",
               {
-                type: "text",
-                value: newPin,
-                onChange: (e) => {
-                  setNewPin(e.target.value);
-                  setPinStatus(null);
+                type: "button",
+                onClick: () => {
+                  window.callBare("haptic:tap");
+                  setPinRevealed((v) => !v);
                 },
-                placeholder: "e.g. 1234",
-                style: inputStyle,
-                "aria-label": "New PIN",
-                inputMode: "numeric",
-                maxLength: import_pin_rules.MAX_PIN_LENGTH
+                style: { display: "flex", alignItems: "center", gap: `${spacing2.xs}px`, background: "none", border: "none", padding: `${spacing2.xs}px`, cursor: "pointer", color: colors.text.muted, fontSize: "13px" },
+                "aria-label": pinRevealed ? "Hide current PIN" : "Show current PIN",
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Icon, { name: pinRevealed ? "EyeSlash" : "Eye", size: 18, color: colors.text.muted }),
+                  pinRevealed ? "Hide" : "Show"
+                ]
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
-            "Confirm PIN",
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
-              "input",
-              {
-                ref: confirmPinRef,
-                type: "text",
-                value: confirmPin,
-                onChange: (e) => {
-                  setConfirmPin(e.target.value);
-                  setPinStatus(null);
-                },
-                placeholder: "Repeat PIN",
-                style: inputStyle,
-                "aria-label": "Confirm PIN",
-                inputMode: "numeric",
-                maxLength: import_pin_rules.MAX_PIN_LENGTH
-              }
-            )
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("form", { onSubmit: handlePinSubmit, style: { display: "flex", flexDirection: "column", gap: `${spacing2.md}px` }, "aria-label": "Change PIN form", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
+              "New PIN (4 to ",
+              import_pin_rules.MAX_PIN_LENGTH,
+              " digits)",
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+                "input",
+                {
+                  type: "text",
+                  value: newPin,
+                  onChange: (e) => {
+                    setNewPin(e.target.value);
+                    setPinStatus(null);
+                  },
+                  placeholder: "e.g. 1234",
+                  style: inputStyle,
+                  "aria-label": "New PIN",
+                  inputMode: "numeric",
+                  maxLength: import_pin_rules.MAX_PIN_LENGTH
+                }
+              )
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.xs}px`, fontSize: "14px", color: colors.text.secondary }, children: [
+              "Confirm PIN",
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+                "input",
+                {
+                  ref: confirmPinRef,
+                  type: "text",
+                  value: confirmPin,
+                  onChange: (e) => {
+                    setConfirmPin(e.target.value);
+                    setPinStatus(null);
+                  },
+                  placeholder: "Repeat PIN",
+                  style: inputStyle,
+                  "aria-label": "Confirm PIN",
+                  inputMode: "numeric",
+                  maxLength: import_pin_rules.MAX_PIN_LENGTH
+                }
+              )
+            ] }),
+            pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, role: "alert", children: pinStatus }),
+            pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, role: "status", children: "PIN updated successfully." }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { type: "submit", style: { alignSelf: "center" }, "aria-label": "Save PIN", children: "Save PIN" })
+          ] })
+        ] }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(SettingsGroup, { title: "This device", colors, spacing: spacing2, children: [
+        settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Collapsible, { title: "Appearance", icon: "SunDim", open: appearanceOpen, onToggle: () => setAppearanceOpen((o) => !o), maxHeight: "200px", ...collapsibleProps, children: /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px` }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Icon, { name: currentTheme === "dark" ? "Moon" : "SunDim", size: 20, color: colors.text.primary }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { fontSize: "14px", color: colors.text.primary }, children: currentTheme === "dark" ? "Dark mode" : "Light mode" })
           ] }),
-          pinStatus && pinStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.error, fontSize: "13px", margin: 0 }, role: "alert", children: pinStatus }),
-          pinStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.success, fontSize: "13px", margin: 0 }, role: "status", children: "PIN updated successfully." }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { type: "submit", style: { alignSelf: "center" }, "aria-label": "Save PIN", children: "Save PIN" })
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: currentTheme === "dark", onChange: (checked) => setTheme2(checked ? "dark" : "light") })
+        ] }) }),
+        settingsLoaded && relayStatus && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Connection", icon: "ShareNetwork", open: connectionOpen, onToggle: () => setConnectionOpen((o) => !o), maxHeight: "620px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.md}px` }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { fontSize: "14px", color: colors.text.primary }, children: "Use the PearGuard relay when a direct connection fails" }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: relayEnabled, onChange: handleRelayToggle, ariaLabel: "Use the relay when a direct connection fails" })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "Your devices always try to connect to each other directly first. On some mobile and home networks a direct connection is impossible, and without a helper the parent device simply cannot reach the child. When that happens PearGuard passes the connection through a relay we run." }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "The relay cannot read anything it carries - everything stays encrypted between your two devices. It does see that two devices are talking and how much data they send. Turn this off to stay strictly device-to-device, knowing some networks will then never connect." }),
+          relayStatus.relaying && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { marginTop: `${spacing2.md}px`, fontSize: "12px", color: colors.text.secondary }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", justifyContent: "space-between" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Times a direct connection failed and the relay was tried" }),
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { color: colors.text.primary }, children: relayStatus.relaying.attempts })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Of those, connected through the relay" }),
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { color: colors.text.primary }, children: relayStatus.relaying.successes })
+            ] }),
+            relayStatus.relaying.attempts === 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { marginTop: `${spacing2.sm}px`, marginBottom: 0, color: colors.text.muted }, children: "Zero is the good number here - it means your devices have always managed to connect directly." })
+          ] }),
+          relayStatus.randomized && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "This device is on a network that blocks direct connections entirely, so it uses the relay every time." })
         ] })
-      ] }) }),
-      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Collapsible, { title: "Appearance", icon: "SunDim", open: appearanceOpen, onToggle: () => setAppearanceOpen((o) => !o), maxHeight: "200px", ...collapsibleProps, children: /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Icon, { name: currentTheme === "dark" ? "Moon" : "SunDim", size: 20, color: colors.text.primary }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { fontSize: "14px", color: colors.text.primary }, children: currentTheme === "dark" ? "Dark mode" : "Light mode" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(SettingsGroup, { title: "Data", colors, spacing: spacing2, children: [
+        settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Device Backup", icon: "Export", open: backupOpen, onToggle: () => setBackupOpen((o) => !o), maxHeight: "220px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "13px", color: colors.text.muted, marginBottom: `${spacing2.sm}px` }, children: 'Save your full parent state (identity, children, policies) to migrate to a new device. To restore a backup, install the app on a fresh device and choose "Restore parent from backup" on the welcome screen.' }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { variant: "secondary", icon: "Export", onClick: () => {
+            window.callBare("haptic:tap");
+            setBackupMode("export");
+          }, children: "Export backup" }) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: currentTheme === "dark", onChange: (checked) => setTheme2(checked ? "dark" : "light") })
-      ] }) }),
-      settingsLoaded && relayStatus && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Connection", icon: "ShareNetwork", open: connectionOpen, onToggle: () => setConnectionOpen((o) => !o), maxHeight: "620px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.md}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { fontSize: "14px", color: colors.text.primary }, children: "Use the PearGuard relay when a direct connection fails" }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: relayEnabled, onChange: handleRelayToggle, ariaLabel: "Use the relay when a direct connection fails" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "Your devices always try to connect to each other directly first. On some mobile and home networks a direct connection is impossible, and without a helper the parent device simply cannot reach the child. When that happens PearGuard passes the connection through a relay we run." }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "The relay cannot read anything it carries - everything stays encrypted between your two devices. It does see that two devices are talking and how much data they send. Turn this off to stay strictly device-to-device, knowing some networks will then never connect." }),
-        relayStatus.relaying && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { marginTop: `${spacing2.md}px`, fontSize: "12px", color: colors.text.secondary }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Times a direct connection failed and the relay was tried" }),
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { color: colors.text.primary }, children: relayStatus.relaying.attempts })
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Storage", icon: "Trash", open: storageOpen, onToggle: () => setStorageOpen((o) => !o), maxHeight: "400px", ...collapsibleProps, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "The local database grows over time as telemetry (usage reports, alerts, sessions) accumulates. Check the current footprint and reclaim disk when it gets large." }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px`, alignItems: "center" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { variant: "secondary", onClick: () => {
+              window.callBare("haptic:tap");
+              handleStorageBreakdown();
+            }, disabled: storageBusy, style: { minWidth: "200px" }, children: "Storage Breakdown" }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { variant: "secondary", onClick: () => {
+              window.callBare("haptic:tap");
+              handleStorageAnalyze();
+            }, disabled: storageBusy, style: { minWidth: "200px" }, children: "Analyze Reclaimable" }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { onClick: () => {
+              window.callBare("haptic:tap");
+              setReclaimConfirm(true);
+            }, disabled: storageBusy || !storageAnalyze, style: { minWidth: "200px" }, children: "Reclaim Storage" })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Of those, connected through the relay" }),
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { color: colors.text.primary }, children: relayStatus.relaying.successes })
-          ] }),
-          relayStatus.relaying.attempts === 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { marginTop: `${spacing2.sm}px`, marginBottom: 0, color: colors.text.muted }, children: "Zero is the good number here - it means your devices have always managed to connect directly." })
-        ] }),
-        relayStatus.randomized && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: "This device is on a network that blocks direct connections entirely, so it uses the relay every time." })
-      ] }),
-      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "New App Installs", icon: "DownloadSimple", open: newAppsOpen, onToggle: () => setNewAppsOpen((o) => !o), maxHeight: "220px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: `${spacing2.md}px` }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { ...typography2.body, color: colors.text.primary }, children: "Allow new apps automatically" }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Toggle, { checked: autoApproveNewApps, onChange: handleAutoApproveToggle, ariaLabel: "Allow new apps automatically" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: autoApproveNewApps ? "Apps your child installs are allowed right away. You still get a notification and can block them from the Apps tab." : "Apps your child installs are blocked until you approve them from the Activity tab." }),
-        autoApproveStatus && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { role: "alert", style: { fontSize: "13px", color: colors.error, marginTop: `${spacing2.sm}px`, marginBottom: 0 }, children: autoApproveStatus })
-      ] }),
-      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Time Request Options", icon: "Clock", open: timeOptsOpen, onToggle: () => setTimeOptsOpen((o) => !o), maxHeight: "200px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "Choose which duration options the child sees when requesting more time from the block overlay." }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
-          ChipSelect,
-          {
-            options: AVAILABLE_TIME_OPTIONS,
-            selected: timeRequestMinutes,
-            onChange: (v) => {
-              setTimeRequestMinutes(v);
-              setSettingsStatus(null);
-            },
-            formatter: formatMinutes,
-            colors,
-            spacing: spacing2,
-            radius: radius2
-          }
-        )
-      ] }),
-      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Warning Notifications", icon: "Bell", open: warningOpen, onToggle: () => setWarningOpen((o) => !o), maxHeight: "200px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "The child will be notified this many minutes before a schedule block starts or a daily time limit runs out." }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
-          ChipSelect,
-          {
-            options: AVAILABLE_WARNING_OPTIONS,
-            selected: warningMinutes,
-            onChange: (v) => {
-              setWarningMinutes(v);
-              setSettingsStatus(null);
-            },
-            formatter: (v) => v + " min",
-            colors,
-            spacing: spacing2,
-            radius: radius2
-          }
-        )
-      ] }),
-      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Device Backup", icon: "Export", open: backupOpen, onToggle: () => setBackupOpen((o) => !o), maxHeight: "220px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: "13px", color: colors.text.muted, marginBottom: `${spacing2.sm}px` }, children: 'Save your full parent state (identity, children, policies) to migrate to a new device. To restore a backup, install the app on a fresh device and choose "Restore parent from backup" on the welcome screen.' }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { variant: "secondary", icon: "Export", onClick: () => {
-          window.callBare("haptic:tap");
-          setBackupMode("export");
-        }, children: "Export backup" }) })
+          storageBusy && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, margin: `${spacing2.md}px 0 0`, textAlign: "center" }, children: "Working..." }),
+          storageError && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "13px", color: colors.error, margin: `${spacing2.md}px 0 0`, textAlign: "center" }, children: storageError })
+        ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
         DeviceBackupModal,
@@ -20671,25 +20759,6 @@ ${inv.inviteLink}`
           onClose: () => setBackupMode(null)
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(Collapsible, { title: "Storage", icon: "Trash", open: storageOpen, onToggle: () => setStorageOpen((o) => !o), maxHeight: "400px", ...collapsibleProps, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "12px", color: colors.text.muted, marginBottom: `${spacing2.md}px`, marginTop: 0 }, children: "The local database grows over time as telemetry (usage reports, alerts, sessions) accumulates. Check the current footprint and reclaim disk when it gets large." }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: `${spacing2.sm}px`, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { variant: "secondary", onClick: () => {
-            window.callBare("haptic:tap");
-            handleStorageBreakdown();
-          }, disabled: storageBusy, style: { minWidth: "200px" }, children: "Storage Breakdown" }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { variant: "secondary", onClick: () => {
-            window.callBare("haptic:tap");
-            handleStorageAnalyze();
-          }, disabled: storageBusy, style: { minWidth: "200px" }, children: "Analyze Reclaimable" }),
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Button, { onClick: () => {
-            window.callBare("haptic:tap");
-            setReclaimConfirm(true);
-          }, disabled: storageBusy || !storageAnalyze, style: { minWidth: "200px" }, children: "Reclaim Storage" })
-        ] }),
-        storageBusy && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "13px", color: colors.text.muted, margin: `${spacing2.md}px 0 0`, textAlign: "center" }, children: "Working..." }),
-        storageError && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { fontSize: "13px", color: colors.error, margin: `${spacing2.md}px 0 0`, textAlign: "center" }, children: storageError })
-      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
         StorageModal,
         {
@@ -20716,21 +20785,7 @@ ${inv.inviteLink}`
           }, style: { flex: 1, maxWidth: 160 }, children: "Reclaim now" })
         ] })
       ] }) }),
-      settingsLoaded && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { textAlign: "center", marginTop: `${spacing2.md}px`, marginBottom: `${spacing2.xxl}px` }, children: [
-        settingsStatus && settingsStatus !== "success" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.error, fontSize: "13px", marginBottom: `${spacing2.sm}px` }, children: settingsStatus }),
-        settingsStatus === "success" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { style: { color: colors.success, fontSize: "13px", marginBottom: `${spacing2.sm}px` }, children: "Settings saved and synced to child." }),
-        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
-          Button,
-          {
-            onClick: () => {
-              window.callBare("haptic:tap");
-              handleSettingsSave();
-            },
-            style: { alignSelf: "center" },
-            children: "Save Settings"
-          }
-        )
-      ] })
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { height: `${spacing2.xxl}px` } })
     ] });
   }
 

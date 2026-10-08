@@ -15,6 +15,10 @@ const DEFAULT_WARNING_THRESHOLDS = [10, 5, 1];
 const AVAILABLE_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
 const AVAILABLE_WARNING_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 30];
 
+// Long enough to collect a burst of chip taps into one sync, short enough that the
+// "Saved." confirmation still feels like a response to what you just did.
+const SAVE_DEBOUNCE_MS = 600;
+
 function formatMinutes(min) {
   if (min < 60) return min + ' min';
   const h = Math.floor(min / 60);
@@ -155,6 +159,47 @@ function ChipSelect({ options, selected, onChange, formatter, colors, spacing, r
   );
 }
 
+// A labeled band of related sections. Seven equal-weight collapsibles in a flat
+// list read as a wall; grouping gives the page a shape you can skim past.
+function SettingsGroup({ title, children, colors, spacing }) {
+  return (
+    <section style={{ marginBottom: `${spacing.xl}px` }}>
+      <h3 style={{
+        fontSize: '11px',
+        fontWeight: 700,
+        letterSpacing: '0.09em',
+        textTransform: 'uppercase',
+        color: colors.text.muted,
+        margin: `0 0 ${spacing.sm}px`,
+        paddingLeft: `${spacing.sm}px`,
+      }}>
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+// Inline "Saved." / error line for the auto-saving sections. Rendered under the
+// section that changed rather than once at the bottom of the page, so the feedback
+// is where the user is actually looking.
+function SaveStatus({ status, section, colors, spacing }) {
+  if (!status || status.section !== section) return null;
+  const isError = status.kind === 'error';
+  return (
+    <p
+      role={isError ? 'alert' : 'status'}
+      style={{
+        fontSize: '13px',
+        margin: `${spacing.sm}px 0 0`,
+        color: isError ? colors.error : colors.success,
+      }}
+    >
+      {status.message}
+    </p>
+  );
+}
+
 export default function Settings() {
   const { colors, typography, spacing, radius, theme: currentTheme, setTheme } = useTheme();
 
@@ -202,8 +247,16 @@ export default function Settings() {
   // it is allowed straight away and the parent just gets told about it.
   const [autoApproveNewApps, setAutoApproveNewApps] = useState(false);
   const [autoApproveStatus, setAutoApproveStatus] = useState(null);
+  // { section: 'time'|'warning', kind: 'saved'|'error', message } or null
   const [settingsStatus, setSettingsStatus] = useState(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const saveTimer = useRef(null);
+  const statusTimer = useRef(null);
+  // settings:save replaces the whole parentSettings object, so every save sends
+  // all three values as they are when it goes out. Building the payload when the
+  // save was scheduled let a debounced chip save, firing after the auto-approve
+  // toggle, put the toggle back.
+  const currentSettings = useRef({ timeRequestMinutes: DEFAULT_TIME_OPTIONS, warningMinutes: DEFAULT_WARNING_THRESHOLDS, autoApproveNewApps: false });
 
   // Connection / relay state. `relayStatus` is null until the worklet answers, and
   // stays null on a worklet that has no relay at all.
@@ -225,6 +278,11 @@ export default function Settings() {
         if (s.timeRequestMinutes) setTimeRequestMinutes(s.timeRequestMinutes);
         if (s.warningMinutes) setWarningMinutes(s.warningMinutes);
         setAutoApproveNewApps(!!s.autoApproveNewApps);
+        currentSettings.current = {
+          timeRequestMinutes: s.timeRequestMinutes || DEFAULT_TIME_OPTIONS,
+          warningMinutes: s.warningMinutes || DEFAULT_WARNING_THRESHOLDS,
+          autoApproveNewApps: !!s.autoApproveNewApps,
+        };
         setSettingsLoaded(true);
       })
       .catch(() => setSettingsLoaded(true));
@@ -265,6 +323,17 @@ export default function Settings() {
   useEffect(() => {
     if (!pinOpen) setPinRevealed(false);
   }, [pinOpen]);
+
+  // Leaving the tab with a debounced save still pending must not drop it - that is
+  // the exact failure the old Save Settings button had. Flush it on the way out,
+  // without touching state, since this component is going away.
+  useEffect(() => () => {
+    if (statusTimer.current) clearTimeout(statusTimer.current);
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      window.callBare('settings:save', { settings: currentSettings.current }).catch(() => {});
+    }
+  }, []);
 
   async function handleNameSave() {
     const trimmed = name.trim();
@@ -338,34 +407,65 @@ export default function Settings() {
       });
   }
 
-  async function handleSettingsSave() {
-    if (timeRequestMinutes.length === 0 || warningMinutes.length === 0) {
-      setSettingsStatus('Select at least one option for each setting.');
-      return;
-    }
+  // These two settings used to sit behind a "Save Settings" button at the foot of the
+  // page. That button looked global but persisted only these two of the seven
+  // sections, so a parent who changed a chip and never scrolled down silently lost
+  // it. They now save on change like everything else on this page.
+  //
+  // Debounced because settings:save is not cheap on the worklet side: it rewrites
+  // every child's policy and pushes it to each connected child. Picking four chips
+  // in a row should be one sync, not four.
+  function persistSettings(patch, section) {
     setSettingsStatus(null);
-    try {
-      await window.callBare('settings:save', {
-        settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps },
-      });
-      setSettingsStatus('success');
-    } catch {
-      setSettingsStatus('Failed to save settings.');
-    }
+    currentSettings.current = { ...currentSettings.current, ...patch };
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      saveTimer.current = null;
+      try {
+        await window.callBare('settings:save', { settings: currentSettings.current });
+        setSettingsStatus({ section, kind: 'saved', message: 'Saved and synced to your children.' });
+        if (statusTimer.current) clearTimeout(statusTimer.current);
+        statusTimer.current = setTimeout(
+          () => setSettingsStatus((s) => (s && s.kind === 'saved' ? null : s)),
+          2500,
+        );
+      } catch {
+        setSettingsStatus({ section, kind: 'error', message: 'Could not save. Your children still have the previous setting.' });
+      }
+    }, SAVE_DEBOUNCE_MS);
   }
 
-  // settings:save replaces the whole parentSettings object, so the toggle has to
-  // send the chip selections along with itself. It saves on tap, since a switch
-  // that waits for a Save button further down the page reads as already applied.
+  // Refusing the change outright, rather than accepting it and declining to persist,
+  // keeps what is on screen equal to what is stored. An empty list would leave the
+  // child with no options to pick from on the block overlay.
+  function handleTimeOptionsChange(v) {
+    if (v.length === 0) {
+      setSettingsStatus({ section: 'time', kind: 'error', message: 'Keep at least one option selected.' });
+      return;
+    }
+    setTimeRequestMinutes(v);
+    persistSettings({ timeRequestMinutes: v }, 'time');
+  }
+
+  function handleWarningChange(v) {
+    if (v.length === 0) {
+      setSettingsStatus({ section: 'warning', kind: 'error', message: 'Keep at least one option selected.' });
+      return;
+    }
+    setWarningMinutes(v);
+    persistSettings({ warningMinutes: v }, 'warning');
+  }
+
+  // Saves on tap, with no debounce: a switch reads as applied the moment it moves.
   async function handleAutoApproveToggle(checked) {
-    const previous = autoApproveNewApps;
+    const previous = currentSettings.current.autoApproveNewApps;
     setAutoApproveNewApps(checked);
     setAutoApproveStatus(null);
+    currentSettings.current = { ...currentSettings.current, autoApproveNewApps: checked };
     try {
-      await window.callBare('settings:save', {
-        settings: { timeRequestMinutes, warningMinutes, autoApproveNewApps: checked },
-      });
+      await window.callBare('settings:save', { settings: currentSettings.current });
     } catch {
+      currentSettings.current = { ...currentSettings.current, autoApproveNewApps: previous };
       setAutoApproveNewApps(previous);
       setAutoApproveStatus('Failed to save. Try again.');
     }
@@ -441,8 +541,8 @@ export default function Settings() {
     <div style={{ padding: `${spacing.base}px`, overflowY: 'auto', flex: 1 }}>
       <h2 style={{ ...typography.heading, color: colors.text.primary, marginBottom: `${spacing.lg}px`, textAlign: 'center' }}>Settings</h2>
 
-      {/* Profile */}
-      <section style={{ marginBottom: `${spacing.xxl}px` }}>
+      {/* ── Your profile ───────────────────────────────────────────────────── */}
+      <SettingsGroup title="Your profile" colors={colors} spacing={spacing}>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: `${spacing.lg}px` }}>
           <Avatar avatar={avatar} name={savedName} size={80} onClick={() => setShowPicker(true)} />
@@ -491,9 +591,65 @@ export default function Settings() {
           {!savingName && nameStatus === 'success' && <p style={{ color: colors.success, fontSize: '13px', margin: 0 }}>Saved.</p>}
           {nameStatus === 'error' && <p style={{ color: colors.error, fontSize: '13px', margin: 0 }}>Failed to save name.</p>}
         </div>
-      </section>
+      </SettingsGroup>
 
-      {/* Override PIN */}
+      {/* ── What your children experience ──────────────────────────────────── */}
+      <SettingsGroup title="What your children see" colors={colors} spacing={spacing}>
+
+      {settingsLoaded && (
+        <Collapsible title="Time Request Options" icon="Clock" open={timeOptsOpen} onToggle={() => setTimeOptsOpen(o => !o)} maxHeight="260px" {...collapsibleProps}>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+            Choose which duration options the child sees when requesting more time from the block overlay.
+          </p>
+          <ChipSelect
+            options={AVAILABLE_TIME_OPTIONS}
+            selected={timeRequestMinutes}
+            onChange={handleTimeOptionsChange}
+            formatter={formatMinutes}
+            colors={colors}
+            spacing={spacing}
+            radius={radius}
+          />
+          <SaveStatus status={settingsStatus} section="time" colors={colors} spacing={spacing} />
+        </Collapsible>
+      )}
+
+      {settingsLoaded && (
+        <Collapsible title="Warning Notifications" icon="Bell" open={warningOpen} onToggle={() => setWarningOpen(o => !o)} maxHeight="260px" {...collapsibleProps}>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
+            The child will be notified this many minutes before a schedule block starts or a daily time limit runs out.
+          </p>
+          <ChipSelect
+            options={AVAILABLE_WARNING_OPTIONS}
+            selected={warningMinutes}
+            onChange={handleWarningChange}
+            formatter={(v) => v + ' min'}
+            colors={colors}
+            spacing={spacing}
+            radius={radius}
+          />
+          <SaveStatus status={settingsStatus} section="warning" colors={colors} spacing={spacing} />
+        </Collapsible>
+      )}
+
+      {/* New App Installs */}
+      {settingsLoaded && (
+        <Collapsible title="New App Installs" icon="DownloadSimple" open={newAppsOpen} onToggle={() => setNewAppsOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: `${spacing.md}px` }}>
+            <span style={{ ...typography.body, color: colors.text.primary }}>Allow new apps automatically</span>
+            <Toggle checked={autoApproveNewApps} onChange={handleAutoApproveToggle} ariaLabel="Allow new apps automatically" />
+          </div>
+          <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
+            {autoApproveNewApps
+              ? 'Apps your child installs are allowed right away. You still get a notification and can block them from the Apps tab.'
+              : 'Apps your child installs are blocked until you approve them from the Activity tab.'}
+          </p>
+          {autoApproveStatus && (
+            <p role="alert" style={{ fontSize: '13px', color: colors.error, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>{autoApproveStatus}</p>
+          )}
+        </Collapsible>
+      )}
+
       <div data-tour-id="settings-override-pin">
       <Collapsible title="Override PIN" icon="LockSimple" open={pinOpen} onToggle={() => setPinOpen(o => !o)} maxHeight="350px" {...collapsibleProps}>
         <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
@@ -559,7 +715,11 @@ export default function Settings() {
       </Collapsible>
       </div>
 
-      {/* Appearance */}
+      </SettingsGroup>
+
+      {/* ── This device ────────────────────────────────────────────────────── */}
+      <SettingsGroup title="This device" colors={colors} spacing={spacing}>
+
       {settingsLoaded && (
         <Collapsible title="Appearance" icon="SunDim" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -572,7 +732,6 @@ export default function Settings() {
         </Collapsible>
       )}
 
-      {/* Connection */}
       {settingsLoaded && relayStatus && (
         <Collapsible title="Connection" icon="ShareNetwork" open={connectionOpen} onToggle={() => setConnectionOpen(o => !o)} maxHeight="620px" {...collapsibleProps}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: `${spacing.md}px` }}>
@@ -614,61 +773,11 @@ export default function Settings() {
         </Collapsible>
       )}
 
-      {/* New App Installs */}
-      {settingsLoaded && (
-        <Collapsible title="New App Installs" icon="DownloadSimple" open={newAppsOpen} onToggle={() => setNewAppsOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: `${spacing.md}px` }}>
-            <span style={{ ...typography.body, color: colors.text.primary }}>Allow new apps automatically</span>
-            <Toggle checked={autoApproveNewApps} onChange={handleAutoApproveToggle} ariaLabel="Allow new apps automatically" />
-          </div>
-          <p style={{ fontSize: '12px', color: colors.text.muted, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>
-            {autoApproveNewApps
-              ? 'Apps your child installs are allowed right away. You still get a notification and can block them from the Apps tab.'
-              : 'Apps your child installs are blocked until you approve them from the Activity tab.'}
-          </p>
-          {autoApproveStatus && (
-            <p role="alert" style={{ fontSize: '13px', color: colors.error, marginTop: `${spacing.sm}px`, marginBottom: 0 }}>{autoApproveStatus}</p>
-          )}
-        </Collapsible>
-      )}
+      </SettingsGroup>
 
-      {/* Time Request Options */}
-      {settingsLoaded && (
-        <Collapsible title="Time Request Options" icon="Clock" open={timeOptsOpen} onToggle={() => setTimeOptsOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
-          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
-            Choose which duration options the child sees when requesting more time from the block overlay.
-          </p>
-          <ChipSelect
-            options={AVAILABLE_TIME_OPTIONS}
-            selected={timeRequestMinutes}
-            onChange={(v) => { setTimeRequestMinutes(v); setSettingsStatus(null); }}
-            formatter={formatMinutes}
-            colors={colors}
-            spacing={spacing}
-            radius={radius}
-          />
-        </Collapsible>
-      )}
+      {/* ── Data ───────────────────────────────────────────────────────────── */}
+      <SettingsGroup title="Data" colors={colors} spacing={spacing}>
 
-      {/* Warning Thresholds */}
-      {settingsLoaded && (
-        <Collapsible title="Warning Notifications" icon="Bell" open={warningOpen} onToggle={() => setWarningOpen(o => !o)} maxHeight="200px" {...collapsibleProps}>
-          <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
-            The child will be notified this many minutes before a schedule block starts or a daily time limit runs out.
-          </p>
-          <ChipSelect
-            options={AVAILABLE_WARNING_OPTIONS}
-            selected={warningMinutes}
-            onChange={(v) => { setWarningMinutes(v); setSettingsStatus(null); }}
-            formatter={(v) => v + ' min'}
-            colors={colors}
-            spacing={spacing}
-            radius={radius}
-          />
-        </Collapsible>
-      )}
-
-      {/* Device Backup */}
       {settingsLoaded && (
         <Collapsible title="Device Backup" icon="Export" open={backupOpen} onToggle={() => setBackupOpen(o => !o)} maxHeight="220px" {...collapsibleProps}>
           <div style={{ fontSize: '13px', color: colors.text.muted, marginBottom: `${spacing.sm}px` }}>
@@ -680,13 +789,6 @@ export default function Settings() {
         </Collapsible>
       )}
 
-      <DeviceBackupModal
-        visible={backupMode !== null}
-        mode={backupMode || 'export'}
-        onClose={() => setBackupMode(null)}
-      />
-
-      {/* Storage */}
       <Collapsible title="Storage" icon="Trash" open={storageOpen} onToggle={() => setStorageOpen(o => !o)} maxHeight="400px" {...collapsibleProps}>
         <p style={{ fontSize: '12px', color: colors.text.muted, marginBottom: `${spacing.md}px`, marginTop: 0 }}>
           The local database grows over time as telemetry (usage reports, alerts, sessions) accumulates. Check the current footprint and reclaim disk when it gets large.
@@ -699,6 +801,15 @@ export default function Settings() {
         {storageBusy && <p style={{ fontSize: '13px', color: colors.text.muted, margin: `${spacing.md}px 0 0`, textAlign: 'center' }}>Working...</p>}
         {storageError && <p style={{ fontSize: '13px', color: colors.error, margin: `${spacing.md}px 0 0`, textAlign: 'center' }}>{storageError}</p>}
       </Collapsible>
+
+      </SettingsGroup>
+
+      {/* Modals live outside the groups: they render nothing until opened. */}
+      <DeviceBackupModal
+        visible={backupMode !== null}
+        mode={backupMode || 'export'}
+        onClose={() => setBackupMode(null)}
+      />
 
       <StorageModal
         modal={storageModal}
@@ -728,23 +839,8 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Save settings button */}
-      {settingsLoaded && (
-        <div style={{ textAlign: 'center', marginTop: `${spacing.md}px`, marginBottom: `${spacing.xxl}px` }}>
-          {settingsStatus && settingsStatus !== 'success' && (
-            <p style={{ color: colors.error, fontSize: '13px', marginBottom: `${spacing.sm}px` }}>{settingsStatus}</p>
-          )}
-          {settingsStatus === 'success' && (
-            <p style={{ color: colors.success, fontSize: '13px', marginBottom: `${spacing.sm}px` }}>Settings saved and synced to child.</p>
-          )}
-          <Button
-            onClick={() => { window.callBare('haptic:tap'); handleSettingsSave(); }}
-            style={{ alignSelf: 'center' }}
-          >
-            Save Settings
-          </Button>
-        </div>
-      )}
+      {/* No global save button: every section on this page persists on change. */}
+      <div style={{ height: `${spacing.xxl}px` }} />
     </div>
   );
 }

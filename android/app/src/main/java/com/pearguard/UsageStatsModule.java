@@ -1167,6 +1167,19 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Stores a device-wide bedtime extension: schedule rules are skipped for
+     * every app until expiresAt. Keeps the later expiry if one is already set,
+     * so a short grant never cuts a longer one short.
+     */
+    @ReactMethod
+    public void grantScheduleOverride(double expiresAt, Promise promise) {
+        SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
+        long current = prefs.getLong(AppBlockerModule.SCHEDULE_OVERRIDE_KEY, 0L);
+        prefs.edit().putLong(AppBlockerModule.SCHEDULE_OVERRIDE_KEY, Math.max(current, (long) expiresAt)).apply();
+        promise.resolve(null);
+    }
+
+    /**
      * Today's screen-time budget as enforcement actually sees it (#179). Computed
      * from the same AppBlockerModule helpers the block decision uses, so the number
      * the child and parent see can never drift from the number being enforced.
@@ -1301,6 +1314,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         SharedPreferences prefs = reactContext.getSharedPreferences("PearGuardPrefs", Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         editor.remove("pearguard_policy");
+        editor.remove(AppBlockerModule.SCHEDULE_OVERRIDE_KEY);
         for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
             if (entry.getKey().startsWith("pearguard_override_")) {
                 editor.remove(entry.getKey());

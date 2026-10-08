@@ -4810,3 +4810,106 @@ describe('time:deny can carry a short note to the child', () => {
     expect(db._stored['request:r1']).not.toHaveProperty('denyNote')
   })
 })
+
+describe('bedtime extension: scope device (proposal 2026-10-08)', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => (stored[k] !== undefined ? { value: stored[k] } : null)),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value }
+        }
+      }),
+    }
+  }
+
+  test('child time:request stores scope and sends it to parents', async () => {
+    const stored = {}
+    const sendToAllParents = jest.fn()
+    const dispatch = createDispatch({ db: makeDb(stored), send: jest.fn(), sendToAllParents })
+
+    const { requestId } = await dispatch('time:request', { packageName: 'com.app', requestType: 'extra_time', extraSeconds: 1800, scope: 'device' })
+
+    expect(stored[requestId].scope).toBe('device')
+    expect(sendToAllParents.mock.calls[0][0].payload.scope).toBe('device')
+  })
+
+  test('scope is dropped on anything but extra_time', async () => {
+    const stored = {}
+    const sendToAllParents = jest.fn()
+    const dispatch = createDispatch({ db: makeDb(stored), send: jest.fn(), sendToAllParents })
+
+    const { requestId } = await dispatch('time:request', { packageName: 'com.app', requestType: 'general_time', extraSeconds: 1800, scope: 'device' })
+
+    expect(stored[requestId].scope).toBeUndefined()
+    expect(sendToAllParents.mock.calls[0][0].payload.scope).toBeUndefined()
+  })
+
+  test('parent keeps scope on the stored request and in alerts:list', async () => {
+    const stored = { 'peers:childpk': { displayName: 'Kid' } }
+    const db = makeDb(stored)
+    await handleIncomingTimeRequest(
+      { requestId: 'req:1:com.app', packageName: 'com.app', requestedAt: Date.now(), requestType: 'extra_time', extraSeconds: 1800, scope: 'device' },
+      'childpk', db, jest.fn()
+    )
+    expect(stored['request:req:1:com.app'].scope).toBe('device')
+
+    const dispatch = createDispatch({ db, send: jest.fn(), getMode: () => 'child' })
+    const list = await dispatch('alerts:list', { childPublicKey: 'childpk' })
+    const items = Array.isArray(list) ? list : (list.alerts || list.items || [])
+    const entry = items.find((e) => e.id === 'req:1:com.app')
+    expect(entry && entry.scope).toBe('device')
+  })
+
+  test('time:grant sends scope to the child and keeps it for replay', async () => {
+    const stored = {
+      'peers:childpk': { noiseKey: 'noise1' },
+      'request:req1': { id: 'req1', packageName: 'com.app', requestType: 'extra_time', scope: 'device', status: 'pending' },
+    }
+    const db = makeDb(stored)
+    const sendToPeer = jest.fn()
+    const dispatch = createDispatch({ db, send: jest.fn(), sendToPeer })
+
+    await dispatch('time:grant', { childPublicKey: 'childpk', requestId: 'req1', packageName: 'com.app', extraSeconds: 1800 })
+
+    expect(sendToPeer).toHaveBeenCalledWith('noise1', { type: 'time:extend', payload: { requestId: 'req1', packageName: 'com.app', extraSeconds: 1800, scope: 'device' } })
+    const overrideKey = Object.keys(stored).find((k) => k.startsWith('override:childpk:'))
+    expect(stored[overrideKey].scope).toBe('device')
+
+    const replay = jest.fn()
+    await replayActiveGrants(db, 'childpk', replay, 'noise2', Date.now())
+    expect(replay).toHaveBeenCalledWith('noise2', { type: 'time:extend', payload: { requestId: 'req1', packageName: 'com.app', extraSeconds: 1800, scope: 'device' } })
+  })
+
+  test('time:grant without scope sends the same payload as before', async () => {
+    const stored = {
+      'peers:childpk': { noiseKey: 'noise1' },
+      'request:req1': { id: 'req1', packageName: 'com.app', requestType: 'extra_time', status: 'pending' },
+    }
+    const sendToPeer = jest.fn()
+    const dispatch = createDispatch({ db: makeDb(stored), send: jest.fn(), sendToPeer })
+
+    await dispatch('time:grant', { childPublicKey: 'childpk', requestId: 'req1', packageName: 'com.app', extraSeconds: 600 })
+
+    expect(sendToPeer).toHaveBeenCalledWith('noise1', { type: 'time:extend', payload: { requestId: 'req1', packageName: 'com.app', extraSeconds: 600 } })
+  })
+
+  test('child handleTimeExtend passes scope to native:grantOverride', async () => {
+    const send = jest.fn()
+    await handleTimeExtend({ requestId: 'req1', packageName: 'com.app', extraSeconds: 1800, scope: 'device' }, makeDb({}), send)
+    const grant = send.mock.calls.find(([m]) => m.method === 'native:grantOverride')[0].args
+    expect(grant.scope).toBe('device')
+    expect(grant.packageName).toBe('com.app')
+  })
+
+  test('child handleTimeExtend without scope grants one app, as before', async () => {
+    const send = jest.fn()
+    await handleTimeExtend({ requestId: 'req1', packageName: 'com.app', extraSeconds: 600 }, makeDb({}), send)
+    const grant = send.mock.calls.find(([m]) => m.method === 'native:grantOverride')[0].args
+    expect(grant.scope).toBeUndefined()
+  })
+})

@@ -809,7 +809,7 @@ export default function Root () {
           // Child tapped "Send Request" on block overlay — forward as time:request.
           // Pass all fields through so requestType ('approval' | 'extra_time') and
           // extraSeconds (for extra-time requests) reach the worklet.
-          DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string; requestType?: string; extraSeconds?: number }) => {
+          DeviceEventEmitter.addListener('onTimeRequest', (e: { packageName: string; appName: string; requestType?: string; extraSeconds?: number; scope?: string }) => {
             sendToWorklet({ method: 'time:request', args: { ...e } })
           }),
 
@@ -819,7 +819,7 @@ export default function Root () {
           DeviceEventEmitter.addListener('onTimeRequestDrain', async () => {
             try {
               const json = await NativeModules.UsageStatsModule.getQueuedTimeRequests()
-              const entries = JSON.parse(json) as Array<{ packageName: string; appName?: string; requestType?: string; extraSeconds?: number }>
+              const entries = JSON.parse(json) as Array<{ packageName: string; appName?: string; requestType?: string; extraSeconds?: number; scope?: string }>
               if (!Array.isArray(entries) || entries.length === 0) return
               for (const e of entries) {
                 if (!e || !e.packageName) continue
@@ -828,6 +828,7 @@ export default function Root () {
                   appName: e.appName,
                   requestType: e.requestType,
                   extraSeconds: e.extraSeconds,
+                  scope: e.scope,
                 } })
               }
               await NativeModules.UsageStatsModule.clearQueuedTimeRequests()
@@ -1165,11 +1166,16 @@ export default function Root () {
                 }
               } catch (_) {}
             } else if (msg.method === 'native:grantOverride') {
-              // Write P2P-granted override expiry to SharedPreferences so AppBlockerModule can read it
-              NativeModules.UsageStatsModule?.grantOverride(
-                msg.args.packageName,
-                msg.args.expiresAt
-              )
+              // Write P2P-granted override expiry to SharedPreferences so AppBlockerModule can read it.
+              // scope 'device' is a bedtime extension: lift schedule rules for every app.
+              if (msg.args.scope === 'device') {
+                NativeModules.UsageStatsModule?.grantScheduleOverride?.(msg.args.expiresAt)
+              } else {
+                NativeModules.UsageStatsModule?.grantOverride(
+                  msg.args.packageName,
+                  msg.args.expiresAt
+                )
+              }
               // Auto-dismiss the overlay for this package — the parent just granted access
               NativeModules.UsageStatsModule?.dismissOverlayForPackage?.(msg.args.packageName)
             } else if (msg.method === 'native:setScreenTimeBonus') {

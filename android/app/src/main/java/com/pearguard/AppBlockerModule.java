@@ -59,6 +59,8 @@ import java.util.Set;
 public class AppBlockerModule extends AccessibilityService {
 
     private static final String PREFS_NAME = "PearGuardPrefs";
+    /** Expiry of a device-wide bedtime extension; written by UsageStatsModule.grantScheduleOverride. */
+    static final String SCHEDULE_OVERRIDE_KEY = "pearguard_schedule_override_until";
     private static final String POLICY_KEY = "pearguard_policy";
     private static final String CHANNEL_ID = "pearguard_bypass_warning";
 
@@ -739,8 +741,12 @@ public class AppBlockerModule extends AccessibilityService {
                 }
             }
 
-            // Step 2: Scheduled blackout (respects per-rule exempt apps).
-            String scheduleReason = getScheduleBlockReason(policy, packageName);
+            // Step 2: Scheduled blackout (respects per-rule exempt apps). A
+            // parent-approved bedtime extension lifts schedule rules for every
+            // app until it expires; per-app windows, status and limits below
+            // still apply (proposal 2026-10-08).
+            boolean scheduleExtended = prefs.getLong(SCHEDULE_OVERRIDE_KEY, 0L) > System.currentTimeMillis();
+            String scheduleReason = scheduleExtended ? null : getScheduleBlockReason(policy, packageName);
             if (scheduleReason != null) return scheduleReason;
 
             // Step 3: Permanently blocked or pending (parent's explicit policy decision).
@@ -1583,7 +1589,10 @@ public class AppBlockerModule extends AccessibilityService {
             // first. Keeping the block screen attached underneath means Cancel just
             // removes the picker to reveal it (no rebuild), and neither transition
             // flashes the blocked app through a gap. Mirrors the PIN keypad flow.
-            showExtraTimePicker(packageName, reason, isScreenTime ? "general_time" : "extra_time");
+            // A schedule rule ("Blocked during ...") blocks every app at once, so ask
+            // for a device-wide bedtime extension. Per-app windows stay per-app.
+            boolean deviceScope = reason != null && reason.startsWith("Blocked during");
+            showExtraTimePicker(packageName, reason, isScreenTime ? "general_time" : "extra_time", deviceScope);
             return;
         }
 
@@ -1718,7 +1727,7 @@ public class AppBlockerModule extends AccessibilityService {
         return layout;
     }
 
-    private void showExtraTimePicker(String packageName, String reason, String requestType) {
+    private void showExtraTimePicker(String packageName, String reason, String requestType, boolean deviceScope) {
         int[] optionMinutes = getTimeRequestOptions();
         String[] labels = new String[optionMinutes.length];
         int[] seconds = new int[optionMinutes.length];
@@ -1728,7 +1737,8 @@ public class AppBlockerModule extends AccessibilityService {
         }
 
         boolean isGeneral = "general_time".equals(requestType);
-        String title = isGeneral ? "How much more screen time?" : "How much extra time?";
+        String title = isGeneral ? "How much more screen time?"
+                : deviceScope ? "How much more time for all apps?" : "How much extra time?";
 
         final LinearLayout[] holder = { null };
         holder[0] = makeDurationLayout(title, labels, seconds,
@@ -1743,12 +1753,13 @@ public class AppBlockerModule extends AccessibilityService {
                         params.putString("appName", getAppName(packageName));
                         params.putString("requestType", requestType);
                         params.putInt("extraSeconds", durationSeconds);
+                        if (deviceScope) params.putString("scope", "device");
                         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                                 .emit("onTimeRequest", params);
                         Toast.makeText(this, "Request sent to parent", Toast.LENGTH_SHORT).show();
                     } else {
                         TimeRequestQueueHelper.enqueue(this, packageName, getAppName(packageName),
-                                requestType, durationSeconds);
+                                requestType, durationSeconds, deviceScope ? "device" : null);
                         Toast.makeText(this, "Request queued — will sync to parent shortly", Toast.LENGTH_LONG).show();
                     }
                     pendingRequestPackages.add(packageName);

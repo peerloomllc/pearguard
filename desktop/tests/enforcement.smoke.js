@@ -7,7 +7,7 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { evaluate, isSystemExempt, LINUX_SYSTEM_EXEMPT_BASENAMES } = require('../src/enforcement/block-evaluator')
+const { evaluate, isSystemExempt, LINUX_SYSTEM_EXEMPT_BASENAMES, SCHEDULE_OVERRIDE_KEY } = require('../src/enforcement/block-evaluator')
 const { ExeMap, ALIAS_MAP, UWP_HOST_BASENAMES, LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP, computeAppImageMountPrefix, extractAppImageMountPrefix } = require('../src/enforcement/exe-map')
 const { PolicyCache } = require('../src/enforcement/policy-cache')
 const { ForegroundMonitor } = require('../src/enforcement/foreground-monitor')
@@ -4146,4 +4146,60 @@ test('overlay re-renders when the reason changes for the same app', () => {
   controller._showOverlay(fg, { reason: 'Device is locked by your parent.', category: 'lock' })
   assert.strictEqual(shown.length, 2, 'a changed decision must re-render the overlay')
   assert.strictEqual(shown[1].category, 'lock')
+})
+
+// --- Bedtime extension (proposal 2026-10-08) ------------------------------
+
+test('a schedule-rule block is marked deviceWide', () => {
+  const r = evaluate({
+    policy: policy({ schedules: [{ label: 'Bedtime', days: [4], start: '08:00', end: '15:00' }] }),
+    packageName: 'com.discord',
+    exeBasename: 'Discord.exe',
+    now: THURSDAY_NOON,
+  })
+  assert.strictEqual(r.category, 'schedule')
+  assert.strictEqual(r.deviceWide, true)
+})
+
+test('a bedtime extension lifts schedule rules for every app, but not blocked status or limits', () => {
+  const store = new OverridesStore()
+  const realNow = Date.now
+  Date.now = () => THURSDAY_NOON
+  try {
+    store.applyGrant({ packageName: 'com.discord', expiresAt: THURSDAY_NOON + 30 * 60_000, scope: 'device' })
+  } finally {
+    Date.now = realNow
+  }
+  assert.strictEqual(store.asMap().has('com.discord'), false, 'a device grant is not a per-app override')
+  const base = {
+    policy: policy({ schedules: [{ label: 'Bedtime', days: [4], start: '08:00', end: '15:00' }] }),
+    overrides: store.asMap(),
+    getUsageSeconds: (pkg) => (pkg === 'com.limited.example' ? 700 : 0),
+    now: THURSDAY_NOON,
+  }
+  assert.strictEqual(evaluate({ ...base, packageName: 'com.discord', exeBasename: 'Discord.exe' }), null)
+  assert.strictEqual(evaluate({ ...base, packageName: 'com.spotify.music', exeBasename: 'Spotify.exe' }), null)
+  assert.strictEqual(evaluate({ ...base, packageName: 'com.roblox.client', exeBasename: 'RobloxPlayerBeta.exe' }).category, 'status')
+  assert.strictEqual(evaluate({ ...base, packageName: 'com.limited.example', exeBasename: 'limited.exe' }).category, 'daily_limit')
+  // Expired: the schedule is back.
+  assert.strictEqual(evaluate({ ...base, packageName: 'com.discord', exeBasename: 'Discord.exe', now: THURSDAY_NOON + 31 * 60_000 }).category, 'schedule')
+})
+
+test('a shorter device grant does not cut a longer one short', () => {
+  const store = new OverridesStore()
+  const t = Date.now()
+  store.applyGrant({ packageName: 'a', expiresAt: t + 60 * 60_000, scope: 'device' })
+  store.applyGrant({ packageName: 'b', expiresAt: t + 15 * 60_000, scope: 'device' })
+  assert.strictEqual(store.asMap().get(SCHEDULE_OVERRIDE_KEY), t + 60 * 60_000)
+})
+
+test('a per-app window block is not deviceWide', () => {
+  const r = evaluate({
+    policy: policy({ apps: { 'com.discord': { status: 'allowed', appName: 'Discord', window: { mode: 'block', days: [4], start: '08:00', end: '15:00' } } } }),
+    packageName: 'com.discord',
+    exeBasename: 'Discord.exe',
+    now: THURSDAY_NOON,
+  })
+  assert.strictEqual(r.category, 'schedule')
+  assert.ok(!r.deviceWide)
 })

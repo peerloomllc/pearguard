@@ -23,10 +23,16 @@ public class TimeRequestQueueHelper {
     /**
      * Enqueue a time/approval request. Each entry is:
      * { "timestamp": long, "packageName": str, "appName": str,
-     *   "requestType": "approval" | "extra_time", "extraSeconds": int? }
+     *   "requestType": "approval" | "extra_time", "extraSeconds": int?,
+     *   "scope": "device"? }
      */
     public static void enqueue(Context context, String packageName, String appName,
                                String requestType, int extraSeconds) {
+        enqueue(context, packageName, appName, requestType, extraSeconds, null);
+    }
+
+    public static void enqueue(Context context, String packageName, String appName,
+                               String requestType, int extraSeconds, String scope) {
         synchronized (LOCK) {
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             JSONArray queue;
@@ -44,6 +50,7 @@ public class TimeRequestQueueHelper {
                 if (appName != null) entry.put("appName", appName);
                 if (requestType != null) entry.put("requestType", requestType);
                 if (extraSeconds > 0) entry.put("extraSeconds", extraSeconds);
+                if (scope != null) entry.put("scope", scope);
                 queue.put(entry);
 
                 while (queue.length() > MAX_ENTRIES) {

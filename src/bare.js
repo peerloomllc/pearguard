@@ -1630,6 +1630,7 @@ async function handleHello (msg, conn, remoteKeyHex) {
         if (value.requestType !== 'approval' && typeof value.extraSeconds === 'number') {
           p2pPayload.extraSeconds = value.extraSeconds
         }
+        if (value.scope) p2pPayload.scope = value.scope
         const signed = signMessage({ type: 'time:request', payload: p2pPayload }, identity)
         conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
         resent++

@@ -931,6 +931,9 @@ function createDispatch (ctx) {
 
       case 'time:request': {
         const { packageName, appName, requestType, extraSeconds } = args
+        // scope: 'device' on an extra_time request is a bedtime extension: the
+        //        grant lifts schedule rules for every app, not just this one.
+        //        Older parents ignore it and grant this app only.
         // requestType: 'approval'     (blocked/pending — parent changes policy)
         //              'extra_time'   (approved but hit limit/schedule — parent grants timed override)
         //              'general_time' (device-wide screen-time cap spent — parent tops up
@@ -950,6 +953,7 @@ function createDispatch (ctx) {
           status: 'pending',
           requestType: resolvedType,
           ...(carriesSeconds && typeof extraSeconds === 'number' ? { extraSeconds } : {}),
+          ...(resolvedType === 'extra_time' && args.scope === 'device' ? { scope: 'device' } : {}),
         }
 
         await ctx.db.put(requestId, request)
@@ -963,6 +967,7 @@ function createDispatch (ctx) {
         if (ctx.sendToAllParents) {
           const p2pPayload = { requestId, packageName, appName: request.appName, requestedAt: request.requestedAt, requestType: resolvedType }
           if (carriesSeconds && typeof extraSeconds === 'number') p2pPayload.extraSeconds = extraSeconds
+          if (request.scope) p2pPayload.scope = request.scope
           await ctx.sendToAllParents({ type: 'time:request', payload: p2pPayload })
         }
 
@@ -977,6 +982,8 @@ function createDispatch (ctx) {
         }
         const existing = await ctx.db.get('request:' + requestId).catch(() => null)
         const appName = (existing && existing.value && (existing.value.appDisplayName || existing.value.appName)) || packageName
+        // A bedtime extension lifts schedule rules device-wide (proposal 2026-10-08).
+        const scope = existing && existing.value && existing.value.scope === 'device' ? 'device' : null
         if (existing) {
           await ctx.db.put('request:' + requestId, { ...existing.value, status: 'approved' })
         }
@@ -987,7 +994,7 @@ function createDispatch (ctx) {
           const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
           const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
           if (noiseKey) {
-            ctx.sendToPeer(noiseKey, { type: 'time:extend', payload: { requestId, packageName, extraSeconds } })
+            ctx.sendToPeer(noiseKey, { type: 'time:extend', payload: { requestId, packageName, extraSeconds, ...(scope && { scope }) } })
             sent = true
           }
         } catch (_e) {
@@ -1012,7 +1019,7 @@ function createDispatch (ctx) {
           expiresAt: null, awaitingDelivery: true, ...(sent && { sentAt: grantedAt }),
           // requestId + extraSeconds let handleHello re-send this grant to a child
           // that was offline when it was approved (grants were otherwise lost).
-          requestId, extraSeconds,
+          requestId, extraSeconds, ...(scope && { scope }),
         })
         ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'approved' } })
         return { ok: true }
@@ -2392,6 +2399,7 @@ function createDispatch (ctx) {
             resolved: value.status !== 'pending',
             childPublicKey,
             requestType: value.requestType || 'approval',
+            ...(value.scope && { scope: value.scope }),
             // 'install' => the app just appeared and needs a decision; absent =>
             // the child actively asked. The UI must not imply the child begged
             // for an app they merely installed.
@@ -2950,7 +2958,7 @@ async function replayActiveGrants (db, childPublicKey, sendToPeer, remoteKeyHex,
       continue
     }
     try {
-      sendToPeer(remoteKeyHex, { type: 'time:extend', payload: { requestId: value.requestId, packageName: value.packageName, extraSeconds: value.extraSeconds } })
+      sendToPeer(remoteKeyHex, { type: 'time:extend', payload: { requestId: value.requestId, packageName: value.packageName, extraSeconds: value.extraSeconds, ...(value.scope && { scope: value.scope }) } })
     } catch (e) {
       console.warn('[bare] could not replay grant to child', childPublicKey.slice(0, 8) + ':', e.message)
       continue
@@ -3016,6 +3024,8 @@ async function handleTimeExtendGeneral (payload, db, send, sendToAllParents) {
  */
 async function handleTimeExtend (payload, db, send, sendToAllParents) {
   const { requestId, packageName, extraSeconds } = payload
+  // 'device' = bedtime extension: native lifts schedule rules for every app.
+  const scope = payload.scope === 'device' ? 'device' : null
   if (!requestId || !packageName || typeof extraSeconds !== 'number') {
     console.warn('[bare] time:extend: malformed payload, dropping')
     return
@@ -3037,7 +3047,7 @@ async function handleTimeExtend (payload, db, send, sendToAllParents) {
   }
 
   const expiresAt = Date.now() + extraSeconds * 1000
-  const grant = { packageName, grantedAt: Date.now(), expiresAt, source: 'parent-approved' }
+  const grant = { packageName, grantedAt: Date.now(), expiresAt, source: 'parent-approved', ...(scope && { scope }) }
 
   // Update request status in Hyperbee (creating it if the child never had the
   // request, so a later re-send is deduped by the guard above).
@@ -3049,7 +3059,7 @@ async function handleTimeExtend (payload, db, send, sendToAllParents) {
     req.expiresAt = expiresAt
     await db.put(requestId, req)
   } else {
-    await db.put(requestId, { id: requestId, packageName, requestType: 'extra_time', status: 'approved', expiresAt })
+    await db.put(requestId, { id: requestId, packageName, requestType: 'extra_time', status: 'approved', expiresAt, ...(scope && { scope }) })
   }
 
   // Store grant to Hyperbee so overrides:list can find it (#61)
@@ -3654,6 +3664,7 @@ async function handleIncomingTimeRequest (payload, childPublicKey, db, send) {
 
   const request = { id: requestId, packageName, appName, requestedAt, status: 'pending', notified: false, childPublicKey, childDisplayName, requestType: resolvedType }
   if (resolvedType !== 'approval' && typeof extraSeconds === 'number') request.extraSeconds = extraSeconds
+  if (resolvedType === 'extra_time' && payload.scope === 'device') request.scope = 'device'
   await db.put('request:' + requestId, request)
   send({ type: 'event', event: 'time:request:received', data: request })
 }

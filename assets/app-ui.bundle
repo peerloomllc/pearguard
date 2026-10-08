@@ -16528,6 +16528,7 @@
     const [note, setNote] = (0, import_react8.useState)("");
     const isGeneralTime = req.requestType === "general_time";
     const isExtraTime = req.requestType === "extra_time" || isGeneralTime;
+    const isBedtime = req.requestType === "extra_time" && req.scope === "device";
     async function handleApprove() {
       setActing(true);
       try {
@@ -16582,8 +16583,8 @@
       return mins >= 60 ? `Grant ${mins / 60}h` : `Grant ${mins}m`;
     }
     const appLabel = req.appDisplayName || req.packageName || "Unknown app";
-    const title = isGeneralTime ? "More screen time" : appLabel;
-    const triggeredBy = isGeneralTime && req.packageName !== "general" ? appLabel : null;
+    const title = isGeneralTime ? "More screen time" : isBedtime ? "Bedtime extension (all apps)" : appLabel;
+    const triggeredBy = isGeneralTime && req.packageName !== "general" || isBedtime ? appLabel : null;
     const lapsed = req.status === "expired";
     const askedBecause = req.origin === "install" ? "just installed, not yet approved" : lapsed ? "no answer yet, they can ask again" : null;
     const badgeColor = typeColor(req.type, colors);

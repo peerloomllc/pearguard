@@ -64,6 +64,8 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
   // General time tops up the whole daily budget; extra time overrides one app.
   const isGeneralTime = req.requestType === 'general_time';
   const isExtraTime = req.requestType === 'extra_time' || isGeneralTime;
+  // A bedtime extension: the grant lifts schedule rules for every app.
+  const isBedtime = req.requestType === 'extra_time' && req.scope === 'device';
 
   async function handleApprove() {
     setActing(true);
@@ -124,10 +126,12 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
   // A general-time request is about the whole day's budget, so lead with that
   // and demote the app that happened to trigger it to context.
   const appLabel = req.appDisplayName || req.packageName || 'Unknown app';
-  const title = isGeneralTime ? 'More screen time' : appLabel;
+  const title = isGeneralTime ? 'More screen time'
+    : isBedtime ? 'Bedtime extension (all apps)'
+    : appLabel;
   // Requests raised from the child's home screen carry no real app, just the
   // 'general' sentinel — there is no "blocked while opening X" to show.
-  const triggeredBy = isGeneralTime && req.packageName !== 'general' ? appLabel : null;
+  const triggeredBy = (isGeneralTime && req.packageName !== 'general') || isBedtime ? appLabel : null;
   // Say WHY we're asking. An install is not the child pleading for an app — it
   // appeared on their device and now needs a decision. Wording that implied they
   // asked for it would misrepresent them to their own parent.

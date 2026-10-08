@@ -91,3 +91,43 @@ test('updates bypassAlerts badge on alert:bypass event', async () => {
     expect(screen.getByTestId('child-pk2').textContent).toContain('1');
   });
 });
+
+// ── Lock or pause every child at once ───────────────────────────────────────
+const setLockCalls = () => window.callBare.mock.calls.filter(([m]) => m === 'policy:setLock');
+
+test('no "All children" row with only one child', async () => {
+  window.callBare.mockResolvedValue([MOCK_CHILDREN[0]]);
+  render(<Dashboard />);
+  await waitFor(() => screen.getByTestId('child-pk1'));
+  expect(screen.queryByText('Lock all children')).not.toBeInTheDocument();
+});
+
+test('Lock all asks once, then locks every child with the same message', async () => {
+  render(<Dashboard />);
+  fireEvent.click(await screen.findByText('Lock all children'));
+  expect(screen.getByText("Lock every child's device?")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /^Lock$/ }));
+  await waitFor(() => expect(setLockCalls()).toHaveLength(2));
+  expect(setLockCalls().map(([, a]) => a.childPublicKey).sort()).toEqual(['pk1', 'pk2']);
+  expect(setLockCalls().every(([, a]) => a.locked === true)).toBe(true);
+  // Both are locked now, so the same button unlocks them.
+  expect(await screen.findByText('Unlock all children')).toBeInTheDocument();
+});
+
+test('Unlock all unlocks every child without asking', async () => {
+  window.callBare.mockResolvedValue(MOCK_CHILDREN.map((c) => ({ ...c, locked: true })));
+  render(<Dashboard />);
+  fireEvent.click(await screen.findByText('Unlock all children'));
+  await waitFor(() => expect(setLockCalls()).toHaveLength(2));
+  expect(setLockCalls().every(([, a]) => a.locked === false)).toBe(true);
+});
+
+test('Pause all pauses every child for the chosen time', async () => {
+  render(<Dashboard />);
+  fireEvent.click(await screen.findByText('Pause all children'));
+  fireEvent.click(await screen.findByText('1 hour'));
+  await waitFor(() => {
+    const pauses = window.callBare.mock.calls.filter(([m]) => m === 'policy:setPause');
+    expect(pauses.map(([, a]) => a.childPublicKey).sort()).toEqual(['pk1', 'pk2']);
+  });
+});

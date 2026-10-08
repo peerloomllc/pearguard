@@ -31,7 +31,9 @@ function formatUntil(ts) {
   }
 }
 
-export default function PauseModal({ child, pauseUntil, visible, onClose, onChanged }) {
+// `targets` (child public keys) pauses several children at once, for the
+// Dashboard's "Pause all"; `child` then only supplies the display name.
+export default function PauseModal({ child, targets, pauseUntil, visible, onClose, onChanged }) {
   const { colors, typography, spacing } = useTheme();
   const [busy, setBusy] = useState(false);
 
@@ -41,7 +43,8 @@ export default function PauseModal({ child, pauseUntil, visible, onClose, onChan
     window.callBare('haptic:tap');
     setBusy(true);
     try {
-      await window.callBare('policy:setPause', { childPublicKey: child.publicKey, pauseUntil: until });
+      const keys = targets && targets.length ? targets : [child.publicKey];
+      await Promise.all(keys.map((k) => window.callBare('policy:setPause', { childPublicKey: k, pauseUntil: until })));
       onChanged?.(until > Date.now() ? until : 0);
       onClose();
     } catch (e) {

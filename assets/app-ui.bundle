@@ -18844,7 +18844,7 @@
       return "";
     }
   }
-  function PauseModal({ child, pauseUntil, visible, onClose, onChanged }) {
+  function PauseModal({ child, targets, pauseUntil, visible, onClose, onChanged }) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
     const [busy, setBusy] = (0, import_react15.useState)(false);
     const isPaused = pauseUntil && Date.now() < pauseUntil;
@@ -18852,7 +18852,8 @@
       window.callBare("haptic:tap");
       setBusy(true);
       try {
-        await window.callBare("policy:setPause", { childPublicKey: child.publicKey, pauseUntil: until });
+        const keys = targets && targets.length ? targets : [child.publicKey];
+        await Promise.all(keys.map((k) => window.callBare("policy:setPause", { childPublicKey: k, pauseUntil: until })));
         onChanged?.(until > Date.now() ? until : 0);
         onClose();
       } catch (e) {
@@ -19579,6 +19580,19 @@ ${inv.inviteLink}`
     (0, import_react18.useImperativeHandle)(ref, () => ({
       navigateToChild
     }));
+    const ALL = { all: true, displayName: "every child" };
+    const allLocked = children.length > 0 && children.every((c) => c.locked);
+    const allPaused = children.length > 0 && children.every((c) => c.pauseUntil && Date.now() < c.pauseUntil);
+    const [pauseAllOpen, setPauseAllOpen] = (0, import_react18.useState)(false);
+    async function handleLockAll() {
+      window.callBare("haptic:tap");
+      if (allLocked) {
+        await Promise.all(children.map((c) => window.callBare("policy:setLock", { childPublicKey: c.publicKey, locked: false })));
+        setChildren((prev) => prev.map((c) => ({ ...c, locked: false })));
+      } else {
+        setLockTarget(ALL);
+      }
+    }
     async function handleLockToggle(child) {
       if (child.locked) {
         await window.callBare("policy:setLock", { childPublicKey: child.publicKey, locked: false });
@@ -19590,8 +19604,9 @@ ${inv.inviteLink}`
     async function confirmLock() {
       if (!lockTarget) return;
       const lockUntil = lockMinutes ? Date.now() + lockMinutes * 6e4 : 0;
-      await window.callBare("policy:setLock", { childPublicKey: lockTarget.publicKey, locked: true, lockMessage, lockUntil });
-      setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true, lockUntil } : c));
+      const keys = lockTarget.all ? children.map((c) => c.publicKey) : [lockTarget.publicKey];
+      await Promise.all(keys.map((k) => window.callBare("policy:setLock", { childPublicKey: k, locked: true, lockMessage, lockUntil })));
+      setChildren((prev) => prev.map((c) => keys.includes(c.publicKey) ? { ...c, locked: true, lockUntil, pauseUntil: 0 } : c));
       setLockTarget(null);
       setLockMessage("");
       setLockMinutes(null);
@@ -19673,6 +19688,13 @@ ${inv.inviteLink}`
           onDismiss: () => setInviteActive(false)
         }
       ),
+      children.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, marginBottom: `${spacing2.md}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { variant: "secondary", icon: allLocked ? "LockSimpleOpen" : "LockSimple", onClick: handleLockAll, style: { flex: 1 }, children: allLocked ? "Unlock all children" : "Lock all children" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Button, { variant: "secondary", icon: "SunDim", onClick: () => {
+          window.callBare("haptic:tap");
+          setPauseAllOpen(true);
+        }, style: { flex: 1 }, children: allPaused ? "Free time on" : "Pause all children" })
+      ] }),
       children.map((child, idx) => /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
         ChildCard,
         {
@@ -19687,6 +19709,17 @@ ${inv.inviteLink}`
         },
         child.publicKey
       )),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
+        PauseModal,
+        {
+          child: ALL,
+          targets: children.map((c) => c.publicKey),
+          pauseUntil: allPaused ? Math.min(...children.map((c) => c.pauseUntil)) : 0,
+          visible: pauseAllOpen,
+          onClose: () => setPauseAllOpen(false),
+          onChanged: (until) => setChildren((prev) => prev.map((c) => ({ ...c, pauseUntil: until, ...until && { locked: false } })))
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
         GrantTimeModal,
         {

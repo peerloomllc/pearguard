@@ -45,12 +45,16 @@ public class EnforcementService extends Service {
     private static final long POLL_INTERVAL_MS = 5_000;       // 5 seconds
     private static final long USAGE_FLUSH_INTERVAL_MS = 300_000; // 5 minutes
     private static final long RECONNECT_EMIT_INTERVAL_MS = 30_000; // 30 seconds
+    // The force-stop check on startup only asks whether this stamp is under
+    // 5 minutes old, so once a minute is plenty (it was every 5 s tick).
+    private static final long HEARTBEAT_WRITE_INTERVAL_MS = 60_000;
     private static final String WARNING_CHANNEL_ID = "pearguard_upcoming_warning";
     private static final int[] DEFAULT_WARNING_THRESHOLDS_MIN = {10, 5, 1};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastUsageFlushTime = 0;
     private long lastReconnectEmitTime = 0;
+    private long lastHeartbeatWriteTime = 0;
     private boolean lastAccessibilityState = true;
     // Consecutive ticks where the service reads as ENABLED in settings but its
     // process is not connected (AppBlockerModule.isServiceConnected() == false).
@@ -124,14 +128,17 @@ public class EnforcementService extends Service {
     };
 
     /**
-     * Writes the current timestamp to SharedPreferences on every loop tick.
+     * Writes the current timestamp to SharedPreferences once a minute.
      * When PearGuard is force-stopped, onDestroy() is never called so this
      * timestamp goes stale, allowing startup detection of a force-stop event.
      */
     private void writeEnforcementHeartbeat() {
+        long now = System.currentTimeMillis();
+        if (now - lastHeartbeatWriteTime < HEARTBEAT_WRITE_INTERVAL_MS) return;
+        lastHeartbeatWriteTime = now;
         getSharedPreferences("PearGuardPrefs", MODE_PRIVATE)
             .edit()
-            .putLong("enforcement_heartbeat_ms", System.currentTimeMillis())
+            .putLong("enforcement_heartbeat_ms", now)
             .apply();
     }
 
@@ -146,14 +153,17 @@ public class EnforcementService extends Service {
         long now = System.currentTimeMillis();
         if (now - lastReconnectEmitTime < RECONNECT_EMIT_INTERVAL_MS) return;
         lastReconnectEmitTime = now;
-        emitReconnectNeeded();
+        emitReconnectNeeded("periodic");
     }
 
-    private void emitReconnectNeeded() {
+    // reason: "periodic" from the 30 s loop, which the worklet skips when every
+    // parent is already connected; "network" from a network change, which always
+    // rejoins.
+    private void emitReconnectNeeded(String reason) {
         ReactContext ctx = PearGuardReactHost.get();
         if (ctx == null || !ctx.hasActiveReactInstance()) return;
         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-           .emit("onChildReconnectNeeded", null);
+           .emit("onChildReconnectNeeded", reason);
     }
 
     /**
@@ -169,7 +179,7 @@ public class EnforcementService extends Service {
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
-                    emitReconnectNeeded();
+                    emitReconnectNeeded("network");
                 }
             };
             connectivityManager.registerDefaultNetworkCallback(networkCallback);

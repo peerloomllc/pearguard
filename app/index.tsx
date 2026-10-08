@@ -877,13 +877,13 @@ export default function Root () {
 
           // ParentConnectionService heartbeat — trigger swarm:reconnect to restore
           // any connections that dropped while the app was backgrounded
-          DeviceEventEmitter.addListener('onParentReconnectNeeded', () => {
-            sendToWorklet({ method: 'swarm:reconnect' })
+          DeviceEventEmitter.addListener('onParentReconnectNeeded', (reason?: string) => {
+            sendToWorklet({ method: 'swarm:reconnect', args: { periodic: reason === 'periodic' } })
           }),
 
           // EnforcementService: child-side reconnect (30s loop + network-change callback)
-          DeviceEventEmitter.addListener('onChildReconnectNeeded', () => {
-            sendToWorklet({ method: 'swarm:reconnect' })
+          DeviceEventEmitter.addListener('onChildReconnectNeeded', (reason?: string) => {
+            sendToWorklet({ method: 'swarm:reconnect', args: { periodic: reason === 'periodic' } })
           }),
         )
       }

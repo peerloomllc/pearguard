@@ -73,3 +73,21 @@ test('subscribes to bare events', async () => {
     expect(window.onBareEvent).toHaveBeenCalledWith('request:submitted', expect.any(Function))
   })
 })
+
+test('shows the next bedtime with its time and countdown', async () => {
+  window.callBare.mockResolvedValue({
+    blockedCount: 0,
+    pendingCount: 0,
+    pendingRequests: 0,
+    activeOverrides: [],
+    hasPolicy: true,
+    locked: false,
+    parentName: null,
+    childName: 'Alex',
+    nextSchedule: { label: 'Bedtime', at: Date.now() + 2 * 60 * 60 * 1000, active: false },
+  })
+  render(<ChildHome />)
+  await waitFor(() => {
+    expect(screen.getByText(/in 2h/)).toBeInTheDocument()
+  })
+})

@@ -4913,3 +4913,98 @@ describe('bedtime extension: scope device (proposal 2026-10-08)', () => {
     expect(grant.scope).toBeUndefined()
   })
 })
+
+describe('app icons live under icon: keys on the parent (proposal 2026-10-08)', () => {
+  const { getAppIcons, migrateIconsOut } = require('../src/bare-dispatch')
+  function makeDb (stored = {}) {
+    return {
+      _stored: stored,
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => (stored[k] !== undefined ? { value: stored[k] } : null)),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const key of Object.keys(stored).sort()) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: stored[key] }
+        }
+      }),
+    }
+  }
+  const hasIcon = (policy) => Object.values(policy.apps || {}).some((a) => a && a.iconBase64)
+
+  test('app:installed stores the icon under icon: and not in the policy', async () => {
+    const stored = { 'policy:kid': { apps: {}, version: 1 } }
+    await handleIncomingAppInstalled({ packageName: 'com.a', appName: 'A', iconBase64: 'AAA' }, 'kid', makeDb(stored), jest.fn())
+    expect(stored['icon:kid:com.a']).toBe('AAA')
+    expect(stored['policy:kid'].apps['com.a']).toBeDefined()
+    expect(hasIcon(stored['policy:kid'])).toBe(false)
+  })
+
+  test('apps:sync writes missing icons only and keeps them out of the policy', async () => {
+    const stored = { 'policy:kid': { apps: { 'com.a': { status: 'allowed', appName: 'A' } }, version: 1 }, 'icon:kid:com.a': 'OLD' }
+    const db = makeDb(stored)
+    await handleIncomingAppsSync({ apps: [{ packageName: 'com.a', appName: 'A', iconBase64: 'NEW' }, { packageName: 'com.b', appName: 'B', iconBase64: 'BBB' }] }, 'kid', db, jest.fn())
+    expect(stored['icon:kid:com.a']).toBe('OLD')
+    expect(stored['icon:kid:com.b']).toBe('BBB')
+    expect(hasIcon(stored['policy:kid'])).toBe(false)
+  })
+
+  test('policy:get merges icons back in; policy:update stores them under icon: and not in the policy', async () => {
+    const stored = { 'policy:kid': { apps: { 'com.a': { status: 'allowed' }, 'com.b': { status: 'allowed' } }, version: 3 }, 'icon:kid:com.a': 'AAA' }
+    const db = makeDb(stored)
+    const dispatch = createDispatch({ db, send: jest.fn(), sendToPeer: jest.fn() })
+
+    const got = await dispatch('policy:get', { childPublicKey: 'kid' })
+    expect(got.apps['com.a'].iconBase64).toBe('AAA')
+    expect(got.apps['com.b'].iconBase64).toBeUndefined()
+    expect(hasIcon(stored['policy:kid'])).toBe(false)
+
+    got.apps['com.b'] = { status: 'blocked', iconBase64: 'BBB' }
+    await dispatch('policy:update', { childPublicKey: 'kid', policy: got })
+    expect(stored['policy:kid'].apps['com.b'].status).toBe('blocked')
+    expect(hasIcon(stored['policy:kid'])).toBe(false)
+    expect(stored['icon:kid:com.b']).toBe('BBB')
+  })
+
+  test('migration moves icons out once and does nothing on a second run', async () => {
+    const stored = {
+      'policy:kid': { apps: { 'com.a': { status: 'allowed', iconBase64: 'AAA' }, 'com.b': { status: 'allowed' } }, version: 2 },
+      'policy:kid2': { apps: { 'com.c': { status: 'allowed' } }, version: 1 },
+      policy: { pinHash: 'x' },
+    }
+    const db = makeDb(stored)
+    expect(await migrateIconsOut(db)).toBe(1)
+    expect(stored['icon:kid:com.a']).toBe('AAA')
+    expect(hasIcon(stored['policy:kid'])).toBe(false)
+    expect(stored['policy:kid'].version).toBe(2)
+    db.put.mockClear()
+    expect(await migrateIconsOut(db)).toBe(0)
+    expect(db.put).not.toHaveBeenCalled()
+  })
+
+  test('getAppIcons returns only that child\'s icons', async () => {
+    const db = makeDb({ 'icon:kid:com.a': 'A', 'icon:kid:com.b': 'B', 'icon:kid2:com.a': 'X' })
+    expect(await getAppIcons(db, 'kid')).toEqual({ 'com.a': 'A', 'com.b': 'B' })
+  })
+
+  test('children:list lists the child and shows the current app icon from icon: keys', async () => {
+    const stored = {
+      'peers:kid': { publicKey: 'kid', displayName: 'Sam', noiseKey: 'n1' },
+      'policy:kid': { version: 1, apps: { 'com.a': { status: 'allowed', appName: 'A' } } },
+      'icon:kid:com.a': 'AAA',
+      'usageReport:kid:1': { timestamp: Date.now(), currentApp: 'A', currentAppPackage: 'com.a', apps: [] },
+    }
+    const children = await createDispatch({ db: makeDb(stored), send: jest.fn(), peers: new Map(), mode: 'parent' })('children:list', {})
+    expect(children).toHaveLength(1)
+    expect(children[0].currentAppIcon).toBe('AAA')
+  })
+
+  test('removing a child deletes its icons', async () => {
+    const stored = { 'peers:kid': { publicKey: 'kid' }, 'policy:kid': { apps: {} }, 'icon:kid:com.a': 'A', 'icon:kid2:com.a': 'X' }
+    const dispatch = createDispatch({ db: makeDb(stored), send: jest.fn(), sendToPeer: jest.fn(), getMode: () => 'parent' })
+    await dispatch('child:unpair', { childPublicKey: 'kid' })
+    expect(stored['icon:kid:com.a']).toBeUndefined()
+    expect(stored['icon:kid2:com.a']).toBe('X')
+  })
+})

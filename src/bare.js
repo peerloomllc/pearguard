@@ -994,6 +994,17 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       // the reasons that are PearGuard's own failure and not the child's doing.
       // describeBypassReason is the single source of truth for both the wording
       // and whether this is really tampering; the notification already used it.
+      // The child names each alert by its detectedAt, so a copy we already
+      // stored is a re-delivery (a reconnect replay), not a new event. Storing
+      // it again is harmless, but emitting it would post a second notification.
+      // _seenBypassAlerts covers two copies arriving at once on two
+      // connections, before either has been stored.
+      const alertKey = 'alert:' + childPublicKey + ':' + detectedAt
+      if (_seenBypassAlerts.has(alertKey) || await db.get(alertKey).catch(() => null)) {
+        log('[bare] ignoring duplicate bypass:alert', detectedAt, 'from', childPublicKey.slice(0, 12))
+        break
+      }
+      _seenBypassAlerts.add(alertKey)
       const described = describeBypassReason(reason, childDisplayName)
       const alertEntry = {
         id: 'bypass:' + detectedAt,
@@ -1005,7 +1016,7 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
         childPublicKey,
         childDisplayName,
       }
-      await db.put('alert:' + childPublicKey + ':' + detectedAt, alertEntry)
+      await db.put(alertKey, alertEntry)
       send({ type: 'event', event: 'alert:bypass', data: alertEntry })
       break
     }
@@ -1174,14 +1185,26 @@ async function sendToAllParents (message, excludeKey) {
  * Flush all queued messages to the parent connection and clear the queue.
  * @param {object} conn — the parent peer's connection stream
  */
-async function flushPendingMessages (conn) {
-  const count = await flushMessageQueue(db, (message) => {
-    const signed = signMessage(message, identity)
-    conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+// Flushes run one at a time. A parent that changes networks opens several
+// connections at once, and each one's hello triggers a flush; run concurrently,
+// every flush read the queue before any had deleted from it, so one queued
+// bypass alert reached the parent three times as three notifications.
+let _flushChain = Promise.resolve()
+
+// Parent: bypass alert keys handled this session. See case 'bypass:alert'.
+const _seenBypassAlerts = new Set()
+function flushPendingMessages (conn) {
+  const run = _flushChain.then(async () => {
+    const count = await flushMessageQueue(db, (message) => {
+      const signed = signMessage(message, identity)
+      conn.write(Buffer.from(JSON.stringify(signed) + '\n'))
+    })
+    if (count > 0) {
+      log('[bare] flushed', count, 'queued messages to parent')
+    }
   })
-  if (count > 0) {
-    log('[bare] flushed', count, 'queued messages to parent')
-  }
+  _flushChain = run.catch(() => {})
+  return run
 }
 
 /**

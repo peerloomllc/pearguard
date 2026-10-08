@@ -2100,6 +2100,17 @@ test('TamperDetector markCleanQuit persists cleanQuit=true', () => {
   assert.strictEqual(state.cleanQuit, true)
 })
 
+test('TamperDetector OS shutdown (markSessionEnding) → next launch is not a tamper', () => {
+  const dir = makeTempDir()
+  const td = new TamperDetector({ userDataDir: dir, onTamper: () => {}, now: () => 2000 })
+  td.checkOnStartup()
+  td.markSessionEnding()
+  let fired = null
+  const next = new TamperDetector({ userDataDir: dir, onTamper: (r) => { fired = r }, now: () => 3000 })
+  assert.strictEqual(next.checkOnStartup().tampered, false)
+  assert.strictEqual(fired, null)
+})
+
 test('TamperDetector corrupt state file is ignored (no tamper fire)', () => {
   const dir = makeTempDir()
   fs.writeFileSync(path.join(dir, 'runtime-state.json'), '{ not json')

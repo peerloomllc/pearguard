@@ -401,6 +401,11 @@ function createTray() {
   tray.on('click', showMainWindow)
 }
 
+function markSessionEnd(event) {
+  console.log('[main] OS session ending (' + event + ') - marking clean quit')
+  if (tamperDetector) tamperDetector.markSessionEnding()
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 420,
@@ -426,6 +431,12 @@ function createWindow() {
       mainWindow.hide()
     }
   })
+
+  // An OS shutdown, restart or logout is not a force-stop, but before-quit
+  // does not fire for it on Windows, so the next launch read the unclean
+  // marker as tampering and the parent got "PearGuard was stopped". Windows
+  // reports the session ending on the window; Linux and macOS on powerMonitor.
+  mainWindow.on('session-end', () => markSessionEnd('session-end'))
 
   // Mirror renderer console to the main process stdout when logging is on.
   if (process.env.PEARGUARD_SMOKE || process.env.PEARGUARD_UI_SMOKE || process.env.PEARGUARD_LOG_RENDERER) {
@@ -486,6 +497,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  powerMonitor.on('shutdown', () => markSessionEnd('shutdown'))
   // Migrate the userData root if we're running on top of an old install that
   // used the legacy package name (`pearguard-windows`). Must happen BEFORE
   // bare.js init (Hypercore opens locks) and before any other on-disk state

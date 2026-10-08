@@ -18,6 +18,7 @@ const TYPE_META = {
   app_uninstalled: { label: 'App Uninstalled',  icon: 'Trash' },
   pin_override:    { label: 'PIN Override',     icon: 'LockSimpleOpen' },
   pin_failure:     { label: 'PIN Guessing',     icon: 'Warning' },
+  grant_undelivered: { label: 'Time Not Delivered', icon: 'Clock' },
 };
 
 // A request row's badge depends on what is actually being asked, not just on the
@@ -33,7 +34,7 @@ function metaFor(item) {
 
 function typeColor(type, colors) {
   // Amber, not red: the parent must still act, but nobody is being accused.
-  if (type === 'enforcement_off') return colors.secondary;
+  if (type === 'enforcement_off' || type === 'grant_undelivered') return colors.secondary;
   if (type === 'bypass' || type === 'app_uninstalled' || type === 'pin_failure') return colors.error;
   if (type === 'time_request' || type === 'pin_use' || type === 'pin_override') return colors.secondary;
   if (type === 'app_installed') return colors.success;
@@ -282,7 +283,8 @@ export default function ActivityTab({ childPublicKey }) {
     const unsubUpdated     = window.onBareEvent('request:updated',       reload);
     const unsubOverride    = window.onBareEvent('alert:pin_override',    reload);
     const unsubFailure     = window.onBareEvent('alert:pin_failure',     reload);
-    return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); unsubUpdated(); unsubOverride(); unsubFailure(); };
+    const unsubUndelivered = window.onBareEvent('alert:grant_undelivered', reload);
+    return () => { unsubBypass(); unsubRequest(); unsubInstalled(); unsubUninstalled(); unsubUpdated(); unsubOverride(); unsubFailure(); unsubUndelivered(); };
   }, [childPublicKey]);
 
   function handleDismiss(item) {

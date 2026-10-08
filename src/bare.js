@@ -20,7 +20,7 @@ const { generateKeypair, sign, verify } = require('./identity')
 // `log` is silent unless the host enables it on init (see src/log.js). warn/error
 // stay unconditional — those are the ones worth having in production.
 const { log, setLogEnabled } = require('./log')
-const { createDispatch, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, recordPolicyAck, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
+const { createDispatch, lapseUndeliveredGrants, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, recordPolicyAck, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite } = require('./bare-dispatch')
 const { describeBypassReason } = require('./bypass-reasons')
 const { RELAY_PUBLIC_KEY, RELAY_PREF_KEY, relayEnabledFromPref, relayThroughFor } = require('./relay')
 const { signMessage, verifyMessage } = require('./message')
@@ -827,7 +827,7 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
       await handleTimeExtend(msg.payload, db, send, sendToAllParents)
       break
     case 'time:extendGeneral':
-      await handleTimeExtendGeneral(msg.payload, db, send)
+      await handleTimeExtendGeneral(msg.payload, db, send, sendToAllParents)
       break
     case 'request:denied': {
       // Parent denied an extra-time request — update the child-side req: entry and notify.
@@ -1508,6 +1508,11 @@ async function handleHello (msg, conn, remoteKeyHex) {
     // stayed pending. The child dedups by request status so an already-applied
     // grant is ignored (no double-credit).
     try {
+      // Anything too old to deliver is cancelled first, with an alert, so the
+      // replay below never springs stale time on the child.
+      for (const alert of await lapseUndeliveredGrants(db, Date.now())) {
+        send({ type: 'event', event: 'alert:grant_undelivered', data: alert })
+      }
       const replayed = await replayActiveGrants(db, peerIdentityKeyHex, sendToPeer, remoteKeyHex, Date.now())
       if (replayed > 0) log('[bare] replayed', replayed, 'active grant(s) to reconnecting child:', peerIdentityKeyHex.slice(0, 12))
     } catch (e) {

@@ -6,6 +6,7 @@ import Button from './primitives/Button.jsx';
 import Input from './primitives/Input.jsx';
 import ChildCard from './ChildCard.jsx';
 import ChildDetail from './ChildDetail.jsx';
+import PauseModal from './PauseModal.jsx';
 import GrantTimeModal from './GrantTimeModal.jsx';
 import InviteCard from './InviteCard.jsx';
 import { useLocalDate } from '../useLocalDate.js';
@@ -184,6 +185,24 @@ export default forwardRef(function Dashboard(_props, ref) {
     navigateToChild,
   }));
 
+  // "Lock all" reuses the single-child lock dialog with this stand-in target.
+  // Each child still gets its own policy:setLock, which the worklet serialises
+  // per child, so nothing new crosses the wire.
+  const ALL = { all: true, displayName: 'every child' };
+  const allLocked = children.length > 0 && children.every((c) => c.locked);
+  const allPaused = children.length > 0 && children.every((c) => c.pauseUntil && Date.now() < c.pauseUntil);
+  const [pauseAllOpen, setPauseAllOpen] = useState(false);
+
+  async function handleLockAll() {
+    window.callBare('haptic:tap');
+    if (allLocked) {
+      await Promise.all(children.map((c) => window.callBare('policy:setLock', { childPublicKey: c.publicKey, locked: false })));
+      setChildren((prev) => prev.map((c) => ({ ...c, locked: false })));
+    } else {
+      setLockTarget(ALL);
+    }
+  }
+
   async function handleLockToggle(child) {
     if (child.locked) {
       await window.callBare('policy:setLock', { childPublicKey: child.publicKey, locked: false });
@@ -196,8 +215,10 @@ export default forwardRef(function Dashboard(_props, ref) {
   async function confirmLock() {
     if (!lockTarget) return;
     const lockUntil = lockMinutes ? Date.now() + lockMinutes * 60000 : 0;
-    await window.callBare('policy:setLock', { childPublicKey: lockTarget.publicKey, locked: true, lockMessage, lockUntil });
-    setChildren((prev) => prev.map((c) => c.publicKey === lockTarget.publicKey ? { ...c, locked: true, lockUntil } : c));
+    const keys = lockTarget.all ? children.map((c) => c.publicKey) : [lockTarget.publicKey];
+    await Promise.all(keys.map((k) => window.callBare('policy:setLock', { childPublicKey: k, locked: true, lockMessage, lockUntil })));
+    // Locking cancels a pause, same as the worklet does.
+    setChildren((prev) => prev.map((c) => keys.includes(c.publicKey) ? { ...c, locked: true, lockUntil, pauseUntil: 0 } : c));
     setLockTarget(null);
     setLockMessage('');
     setLockMinutes(null);
@@ -276,6 +297,17 @@ export default forwardRef(function Dashboard(_props, ref) {
         />
       )}
 
+      {children.length > 1 && (
+        <div style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
+          <Button variant="secondary" icon={allLocked ? 'LockSimpleOpen' : 'LockSimple'} onClick={handleLockAll} style={{ flex: 1 }}>
+            {allLocked ? 'Unlock all children' : 'Lock all children'}
+          </Button>
+          <Button variant="secondary" icon="SunDim" onClick={() => { window.callBare('haptic:tap'); setPauseAllOpen(true); }} style={{ flex: 1 }}>
+            {allPaused ? 'Free time on' : 'Pause all children'}
+          </Button>
+        </div>
+      )}
+
       {children.map((child, idx) => (
         <ChildCard
           key={child.publicKey}
@@ -286,6 +318,15 @@ export default forwardRef(function Dashboard(_props, ref) {
           onGrant={() => { window.callBare('haptic:tap'); setGrantTarget(child); }}
         />
       ))}
+
+      <PauseModal
+        child={ALL}
+        targets={children.map((c) => c.publicKey)}
+        pauseUntil={allPaused ? Math.min(...children.map((c) => c.pauseUntil)) : 0}
+        visible={pauseAllOpen}
+        onClose={() => setPauseAllOpen(false)}
+        onChanged={(until) => setChildren((prev) => prev.map((c) => ({ ...c, pauseUntil: until, ...(until && { locked: false }) })))}
+      />
 
       <GrantTimeModal
         child={grantTarget}

@@ -2644,6 +2644,18 @@ async function handleAppDecision (payload, db, send, sendToAllParents) {
  * @param {object} db — Hyperbee instance
  * @param {function} send — bare→RN IPC send function
  */
+// JSON with object keys sorted, so two copies of the same policy compare equal
+// however their keys were ordered on the way in.
+function stableStringify (value) {
+  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']'
+  if (value && typeof value === 'object') {
+    return '{' + Object.keys(value).sort()
+      .filter((k) => value[k] !== undefined)
+      .map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}'
+  }
+  return JSON.stringify(value)
+}
+
 async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKey, replyToSender) {
   if (typeof payload.version !== 'number' || !payload.childPublicKey) {
     console.warn('[bare] policy:update ignored: invalid payload (missing version or childPublicKey)')
@@ -2691,6 +2703,22 @@ async function handlePolicyUpdate (payload, db, send, sendToAllParents, senderKe
   // they would otherwise be stored, parsed by native on every check and relayed
   // to every co-parent.
   payload = stripAppIcons(payload)
+
+  // A parent re-pushes its stored copy on every reconnect, so most pushes are
+  // the policy we already enforce. Re-storing, re-applying and relaying that to
+  // every other parent changed nothing. The sender still gets an ack, since
+  // its "waiting for the phone" indicator keys on it.
+  if (existing && existing.value && payload.version === existingVersion &&
+      stableStringify(payload) === stableStringify(existing.value)) {
+    if (replyToSender && senderKey) {
+      try {
+        replyToSender(senderKey, { type: 'policy:ack', payload: { version: payload.version, at: Date.now() } })
+      } catch (e) {
+        console.warn('[bare] could not ack unchanged policy to parent', senderKey.slice(0, 8), e.message)
+      }
+    }
+    return
+  }
 
   await db.put('policy', payload)
   // Use method format (not event) so the RN shell routes this to

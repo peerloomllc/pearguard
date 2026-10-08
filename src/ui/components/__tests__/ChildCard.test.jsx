@@ -73,3 +73,13 @@ test('calls onPress when card is clicked', () => {
   fireEvent.click(screen.getByRole('button', { name: /open alice/i }));
   expect(onPress).toHaveBeenCalledTimes(1);
 });
+
+test('an offline child shows when it was last seen', () => {
+  render(<ChildCard child={{ publicKey: 'pk', displayName: 'Sam', isOnline: false, lastSeen: Date.now() - 2 * 3600 * 1000 }} onPress={() => {}} onLockToggle={() => {}} />);
+  expect(screen.getByText('seen 2h ago')).toBeInTheDocument();
+});
+
+test('an online child shows no last-seen time', () => {
+  render(<ChildCard child={{ publicKey: 'pk', displayName: 'Sam', isOnline: true, lastSeen: Date.now() - 2 * 3600 * 1000 }} onPress={() => {}} onLockToggle={() => {}} />);
+  expect(screen.queryByText(/seen .* ago/)).not.toBeInTheDocument();
+});

@@ -28,8 +28,15 @@ module.exports = {
       const req = await call(child, 'time:request', { packageName: PKG, appName: 'Game', requestType: 'extra_time', extraSeconds: GRANT_SECONDS })
       await new Promise((r) => setTimeout(r, 1500))
 
+      const killedAt = Date.now()
       await kill(child)
       log('child OFFLINE')
+      // The parent records when the child dropped, for "last seen" on its card.
+      await waitEvent(parent, (m) => m.event === 'peer:disconnected', 30000)
+      await new Promise((r) => setTimeout(r, 500))
+      const listed = (await call(parent, 'children:list')).find((c) => c.publicKey === childPub)
+      log('lastSeen recorded', listed && listed.lastSeen >= killedAt ? 'at disconnect' : 'NOT updated')
+      if (!listed || !(listed.lastSeen >= killedAt)) throw new Error('parent did not record lastSeen when the child disconnected')
       await call(parent, 'time:grant', { childPublicKey: childPub, requestId: req.requestId, packageName: PKG, extraSeconds: GRANT_SECONDS })
       const pending = (await call(parent, 'overrides:list', { childPublicKey: childPub })).overrides
         .filter((o) => o.packageName === PKG)

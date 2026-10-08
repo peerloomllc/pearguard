@@ -22274,6 +22274,18 @@ ${inv.inviteLink}`
       a.packageName
     )) });
   }
+  var ASK_OPTIONS_MINUTES = [15, 30, 60];
+  function formatClock(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  function formatCountdown(ms) {
+    const mins = Math.round((ms - Date.now()) / 6e4);
+    if (mins < 1) return "in under a minute";
+    if (mins < 60) return `in ${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+  }
   function Section2({ title, children, colors, typography: typography2, spacing: spacing2 }) {
     return /* @__PURE__ */ (0, import_jsx_runtime35.jsxs)("div", { style: { marginTop: `${spacing2.xl}px` }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime35.jsx)("h3", { style: { fontSize: "15px", fontWeight: "700", margin: `0 0 ${spacing2.sm}px`, color: colors.text.primary, textAlign: "center" }, children: title }),

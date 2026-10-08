@@ -73,6 +73,22 @@ function AppList({ items, emptyText, colors, typography, spacing, radius }) {
   )
 }
 
+const ASK_OPTIONS_MINUTES = [15, 30, 60]
+
+function formatClock(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+// "in 2h 15m" / "in 20m" / "in under a minute"
+function formatCountdown(ms) {
+  const mins = Math.round((ms - Date.now()) / 60000)
+  if (mins < 1) return 'in under a minute'
+  if (mins < 60) return `in ${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`
+}
+
 function Section({ title, children, colors, typography, spacing }) {
   return (
     <div style={{ marginTop: `${spacing.xl}px` }}>

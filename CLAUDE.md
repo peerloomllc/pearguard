@@ -130,7 +130,8 @@ The canonical verify gate - the one command that answers "safe to merge?":
 npm run verify
 ```
 
-It runs jest, the desktop smoke suites (`npm test --prefix desktop`) and all four
+It runs a narrow eslint pass (`npm run lint`: undefined names, duplicate keys,
+unreachable code and similar bugs, no style rules), jest, the desktop smoke suites (`npm test --prefix desktop`) and all four
 bundle builds (bare universal, bare ios, bare ios-sim, UI), in about 7 seconds. The
 bundle builds are the point as much as the tests are: they catch a broken import or
 syntax error in the worklet or UI that jest never loads. Note it rewrites the

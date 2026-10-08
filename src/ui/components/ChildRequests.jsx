@@ -12,7 +12,9 @@ function statusBadge(status, colors) {
   }
 }
 
-export default function ChildRequests() {
+// `embedded` drops the page heading and padding, for use inside the Home tab's
+// requests sheet, which is where the decision notification lands.
+export default function ChildRequests({ embedded = false } = {}) {
   const { colors, typography, spacing, radius } = useTheme()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
@@ -21,7 +23,8 @@ export default function ChildRequests() {
   async function loadRequests() {
     setLoading(true)
     const { requests } = await window.callBare('requests:list')
-    setRequests(requests || [])
+    // Newest first, so the answer a notification just announced is on top.
+    setRequests((requests || []).slice().sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0)))
     setLoading(false)
   }
 
@@ -55,12 +58,12 @@ export default function ChildRequests() {
   const hasResolved = requests.some((r) => r.status === 'approved' || r.status === 'denied' || r.status === 'expired')
 
   return (
-    <div style={{ padding: `${spacing.xl}px`, ...typography.body, color: colors.text.primary }}>
+    <div style={{ padding: embedded ? 0 : `${spacing.xl}px`, ...typography.body, color: colors.text.primary }}>
       <div style={{
         marginBottom: `${spacing.base}px`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', alignItems: 'center', justifyContent: embedded ? 'flex-end' : 'space-between',
       }}>
-        <h2 style={{ ...typography.display, color: colors.text.primary, margin: 0 }}>My Requests</h2>
+        {!embedded && <h2 style={{ ...typography.display, color: colors.text.primary, margin: 0 }}>My Requests</h2>}
         {hasResolved && (
           <button
             onClick={() => { window.callBare('haptic:tap'); handleClearResolved(); }}
@@ -102,11 +105,16 @@ export default function ChildRequests() {
           >
             <div>
               <div style={{ ...typography.body, fontWeight: '600', color: colors.text.primary }}>
-                {req.appName || req.packageName}
+                {req.packageName === 'general' ? 'More screen time' : (req.appName || req.packageName)}
               </div>
               <div style={{ ...typography.caption, color: colors.text.muted, marginTop: `${spacing.xs}px` }}>
                 {new Date(req.requestedAt).toLocaleTimeString()}
               </div>
+              {req.status === 'denied' && req.denyNote && (
+                <div style={{ ...typography.caption, color: colors.text.secondary, marginTop: `${spacing.xs}px`, fontStyle: 'italic' }}>
+                  "{req.denyNote}"
+                </div>
+              )}
             </div>
             <div style={{ ...typography.caption, fontWeight: '700', color: badge.color }}>
               {badge.label}

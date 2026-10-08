@@ -4,6 +4,7 @@ import Icon from '../icons.js';
 import Card from './primitives/Card.jsx';
 import Button from './primitives/Button.jsx';
 import Badge from './primitives/Badge.jsx';
+import Modal from './primitives/Modal.jsx';
 
 const TYPE_META = {
   bypass:          { label: 'Bypass Attempt',  icon: 'Warning' },
@@ -56,7 +57,7 @@ function formatSeconds(s) {
 function PendingRequestCard({ req, childPublicKey, onResolved }) {
   const { colors, typography, spacing } = useTheme();
   const [acting, setActing] = useState(false);
-  // Deny stays one tap; the note is opt-in.
+  // Denying a time request asks first whether to add a note for the child.
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState('');
 
@@ -180,36 +181,48 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
           <Button
             variant="danger"
             disabled={acting}
-            onClick={handleDeny}
+            onClick={isExtraTime ? () => setNoteOpen(true) : handleDeny}
             aria-label={`Deny request for ${req.packageName}`}
           >
             Deny
           </Button>
         </div>
       </div>
-      {isExtraTime && (noteOpen ? (
+      <Modal
+        visible={noteOpen}
+        onClose={() => setNoteOpen(false)}
+        title="Add a note to this denial?"
+        footer={<>
+          <Button variant="secondary" onClick={() => setNoteOpen(false)} style={{ flex: 1 }}>Cancel</Button>
+          <Button
+            variant="danger"
+            disabled={acting}
+            onClick={() => { setNoteOpen(false); handleDeny(); }}
+            aria-label="Confirm deny"
+            style={{ flex: 1 }}
+          >
+            Deny
+          </Button>
+        </>}
+      >
+        <div style={{ ...typography.caption, color: colors.text.secondary, marginBottom: `${spacing.sm}px`, textAlign: 'center' }}>
+          Your child sees it with the answer. Leave it empty to just say no.
+        </div>
         <input
           type="text"
           value={note}
           maxLength={140}
-          placeholder="Reason for saying no (optional)"
+          autoFocus
+          placeholder="e.g. Homework first"
           aria-label="Reason for saying no"
           onChange={(e) => setNote(e.target.value)}
           style={{
-            width: '100%', boxSizing: 'border-box', marginTop: `${spacing.sm}px`, padding: `${spacing.sm}px`,
+            width: '100%', boxSizing: 'border-box', padding: `${spacing.sm}px`,
             borderRadius: '8px', border: `1px solid ${colors.border}`, background: colors.surface.input || colors.surface.card,
             color: colors.text.primary, fontSize: '14px',
           }}
         />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setNoteOpen(true)}
-          style={{ marginTop: `${spacing.xs}px`, padding: 0, border: 'none', background: 'none', color: colors.text.secondary, fontSize: '13px', textDecoration: 'underline', cursor: 'pointer' }}
-        >
-          Add a note to a no
-        </button>
-      ))}
+      </Modal>
     </Card>
   );
 }

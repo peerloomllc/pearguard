@@ -16610,43 +16610,63 @@
             {
               variant: "danger",
               disabled: acting,
-              onClick: handleDeny,
+              onClick: isExtraTime ? () => setNoteOpen(true) : handleDeny,
               "aria-label": `Deny request for ${req.packageName}`,
               children: "Deny"
             }
           )
         ] })
       ] }),
-      isExtraTime && (noteOpen ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-        "input",
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+        Modal,
         {
-          type: "text",
-          value: note,
-          maxLength: 140,
-          placeholder: "Reason for saying no (optional)",
-          "aria-label": "Reason for saying no",
-          onChange: (e) => setNote(e.target.value),
-          style: {
-            width: "100%",
-            boxSizing: "border-box",
-            marginTop: `${spacing2.sm}px`,
-            padding: `${spacing2.sm}px`,
-            borderRadius: "8px",
-            border: `1px solid ${colors.border}`,
-            background: colors.surface.input || colors.surface.card,
-            color: colors.text.primary,
-            fontSize: "14px"
-          }
+          visible: noteOpen,
+          onClose: () => setNoteOpen(false),
+          title: "Add a note to this denial?",
+          footer: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Button, { variant: "secondary", onClick: () => setNoteOpen(false), style: { flex: 1 }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+              Button,
+              {
+                variant: "danger",
+                disabled: acting,
+                onClick: () => {
+                  setNoteOpen(false);
+                  handleDeny();
+                },
+                "aria-label": "Confirm deny",
+                style: { flex: 1 },
+                children: "Deny"
+              }
+            )
+          ] }),
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Your child sees it with the answer. Leave it empty to just say no." }),
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+              "input",
+              {
+                type: "text",
+                value: note,
+                maxLength: 140,
+                autoFocus: true,
+                placeholder: "e.g. Homework first",
+                "aria-label": "Reason for saying no",
+                onChange: (e) => setNote(e.target.value),
+                style: {
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: `${spacing2.sm}px`,
+                  borderRadius: "8px",
+                  border: `1px solid ${colors.border}`,
+                  background: colors.surface.input || colors.surface.card,
+                  color: colors.text.primary,
+                  fontSize: "14px"
+                }
+              }
+            )
+          ]
         }
-      ) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-        "button",
-        {
-          type: "button",
-          onClick: () => setNoteOpen(true),
-          style: { marginTop: `${spacing2.xs}px`, padding: 0, border: "none", background: "none", color: colors.text.secondary, fontSize: "13px", textDecoration: "underline", cursor: "pointer" },
-          children: "Add a note to a no"
-        }
-      ))
+      )
     ] });
   }
   function isDismissible(item) {

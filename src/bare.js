@@ -589,6 +589,20 @@ async function onPeerConnection (conn, info) {
       }
     }
     send({ type: 'event', event: 'peer:disconnected', data: { remoteKey: remoteKeyHex } })
+    // Parent: remember when this child was last connected, so the dashboard can
+    // say "last seen 2h ago" instead of just a grey dot. lastSeen was otherwise
+    // only set on hello, which is when the connection started, not when it
+    // ended. One write per disconnect.
+    if (mode === 'parent' && !(peers.get(remoteKeyHex) || {}).conn) {
+      ;(async () => {
+        if (_rebuildBusy) await _rebuildBusy
+        // Matched on noiseKey: it usually equals the identity key the record is
+        // stored under, but not after every re-pair.
+        for await (const { key, value } of db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          if (value && value.noiseKey === remoteKeyHex) await db.put(key, { ...value, lastSeen: Date.now() })
+        }
+      })().catch((e) => console.warn('[bare] could not record lastSeen:', e.message))
+    }
     // Signal Hyperswarm to expedite reconnection
     if (swarm) swarm.flush().catch(() => {})
   })

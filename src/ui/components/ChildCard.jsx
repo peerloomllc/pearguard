@@ -16,6 +16,16 @@ function formatSeconds(seconds) {
   return `${seconds}s`;
 }
 
+// "5m ago", "2h ago", "3d ago" for when an offline child was last connected.
+function lastSeenAgo(ts) {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourId }) {
   const { colors, typography, spacing, radius, shadow } = useTheme();
   const {
@@ -146,6 +156,11 @@ export default function ChildCard({ child, onPress, onLockToggle, onGrant, tourI
         }}>
           {displayName}
         </span>
+        {!isOnline && child.lastSeen ? (
+          <span style={{ ...typography.caption, color: colors.text.muted, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            seen {lastSeenAgo(child.lastSeen)}
+          </span>
+        ) : null}
       </div>
       <div style={{
         ...typography.caption, color: statusColor, marginBottom: `${spacing.xs}px`,

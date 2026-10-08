@@ -166,7 +166,7 @@ export default forwardRef(function Dashboard(_props, ref) {
       window.onBareEvent('peer:disconnected', (data) => {
         if (!data?.remoteKey) return;
         setChildren((prev) => prev.map((c) =>
-          c.noiseKey === data.remoteKey ? { ...c, isOnline: false } : c
+          c.noiseKey === data.remoteKey ? { ...c, isOnline: false, lastSeen: Date.now() } : c
         ));
       }),
     ];

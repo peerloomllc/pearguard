@@ -683,6 +683,11 @@ public class AppBlockerModule extends AccessibilityService {
         JSONObject policy = loadPolicy();
         if (policy == null) return null; // no policy yet, allow everything
 
+        // Manual clock/timezone change: every check below reads the wall clock, so
+        // block until automatic time is back on rather than trust a moved clock.
+        String tamperReason = ClockTamperLock.blockReason(this, packageName);
+        if (tamperReason != null) return tamperReason;
+
         try {
             // Step 0: Device-wide lock — parent toggled quick-lock, block everything.
             boolean locked = policy.optBoolean("locked", false);

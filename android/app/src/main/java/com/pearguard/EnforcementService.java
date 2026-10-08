@@ -283,6 +283,8 @@ public class EnforcementService extends Service {
                     boolean zoneChanged = timezoneChanged();
                     if (zoneChanged && !isAutoTimeZoneEnabled()) {
                         reportBypass("timezone_changed");
+                        ClockTamperLock.lockZone(EnforcementService.this);
+                        checkForegroundEnforcement();
                     }
                     anchorClock();
                     return;
@@ -307,6 +309,8 @@ public class EnforcementService extends Service {
                 // by toggling WiFi and then changing the clock within 90 seconds.
                 if (isAutoTimeEnabled()) return;
                 reportBypass("clock_changed");
+                ClockTamperLock.lockClock(EnforcementService.this);
+                checkForegroundEnforcement();
             }
         };
         IntentFilter filter = new IntentFilter();
@@ -329,20 +333,12 @@ public class EnforcementService extends Service {
      * automatic) if the setting can't be read, to avoid falsely accusing the child.
      */
     private boolean isAutoTimeEnabled() {
-        try {
-            return Settings.Global.getInt(getContentResolver(), Settings.Global.AUTO_TIME, 1) == 1;
-        } catch (Exception e) {
-            return true;
-        }
+        return ClockTamperLock.isAutoTimeEnabled(this);
     }
 
     /** Same idea as isAutoTimeEnabled but for the timezone (AUTO_TIME_ZONE). */
     private boolean isAutoTimeZoneEnabled() {
-        try {
-            return Settings.Global.getInt(getContentResolver(), Settings.Global.AUTO_TIME_ZONE, 1) == 1;
-        } catch (Exception e) {
-            return true;
-        }
+        return ClockTamperLock.isAutoTimeZoneEnabled(this);
     }
 
     /** Records the current timezone ID so the first genuine change is detectable. */

@@ -97,6 +97,17 @@ security set-key-partition-list \
   -s -k "" \
   ~/Library/Keychains/buildkey.keychain
 
+# ── CocoaPods ──────────────────────────────────────────────────────────────
+# release.sh rsyncs the repo without node_modules, so the Mac must resolve its
+# own dependency tree and refresh Pods from the current Podfile. Skipping this
+# left the Mac on July's Pods, so the Xcode 27 Podfile fix never applied and
+# 1.0.24 failed to archive (RNSVG at iOS 12.4) until pod install was run by
+# hand. Same step as pearcal-native's ios-appstore.sh. Runs with the full PATH
+# (Homebrew node/npm/pod), before XCODE_PATH strips Homebrew.
+echo "Syncing CocoaPods sandbox (npm install + pod install)..."
+( cd "$REPO_ROOT" && npm install --no-audit --no-fund )
+( cd "$REPO_ROOT/ios" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install )
+
 # ── Xcode PATH ─────────────────────────────────────────────────────────────
 # Xcode's distribution pipeline invokes rsync internally.  If Homebrew's GNU
 # rsync (3.4.x) is on PATH it conflicts with Apple's built-in openrsync,

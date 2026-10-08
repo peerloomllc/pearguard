@@ -194,6 +194,28 @@ class UsageTracker extends EventEmitter {
     return out
   }
 
+  // Per-day totals for the parent's 30-day trends, in the shape Android's
+  // getDailyAggregatesRange sends: [{ date: 'YYYY-MM-DD', apps: [{ packageName,
+  // displayName, secondsToday }] }], newest first. Today plus up to `days - 1`
+  // archived days before it. An archived day later than today exists only if
+  // the clock was moved forward and back, so it is left out.
+  getDailyTotals(days = MAX_ARCHIVED_DAYS + 1) {
+    const today = this.getDailyUsageAll()
+    const out = [{
+      date: dateOfDayKey(this._dayKey),
+      apps: today.map((a) => ({ packageName: a.packageName, displayName: a.appName || a.packageName, secondsToday: a.secondsToday })),
+    }]
+    const past = [...this._dayArchive.keys()].filter((k) => k < this._dayKey).sort((a, b) => b - a).slice(0, days - 1)
+    for (const key of past) {
+      const counters = this._dayArchive.get(key) || {}
+      out.push({
+        date: dateOfDayKey(key),
+        apps: Object.entries(counters).map(([pkg, seconds]) => ({ packageName: pkg, displayName: this._displayName(pkg) || pkg, secondsToday: seconds })),
+      })
+    }
+    return out
+  }
+
   // [{ packageName, secondsThisWeek }].
   getWeeklyUsageAll() {
     const ts = this._now()
@@ -563,6 +585,12 @@ const DAY_MS = 24 * 60 * 60 * 1000
 function dayKeyOf(ts) {
   const d = new Date(ts)
   return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS)
+}
+
+// 'YYYY-MM-DD' for a day number. The number already encodes the local calendar
+// date, so reading it back in UTC gives that same date.
+function dateOfDayKey(key) {
+  return new Date(key * DAY_MS).toISOString().slice(0, 10)
 }
 
 // Day number of the local Sunday that starts this week.

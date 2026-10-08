@@ -66,6 +66,7 @@ const { OverridesStore } = require('../enforcement/overrides-store')
 const { PinLockoutStore, formatLockRemaining } = require('../enforcement/pin-lockout')
 const { UsageTracker } = require('../enforcement/usage-tracker')
 const { enumerateInstalledApps, slugify } = require('../enforcement/apps-enumerator')
+const { computePrune } = require('../enforcement/app-prune')
 const { readFileDescription } = require('../enforcement/exe-metadata')
 const { extractWin32Icons } = require('../enforcement/icon-extractor')
 const { ExeMap, DEFAULT_MAP, ALIAS_MAP, LINUX_DEFAULT_MAP, LINUX_ALIAS_MAP } = require('../enforcement/exe-map')
@@ -210,7 +211,9 @@ shim.onBareOut((buf) => {
         return
       }
       if (msg.event === 'usageFlushRequested') {
-        flushUsageOnce().catch((e) => console.warn('[main] usage:flush failed:', e.message))
+        // A parent just connected: send every day we still hold, to fill any
+        // gap in its trends.
+        flushUsageOnce({ full: true }).catch((e) => console.warn('[main] usage:flush failed:', e.message))
         return
       }
       // First parent pairing flips the device into "supervised" mode. Until
@@ -237,8 +240,29 @@ async function runAppsSync() {
     return
   }
   console.log('[main] apps:sync reporting', apps.length, 'apps; sample=', apps.slice(0, 3))
+  // Prune programs the scan has stopped reporting. bare prunes every policy
+  // app missing from installedAll, so it gets the whole policy minus exactly
+  // those; foreground-only apps the scan never lists are kept. See app-prune.js.
+  const listPath = path.join(app.getPath('userData'), 'enumerated-apps.json')
+  let previous = null
+  try { previous = JSON.parse(fs.readFileSync(listPath, 'utf8')) } catch (_e) { /* first run */ }
+  const { removed, remember, suspect } = computePrune(previous, apps.map((a) => a.packageName))
+  if (suspect) console.warn('[main] apps:sync scan dropped too many programs at once; not pruning this time')
+  let installedAll
+  if (removed.length) {
+    try {
+      const { policy } = await callBare('policy:getCurrent')
+      const gone = new Set(removed)
+      installedAll = Object.keys((policy && policy.apps) || {}).filter((p) => !gone.has(p))
+      for (const a of apps) installedAll.push(a.packageName)
+      console.log('[main] apps:sync pruning', removed)
+    } catch (e) {
+      console.warn('[main] apps:sync policy read failed, not pruning:', e.message)
+    }
+  }
   try {
-    await callBare('apps:sync', { apps })
+    await callBare('apps:sync', installedAll ? { apps, installedAll } : { apps })
+    try { fs.writeFileSync(listPath, JSON.stringify(remember)) } catch (e) { console.warn('[main] could not save enumerated-apps list:', e.message) }
     console.log('[main] apps:sync callBare returned ok')
   } catch (e) {
     console.warn('[main] apps:sync callBare rejected:', e.message)
@@ -1222,15 +1246,21 @@ function reportEnforcementInitFailure(err) {
     .catch((e) => console.warn('[main] enforcement-init bypass relay failed:', e.message))
 }
 
-async function flushUsageOnce() {
+// dailyTotals feed the parent's 30-day trends (without them it falls back to 7
+// days of sessions). The timer sends today and yesterday, the only days that
+// can still change; a reconnect sends all the tracker holds (about 8 days), and
+// the parent keeps each day, so it builds up 30 over time. Same split as the
+// Android shell.
+async function flushUsageOnce({ full = false } = {}) {
   if (!enforcement || !bareReady) return
   const usage = enforcement.usage.getDailyUsageAll()
   const weekly = enforcement.usage.getWeeklyUsageAll()
   const sessions = enforcement.usage.takeSessions()
   const foregroundPackage = enforcement.usage.getLastForegroundPackage()
-  if (usage.length === 0 && sessions.length === 0) return
+  const dailyTotals = enforcement.usage.getDailyTotals(full ? undefined : 2)
+  if (usage.length === 0 && sessions.length === 0 && !full) return
   try {
-    await callBare('usage:flush', { usage, weekly, foregroundPackage, sessions })
+    await callBare('usage:flush', { usage, weekly, foregroundPackage, sessions, dailyTotals })
   } catch (e) {
     console.warn('[main] usage:flush failed:', e.message)
   }

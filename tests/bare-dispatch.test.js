@@ -4631,3 +4631,40 @@ describe('alerts:list asks the child to resend resolved requests at most every 5
     expect(sendToPeer).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('handlePolicyUpdate skips a push identical to the enforced policy', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * () {}),
+    }
+  }
+  const current = { version: 4, childPublicKey: 'kid', apps: { 'com.a': { status: 'allowed', appName: 'A' } }, pinHashes: { p1: 'h1' } }
+
+  test('re-pushed on reconnect: nothing re-applied or relayed, the sender still gets its ack', async () => {
+    const db = makeDb({ policy: current })
+    const send = jest.fn()
+    const sendToAllParents = jest.fn()
+    const reply = jest.fn()
+    // Same content, keys in a different order.
+    const pushed = { pinHashes: { p1: 'h1' }, apps: { 'com.a': { appName: 'A', status: 'allowed' } }, childPublicKey: 'kid', version: 4 }
+    await handlePolicyUpdate(pushed, db, send, sendToAllParents, 'p1', reply)
+    expect(db.put).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(sendToAllParents).not.toHaveBeenCalled()
+    expect(reply).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'policy:ack', payload: expect.objectContaining({ version: 4 }) }))
+  })
+
+  test('same version with different content is still applied', async () => {
+    const db = makeDb({ policy: current })
+    const send = jest.fn()
+    const sendToAllParents = jest.fn()
+    const pushed = { ...current, apps: { 'com.a': { status: 'blocked', appName: 'A' } } }
+    await handlePolicyUpdate(pushed, db, send, sendToAllParents, 'p1', jest.fn())
+    expect(db.put).toHaveBeenCalledWith('policy', expect.objectContaining({ version: 4 }))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ method: 'native:setPolicy' }))
+    expect(sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({ type: 'policy:update' }), 'p1')
+  })
+})

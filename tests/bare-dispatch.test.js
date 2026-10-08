@@ -4009,6 +4009,47 @@ describe('the app catalogue is only sent to a parent that needs it', () => {
     expect((await dispatch('apps:sync', { apps: APPS, installedAll: ALL })).relayedTo).toBe(1)
     expect(db._stored['appsSig:dad']).toBeDefined()
   })
+
+  describe('a scan without icons (Android reconnect)', () => {
+    const iconAsks = (send) => send.mock.calls.filter(([m]) => m.event === 'apps:syncRequested' && m.data && m.data.withIcons).length
+
+    test('nothing changed: no icon scan is asked for and nothing is sent', async () => {
+      const db = makeDb({ 'peers:dad': dad })
+      const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+      const dispatch = createDispatch(ctx)
+      await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+      ctx.send.mockClear(); ctx.sendToPeer.mockClear()
+      const r = await dispatch('apps:sync', { apps: APPS, installedAll: ALL, iconsOmitted: true })
+      expect(r.iconsRequested).toBeUndefined()
+      expect(iconAsks(ctx.send)).toBe(0)
+      expect(relays(ctx.sendToPeer)).toHaveLength(0)
+    })
+
+    test('a new app is recorded at once, and the relay waits for the scan with icons', async () => {
+      const db = makeDb({ 'peers:dad': dad })
+      const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), sendToAllParents: jest.fn(), mode: 'child' }
+      const dispatch = createDispatch(ctx)
+      await dispatch('apps:sync', { apps: APPS, installedAll: ALL })
+      ctx.send.mockClear(); ctx.sendToPeer.mockClear()
+      const grown = [...APPS, { packageName: 'com.c', appName: 'C' }]
+      const r = await dispatch('apps:sync', { apps: grown, installedAll: [...ALL, 'com.c'], iconsOmitted: true })
+      expect(r.iconsRequested).toBe(true)
+      expect(db._stored.policy.apps['com.c']).toBeDefined()
+      expect(iconAsks(ctx.send)).toBe(1)
+      expect(relays(ctx.sendToPeer)).toHaveLength(0)
+      // The scan with icons then relays as before.
+      const withIcons = grown.map((a) => ({ ...a, iconBase64: 'x' }))
+      expect((await dispatch('apps:sync', { apps: withIcons, installedAll: [...ALL, 'com.c'] })).relayedTo).toBe(1)
+    })
+
+    test('an offline parent that never had the list does not trigger an icon scan', async () => {
+      const db = makeDb({ 'peers:dad': dad })
+      const ctx = { db, send: jest.fn(), sendToPeer: jest.fn(), sendToAllParents: jest.fn(), mode: 'child', peers: new Map() }
+      const r = await createDispatch(ctx)('apps:sync', { apps: APPS, installedAll: ALL, iconsOmitted: true })
+      expect(r.iconsRequested).toBeUndefined()
+      expect(iconAsks(ctx.send)).toBe(0)
+    })
+  })
 })
 
 describe('a child device can free itself, but only slowly and with the PIN', () => {

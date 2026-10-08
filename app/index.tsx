@@ -947,14 +947,19 @@ export default function Root () {
                 // bridge was down. The real-time PackageMonitor receiver never fires on
                 // Android 8+ (manifest receivers are banned from PACKAGE_ADDED/REMOVED),
                 // so this full-scan reconciliation on each sync is the reliable path.
-                Promise.all([
-                  NativeModules.UsageStatsModule?.getInstalledPackages?.(),
-                  NativeModules.UsageStatsModule?.getAllInstalledPackageNames?.(),
-                ])
+                // The scan runs on every reconnect, so it skips icons unless bare
+                // asks for them (withIcons): it does when a parent needs the
+                // catalogue relayed, which is only when the app set changed or a
+                // parent has never had it.
+                const withIcons = !!(msg.data && msg.data.withIcons)
+                const usm = NativeModules.UsageStatsModule
+                const lite = !withIcons && !!usm?.getInstalledPackagesNoIcons
+                const scan = lite ? usm.getInstalledPackagesNoIcons() : usm?.getInstalledPackages?.()
+                Promise.all([scan, usm?.getAllInstalledPackageNames?.()])
                   .then(([apps, installedAll]: [{ packageName: string; appName: string }[], string[]]) => {
                     // Send all apps in one batch to avoid race-condition on parent side
                     // (individual messages all read same policy DB key concurrently, last-writer-wins)
-                    sendToWorklet({ method: 'apps:sync', args: { apps, installedAll } })
+                    sendToWorklet({ method: 'apps:sync', args: { apps, installedAll, iconsOmitted: lite } })
                   })
                   .catch((e: any) => console.warn('[RN] getInstalledPackages failed:', e))
                 return

@@ -1408,7 +1408,7 @@ function createDispatch (ctx) {
         // Batch version of app:installed — receives all installed apps at once.
         // Avoids the race condition where concurrent individual app:installed messages
         // all read the same policy key before any write completes.
-        const { apps, installedAll } = args
+        const { apps, installedAll, iconsOmitted } = args
         if (!Array.isArray(apps) || apps.length === 0) return { count: 0 }
 
         const raw = await ctx.db.get('policy')
@@ -1477,12 +1477,24 @@ function createDispatch (ctx) {
         // parents are skipped rather than queued, because a scan runs on every
         // reconnect anyway and a queued catalogue is exactly the bulk worth not
         // storing.
+        //
+        // The Android scan leaves icons out (iconsOmitted) because it runs on
+        // every reconnect. If any parent does need the list, ask the shell for
+        // a scan with icons and relay from that one instead.
         const signature = appsSignature(apps)
         let relayedTo = 0
         for await (const { value: parent } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
           if (!parent || !parent.publicKey || !parent.noiseKey) continue
           const seen = await ctx.db.get('appsSig:' + parent.publicKey).catch(() => null)
           if (seen && seen.value && seen.value.signature === signature) continue
+          if (iconsOmitted) {
+            // An offline parent gets the list on its own next connect, which
+            // runs a scan anyway; asking for icons for it now is wasted.
+            const live = ctx.peers ? ctx.peers.get(parent.noiseKey) : { conn: true }
+            if (!live || !live.conn) continue
+            ctx.send({ type: 'event', event: 'apps:syncRequested', data: { withIcons: true } })
+            return { count: newCount, removed: removed.length, relayedTo: 0, iconsRequested: true }
+          }
           try {
             ctx.sendToPeer(parent.noiseKey, { type: 'apps:sync', payload: { apps } })
           } catch (_e) {

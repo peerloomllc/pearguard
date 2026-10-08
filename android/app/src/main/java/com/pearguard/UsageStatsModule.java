@@ -1015,6 +1015,20 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void getInstalledPackages(Promise promise) {
+        promise.resolve(listLauncherApps(true));
+    }
+
+    /**
+     * Same list without icons. Encoding an icon per app is most of the cost of a
+     * scan, and the scan runs on every parent reconnect; the worklet asks for the
+     * icon version only when a parent actually needs the catalogue.
+     */
+    @ReactMethod
+    public void getInstalledPackagesNoIcons(Promise promise) {
+        promise.resolve(listLauncherApps(false));
+    }
+
+    private WritableArray listLauncherApps(boolean withIcons) {
         PackageManager pm = reactContext.getPackageManager();
 
         // Determine the default home launcher package so it can be auto-approved
@@ -1028,10 +1042,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
         List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
 
         WritableArray result = Arguments.createArray();
-        if (resolveInfos == null) {
-            promise.resolve(result);
-            return;
-        }
+        if (resolveInfos == null) return result;
         for (ResolveInfo info : resolveInfos) {
             ApplicationInfo ai = info.activityInfo.applicationInfo;
             // Skip PearGuard itself
@@ -1049,13 +1060,15 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
             item.putString("appName", appName);
             item.putBoolean("isLauncher", ai.packageName.equals(launcherPackage));
             item.putString("category", AppCategoryHelper.getCategory(ai));
-            try {
-                android.graphics.drawable.Drawable drawable = pm.getApplicationIcon(ai.packageName);
-                item.putString("iconBase64", AppIconEncoder.encode(drawable));
-            } catch (Exception ignored) {}
+            if (withIcons) {
+                try {
+                    android.graphics.drawable.Drawable drawable = pm.getApplicationIcon(ai.packageName);
+                    item.putString("iconBase64", AppIconEncoder.encode(drawable));
+                } catch (Exception ignored) {}
+            }
             result.pushMap(item);
         }
-        promise.resolve(result);
+        return result;
     }
 
     /**

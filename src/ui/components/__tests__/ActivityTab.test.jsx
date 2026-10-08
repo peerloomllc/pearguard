@@ -168,3 +168,46 @@ test('an app the child asked for is badged as a request, not an install', async 
   await waitFor(() => expect(screen.getByText('App Request')).toBeInTheDocument());
   expect(screen.queryByText(/just installed/i)).not.toBeInTheDocument();
 });
+
+// ── Deny with a note ─────────────────────────────────────────────────────────
+const EXTRA_TIME = {
+  id: 'req-time', type: 'time_request', timestamp: NOW - 5000,
+  appDisplayName: 'YouTube', packageName: 'com.google.android.youtube',
+  status: 'pending', resolved: false, requestType: 'extra_time', extraSeconds: 1800,
+};
+
+test('Deny asks about a note first, and sends none when it is left empty', async () => {
+  mockBare([EXTRA_TIME]);
+  render(<ActivityTab childPublicKey="pk1" />);
+  fireEvent.click(await screen.findByLabelText('Deny request for com.google.android.youtube'));
+  expect(screen.getByText('Add a note to this denial?')).toBeInTheDocument();
+  expect(window.callBare).not.toHaveBeenCalledWith('time:deny', expect.anything());
+  fireEvent.click(screen.getByLabelText('Confirm deny'));
+  await waitFor(() => expect(window.callBare).toHaveBeenCalledWith('time:deny', {
+    childPublicKey: 'pk1', requestId: 'req-time', packageName: 'com.google.android.youtube', appName: 'YouTube',
+  }));
+});
+
+test('a note added before Deny goes to the child with it', async () => {
+  mockBare([EXTRA_TIME]);
+  render(<ActivityTab childPublicKey="pk1" />);
+  fireEvent.click(await screen.findByLabelText('Deny request for com.google.android.youtube'));
+  fireEvent.change(screen.getByLabelText('Reason for saying no'), { target: { value: '  homework first ' } });
+  fireEvent.click(screen.getByLabelText('Confirm deny'));
+  await waitFor(() => expect(window.callBare).toHaveBeenCalledWith('time:deny', expect.objectContaining({ note: 'homework first' })));
+});
+
+test('the note shows on the denied request in the history', async () => {
+  mockBare([{ ...EXTRA_TIME, id: 'req-old', status: 'denied', resolved: true, denyNote: 'homework first' }]);
+  render(<ActivityTab childPublicKey="pk1" />);
+  expect(await screen.findByText('"homework first"')).toBeInTheDocument();
+});
+
+test('Cancel in the note prompt denies nothing', async () => {
+  mockBare([EXTRA_TIME]);
+  render(<ActivityTab childPublicKey="pk1" />);
+  fireEvent.click(await screen.findByLabelText('Deny request for com.google.android.youtube'));
+  fireEvent.click(screen.getByText('Cancel'));
+  expect(screen.queryByText('Add a note to this denial?')).not.toBeInTheDocument();
+  expect(window.callBare).not.toHaveBeenCalledWith('time:deny', expect.anything());
+});

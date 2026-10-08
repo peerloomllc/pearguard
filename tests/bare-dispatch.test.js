@@ -4780,3 +4780,33 @@ describe('grants the child never confirms are cancelled with an alert', () => {
     expect(confirms).toHaveLength(2)
   })
 })
+
+describe('time:deny can carry a short note to the child', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * () {}),
+      _stored: stored,
+    }
+  }
+  const base = { childPublicKey: 'kid', requestId: 'r1', packageName: 'com.game', appName: 'Game' }
+
+  test('the note is trimmed, capped, stored and sent', async () => {
+    const db = makeDb({ 'peers:kid': { noiseKey: 'nk' }, 'request:r1': { id: 'r1', status: 'pending' } })
+    const sendToPeer = jest.fn()
+    await createDispatch({ db, send: jest.fn(), sendToPeer, mode: 'parent' })('time:deny', { ...base, note: '  ' + 'x'.repeat(200) + ' ' })
+    const sent = sendToPeer.mock.calls[0][1]
+    expect(sent.payload.note).toHaveLength(140)
+    expect(db._stored['request:r1'].denyNote).toHaveLength(140)
+  })
+
+  test('no note means no note field at all', async () => {
+    const db = makeDb({ 'peers:kid': { noiseKey: 'nk' }, 'request:r1': { id: 'r1', status: 'pending' } })
+    const sendToPeer = jest.fn()
+    await createDispatch({ db, send: jest.fn(), sendToPeer, mode: 'parent' })('time:deny', { ...base, note: '   ' })
+    expect(sendToPeer.mock.calls[0][1].payload).not.toHaveProperty('note')
+    expect(db._stored['request:r1']).not.toHaveProperty('denyNote')
+  })
+})

@@ -16512,6 +16512,8 @@
   function PendingRequestCard({ req, childPublicKey, onResolved }) {
     const { colors, typography: typography2, spacing: spacing2 } = useTheme();
     const [acting, setActing] = (0, import_react8.useState)(false);
+    const [noteOpen, setNoteOpen] = (0, import_react8.useState)(false);
+    const [note, setNote] = (0, import_react8.useState)("");
     const isGeneralTime = req.requestType === "general_time";
     const isExtraTime = req.requestType === "extra_time" || isGeneralTime;
     async function handleApprove() {
@@ -16548,7 +16550,8 @@
             childPublicKey,
             requestId: req.id,
             packageName: req.packageName,
-            appName: req.appDisplayName || req.packageName
+            appName: req.appDisplayName || req.packageName,
+            ...note.trim() && { note: note.trim() }
           });
         } else {
           await window.callBare("app:decide", { childPublicKey, packageName: req.packageName, decision: "deny" });
@@ -16573,46 +16576,98 @@
     const askedBecause = req.origin === "install" ? "just installed, not yet approved" : lapsed ? "no answer yet, they can ask again" : null;
     const badgeColor = typeColor(req.type, colors);
     const meta = metaFor(req);
-    return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Card, { style: { marginBottom: `${spacing2.sm}px` }, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: `${spacing2.sm}px` }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.body, color: colors.text.primary, fontWeight: "600", marginBottom: "4px" }, children: title }),
-        triggeredBy && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: "4px" }, children: [
-          "blocked while opening ",
-          triggeredBy
+    return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Card, { style: { marginBottom: `${spacing2.sm}px` }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: `${spacing2.sm}px` }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.body, color: colors.text.primary, fontWeight: "600", marginBottom: "4px" }, children: title }),
+          triggeredBy && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: "4px" }, children: [
+            "blocked while opening ",
+            triggeredBy
+          ] }),
+          askedBecause && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: "4px" }, children: askedBecause }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Badge, { color: badgeColor, children: meta.label }),
+            isExtraTime && (req.requestedSeconds || req.extraSeconds) ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: [
+              "requesting ",
+              formatSeconds3(req.requestedSeconds || req.extraSeconds)
+            ] }) : null
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.micro, color: colors.text.muted }, children: formatTime(req.timestamp) })
         ] }),
-        askedBecause && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: "4px" }, children: askedBecause }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Badge, { color: badgeColor, children: meta.label }),
-          isExtraTime && (req.requestedSeconds || req.extraSeconds) ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { style: { ...typography2.caption, color: colors.text.secondary }, children: [
-            "requesting ",
-            formatSeconds3(req.requestedSeconds || req.extraSeconds)
-          ] }) : null
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.micro, color: colors.text.muted }, children: formatTime(req.timestamp) })
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, flexShrink: 0, paddingTop: "2px" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+            Button,
+            {
+              variant: "primary",
+              disabled: acting,
+              onClick: handleApprove,
+              "aria-label": `Approve request for ${req.packageName}`,
+              children: approveLabel()
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+            Button,
+            {
+              variant: "danger",
+              disabled: acting,
+              onClick: isExtraTime ? () => setNoteOpen(true) : handleDeny,
+              "aria-label": `Deny request for ${req.packageName}`,
+              children: "Deny"
+            }
+          )
+        ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", gap: `${spacing2.sm}px`, flexShrink: 0, paddingTop: "2px" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-          Button,
-          {
-            variant: "primary",
-            disabled: acting,
-            onClick: handleApprove,
-            "aria-label": `Approve request for ${req.packageName}`,
-            children: approveLabel()
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
-          Button,
-          {
-            variant: "danger",
-            disabled: acting,
-            onClick: handleDeny,
-            "aria-label": `Deny request for ${req.packageName}`,
-            children: "Deny"
-          }
-        )
-      ] })
-    ] }) });
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+        Modal,
+        {
+          visible: noteOpen,
+          onClose: () => setNoteOpen(false),
+          title: "Add a note to this denial?",
+          footer: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(import_jsx_runtime12.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Button, { variant: "secondary", onClick: () => setNoteOpen(false), style: { flex: 1 }, children: "Cancel" }),
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+              Button,
+              {
+                variant: "danger",
+                disabled: acting,
+                onClick: () => {
+                  setNoteOpen(false);
+                  handleDeny();
+                },
+                "aria-label": "Confirm deny",
+                style: { flex: 1 },
+                children: "Deny"
+              }
+            )
+          ] }),
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...typography2.caption, color: colors.text.secondary, marginBottom: `${spacing2.sm}px`, textAlign: "center" }, children: "Your child sees it with the answer. Leave it empty to just say no." }),
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+              "input",
+              {
+                type: "text",
+                value: note,
+                maxLength: 140,
+                autoFocus: true,
+                placeholder: "e.g. Homework first",
+                "aria-label": "Reason for saying no",
+                onChange: (e) => setNote(e.target.value),
+                style: {
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: `${spacing2.sm}px`,
+                  borderRadius: "8px",
+                  border: `1px solid ${colors.border}`,
+                  background: colors.surface.input || colors.surface.card,
+                  color: colors.text.primary,
+                  fontSize: "14px"
+                }
+              }
+            )
+          ]
+        }
+      )
+    ] });
   }
   function isDismissible(item) {
     return item.type !== "time_request";
@@ -16646,6 +16701,11 @@
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: `${spacing2.sm}px` }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.micro, color: colors.text.muted }, children: formatTime(item.timestamp) }),
+          item.type === "time_request" && item.status === "denied" && item.denyNote ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { style: { ...typography2.micro, color: colors.text.secondary, fontStyle: "italic" }, children: [
+            '"',
+            item.denyNote,
+            '"'
+          ] }) : null,
           item.type === "time_request" && item.resolved ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: { ...typography2.micro, color: colors.text.muted, fontStyle: "italic" }, children: item.status === "approved" ? "Approved" : item.status === "denied" ? "Denied" : item.status === "expired" ? "No answer" : "Resolved" }) : null
         ] })
       ] }),

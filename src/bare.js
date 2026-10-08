@@ -832,15 +832,22 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
     case 'request:denied': {
       // Parent denied an extra-time request — update the child-side req: entry and notify.
       const { requestId, packageName, appName } = msg.payload || {}
+      // The parent's optional reason, shown under "Denied" in the child's list.
+      const note = typeof msg.payload?.note === 'string' ? msg.payload.note.slice(0, 140) : ''
       if (requestId) {
         const existing = await db.get(requestId).catch(() => null)
         if (existing) {
-          await db.put(requestId, { ...existing.value, status: 'denied' })
+          await db.put(requestId, { ...existing.value, status: 'denied', ...(note && { denyNote: note }) })
         }
       }
-      send({ type: 'event', event: 'request:updated', data: { requestId, packageName, status: 'denied' } })
+      // A request from the home screen has no app, only the 'general' sentinel.
+      const label = packageName === 'general' ? 'more screen time' : (appName || packageName || 'the app')
+      // notified: the native:showDecisionNotification below already posts it, and
+      // the shell would otherwise post a second copy from this event. The desktop
+      // shell only acts on the native call, so that one has to stay.
+      send({ type: 'event', event: 'request:updated', data: { requestId, packageName, appName: label, status: 'denied', notified: true } })
       // Trigger native notification (same channel as approval decisions)
-      send({ method: 'native:showDecisionNotification', args: { appName: appName || packageName || 'the app', decision: 'denied' } })
+      send({ method: 'native:showDecisionNotification', args: { appName: label, decision: 'denied', ...(note && { note }) } })
       // Broadcast resolution to all parents so co-parent activity lists update (#122)
       sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'denied', packageName, appName, resolvedAt: Date.now() } })
       break

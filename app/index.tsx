@@ -1017,10 +1017,10 @@ export default function Root () {
               // Guard on _mode === 'child': the parent also emits request:updated (e.g. from
               // time:grant) and must not show the child-targeted notification on itself (#67).
               if (msg.event === 'request:updated' && _mode === 'child') {
-                const { appName, packageName, status } = msg.data ?? {}
-                if (status === 'approved' || status === 'denied') {
+                const { appName, packageName, status, note, notified } = msg.data ?? {}
+                if ((status === 'approved' || status === 'denied') && !notified) {
                   const label = appName || packageName || 'an app'
-                  NativeModules.UsageStatsModule?.showDecisionNotification?.(label, status)
+                  NativeModules.UsageStatsModule?.showDecisionNotification?.(label, status, note || null)
                 }
               }
               // Tell the parent enforcement is off on a child's device. The text is
@@ -1186,7 +1186,8 @@ export default function Root () {
               // Parent denied an extra-time request — show a notification to the child
               NativeModules.UsageStatsModule?.showDecisionNotification?.(
                 msg.args.appName,
-                msg.args.decision
+                msg.args.decision,
+                msg.args.note || null
               )
             } else if (msg.type === 'response') {
               settlePending(msg.id, msg)

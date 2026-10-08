@@ -4590,3 +4590,44 @@ describe('guessing at the leave screen costs the same as guessing at the block s
     expect(st.lockedForMs).toBeGreaterThan(110000)
   })
 })
+
+describe('alerts:list asks the child to resend resolved requests at most every 5 minutes', () => {
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+    }
+  }
+  const pulls = (sendToPeer) => sendToPeer.mock.calls.filter(([, m]) => m.type === 'requests:syncResolved').length
+
+  afterEach(() => jest.useRealTimers())
+
+  test('a burst of Activity reloads sends one pull, and the next comes after 5 minutes', async () => {
+    jest.useFakeTimers({ now: 1_800_000_000_000 })
+    const sendToPeer = jest.fn()
+    const dispatch = createDispatch({ db: makeDb({ 'peers:kid': { publicKey: 'kid', noiseKey: 'nk' } }), send: jest.fn(), mode: 'parent', getMode: () => 'parent', sendToPeer })
+    for (let i = 0; i < 7; i++) await dispatch('alerts:list', { childPublicKey: 'kid' })
+    expect(pulls(sendToPeer)).toBe(1)
+    jest.setSystemTime(Date.now() + 5 * 60 * 1000)
+    await dispatch('alerts:list', { childPublicKey: 'kid' })
+    expect(pulls(sendToPeer)).toBe(2)
+  })
+
+  test('a pull that fails to send is retried on the next load', async () => {
+    let online = false
+    const sendToPeer = jest.fn(() => { if (!online) throw new Error('peer not connected') })
+    const dispatch = createDispatch({ db: makeDb({ 'peers:kid': { publicKey: 'kid', noiseKey: 'nk' } }), send: jest.fn(), mode: 'parent', getMode: () => 'parent', sendToPeer })
+    await dispatch('alerts:list', { childPublicKey: 'kid' })
+    online = true
+    await dispatch('alerts:list', { childPublicKey: 'kid' })
+    expect(sendToPeer).toHaveBeenCalledTimes(2)
+  })
+})

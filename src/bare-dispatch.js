@@ -28,6 +28,7 @@ const { pendingUninstalls } = require('./package-reconcile')
 // get the full grant on reconnect; past this the grant is stale (yesterday's
 // 15-minute ask) and handing it over would surprise everyone.
 const UNDELIVERED_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const SYNC_RESOLVED_MIN_INTERVAL_MS = 5 * 60 * 1000
 
 // How long a request the child raised waits for an answer before it stops
 // counting as outstanding. A pending request is not free: it disables the child's
@@ -317,6 +318,10 @@ function createDispatch (ctx) {
     ctx.send({ type: 'event', event: 'request:updated', data: { requestId: request.id, packageName: request.packageName, appName: request.appName, status: 'expired' } })
     ctx.send({ method: 'native:showDecisionNotification', args: { appName: request.appName || request.packageName || 'the app', decision: 'expired' } })
   }
+
+  // childPublicKey -> when alerts:list last asked that child to resend its
+  // resolved requests. See the end of case 'alerts:list'.
+  const lastSyncResolvedAt = new Map()
 
   async function dispatchInner (method, args) {
     switch (method) {
@@ -2369,15 +2374,22 @@ function createDispatch (ctx) {
 
         results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
 
-        // Always ask the child for resolution updates when opening Activity tab (#122).
+        // Ask the child for resolution updates when the Activity tab loads (#122).
         // iOS may drop P2P messages when backgrounded or during Hyperswarm dedup;
-        // this pull-based sync ensures the parent gets updated statuses.
-        if (ctx.getMode() === 'parent') {
+        // this pull-based sync ensures the parent gets updated statuses. At most
+        // once per child every 5 minutes: the tab reloads on 7 kinds of live
+        // event, and each pull costs the child one signed message per request
+        // resolved in the last week, a list the flush and hello already carry.
+        const now = Date.now()
+        if (ctx.getMode() === 'parent' && now - (lastSyncResolvedAt.get(childPublicKey) || 0) >= SYNC_RESOLVED_MIN_INTERVAL_MS) {
           try {
             const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
             const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
             if (noiseKey) {
               ctx.sendToPeer(noiseKey, { type: 'requests:syncResolved', payload: { childPublicKey } })
+              // Only a pull that went out counts; an offline child is asked
+              // again on the next load.
+              lastSyncResolvedAt.set(childPublicKey, now)
               log('[bare] alerts:list triggered syncResolved for', childPublicKey?.slice(0, 8))
             }
           } catch (e) { console.warn('[bare] alerts:list syncResolved failed:', e.message) }

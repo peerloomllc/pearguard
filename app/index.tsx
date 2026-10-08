@@ -859,7 +859,10 @@ export default function Root () {
             )
           }),
 
-          // Usage flush timer fired — gather usage and send report
+          // Usage flush timer fired — gather usage and send report. Only today and
+          // yesterday's daily totals: older days cannot change, and the parent
+          // upserts per day, so resending 30 days 288 times a day was waste. The
+          // reconnect path (usageFlushRequested) still sends all 30 to fill gaps.
           DeviceEventEmitter.addListener('onUsageFlush', async (_e: { timestamp: number }) => {
             try {
               const [usageList, weeklyList, foregroundPkg, sessionsList, dailyTotals] = await Promise.all([
@@ -867,7 +870,7 @@ export default function Root () {
                 NativeModules.UsageStatsModule.getWeeklyUsageAll(),
                 NativeModules.UsageStatsModule.getLastForegroundPackage(),
                 NativeModules.UsageStatsModule.getSessionsSinceLastFlush(),
-                NativeModules.UsageStatsModule.getDailyAggregatesRange?.(30) ?? Promise.resolve([]),
+                NativeModules.UsageStatsModule.getDailyAggregatesRange?.(2) ?? Promise.resolve([]),
               ])
               sendToWorklet({ method: 'usage:flush', args: { usage: usageList, weekly: weeklyList, foregroundPackage: foregroundPkg, sessions: sessionsList, dailyTotals } })
             } catch (err) {

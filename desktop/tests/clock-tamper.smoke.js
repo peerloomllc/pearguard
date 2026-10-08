@@ -133,6 +133,40 @@ console.log('usage-tracker: clock tamper')
   }
 }
 
+// --- 4b. Zone shifts the contradiction check cannot see ---------------------
+// A shift west that keeps the date, and a shift east from Saturday into Sunday,
+// both move the day and the week the same way, so they look like midnight. They
+// happen far sooner than any real window can end, which is what gives them away.
+for (const { label, base, zone } of [
+  { label: 'west, same date', base: Date.UTC(2026, 0, 15, 20, 0, 0), zone: 'America/Bogota' },
+  { label: 'east, Saturday into Sunday', base: Date.UTC(2026, 0, 17, 20, 0, 0), zone: 'Pacific/Kiritimati' },
+]) {
+  const original = process.env.TZ
+  try {
+    process.env.TZ = 'UTC'
+    const { tracker, clock } = makeTracker(base)
+    burn(tracker, clock, 600)
+    const events = []
+    tracker.on('clock-tamper', (info) => events.push(info))
+    process.env.TZ = zone
+    assert.strictEqual(tracker.getDailyUsageSeconds('chrome'), 600, label + ': no fresh budget')
+    for (let i = 0; i < 60; i++) {
+      clock.t += SEC
+      tracker.noteObserved({ packageName: null })
+    }
+    assert.strictEqual(events.length, 1, label + ': parent told once')
+    assert.strictEqual(events[0].window, 'zone')
+    assert.strictEqual(events[0].direction, 'forward')
+    // Real time reaching the end of the day still rolls it over.
+    clock.t = base + 30 * HOUR
+    assert.strictEqual(tracker.getDailyUsageSeconds('chrome'), 0, label + ': next real day starts clean')
+    ok('timezone shift ' + label + ' does NOT reset the daily budget')
+  } finally {
+    if (original === undefined) delete process.env.TZ
+    else process.env.TZ = original
+  }
+}
+
 // --- 5. REGRESSION GUARD: a real midnight still zeroes ----------------------
 {
   const base = new Date(2026, 0, 15, 23, 50, 0).getTime()

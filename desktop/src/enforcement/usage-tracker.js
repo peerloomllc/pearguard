@@ -30,6 +30,12 @@ const DEFAULT_MAX_OBSERVATION_GAP_MS = 15000
 // package->seconds map each) and bounded so usage.json cannot grow forever.
 const MAX_ARCHIVED_DAYS = 8
 const MAX_ARCHIVED_WEEKS = 3
+// The least real time that can pass between the start of a window and the next
+// one. A day is 23 hours on a spring-forward DST day, so that is the floor; a
+// week loses at most the same hour. A forward move sooner than this cannot be
+// time passing. See the zone-forward guard in _resolveRollovers.
+const MIN_DAY_MS = 23 * 60 * 60 * 1000
+const MIN_WEEK_MS = 7 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000
 
 class UsageTracker extends EventEmitter {
   constructor({
@@ -336,10 +342,8 @@ class UsageTracker extends EventEmitter {
     // of a guard that bailed on any backward component; it never knew why, and
     // never told the parent. This makes it deliberate and alertable.
     //
-    // Known gap, unchanged from pre-fix: when the shift also carries the date
-    // from Saturday into Sunday, day and week both advance, so there is no
-    // contradiction to catch. That is the same advance-and-stay hole a plain
-    // clock change leaves open, and it needs monotonic corroboration to close.
+    // A shift that carries the date from Saturday into Sunday advances both, so
+    // it is caught by the zone-forward guard below instead.
     const dayDir = Math.sign(today - this._dayStart)
     const weekDir = Math.sign(thisWeek - this._weekStart)
     if (dayDir * weekDir < 0) {
@@ -352,6 +356,34 @@ class UsageTracker extends EventEmitter {
         this._flagClockTamper({
           window: 'zone',
           direction: 'contradictory',
+          from: this._dayStart,
+          to: today,
+          restoredSeconds: 0,
+        })
+      }
+      return
+    }
+    // A forward move before the window could possibly have ended. The clock
+    // itself (Date.now(), UTC epoch ms) has barely moved, yet local midnight has
+    // passed, so the zone changed under us. On Windows that needs no admin
+    // rights, and shifting east into "tomorrow" used to mint a fresh daily
+    // budget: day forward with the week unchanged is what midnight looks like,
+    // and Saturday into Sunday moves both. Stay in the current windows until
+    // real time reaches their end. A real clock change moves the epoch too, so
+    // it passes this check; that needs admin rights on Windows.
+    // The week check only counts a move of days: a zone change alone shifts the
+    // week's start by hours, and treating that as an early new week would pin
+    // a family that travels west to the old day until the week ran out.
+    const newWeek = thisWeek - this._weekStart > 2 * 24 * 60 * 60 * 1000
+    const zoneForward = (today > this._dayStart && ts < this._dayStart + MIN_DAY_MS) ||
+      (newWeek && ts < this._weekStart + MIN_WEEK_MS)
+    if (zoneForward) {
+      const signature = 'fwd:' + this._dayStart + ':' + today
+      if (signature !== this._zoneTamperSignature && !replay) {
+        this._zoneTamperSignature = signature
+        this._flagClockTamper({
+          window: 'zone',
+          direction: 'forward',
           from: this._dayStart,
           to: today,
           restoredSeconds: 0,

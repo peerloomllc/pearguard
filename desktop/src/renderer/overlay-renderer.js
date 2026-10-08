@@ -72,6 +72,8 @@ function sendTimeRequest(extraSeconds, requestType) {
     appName: current.appName,
     requestType,
     extraSeconds,
+    // A schedule rule blocks every app, so ask for a device-wide bedtime extension.
+    ...(requestType === 'extra_time' && current.deviceWide && { scope: 'device' }),
   })
 }
 

@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const { EventEmitter } = require('events')
+const { SCHEDULE_OVERRIDE_KEY } = require('./block-evaluator')
 
 // In-memory map of packageName -> expiryMs, mirrored to a JSON file so
 // PIN-verified and parent-granted overrides survive an Electron restart. The
@@ -49,10 +50,16 @@ class OverridesStore extends EventEmitter {
   }
 
   // Apply a grant from native:grantOverride or pin:verify. Returns the new
-  // expiry, or null if the grant is already in the past.
-  applyGrant({ packageName, expiresAt }) {
+  // expiry, or null if the grant is already in the past. scope 'device' is a
+  // bedtime extension, stored under SCHEDULE_OVERRIDE_KEY; it keeps the later
+  // expiry so a short grant never cuts a longer one short.
+  applyGrant({ packageName, expiresAt, scope }) {
     if (!packageName || typeof expiresAt !== 'number') return null
     if (expiresAt <= Date.now()) return null
+    if (scope === 'device') {
+      expiresAt = Math.max(expiresAt, this._map.get(SCHEDULE_OVERRIDE_KEY) || 0)
+      packageName = SCHEDULE_OVERRIDE_KEY
+    }
     this._map.set(packageName, expiresAt)
     this._persist()
     this.emit('grant', { packageName, expiresAt })

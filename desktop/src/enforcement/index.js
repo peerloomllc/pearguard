@@ -404,6 +404,7 @@ class EnforcementController extends EventEmitter {
       appName: appEntry.appName || fg.packageName || fg.exeBasename,
       reason: decision.reason,
       category: decision.category,
+      ...(decision.deviceWide && { deviceWide: true }),
       timeRequestMinutes: Array.isArray(settings.timeRequestMinutes) ? settings.timeRequestMinutes : null,
     })
     this._overlayVisible = true

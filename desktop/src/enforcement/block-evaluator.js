@@ -108,7 +108,14 @@ function isSystemExempt(exeBasename) {
   return SYSTEM_EXEMPT_BASENAMES.has(lower) || LINUX_SYSTEM_EXEMPT_BASENAMES.has(lower)
 }
 
+// Key in the overrides Map for a device-wide bedtime extension: while it holds,
+// schedule rules are lifted for every app (proposal 2026-10-08). Package names
+// never start with '*', so it cannot collide with a per-app override.
+const SCHEDULE_OVERRIDE_KEY = '*schedule'
+
 // Returns null (allow) or { reason: string, category: string }.
+// A schedule-rule block also carries deviceWide: true, so the overlay asks for a
+// bedtime extension instead of time for one app.
 //   category ∈ 'lock' | 'override-bypass' | 'screen_time' | 'schedule' | 'status' | 'daily_limit' | 'category_limit'
 function evaluate({
   policy,
@@ -165,8 +172,10 @@ function evaluate({
   // unmapped exe can never be exempt — meaning any unmapped exe falling
   // inside a scheduled window will block. That matches Android's
   // "everything blocked except listed exemptions" intent.
-  const scheduleReason = getScheduleBlockReason(policy, packageName, now)
-  if (scheduleReason) return { reason: scheduleReason, category: 'schedule' }
+  // A parent-approved bedtime extension lifts this step for every app.
+  const scheduleExtended = !!overrides && (overrides.get(SCHEDULE_OVERRIDE_KEY) || 0) > now
+  const scheduleReason = scheduleExtended ? null : getScheduleBlockReason(policy, packageName, now)
+  if (scheduleReason) return { reason: scheduleReason, category: 'schedule', deviceWide: true }
 
   // For status / limit checks we need a packageName to look anything up.
   if (!packageName) return null
@@ -373,4 +382,4 @@ function safeUsage(getUsageSeconds, packageName) {
   }
 }
 
-module.exports = { evaluate, isSystemExempt, SYSTEM_EXEMPT_BASENAMES, LINUX_SYSTEM_EXEMPT_BASENAMES }
+module.exports = { evaluate, isSystemExempt, SCHEDULE_OVERRIDE_KEY, SYSTEM_EXEMPT_BASENAMES, LINUX_SYSTEM_EXEMPT_BASENAMES }

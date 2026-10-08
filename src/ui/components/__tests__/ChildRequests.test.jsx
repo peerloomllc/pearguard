@@ -244,3 +244,21 @@ test('displays package names and formatted timestamps', async () => {
   const timestamp = new Date(now).toLocaleTimeString()
   expect(screen.getByText(timestamp)).toBeInTheDocument()
 })
+
+test("a denied request shows the parent's note under it, newest first", async () => {
+  window.callBare.mockResolvedValue({ requests: [
+    { id: 'req:old', appName: 'Roblox', packageName: 'com.roblox', status: 'approved', requestedAt: Date.now() - 60000 },
+    { id: 'req:new', appName: 'general', packageName: 'general', status: 'denied', requestedAt: Date.now(), denyNote: 'homework first' },
+  ] })
+  render(<ChildRequests />)
+  expect(await screen.findByText('"homework first"')).toBeInTheDocument()
+  const names = screen.getAllByText(/More screen time|Roblox/).map((n) => n.textContent)
+  expect(names).toEqual(['More screen time', 'Roblox'])
+})
+
+test('embedded in the Home sheet it drops its own page heading', async () => {
+  window.callBare.mockResolvedValue({ requests: [] })
+  render(<ChildRequests embedded />)
+  expect(await screen.findByText('No requests yet.')).toBeInTheDocument()
+  expect(screen.queryByText('My Requests')).not.toBeInTheDocument()
+})

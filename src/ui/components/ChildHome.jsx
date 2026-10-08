@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import ChildRequests from './ChildRequests.jsx'
 import { useTheme } from '../theme.js'
 import Icon from '../icons.js'
 import Modal from './primitives/Modal.jsx'
@@ -72,58 +73,6 @@ function AppList({ items, emptyText, colors, typography, spacing, radius }) {
   )
 }
 
-function RequestList({ items, colors, typography, spacing, radius }) {
-  if (!items || items.length === 0) {
-    return <p style={{ ...typography.body, color: colors.text.muted, textAlign: 'center' }}>No pending requests.</p>
-  }
-  return (
-    <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
-      {items.map((r) => (
-        <div
-          key={r.id}
-          style={{
-            padding: `${spacing.md}px ${spacing.base}px`,
-            marginBottom: `${spacing.sm}px`,
-            borderRadius: `${radius.md}px`,
-            backgroundColor: colors.surface.elevated,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <div style={{ ...typography.body, fontWeight: '600', color: colors.text.primary }}>
-              {r.appName || r.packageName}
-            </div>
-            <div style={{ ...typography.caption, color: colors.text.muted, marginTop: `${spacing.xs}px` }}>
-              {new Date(r.requestedAt).toLocaleTimeString()}
-            </div>
-          </div>
-          <div style={{ ...typography.caption, fontWeight: '700', color: colors.text.muted }}>Pending...</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-const ASK_OPTIONS_MINUTES = [15, 30, 60]
-
-function formatClock(ms) {
-  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-}
-
-// "in 2h 15m" / "in 20m" / "in under a minute"
-function formatCountdown(ms) {
-  const mins = Math.round((ms - Date.now()) / 60000)
-  if (mins < 1) return 'in under a minute'
-  if (mins < 60) return `in ${mins}m`
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`
-}
-
-// One visual language for the three always-present sections, so the home screen
-// reads as a stable list rather than a stack of cards that appear and vanish.
 function Section({ title, children, colors, typography, spacing }) {
   return (
     <div style={{ marginTop: `${spacing.xl}px` }}>
@@ -378,7 +327,7 @@ export default function ChildHome({ openDetail }) {
   const detailTitle =
     detail === 'blocked' ? 'Blocked apps' :
     detail === 'pending' ? 'Awaiting approval' :
-    detail === 'requests' ? 'Pending requests' : ''
+    detail === 'requests' ? 'Your requests' : ''
 
   return (
     <div style={{ padding: `${spacing.xl}px`, paddingTop: `calc(${spacing.xl}px + env(safe-area-inset-top, 0px))` }}>
@@ -435,7 +384,7 @@ export default function ChildHome({ openDetail }) {
           label="Pending requests"
           valueColor={colors.primary}
           onClick={() => setDetail('requests')}
-          disabled={homeData.pendingRequests === 0}
+          /* Always open: answered requests (and a parent's note) live here too. */
           colors={colors} spacing={spacing} radius={radius}
         />
       </div>
@@ -496,7 +445,7 @@ export default function ChildHome({ openDetail }) {
           <AppList items={homeData.pendingApps} emptyText="Nothing awaiting approval." colors={colors} typography={typography} spacing={spacing} radius={radius} />
         )}
         {detail === 'requests' && (
-          <RequestList items={homeData.pendingRequestsList} colors={colors} typography={typography} spacing={spacing} radius={radius} />
+          <ChildRequests embedded />
         )}
       </Modal>
     </div>

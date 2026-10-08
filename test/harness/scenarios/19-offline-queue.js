@@ -31,6 +31,9 @@ module.exports = {
       // that has just gone away does not throw.
       await waitEvent(child, (m) => m.event === 'peer:disconnected', 30000)
       log('parent OFFLINE; the child noticed after', Date.now() - killedAt, 'ms')
+      // With its parent gone the periodic timer must re-announce, not skip.
+      const periodic = await call(child, 'swarm:reconnect', { periodic: true })
+      if (periodic.skipped || !(periodic.rejoined >= 1)) throw new Error('periodic rejoin skipped while the parent is offline: ' + JSON.stringify(periodic))
       await new Promise((r) => setTimeout(r, 500))
 
       // A night offline, compressed: many heartbeats, several usage reports and

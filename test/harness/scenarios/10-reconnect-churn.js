@@ -51,6 +51,14 @@ module.exports = {
       log('heartbeat delivered directly:', delivered, '| child policy v' + cur.version, 'auto', cur.settings && cur.settings.autoApproveNewApps)
       if (!delivered) throw new Error('heartbeat was queued although the parent is connected')
       if (!cur.settings || cur.settings.autoApproveNewApps !== true) throw new Error('last settings push (auto=true) did not reach the child')
+
+      // The services' 30 s timer passes periodic: true. With the parent
+      // connected and no open invite there is nothing to announce.
+      for (const [name, inst] of [['child', child], ['parent', parent]]) {
+        const r = await call(inst, 'swarm:reconnect', { periodic: true })
+        log(name, 'periodic rejoin while connected:', JSON.stringify(r))
+        if (!r.skipped) throw new Error(name + ' rejoined on the periodic timer although its peer is connected')
+      }
     } finally {
       teardown([parent, child])
     }

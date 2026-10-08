@@ -1506,12 +1506,25 @@ function createDispatch (ctx) {
         // Mirror the cold-start rejoin loop in init() so foreground recovery
         // matches a fresh launch.
         const activePeerTopics = new Set()
-        for await (const { value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+        const pairedKeys = []
+        for await (const { key, value } of ctx.db.createReadStream({ gt: 'peers:', lt: 'peers:~' })) {
+          pairedKeys.push(key.slice('peers:'.length))
           if (value && value.swarmTopic) activePeerTopics.add(value.swarmTopic)
         }
         const topicHexSet = new Set(activePeerTopics)
         for await (const { value } of ctx.db.createReadStream({ gt: 'topics:', lt: 'topics:~' })) {
           if (value && value.topicHex) topicHexSet.add(value.topicHex)
+        }
+        // The Android services' 30 s timers ask for this even when nothing is
+        // wrong, which re-announced every topic twice a minute. Skip it when
+        // every paired peer is connected and no other topic (an open invite)
+        // needs announcing; a dropped peer makes the next tick rejoin. A
+        // network change, app resume or background-sync wake always rejoins:
+        // there a connection can look alive while it is already dead.
+        if (args && args.periodic && pairedKeys.length > 0 &&
+            [...topicHexSet].every((t) => activePeerTopics.has(t)) &&
+            pairedKeys.every((k) => { const p = ctx.peers.get(k); return !!(p && p.conn) })) {
+          return { rejoined: 0, skipped: true }
         }
         const topicHexes = [...topicHexSet]
         await Promise.all(topicHexes.map(t =>

@@ -158,7 +158,7 @@ public class ParentConnectionService extends Service {
         @Override
         public void run() {
             try {
-                emitReconnectNeeded();
+                emitReconnectNeeded("periodic");
                 loopTick++;
                 if (loopTick % 2 == 0) checkStaleHeartbeats();
             } catch (Exception ignored) {
@@ -168,11 +168,14 @@ public class ParentConnectionService extends Service {
         }
     };
 
-    private void emitReconnectNeeded() {
+    // reason: "periodic" from the 30 s loop, which the worklet skips when every
+    // child is already connected; "network" from a network change, which always
+    // rejoins.
+    private void emitReconnectNeeded(String reason) {
         ReactContext ctx = PearGuardReactHost.get();
         if (ctx == null || !ctx.hasActiveReactInstance()) return;
         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-           .emit("onParentReconnectNeeded", null);
+           .emit("onParentReconnectNeeded", reason);
     }
 
     /**
@@ -187,7 +190,7 @@ public class ParentConnectionService extends Service {
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
-                    emitReconnectNeeded();
+                    emitReconnectNeeded("network");
                 }
             };
             connectivityManager.registerDefaultNetworkCallback(networkCallback);

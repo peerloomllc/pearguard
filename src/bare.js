@@ -166,6 +166,7 @@ async function init (dataDir, attempt = 0) {
     onModeChange: (m) => { mode = m },
     getMode: () => mode,
     onLeaveDue: () => commitScheduledLeave(),
+    harness: !!globalThis.__PEARGUARD_HARNESS,
     resetParentConnection: (identityKey) => {
       if (identityKey) parentPeers.delete(identityKey)
       else parentPeers.clear()
@@ -688,6 +689,23 @@ async function _handlePeerMessage (msg, conn, remoteKeyHex) {
   if (msg.payload == null || typeof msg.payload !== 'object') {
     console.warn('[bare] dropped message: missing/invalid payload for', msg.type, 'from', msg.from.slice(0, 12))
     return
+  }
+
+  // A paired parent is talking to us on a live connection, so it belongs in
+  // parentPeers. The list was once seen empty for a whole session while the
+  // parent kept pushing, and every relay and alert queued instead of sending.
+  // The cause was never pinned down, so re-register here rather than wait for
+  // a reconnect.
+  if (mode === 'child' && storedPeer && !parentPeers.has(msg.from) &&
+      !(await db.get('blocked:' + msg.from).catch(() => null))) {
+    console.warn('[bare] parent', msg.from.slice(0, 8), 'missing from parentPeers while connected; re-registering on', msg.type)
+    parentPeers.set(msg.from, {
+      conn,
+      remoteKeyHex,
+      displayName: (storedPeer.value && storedPeer.value.displayName) || 'Parent',
+      topicHex: peer.topicHex || null,
+    })
+    await flushPendingMessages(conn)
   }
 
   // Dispatch verified peer message by type

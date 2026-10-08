@@ -20,6 +20,8 @@ ipc.write = (buf) => {
 }
 // bare.js registers ipc.on('data', ...) at module load, so the shim must exist first.
 global.BareKit = { IPC: ipc }
+// Unlocks test-only dispatch methods (harness:*) in bare-dispatch.js.
+global.__PEARGUARD_HARNESS = true
 
 process.on('message', (m) => {
   if (m && m.in) ipc.emit('data', Buffer.from(JSON.stringify(m.in) + '\n'))

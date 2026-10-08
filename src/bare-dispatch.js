@@ -1490,6 +1490,14 @@ function createDispatch (ctx) {
         return { count: newCount, removed: removed.length, relayedTo }
       }
 
+      // Test harness only: forget connected parents without closing anything,
+      // to reproduce the "empty parent list while connected" state.
+      case 'harness:dropParentPeers': {
+        if (!ctx.harness) throw new Error('harness-only method')
+        ctx.resetParentConnection()
+        return { dropped: true }
+      }
+
       case 'swarm:reconnect': {
         if (!ctx.swarm) return { rejoined: 0 }
         // Re-announce on every paired peer's topic. swarm.flush() alone is not

@@ -303,6 +303,25 @@ for (const { label, base, zone, alerts } of [
   }
 }
 
+// --- 9c. Daily totals for the parent's trends ------------------------------
+{
+  const thu = new Date(2026, 0, 15, 20, 0, 0).getTime()
+  const { tracker, clock } = makeTracker(thu)
+  burn(tracker, clock, 600)
+  // Wind forward a week and back: that future window is archived, but it is not
+  // a day that happened and must not reach the parent.
+  clock.t = new Date(2026, 0, 22, 12, 0, 0).getTime()
+  burn(tracker, clock, 60)
+  clock.t = new Date(2026, 0, 16, 9, 0, 0).getTime()
+  burn(tracker, clock, 120)
+  const all = tracker.getDailyTotals()
+  assert.deepStrictEqual(all.map((d) => d.date), ['2026-01-16', '2026-01-15'], 'today then the past, no future day')
+  assert.strictEqual(all[0].apps.find((a) => a.packageName === 'chrome').secondsToday, 120)
+  assert.strictEqual(all[1].apps.find((a) => a.packageName === 'chrome').secondsToday, 600)
+  assert.strictEqual(tracker.getDailyTotals(1).length, 1, 'the limit counts today')
+  ok('daily totals carry today and past days, never a future one')
+}
+
 // --- 10. The archive cannot grow without bound ------------------------------
 {
   const { tracker, clock } = makeTracker(new Date(2026, 0, 1, 12, 0, 0).getTime())

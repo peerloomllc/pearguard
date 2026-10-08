@@ -26,6 +26,8 @@ npm run build:ui 2>&1 | tail -2
 
 echo "==> Syncing to $MAC_MINI"
 rsync -az --checksum --exclude='.git' --exclude='node_modules' --exclude='android' \
+  --exclude='/*.apk' --exclude='/*.aab' --exclude='/*.AppImage' --exclude='/*.deb' --exclude='/*.exe' \
+  --exclude='/*.dmg' --exclude='/*.ipa' --exclude='/*.sha256' --exclude='/*.blockmap' --exclude='/latest*.yml' \
   "$REPO_ROOT/" "$MAC_MINI:$MAC_REPO/"
 
 echo "==> Running driver on $MAC_MINI"

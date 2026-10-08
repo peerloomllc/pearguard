@@ -166,11 +166,12 @@ shim.onBareOut((buf) => {
       return
     }
     if (msg.method === 'native:showDecisionNotification') {
-      const { appName, decision } = msg.args || {}
+      const { appName, decision, note } = msg.args || {}
       const label = appName || 'the app'
       // Was "Solitaire: denied". Same words the Android child shows, since this
       // is read by a child, not by us.
       const body = decision === 'approved' ? `Your parent allowed more time on ${label}`
+        : decision === 'denied' && note ? `Your parent said no to ${label}: "${note}"`
         : decision === 'denied' ? `Your parent denied the request for ${label}`
         : decision === 'expired' ? `Your parent has not answered about ${label}. You can ask again.`
         : `${label}: ${decision || ''}`

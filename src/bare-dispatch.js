@@ -29,6 +29,7 @@ const { pendingUninstalls } = require('./package-reconcile')
 // 15-minute ask) and handing it over would surprise everyone.
 const UNDELIVERED_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const SYNC_RESOLVED_MIN_INTERVAL_MS = 5 * 60 * 1000
+const DENY_NOTE_MAX = 140
 
 // How long a request the child raised waits for an answer before it stops
 // counting as outstanding. A pending request is not free: it disables the child's
@@ -1070,19 +1071,21 @@ function createDispatch (ctx) {
 
       case 'time:deny': {
         // Parent denies an extra-time request — marks it denied and notifies child.
+        // An optional short note ("homework first") goes to the child with it.
         const { childPublicKey, requestId, packageName, appName } = args
         if (!childPublicKey || !requestId || !packageName) {
           throw new Error('invalid time:deny args')
         }
+        const note = typeof args.note === 'string' ? args.note.trim().slice(0, DENY_NOTE_MAX) : ''
         const existing = await ctx.db.get('request:' + requestId).catch(() => null)
         if (existing) {
-          await ctx.db.put('request:' + requestId, { ...existing.value, status: 'denied' })
+          await ctx.db.put('request:' + requestId, { ...existing.value, status: 'denied', ...(note && { denyNote: note }) })
         }
         try {
           const peerRecord = await ctx.db.get('peers:' + childPublicKey).catch(() => null)
           const noiseKey = peerRecord && peerRecord.value && peerRecord.value.noiseKey
           if (noiseKey) {
-            ctx.sendToPeer(noiseKey, { type: 'request:denied', payload: { requestId, packageName, appName } })
+            ctx.sendToPeer(noiseKey, { type: 'request:denied', payload: { requestId, packageName, appName, ...(note && { note }) } })
           }
         } catch (_e) { /* child offline */ }
         ctx.send({ type: 'event', event: 'request:updated', data: { requestId, status: 'denied' } })
@@ -2385,6 +2388,7 @@ function createDispatch (ctx) {
             packageName: value.packageName,
             appDisplayName: value.appName,
             status: value.status,
+            ...(value.denyNote && { denyNote: value.denyNote }),
             resolved: value.status !== 'pending',
             childPublicKey,
             requestType: value.requestType || 'approval',

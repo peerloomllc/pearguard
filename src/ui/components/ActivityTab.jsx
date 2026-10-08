@@ -56,6 +56,9 @@ function formatSeconds(s) {
 function PendingRequestCard({ req, childPublicKey, onResolved }) {
   const { colors, typography, spacing } = useTheme();
   const [acting, setActing] = useState(false);
+  // Deny stays one tap; the note is opt-in.
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState('');
 
   // General time tops up the whole daily budget; extra time overrides one app.
   const isGeneralTime = req.requestType === 'general_time';
@@ -97,6 +100,7 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
           requestId: req.id,
           packageName: req.packageName,
           appName: req.appDisplayName || req.packageName,
+          ...(note.trim() && { note: note.trim() }),
         });
       } else {
         await window.callBare('app:decide', { childPublicKey, packageName: req.packageName, decision: 'deny' });
@@ -183,6 +187,29 @@ function PendingRequestCard({ req, childPublicKey, onResolved }) {
           </Button>
         </div>
       </div>
+      {isExtraTime && (noteOpen ? (
+        <input
+          type="text"
+          value={note}
+          maxLength={140}
+          placeholder="Reason for saying no (optional)"
+          aria-label="Reason for saying no"
+          onChange={(e) => setNote(e.target.value)}
+          style={{
+            width: '100%', boxSizing: 'border-box', marginTop: `${spacing.sm}px`, padding: `${spacing.sm}px`,
+            borderRadius: '8px', border: `1px solid ${colors.border}`, background: colors.surface.input || colors.surface.card,
+            color: colors.text.primary, fontSize: '14px',
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setNoteOpen(true)}
+          style={{ marginTop: `${spacing.xs}px`, padding: 0, border: 'none', background: 'none', color: colors.text.secondary, fontSize: '13px', textDecoration: 'underline', cursor: 'pointer' }}
+        >
+          Add a note to a no
+        </button>
+      ))}
     </Card>
   );
 }
@@ -236,6 +263,9 @@ function ActivityRow({ item, onDismiss }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
           <span style={{ ...typography.micro, color: colors.text.muted }}>{formatTime(item.timestamp)}</span>
+          {item.type === 'time_request' && item.status === 'denied' && item.denyNote
+            ? <span style={{ ...typography.micro, color: colors.text.secondary, fontStyle: 'italic' }}>"{item.denyNote}"</span>
+            : null}
           {item.type === 'time_request' && item.resolved
             ? <span style={{ ...typography.micro, color: colors.text.muted, fontStyle: 'italic' }}>
                 {item.status === 'approved' ? 'Approved'

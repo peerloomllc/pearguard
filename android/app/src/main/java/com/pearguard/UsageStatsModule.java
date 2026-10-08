@@ -1454,7 +1454,7 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void showDecisionNotification(String appName, String decision) {
+    public void showDecisionNotification(String appName, String decision, String note) {
         NotificationManager nm =
                 (NotificationManager) reactContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
@@ -1477,6 +1477,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 ? "Your parent has not answered about " + appName + ". You can ask again."
                 : approved
                 ? "Your parent allowed more time on " + appName
+                : note != null && !note.isEmpty()
+                ? "Your parent said no to " + appName + ": \"" + note + "\""
                 : "Your parent denied the request for " + appName;
 
         // Deep link to child's Requests tab so tapping the notification is actionable
@@ -1493,6 +1495,8 @@ public class UsageStatsModule extends ReactContextBaseJavaModule {
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
+                // A parent's note can run past one line; let it expand.
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(pi);

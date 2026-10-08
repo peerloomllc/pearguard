@@ -901,7 +901,9 @@ app.whenReady().then(() => {
     // it relays as `clock_changed` — the same reason Android already sends from
     // the AUTO_TIME signal (#209), so both platforms report it identically.
     enforcement.on('clock-tamper', (info) => {
-      const reason = 'clock_changed'
+      // A 'zone' event moved the local calendar without moving the clock, so
+      // tell the parent the time zone changed rather than the clock.
+      const reason = info && info.window === 'zone' ? 'timezone_changed' : 'clock_changed'
       console.warn('[main] clock tamper on this PC', info)
       const statePath = capabilityAlertStatePath()
       if (!shouldAlert({ statePath, reason })) return

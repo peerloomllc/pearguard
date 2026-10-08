@@ -133,13 +133,15 @@ console.log('usage-tracker: clock tamper')
   }
 }
 
-// --- 4b. Zone shifts the contradiction check cannot see ---------------------
-// A shift west that keeps the date, and a shift east from Saturday into Sunday,
-// both move the day and the week the same way, so they look like midnight. They
-// happen far sooner than any real window can end, which is what gives them away.
-for (const { label, base, zone } of [
-  { label: 'west, same date', base: Date.UTC(2026, 0, 15, 20, 0, 0), zone: 'America/Bogota' },
-  { label: 'east, Saturday into Sunday', base: Date.UTC(2026, 0, 17, 20, 0, 0), zone: 'Pacific/Kiritimati' },
+// --- 4b. Every other kind of zone shift ------------------------------------
+// Windows are keyed by calendar date, so a shift that keeps the date is the same
+// day: nothing to gain and nothing to report. A shift into a later date comes far
+// sooner than any real window can end, which is what gives it away. Saturday into
+// Sunday moves the week as well.
+for (const { label, base, zone, alerts } of [
+  { label: 'west, same date', base: Date.UTC(2026, 0, 15, 20, 0, 0), zone: 'America/Bogota', alerts: 0 },
+  { label: 'east, same date', base: Date.UTC(2026, 0, 15, 8, 0, 0), zone: 'Asia/Karachi', alerts: 0 },
+  { label: 'east, Saturday into Sunday', base: Date.UTC(2026, 0, 17, 20, 0, 0), zone: 'Pacific/Kiritimati', alerts: 1 },
 ]) {
   const original = process.env.TZ
   try {
@@ -154,9 +156,12 @@ for (const { label, base, zone } of [
       clock.t += SEC
       tracker.noteObserved({ packageName: null })
     }
-    assert.strictEqual(events.length, 1, label + ': parent told once')
-    assert.strictEqual(events[0].window, 'zone')
-    assert.strictEqual(events[0].direction, 'forward')
+    assert.strictEqual(events.length, alerts, label + ': parent told ' + alerts + ' time(s)')
+    if (alerts) {
+      assert.strictEqual(events[0].window, 'zone')
+      assert.strictEqual(events[0].direction, 'forward')
+    }
+    assert.strictEqual(tracker.getWeeklyUsageAll().find((x) => x.packageName === 'chrome').secondsThisWeek, 600, label + ': weekly kept')
     // Real time reaching the end of the day still rolls it over.
     clock.t = base + 30 * HOUR
     assert.strictEqual(tracker.getDailyUsageSeconds('chrome'), 0, label + ': next real day starts clean')
@@ -261,6 +266,38 @@ for (const { label, base, zone } of [
     const reloaded = new UsageTracker({ filePath, now: () => clock.t, logger: QUIET })
     assert.strictEqual(reloaded.getDailyUsageSeconds('chrome'), 0, 'new day after a restart is empty')
     ok('a restart on a genuinely new day still starts from zero')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// --- 9b. A usage.json written before calendar keys still works --------------
+// Pre-v2 files keyed the windows and archives by the epoch of local midnight.
+// Loading one must keep today's counters and still restore an archived day if
+// the clock is wound back into it.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pearguard-clock-'))
+  const filePath = path.join(dir, 'usage.json')
+  try {
+    const today = new Date(2026, 0, 15).getTime()
+    const yesterday = new Date(2026, 0, 14).getTime()
+    const sunday = new Date(2026, 0, 11).getTime()
+    fs.writeFileSync(filePath, JSON.stringify({
+      dayStart: today,
+      weekStart: sunday,
+      daily: { chrome: 600 },
+      weekly: { chrome: 900 },
+      dayArchive: { [yesterday]: { chrome: 300 } },
+      weekArchive: {},
+    }))
+    const clock = { t: new Date(2026, 0, 15, 20, 0, 0).getTime() }
+    const tracker = new UsageTracker({ filePath, now: () => clock.t, logger: QUIET })
+    assert.strictEqual(tracker.getDailyUsageSeconds('chrome'), 600, 'today kept across the upgrade')
+    clock.t = new Date(2026, 0, 14, 20, 0, 0).getTime()
+    assert.strictEqual(tracker.getDailyUsageSeconds('chrome'), 300, 'archived day restored by its converted key')
+    const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    assert.strictEqual(saved.v, 2, 'rewritten in the new format')
+    ok('a pre-v2 usage.json converts to calendar keys')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

@@ -22105,7 +22105,7 @@ ${inv.inviteLink}`
         marginBottom: `${spacing2.base}px`,
         display: "flex",
         alignItems: "center",
-        justifyContent: embedded ? "flex-end" : "space-between"
+        justifyContent: embedded ? "center" : "space-between"
       }, children: [
         !embedded && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("h2", { style: { ...typography2.display, color: colors.text.primary, margin: 0 }, children: "My Requests" }),
         hasResolved && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
@@ -22129,7 +22129,7 @@ ${inv.inviteLink}`
           }
         )
       ] }),
-      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("p", { style: { ...typography2.body, color: colors.text.muted }, children: "No requests yet." }),
+      requests.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("p", { style: { ...typography2.body, color: colors.text.muted, ...embedded && { textAlign: "center" } }, children: "No requests yet." }),
       requests.map((req) => {
         const badge = statusBadge(req.status, colors);
         return /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)(

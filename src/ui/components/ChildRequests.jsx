@@ -61,7 +61,7 @@ export default function ChildRequests({ embedded = false } = {}) {
     <div style={{ padding: embedded ? 0 : `${spacing.xl}px`, ...typography.body, color: colors.text.primary }}>
       <div style={{
         marginBottom: `${spacing.base}px`,
-        display: 'flex', alignItems: 'center', justifyContent: embedded ? 'flex-end' : 'space-between',
+        display: 'flex', alignItems: 'center', justifyContent: embedded ? 'center' : 'space-between',
       }}>
         {!embedded && <h2 style={{ ...typography.display, color: colors.text.primary, margin: 0 }}>My Requests</h2>}
         {hasResolved && (
@@ -84,7 +84,7 @@ export default function ChildRequests({ embedded = false } = {}) {
       </div>
 
       {requests.length === 0 && (
-        <p style={{ ...typography.body, color: colors.text.muted }}>No requests yet.</p>
+        <p style={{ ...typography.body, color: colors.text.muted, ...(embedded && { textAlign: 'center' }) }}>No requests yet.</p>
       )}
 
       {requests.map((req) => {

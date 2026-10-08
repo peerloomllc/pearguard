@@ -16479,7 +16479,8 @@
     app_installed: { label: "App Installed", icon: "Plus" },
     app_uninstalled: { label: "App Uninstalled", icon: "Trash" },
     pin_override: { label: "PIN Override", icon: "LockSimpleOpen" },
-    pin_failure: { label: "PIN Guessing", icon: "Warning" }
+    pin_failure: { label: "PIN Guessing", icon: "Warning" },
+    grant_undelivered: { label: "Time Not Delivered", icon: "Clock" }
   };
   function metaFor(item) {
     if (item.type === "time_request" && (item.requestType || "approval") === "approval") {
@@ -16488,7 +16489,7 @@
     return TYPE_META[item.type] || { label: item.type, icon: "Bell" };
   }
   function typeColor(type, colors) {
-    if (type === "enforcement_off") return colors.secondary;
+    if (type === "enforcement_off" || type === "grant_undelivered") return colors.secondary;
     if (type === "bypass" || type === "app_uninstalled" || type === "pin_failure") return colors.error;
     if (type === "time_request" || type === "pin_use" || type === "pin_override") return colors.secondary;
     if (type === "app_installed") return colors.success;
@@ -16686,6 +16687,7 @@
       const unsubUpdated = window.onBareEvent("request:updated", reload);
       const unsubOverride = window.onBareEvent("alert:pin_override", reload);
       const unsubFailure = window.onBareEvent("alert:pin_failure", reload);
+      const unsubUndelivered = window.onBareEvent("alert:grant_undelivered", reload);
       return () => {
         unsubBypass();
         unsubRequest();
@@ -16694,6 +16696,7 @@
         unsubUpdated();
         unsubOverride();
         unsubFailure();
+        unsubUndelivered();
       };
     }, [childPublicKey]);
     function handleDismiss(item) {

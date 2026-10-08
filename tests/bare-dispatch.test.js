@@ -7,7 +7,7 @@
 global.BareKit = { IPC: { write: jest.fn(), on: jest.fn() } }
 
 // We require the dispatch logic indirectly by extracting it.
-const { createDispatch, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
+const { createDispatch, lapseUndeliveredGrants, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, stripAppIcons, shouldAcceptRelayedPolicy, replayActiveGrants, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, handleRequestResolved, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, handleIncomingAppInstalled, handleIncomingAppsSync, handleIncomingTimeRequest, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, dailyTotalsSignature, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite, groupSessionsByLocalDate, pruneStaleKeys } = require('../src/bare-dispatch')
 const sodium = require('sodium-native')
 
 describe('bare dispatch', () => {
@@ -3565,7 +3565,9 @@ describe('a grant approved while the child is offline survives until delivery', 
     const sendToPeer = jest.fn()
     expect(await replayActiveGrants(db, 'kid', sendToPeer, 'noise1', Date.now())).toBe(0)
     expect(sendToPeer).not.toHaveBeenCalled()
-    // Flag cleared so the Apps tab stops promising time that is never coming.
+    // Clearing it (with an alert to the parent) is lapseUndeliveredGrants' job,
+    // which runs before the replay on every hello.
+    await lapseUndeliveredGrants(db, Date.now())
     expect(overrideRow(db)).toMatchObject({ awaitingDelivery: false, expiresAt: grantedAt })
   })
 
@@ -4707,5 +4709,74 @@ describe('handlePolicyUpdate skips a push identical to the enforced policy', () 
     expect(db.put).toHaveBeenCalledWith('policy', expect.objectContaining({ version: 4 }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ method: 'native:setPolicy' }))
     expect(sendToAllParents).toHaveBeenCalledWith(expect.objectContaining({ type: 'policy:update' }), 'p1')
+  })
+})
+
+describe('grants the child never confirms are cancelled with an alert', () => {
+  const HOUR = 60 * 60 * 1000
+  function makeDb (stored = {}) {
+    return {
+      put: jest.fn(async (k, v) => { stored[k] = v }),
+      get: jest.fn(async (k) => stored[k] !== undefined ? { value: JSON.parse(JSON.stringify(stored[k])) } : null),
+      del: jest.fn(async (k) => { delete stored[k] }),
+      createReadStream: jest.fn(async function * ({ gt, lt } = {}) {
+        for (const [key, value] of Object.entries(stored).sort(([a], [b]) => a < b ? -1 : 1)) {
+          if (gt !== undefined && !(key > gt)) continue
+          if (lt !== undefined && !(key < lt)) continue
+          yield { key, value: JSON.parse(JSON.stringify(value)) }
+        }
+      }),
+      _stored: stored,
+    }
+  }
+  const noon = new Date(2026, 9, 8, 12, 0, 0).getTime()
+  const peer = { 'peers:kid': { publicKey: 'kid', displayName: 'Sam', noiseKey: 'nk' } }
+  const alerts = (db) => Object.entries(db._stored).filter(([k]) => k.startsWith('alert:')).map(([, v]) => v)
+
+  test('a per-app grant unconfirmed after 24 h is cancelled and the parent is told', async () => {
+    const db = makeDb({ ...peer, 'override:kid:1': { packageName: 'com.game', appName: 'Game', childPublicKey: 'kid', grantedAt: noon - 25 * HOUR, awaitingDelivery: true, requestId: 'r1', extraSeconds: 900 } })
+    const out = await lapseUndeliveredGrants(db, noon)
+    expect(out).toHaveLength(1)
+    expect(out[0].appDisplayName).toBe("15 min for Game never reached Sam's phone")
+    expect(db._stored['override:kid:1'].awaitingDelivery).toBe(false)
+    expect(alerts(db)).toHaveLength(1)
+    // Running again finds nothing new.
+    expect(await lapseUndeliveredGrants(db, noon + HOUR)).toHaveLength(0)
+  })
+
+  test('extra screen time lapses when its day ends, not before', async () => {
+    const lateLastNight = new Date(2026, 9, 7, 23, 50, 0).getTime()
+    const db = makeDb({ ...peer, 'screentime:grant:kid:1': { childPublicKey: 'kid', grantedAt: lateLastNight, extraSeconds: 1800, requestId: 'grant:kid:1', awaitingDelivery: true } })
+    expect(await lapseUndeliveredGrants(db, lateLastNight + 5 * 60 * 1000)).toHaveLength(0)
+    const out = await lapseUndeliveredGrants(db, noon)
+    expect(out).toHaveLength(1)
+    expect(out[0].appDisplayName).toMatch(/30 min of extra screen time may not have reached Sam's phone/)
+  })
+
+  test('records from before delivery tracking, and confirmed grants, are left alone', async () => {
+    const db = makeDb({
+      ...peer,
+      'override:kid:1': { packageName: 'com.game', childPublicKey: 'kid', grantedAt: noon - 48 * HOUR, expiresAt: noon - 47 * HOUR, requestId: 'r1', extraSeconds: 900 },
+      'screentime:grant:kid:2': { childPublicKey: 'kid', grantedAt: noon - 48 * HOUR, extraSeconds: 600, requestId: 'r2' },
+      'screentime:grant:kid:3': { childPublicKey: 'kid', grantedAt: noon - 48 * HOUR, extraSeconds: 600, requestId: 'r3', awaitingDelivery: false, deliveredAt: noon - 47 * HOUR },
+    })
+    expect(await lapseUndeliveredGrants(db, noon)).toHaveLength(0)
+  })
+
+  test("the child's confirmation settles extra screen time and adds no Activity row for an unasked grant", async () => {
+    const db = makeDb({ ...peer, 'screentime:grant:kid:1': { childPublicKey: 'kid', grantedAt: noon, extraSeconds: 600, requestId: 'grant:kid:1', awaitingDelivery: true } })
+    await handleRequestResolved({ requestId: 'grant:kid:1', status: 'approved', resolvedAt: noon }, db, jest.fn(), 'kid')
+    expect(db._stored['screentime:grant:kid:1'].awaitingDelivery).toBe(false)
+    expect(db._stored['screentime:grant:kid:1'].deliveredAt).toBeGreaterThan(0)
+    expect(Object.keys(db._stored).some((k) => k.startsWith('request:'))).toBe(false)
+  })
+
+  test('the child confirms extra screen time when applied and again on a re-send', async () => {
+    const db = makeDb({})
+    const sendToAllParents = jest.fn()
+    await handleTimeExtendGeneral({ requestId: 'grant:kid:1', extraSeconds: 600 }, db, jest.fn(), sendToAllParents)
+    await handleTimeExtendGeneral({ requestId: 'grant:kid:1', extraSeconds: 600 }, db, jest.fn(), sendToAllParents)
+    const confirms = sendToAllParents.mock.calls.filter(([m]) => m.type === 'request:resolved' && m.payload.requestId === 'grant:kid:1')
+    expect(confirms).toHaveLength(2)
   })
 })

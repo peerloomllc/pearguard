@@ -1038,6 +1038,17 @@ export default function Root () {
                   showNotification(title, body, childPublicKey, 'activity')
                 }
               }
+              // A grant the child's phone never picked up was cancelled; say so
+              // rather than let it vanish from the Apps tab.
+              if (msg.event === 'alert:grant_undelivered') {
+                const { childPublicKey, appDisplayName, body } = msg.data ?? {}
+                const title = appDisplayName || 'Time not delivered'
+                if (isAndroid) {
+                  NativeModules.UsageStatsModule?.showBypassAlertNotification?.(title, body || '', childPublicKey || '')
+                } else {
+                  showNotification(title, body || '', childPublicKey, 'activity')
+                }
+              }
               // Show a notification on the parent device when a child uses the PIN override
               if (msg.event === 'alert:pin_override') {
                 const { childPublicKey, childDisplayName, appDisplayName } = msg.data ?? {}

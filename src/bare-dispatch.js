@@ -323,6 +323,14 @@ function createDispatch (ctx) {
   // resolved requests. See the end of case 'alerts:list'.
   const lastSyncResolvedAt = new Map()
 
+  // Parent only: cancel grants the child never confirmed and alert on each.
+  async function sweepUndeliveredGrants () {
+    if (!ctx.getMode || ctx.getMode() !== 'parent') return
+    for (const alert of await lapseUndeliveredGrants(ctx.db, Date.now())) {
+      ctx.send({ type: 'event', event: 'alert:grant_undelivered', data: alert })
+    }
+  }
+
   async function dispatchInner (method, args) {
     switch (method) {
       case 'ping':
@@ -1038,6 +1046,10 @@ function createDispatch (ctx) {
           // requestId lets handleHello re-send this grant to a child that was
           // offline when it was approved (grants were otherwise lost).
           childPublicKey, grantedAt, extraSeconds, source: 'parent-approved', requestId: rid,
+          // Settled by the child's request:resolved (see settleDeliveredGrant).
+          // If the day ends first, lapseUndeliveredGrants cancels it and tells
+          // the parent.
+          awaitingDelivery: true,
         })
 
         try {
@@ -1224,6 +1236,7 @@ function createDispatch (ctx) {
         // Returns only non-expired entries so the UI shows what's currently active.
         // Optional childPublicKey filter for parent-side queries.
         const filterChild = args && args.childPublicKey
+        await sweepUndeliveredGrants()
         const overrides = []
         const now = Date.now()
         for await (const { key, value } of ctx.db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
@@ -1516,6 +1529,8 @@ function createDispatch (ctx) {
       }
 
       case 'swarm:reconnect': {
+        // Rides the parent's 30 s timer, which runs even when the app is closed.
+        await sweepUndeliveredGrants().catch((e) => console.warn('[bare] grant sweep failed:', e.message))
         if (!ctx.swarm) return { rejoined: 0 }
         // Re-announce on every paired peer's topic. swarm.flush() alone is not
         // enough: after long background, network change, or Android doze the
@@ -2340,6 +2355,7 @@ function createDispatch (ctx) {
         // Same sweep on the parent's own copies, so the Activity row reads "No
         // answer" instead of the bare "Resolved" an expired request would get.
         await expireUnansweredRequests(ctx.db, 'request:', Date.now())
+        await sweepUndeliveredGrants()
         const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days
 
         // Bypass alerts stored when a bypass:alert P2P message was received from this child
@@ -2847,7 +2863,72 @@ async function settleDeliveredGrant (db, childPublicKey, requestId, now) {
     await db.put(key, { ...value, awaitingDelivery: false, deliveredAt: now, expiresAt: now + extraSeconds * 1000 })
     return true
   }
+  for await (const { key, value } of db.createReadStream({ gt: 'screentime:grant:' + childPublicKey + ':', lt: 'screentime:grant:' + childPublicKey + ':~' })) {
+    if (!value || value.requestId !== requestId || value.awaitingDelivery !== true) continue
+    await db.put(key, { ...value, awaitingDelivery: false, deliveredAt: now })
+    return true
+  }
   return false
+}
+
+/**
+ * Cancel parent-side grants the child's phone never confirmed, and record an
+ * alert for each so the parent is told instead of the grant quietly vanishing.
+ * A per-app grant lapses 24 h after approval; extra screen time lapses when
+ * the day it was given for ends, since it is a top-up for that day. Records
+ * written before delivery tracking carry no awaitingDelivery and are ignored.
+ * Runs from the parent's 30 s reconnect tick, the Apps and Activity loads and
+ * each child hello, so it does not depend on the child ever coming back.
+ *
+ * @returns {Promise<object[]>} the alert entries written
+ */
+async function lapseUndeliveredGrants (db, now) {
+  const lapsed = []
+  for await (const { key, value } of db.createReadStream({ gt: 'override:', lt: 'override:~' })) {
+    if (!value || value.awaitingDelivery !== true || value.deliveredAt) continue
+    if (now - (value.grantedAt || 0) <= UNDELIVERED_GRANT_MAX_AGE_MS) continue
+    await db.put(key, { ...value, awaitingDelivery: false, expiresAt: value.grantedAt || 0, lapsedAt: now })
+    lapsed.push(value)
+  }
+  const todayStr = localDateStr(now)
+  for await (const { key, value } of db.createReadStream({ gt: 'screentime:grant:', lt: 'screentime:grant:~' })) {
+    if (!value || value.awaitingDelivery !== true || value.deliveredAt) continue
+    if (localDateStr(value.grantedAt || 0) === todayStr) continue
+    await db.put(key, { ...value, awaitingDelivery: false, lapsedAt: now })
+    lapsed.push(value)
+  }
+  const alerts = []
+  for (let i = 0; i < lapsed.length; i++) {
+    const grant = lapsed[i]
+    if (!grant.childPublicKey) continue
+    const peer = await db.get('peers:' + grant.childPublicKey).catch(() => null)
+    const childDisplayName = (peer && peer.value && peer.value.displayName) || 'Your child'
+    const minutes = Math.max(1, Math.round((grant.extraSeconds || 0) / 60))
+    // A child on an older build never confirms extra screen time, so that
+    // wording stays hedged; per-app grants have always been confirmed.
+    const title = grant.packageName
+      ? minutes + ' min for ' + (grant.appName || grant.packageName) + " never reached " + childDisplayName + "'s phone"
+      : minutes + " min of extra screen time may not have reached " + childDisplayName + "'s phone"
+    const body = grant.packageName
+      ? 'The phone did not pick it up within a day, so it was cancelled. Approve it again if it is still needed.'
+      : 'The phone did not pick it up before the day ended, so it was cancelled.'
+    // Distinct timestamps keep two grants lapsing together from sharing a key.
+    const timestamp = now + i
+    const entry = {
+      id: 'grant_undelivered:' + (grant.grantedAt || timestamp),
+      type: 'grant_undelivered',
+      timestamp,
+      appDisplayName: title,
+      body,
+      packageName: grant.packageName || null,
+      extraSeconds: grant.extraSeconds || 0,
+      childPublicKey: grant.childPublicKey,
+      childDisplayName,
+    }
+    await db.put('alert:' + grant.childPublicKey + ':' + timestamp, entry)
+    alerts.push(entry)
+  }
+  return alerts
 }
 
 async function replayActiveGrants (db, childPublicKey, sendToPeer, remoteKeyHex, now) {
@@ -2858,12 +2939,9 @@ async function replayActiveGrants (db, childPublicKey, sendToPeer, remoteKeyHex,
     // keep the old expiry rule rather than being resurrected retroactively.
     const undelivered = value.awaitingDelivery === true && !value.deliveredAt
     if (undelivered) {
-      if (now - (value.grantedAt || 0) > UNDELIVERED_GRANT_MAX_AGE_MS) {
-        // Too old to spring on the child now. Clear the flag so the parent's Apps
-        // tab stops promising time that is never coming.
-        await db.put(key, { ...value, awaitingDelivery: false, expiresAt: value.grantedAt || 0 })
-        continue
-      }
+      // Too old to spring on the child now. lapseUndeliveredGrants cancels it
+      // and tells the parent.
+      if (now - (value.grantedAt || 0) > UNDELIVERED_GRANT_MAX_AGE_MS) continue
     } else if ((value.expiresAt || 0) <= now) {
       continue
     }
@@ -2891,7 +2969,7 @@ async function replayActiveGrants (db, childPublicKey, sendToPeer, remoteKeyHex,
   return replayed
 }
 
-async function handleTimeExtendGeneral (payload, db, send) {
+async function handleTimeExtendGeneral (payload, db, send, sendToAllParents) {
   const { requestId, extraSeconds } = payload || {}
   if (!requestId || typeof extraSeconds !== 'number' || extraSeconds <= 0) {
     console.warn('[bare] time:extendGeneral: malformed payload, dropping')
@@ -2902,8 +2980,13 @@ async function handleTimeExtendGeneral (payload, db, send) {
   // grant approved while this child was offline is not lost). applyScreenTimeBonus
   // is additive, so without this guard a re-delivered grant would top up the
   // budget again. A request we already marked 'approved' has been applied.
+  // Confirm receipt to the parents either way, so a re-send of a grant we
+  // already applied still settles the parent's "waiting" record.
+  const confirm = () => {
+    if (sendToAllParents) sendToAllParents({ type: 'request:resolved', payload: { requestId, status: 'approved', resolvedAt: Date.now() } })
+  }
   const existing = await db.get(requestId).catch(() => null)
-  if (existing && existing.value && existing.value.status === 'approved') return
+  if (existing && existing.value && existing.value.status === 'approved') { confirm(); return }
 
   const now = Date.now()
   const bonus = await applyScreenTimeBonus(db, extraSeconds, now)
@@ -2916,6 +2999,7 @@ async function handleTimeExtendGeneral (payload, db, send) {
   // Push the new budget to native enforcement, then tell the child UI.
   send({ method: 'native:setScreenTimeBonus', args: { date: bonus.date, seconds: bonus.seconds } })
   send({ type: 'event', event: 'screentime:granted', data: { extraSeconds, totalBonusSeconds: bonus.seconds } })
+  confirm()
 }
 
 /**
@@ -3637,6 +3721,9 @@ async function handleRequestResolved (payload, db, send, childPublicKey) {
   if (status === 'approved' && childPublicKey) {
     await settleDeliveredGrant(db, childPublicKey, requestId, Date.now())
   }
+  // Extra screen time the parent gave unasked has a synthetic id and no
+  // request row; its confirmation must not invent one below.
+  if (String(requestId).startsWith('grant:')) return
 
   const existing = await db.get('request:' + requestId).catch(() => null)
 
@@ -3721,4 +3808,4 @@ function handleIncomingAppUninstalled (payload, childPublicKey, ...rest) {
   return withPolicyLock(childPublicKey, () => handleIncomingAppUninstalledUnlocked(payload, childPublicKey, ...rest))
 }
 
-module.exports = { createDispatch, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }
+module.exports = { createDispatch, lapseUndeliveredGrants, pruneRuleArchives, leaveLockoutForFailCount, leaveLockRemainingMs, dateStrInZone, childZoneOffset, withPolicyLock, settleDeliveredGrant, recordPolicyAck, isLockActive, appsSignature, verifyParentPin, advanceScheduledLeave, isRequestUnanswered, expireUnansweredRequests, stripAppIcons, shouldAcceptRelayedPolicy, handleAppDecision, handlePolicyUpdate, handleTimeExtend, handleTimeExtendGeneral, replayActiveGrants, applyScreenTimeBonus, bonusSecondsForToday, handleIncomingAppInstalled, handleIncomingAppUninstalled, handleIncomingAppsSync, handleIncomingTimeRequest, handleRequestResolved, appendPinUseLog, getPinUseLog, queueMessage, flushMessageQueue, mergeSessions, groupSessionsByLocalDate, pruneStaleKeys, dailyTotalsSignature, getExclusions, applyExclusionsToReport, resolveAppName, applyPolicyNamesToReport, isBlockClearedByFreshInvite }

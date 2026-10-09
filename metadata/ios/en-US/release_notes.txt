@@ -1,5 +1,21 @@
-## What's Changed
+New Features
+  - Bedtime extensions: when bedtime blocks the phone, your child can ask for more time for all their apps at once. One approval unlocks them until the extra time runs out. Apps you've blocked stay blocked.
+  - Lock or pause every child at once: with two or more children, the Dashboard has "Lock all children" and "Pause all children" buttons.
+  - See when an offline child was last seen: a child's card shows how long ago their device was last connected.                         
+  - Add a note when you say no: when you turn down a time request, you can add a short message such as "homework first".                               
+  - Your child sees your answers: the child's requests list now shows past answers, including any note you added.
+  - Clock tricks no longer work on Android: if a child changes the date or time by hand, their apps stay blocked until they turn automatic date and time back on. Calls, texts and Settings still work.
 
-Fixed
+Improvements
+  - The parent Settings page is grouped into clear sections, and every setting saves as soon as you change it.
+  - Computers now drop programs that were uninstalled from the app list, and send daily totals so usage trends fill in.
+  - You're told when extra time you granted never reached your child's device.
 
-  - The app no longer closes right after you open it on iOS 27.
+Bug Fixes
+  - Changing time zones on a computer no longer resets the daily screen-time allowance.
+  - Fixed repeated "PearGuard was stopped" alerts when a child's device reconnects.
+  - Fixed a case where a child's device stopped hearing from a parent that was still connected.
+
+Performance
+  - PearGuard wakes up less in the background and sends less data, which saves battery on both phones.
+  - The parent app does less work when checking on each child, so it stays quicker as the app list grows.

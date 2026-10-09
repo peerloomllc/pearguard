@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.pearguard",
-      "buildNumber": "33",
+      "buildNumber": "34",
       "infoPlist": {
         "NSCameraUsageDescription": "Used to scan QR codes and set profile photos",
         "NSPhotoLibraryUsageDescription": "Used to set your profile photo",
@@ -64,7 +64,7 @@
           ]
         }
       ],
-      "versionCode": 1000024,
+      "versionCode": 1000025,
       "minSdkVersion": 29
     },
     "plugins": [
@@ -85,6 +85,6 @@
       "./assets/bare-ios.bundle",
       "./assets/bare-ios-sim.bundle"
     ],
-    "version": "1.0.24"
+    "version": "1.0.25"
   }
 }

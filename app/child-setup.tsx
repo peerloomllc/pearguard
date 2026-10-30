@@ -11,9 +11,9 @@
 // No back button (gestureEnabled: false in _layout.tsx).
 
 import { useState, useEffect, useRef } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Modal, Share } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Linking, NativeModules, ActivityIndicator, Share } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { CameraView, useCameraPermissions } from 'expo-camera'
+import ScannerModal from './QrScannerModal'
 import { SvgXml } from 'react-native-svg'
 // @ts-ignore - qrcode ships no types; only toString() is used here
 import QRCode from 'qrcode'
@@ -95,65 +95,6 @@ const PERMISSION_STEPS = {
     settingsAction: '',
   },
 } as const
-
-function ScannerModal({
-  visible,
-  onScanned,
-  onCancel,
-}: {
-  visible: boolean
-  onScanned: (url: string) => void
-  onCancel: () => void
-}) {
-  const [permission, requestPermission] = useCameraPermissions()
-  const scanned = useRef(false)
-
-  useEffect(() => {
-    if (!visible) { scanned.current = false; return }
-    if (!permission?.granted) {
-      requestPermission().catch(() => {})
-    }
-  }, [visible, permission, requestPermission])
-
-  function handleBarcode(result: any) {
-    if (scanned.current) return
-    scanned.current = true
-    onScanned(result.data)
-  }
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
-      {permission?.granted ? (
-        <View style={{ flex: 1 }}>
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            onBarcodeScanned={handleBarcode}
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          />
-          <View style={scannerStyles.overlay} pointerEvents="box-none">
-            <TouchableOpacity style={scannerStyles.cancelBtn} onPress={onCancel}>
-              <Text style={scannerStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <View style={scannerStyles.waiting}>
-          <ActivityIndicator color={colors.accent} size="large" />
-          <Text style={scannerStyles.waitingText}>Requesting camera permission…</Text>
-        </View>
-      )}
-    </Modal>
-  )
-}
-
-const scannerStyles = StyleSheet.create({
-  overlay:    { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: spacing.xxl },
-  cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: spacing.base, borderRadius: radius.md, alignItems: 'center' },
-  cancelText: { color: '#fff', fontSize: typography.subheading.fontSize, fontFamily: fontFamily.semibold },
-  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.base },
-  waitingText:{ color: '#fff', marginTop: spacing.base, fontFamily: fontFamily.regular },
-})
 
 export default function ChildSetupScreen() {
   const router = useRouter()

@@ -8,7 +8,7 @@
 //   4. Handle deep links (pearguard://) and forward to join.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, NativeEventEmitter, PermissionsAndroid, StatusBar, Share, Modal, Text, TouchableOpacity, AppState, BackHandler } from 'react-native'
+import { View, StyleSheet, Platform, DeviceEventEmitter, NativeModules, NativeEventEmitter, PermissionsAndroid, StatusBar, Share, AppState, BackHandler } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Worklet } from 'react-native-bare-kit'
 import b4a from 'b4a'
@@ -20,7 +20,7 @@ import * as Sharing from 'expo-sharing'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { setBareCaller } from './setup'
-import { CameraView, useCameraPermissions } from 'expo-camera'
+import ScannerModal from './QrScannerModal'
 import Constants from 'expo-constants'
 // Shared with the worklet so parent-facing bypass wording stays truthful:
 // some reasons are tampering, others are PearGuard's own limitation.
@@ -288,69 +288,6 @@ function buildHtml (appBundleJs: string): string {
     '</html>',
   ].join('\n')
 }
-
-// ── Scanner modal ──────────────────────────────────────────────────────────────
-
-function ScannerModal ({
-  visible,
-  onScanned,
-  onCancel,
-  onPermissionDenied,
-}: {
-  visible: boolean
-  onScanned: (url: string) => void
-  onCancel: () => void
-  onPermissionDenied: () => void
-}) {
-  const [permission, requestPermission] = useCameraPermissions()
-  const scanned = useRef(false)
-
-  useEffect(() => {
-    if (!visible) { scanned.current = false; return }
-    if (!permission?.granted) {
-      requestPermission().then(result => {
-        if (!result.granted) onPermissionDenied()
-      })
-    }
-  }, [visible, permission, requestPermission, onPermissionDenied])
-
-  function handleBarcode (result: any) {
-    if (scanned.current) return
-    scanned.current = true
-    onScanned(result.data)
-  }
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
-      {permission?.granted ? (
-        <View style={{ flex: 1 }}>
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            onBarcodeScanned={handleBarcode}
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          />
-          <View style={scannerStyles.overlay} pointerEvents="box-none">
-            <TouchableOpacity style={scannerStyles.cancelBtn} onPress={onCancel}>
-              <Text style={scannerStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <View style={scannerStyles.waiting}>
-          <Text style={{ color: '#fff' }}>Requesting camera permission…</Text>
-        </View>
-      )}
-    </Modal>
-  )
-}
-
-const scannerStyles = StyleSheet.create({
-  overlay:    { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: 32 },
-  cancelBtn:  { backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderRadius: 8, alignItems: 'center' },
-  cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  waiting:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
-})
 
 function showNotification(title: string, body: string, childPublicKey?: string, tab?: string) {
   if (isAndroid) return

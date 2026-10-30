@@ -3,10 +3,11 @@
   <uses-permission android:name="android.permission.CAMERA"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
-  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  <!-- minSdk 29: Downloads go through MediaStore, so no storage access. Libraries add these; remove them. -->
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
 
   <!-- Usage stats — user must enable manually in Settings > Apps > Special app access -->
   <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -20,9 +21,6 @@
 
   <!-- Boot receiver — starts enforcement on device reboot -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-  <!-- Contacts — runtime permission, requested during setup wizard -->
-  <uses-permission android:name="android.permission.READ_CONTACTS" />
 
   <!-- Foreground service — required for EnforcementService -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

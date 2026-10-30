@@ -15,7 +15,6 @@ public class PearGuardPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new UsageStatsModule(reactContext));
-        modules.add(new ContactsModule(reactContext));
         modules.add(new DownloadsModule(reactContext));
         modules.add(new CameraModule(reactContext));
         // AppBlockerModule, DeviceAdminModule, PackageMonitorModule, and

@@ -1,4 +1,10 @@
-## What's Changed
+PearGuard v1.0.28
 
 Bug Fixes
-  - Child devices without a camera can now finish setup. On the last setup step, tap "No camera? Show a code for your parent to scan" and the parent scans the code from their phone. You can also share a pairing link instead.
+  - App blocking and screen time work again on Ubuntu 26.04 and other Linux PCs running the newest versions of GNOME (49, 50 and 51). Before, remaining time never counted down there and the child was wrongly told to log out
+  - If a future version of GNOME ever stops PearGuard's blocking from working, the child now sees an honest message that PearGuard needs an update, instead of being told to log out
+
+Privacy
+  - Scanning a QR code no longer uses Google's scanning library. Codes are read inside the app, and nothing about your scans goes to Google
+  - PearGuard asks for fewer permissions. Contacts and storage access are gone
+

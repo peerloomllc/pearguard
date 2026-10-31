@@ -1164,8 +1164,10 @@ else
   fi
 
   echo "    Syncing repo to $MAC_MINI (including freshly built bundles)..."
+  # desktop/dist holds about 1 GB of Windows and Linux installers the iOS build
+  # never reads. Copying them filled the Mac's disk and broke the sync.
   rsync -az --rsync-path=/opt/homebrew/bin/rsync \
-    --exclude='.git' --exclude='node_modules' --exclude='android' \
+    --exclude='.git' --exclude='node_modules' --exclude='android' --exclude='/desktop/dist' \
     --exclude='/*.apk' --exclude='/*.aab' --exclude='/*.AppImage' --exclude='/*.deb' --exclude='/*.exe' \
     --exclude='/*.dmg' --exclude='/*.ipa' --exclude='/*.sha256' --exclude='/*.blockmap' --exclude='/latest*.yml' \
     "$REPO_ROOT/" "${MAC_MINI}:${MAC_MINI_REPO_PATH}/"

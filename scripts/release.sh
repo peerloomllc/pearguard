@@ -1163,6 +1163,7 @@ else
     exit 1
   fi
 
+  release_check_mac_space "$MAC_MINI"
   echo "    Syncing repo to $MAC_MINI (including freshly built bundles)..."
   # desktop/dist holds about 1 GB of Windows and Linux installers the iOS build
   # never reads. Copying them filled the Mac's disk and broke the sync.

@@ -23,6 +23,7 @@
 
 const REASON_UNSUPPORTED = 'linux:unsupported-compositor'
 const REASON_NOT_LOADED = 'linux:extension-not-loaded'
+const REASON_OUT_OF_DATE = 'linux:extension-out-of-date'
 
 /**
  * Pure decision function — all environment probing is done by the caller and
@@ -35,6 +36,7 @@ const REASON_NOT_LOADED = 'linux:extension-not-loaded'
  * @param {boolean} env.extensionEnabled is our extension in the enabled list?
  * @param {boolean|null} env.dbusLive    extension answering on D-Bus? null = unknown/not probed
  * @param {boolean} env.sessionLocked    if locked, dbusLive is meaningless (see above)
+ * @param {string|null} env.extensionState `State:` from `gnome-extensions info`, null = unknown
  *
  * @returns {{ ok: boolean, reason: string|null, childMessage: {title,body}|null }}
  */
@@ -45,6 +47,7 @@ function assessLinuxEnforcement({
   extensionEnabled = false,
   dbusLive = null,
   sessionLocked = false,
+  extensionState = null,
 } = {}) {
   // Non-Linux, or X11: active-win handles it. Nothing to check.
   if (!isLinux || !isWayland) return { ok: true, reason: null, childMessage: null }
@@ -58,6 +61,22 @@ function assessLinuxEnforcement({
       childMessage: {
         title: "PearGuard can't block apps on this desktop",
         body: 'This Linux desktop\'s window system is not supported, so app blocking is inactive. '
+          + 'Your parent has been notified.',
+      },
+    }
+  }
+
+  // GNOME refuses to load the extension because metadata.json doesn't list this
+  // Shell version (Ubuntu 26.04 on GNOME 50 hit this, #313). That is a fact about
+  // the installed files, not the lock screen, so it is safe to trust while
+  // locked. Logging out can't fix it; only a PearGuard update can.
+  if (extensionState === 'OUT_OF_DATE') {
+    return {
+      ok: false,
+      reason: REASON_OUT_OF_DATE,
+      childMessage: {
+        title: "PearGuard can't block apps on this version of GNOME",
+        body: 'App blocking is inactive until PearGuard is updated. Logging out will not help. '
           + 'Your parent has been notified.',
       },
     }
@@ -93,4 +112,4 @@ function assessLinuxEnforcement({
   return { ok: true, reason: null, childMessage: null }
 }
 
-module.exports = { assessLinuxEnforcement, REASON_UNSUPPORTED, REASON_NOT_LOADED }
+module.exports = { assessLinuxEnforcement, REASON_UNSUPPORTED, REASON_NOT_LOADED, REASON_OUT_OF_DATE }

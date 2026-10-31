@@ -85,7 +85,7 @@ const { TamperDetector } = require('./tamper-detector')
 const { initAutoUpdater } = require('./updater')
 const { ensureAutostart: ensureLinuxAutostart } = require('./autostart-linux')
 const { ensureExtensionInstalled: ensureGnomeExtension, applyDeferredUpdate: applyDeferredExtensionUpdate } = require('./gnome-extension-installer')
-const { GnomeExtensionWatchdog } = require('./gnome-extension-watchdog')
+const { GnomeExtensionWatchdog, extractState } = require('./gnome-extension-watchdog')
 const { migrateUserData } = require('./userdata-migrate')
 const { shouldAlert, recordAlert } = require('./alert-dedupe')
 const { isSessionLocked } = require('../enforcement/session-lock')
@@ -1132,6 +1132,11 @@ async function reportLinuxEnforcementCapability() {
   const enabledList = await run('gnome-extensions', ['list', '--enabled'])
   const hasGnome = enabledList !== null   // tool absent => not a GNOME session
   const extensionEnabled = !!enabledList && enabledList.includes('pearguard-focus@peerloomllc.com')
+  // OUT_OF_DATE needs its own message: "log out" can't help when GNOME rejects
+  // the extension's shell-version list.
+  const extensionState = hasGnome
+    ? extractState(await run('gnome-extensions', ['info', 'pearguard-focus@peerloomllc.com']))
+    : null
 
   // Lock state decides whether a dead D-Bus probe means anything, so it has to
   // be RIGHT. This used to read logind's LockedHint alone, which is useless on
@@ -1164,7 +1169,7 @@ async function reportLinuxEnforcementCapability() {
   const dbusLive = extensionEnabled && !sessionLocked ? await probeDbusLive() : null
 
   const verdict = assessLinuxEnforcement({
-    isLinux: true, isWayland, hasGnome, extensionEnabled, dbusLive, sessionLocked,
+    isLinux: true, isWayland, hasGnome, extensionEnabled, dbusLive, sessionLocked, extensionState,
   })
 
   if (verdict.ok) {
@@ -1174,7 +1179,7 @@ async function reportLinuxEnforcementCapability() {
 
   linuxCapabilityReported = true
   console.error('[main] *** ENFORCEMENT IS NOT WORKING ***', verdict.reason,
-    { hasGnome, extensionEnabled, sessionLocked, dbusLive })
+    { hasGnome, extensionEnabled, extensionState, sessionLocked, dbusLive })
 
   try {
     new Notification({

@@ -631,6 +631,18 @@ echo "    iOS build   : $(node -p "require('./app.json').expo.ios.buildNumber")"
 _confirm "app.json version looks correct — proceed with bundle builds?"
 
 # ---------------------------------------------------------------------------
+# 0b. The GNOME extension must accept the newest GNOME
+#
+# GNOME won't load the focus extension on a Shell version metadata.json doesn't
+# list, and the child then gets no blocking at all (#313, GNOME 50 on Ubuntu
+# 26.04). Warns when the newest GNOME with an rc or stable build is missing.
+# ---------------------------------------------------------------------------
+echo "==> Checking the GNOME extension covers the newest GNOME..."
+if ! node scripts/check-gnome-version.js; then
+  _confirm "The GNOME extension is missing the newest GNOME (see above). Release anyway?"
+fi
+
+# ---------------------------------------------------------------------------
 # 1. Canonical verify gate (tests + all bundles)
 #
 # Constitution §5 gate. `npm run verify` runs the unit tests, the desktop test

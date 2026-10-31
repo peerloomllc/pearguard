@@ -3594,7 +3594,7 @@ test('EnforcementController.setPolicyJson re-seeds ExeMap from policy.apps entri
 })()
 
 // --- linux enforcement capability -----------------------------------------
-const { assessLinuxEnforcement, REASON_UNSUPPORTED, REASON_NOT_LOADED } = require('../src/enforcement/linux-capability')
+const { assessLinuxEnforcement, REASON_UNSUPPORTED, REASON_NOT_LOADED, REASON_OUT_OF_DATE } = require('../src/enforcement/linux-capability')
 
 test('X11 needs no extension - never reports a capability failure', () => {
   const r = assessLinuxEnforcement({ isWayland: false, hasGnome: false, extensionEnabled: false })
@@ -3647,6 +3647,28 @@ test('but an unlocked session with a dead D-Bus really is broken', () => {
 
 // --- watchdog must not falsely accuse the child ----------------------------
 const { classifyFailure, extractEnabled } = require('../src/main/gnome-extension-watchdog')
+
+test('linux capability: OUT_OF_DATE extension gets its own reason, not "log out"', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: true, extensionEnabled: true, dbusLive: false, extensionState: 'OUT_OF_DATE' })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, REASON_OUT_OF_DATE)
+  assert.ok(!/log out and log back in/i.test(r.childMessage.body))
+})
+
+test('linux capability: OUT_OF_DATE is reported even while locked', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: true, extensionEnabled: true, dbusLive: null, sessionLocked: true, extensionState: 'OUT_OF_DATE' })
+  assert.strictEqual(r.reason, REASON_OUT_OF_DATE)
+})
+
+test('linux capability: INACTIVE extension still asks for a log out', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: true, extensionEnabled: true, dbusLive: false, extensionState: 'INACTIVE' })
+  assert.strictEqual(r.reason, REASON_NOT_LOADED)
+})
+
+test('linux capability: ACTIVE extension is fine', () => {
+  const r = assessLinuxEnforcement({ isWayland: true, hasGnome: true, extensionEnabled: true, dbusLive: true, extensionState: 'ACTIVE' })
+  assert.strictEqual(r.ok, true)
+})
 
 test('extractEnabled parses the Enabled: line', () => {
   assert.strictEqual(extractEnabled('  Enabled: Yes\n  State: ACTIVE'), true)
